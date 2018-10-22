@@ -22,7 +22,7 @@ echo Compiling Core Engine of AMD-V...
 %ddkpath%\amd64\cl.exe .\src\svm_core\svm_main.c /I".\src\include" /Zi /nologo /W3 /WX /Od /Oy- /D"_msvc" /D"_amd64" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\svm_main.cod" /Fo"%objpath%\svm_main.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gz /TC /c /errorReport:queue
 
 echo Compiling Core of Cross-Platform Framework (XPF)...
-%ddkpath%\amd64\cl.exe .\src\xpf_core\windows\windows.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /Oy- /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\windows.cod" /Fo"%objpath%\windows.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gz /TC /c /errorReport:queue
+%ddkpath%\amd64\cl.exe .\src\xpf_core\windows\debug.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /Oy- /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\debug.cod" /Fo"%objpath%\debug.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gz /TC /c /errorReport:queue
 
 %ddkpath%\amd64\ml64.exe /W3 /WX /Zf /Zd /Fo"%objpath%\vt_hv64.obj" /c /nologo .\src\xpf_core\windows\vt_hv64.asm
 

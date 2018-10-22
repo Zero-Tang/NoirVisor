@@ -11,7 +11,9 @@
 *.ilk
 *.map
 *.exp
-*.pdb
+
+# Extra Compiled Codes
+*.cod
 
 # Precompiled Headers
 *.gch
