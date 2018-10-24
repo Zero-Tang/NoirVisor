@@ -25,5 +25,8 @@ NoirVisor is designed to be cross-platform. It can be built to a kernel-mode com
 Currently, NoirVisor supports the Windows Operating System higher than Windows Server 2000, running as a kernel-mode driver.
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
+# Development Status
+Project NoirVisor has just launched.
+
 # License
 All the codes with NoirVisor are licensed under MIT License.
