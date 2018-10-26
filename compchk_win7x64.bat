@@ -24,10 +24,12 @@ echo Compiling Core Engine of AMD-V...
 echo Compiling Core of Cross-Platform Framework (XPF)...
 %ddkpath%\amd64\cl.exe .\src\xpf_core\windows\debug.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /Oy- /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\debug.cod" /Fo"%objpath%\debug.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gz /TC /c /errorReport:queue
 
-%ddkpath%\amd64\ml64.exe /W3 /WX /Zf /Zd /Fo"%objpath%\vt_hv64.obj" /c /nologo .\src\xpf_core\windows\vt_hv64.asm
+%ddkpath%\amd64\cl.exe .\src\xpf_core\windows\memory.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /Oy- /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\memory.cod" /Fo"%objpath%\memory.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gz /TC /c /errorReport:queue
+
+%ddkpath%\amd64\ml64.exe /W3 /WX /Zf /Zd /Fo"%objpath%\svm_hv64.obj" /c /nologo .\src\xpf_core\windows\svm_hv64.asm
 
 echo ============Start Linking============
-%ddkpath%\amd64\link.exe "%objpath%\driver.obj" "%objpath%\vt_main.obj" "%objpath%\svm_main.obj" "%objpath%\windows.obj" "%objpath%\vt_hv64.obj" "%objpath%\ver64.res" /LIBPATH:"%libpath%\win7\amd64" "ntoskrnl.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
+%ddkpath%\amd64\link.exe "%objpath%\driver.obj" "%objpath%\vt_main.obj" "%objpath%\svm_main.obj" "%objpath%\memory.obj" "%objpath%\debug.obj" "%objpath%\svm_hv64.obj" /LIBPATH:"%libpath%\win7\amd64" "ntoskrnl.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
 
 echo ============Start Signing============
 %ddkpath%\signtool.exe sign /v /f .\ztnxtest.pfx /t http://timestamp.globalsign.com/scripts/timestamp.dll %binpath%\NoirVisor.sys

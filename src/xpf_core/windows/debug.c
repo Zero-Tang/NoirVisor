@@ -20,7 +20,7 @@ void __cdecl nv_dprintf(const char* format,...)
 {
 	va_list arg_list;
 	va_start(arg_list,format);
-	vDbgPrintExWithPrefix("[NoirVisor] ",DPFLTR_IHVDRIVER_ID,DPFLTR_INFO_LEVEL,arg_list);
+	vDbgPrintExWithPrefix("[NoirVisor] ",DPFLTR_IHVDRIVER_ID,DPFLTR_INFO_LEVEL,format,arg_list);
 	va_end(arg_list);
 }
 
@@ -28,7 +28,7 @@ void __cdecl nv_tracef(const char* format,...)
 {
 	va_list arg_list;
 	va_start(arg_list,format);
-	vDbgPrintExWithPrefix("[NoirVisor - Trace] ",DPFLTR_IHVDRIVER_ID,DPFLTR_TRACE_LEVEL,arg_list);
+	vDbgPrintExWithPrefix("[NoirVisor - Trace] ",DPFLTR_IHVDRIVER_ID,DPFLTR_TRACE_LEVEL,format,arg_list);
 	va_end(arg_list);
 }
 
@@ -36,6 +36,6 @@ void __cdecl nv_panicf(const char* format,...)
 {
 	va_list arg_list;
 	va_start(arg_list,format);
-	vDbgPrintExWithPrefix("[NoirVisor - Panic] ",DPFLTR_IHVDRIVER_ID,DPFLTR_ERROR_LEVEL,arg_list);
+	vDbgPrintExWithPrefix("[NoirVisor - Panic] ",DPFLTR_IHVDRIVER_ID,DPFLTR_ERROR_LEVEL,format,arg_list);
 	va_end(arg_list);
 }
