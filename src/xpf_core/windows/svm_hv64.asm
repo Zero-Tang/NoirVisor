@@ -1,3 +1,15 @@
+; NoirVisor - Hardware-Accelerated Hypervisor solution
+; 
+; Copyright 2018, Zero Tang. All rights reserved.
+;
+; This file is part of NoirVisor SVM Core written in assembly language.
+;
+; This program is distributed in the hope that it will be successful, but
+; without any warranty (no matter implied warranty of merchantability or
+; fitness for a particular purpose, etc.).
+;
+; File location: ./xpf_core/windows/svm_hv64.asm
+
 .code
 
 pushaq macro

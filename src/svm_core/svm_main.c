@@ -19,18 +19,25 @@
 bool nvc_is_svm_supported()
 {
 	u32 a,b,c,d;
-	noir_cpuid(0x80000001,0,null,null,&c,null);
-	if(noir_bt(&c,amd64_cpuid_svm))
+	char vs[13];
+	noir_cpuid(0x80000000,0,&a,(u32*)&vs[0],(u32*)&vs[8],(u32*)&vs[4]);vs[12]=0;
+	//Make sure that processor is produced by AMD and
+	//maximum supported cpuid leaf is higher than 0x8000000A
+	if(strcmp(vs,"AuthenticAMD")==0 && a>=0x8000000A)
 	{
-		bool basic_supported=true;
-		noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
-		//At least one ASID should be available.
-		basic_supported&=(b>0);
-		//Decode Assists is the required feature.
-		basic_supported&=noir_bt(&d,amd64_cpuid_decoder);
-		//Next RIP Saving is the required feature.
-		basic_supported&=noir_bt(&d,amd64_cpuid_nrips);
-		return basic_supported;
+		noir_cpuid(0x80000001,0,null,null,&c,null);
+		if(noir_bt(&c,amd64_cpuid_svm))
+		{
+			bool basic_supported=true;
+			noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
+			//At least one ASID should be available.
+			basic_supported&=(b>0);
+			//Decode Assists is the required feature.
+			basic_supported&=noir_bt(&d,amd64_cpuid_decoder);
+			//Next RIP Saving is the required feature.
+			basic_supported&=noir_bt(&d,amd64_cpuid_nrips);
+			return basic_supported;
+		}
 	}
 	return false;
 }
