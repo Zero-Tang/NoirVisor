@@ -13,6 +13,8 @@
 */
 
 #include <nvdef.h>
+#include <noirhvm.h>
+#include <nvbdk.h>
 #include <intrin.h>
 #include <amd64.h>
 
@@ -54,4 +56,87 @@ void nvc_svm_disable()
 	u64 efer=noir_rdmsr(amd64_efer);
 	efer&=~amd64_efer_svme_bit;
 	noir_wrmsr(amd64_efer,efer);
+}
+
+void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
+{
+	nvc_svm_enable();
+	noir_wrmsr(amd64_hsave_pa,vcpu->hsave.phys);
+}
+
+void static nvc_svm_subvert_processor_thunk(void* context,u32 processor_id)
+{
+	noir_svm_vcpu_p vcpu=(noir_svm_vcpu_p)context;
+	nvc_svm_subvert_processor(&vcpu[processor_id]);
+}
+
+void nvc_svm_cleanup(noir_hypervisor_p hvm)
+{
+	if(hvm->virtual_cpu)
+	{
+		u32 i=0;
+		for(;i<hvm->cpu_count;i++)
+		{
+			noir_svm_vcpu_p vcpu=&hvm->virtual_cpu[i];
+			if(vcpu->vmcb.virt)
+				noir_free_contd_memory(vcpu->vmcb.virt);
+			if(vcpu->hsave.virt)
+				noir_free_contd_memory(vcpu->hsave.virt);
+			if(vcpu->hv_stack)
+				noir_free_nonpg_memory(vcpu->hv_stack);
+		}
+		noir_free_nonpg_memory(hvm->virtual_cpu);
+	}
+	if(hvm->relative_hvm->msrpm.virt)
+		noir_free_contd_memory(hvm->relative_hvm->msrpm.virt);
+	if(hvm->relative_hvm->iopm.virt)
+		noir_free_contd_memory(hvm->relative_hvm->iopm.virt);
+	if(host_rsp_list)
+		noir_free_nonpg_memory(host_rsp_list);
+}
+
+void nvc_svm_subvert_system(noir_hypervisor_p hvm)
+{
+	hvm->cpu_count=noir_get_processor_count();
+	host_rsp_list=noir_alloc_nonpg_memory(hvm->cpu_count*sizeof(void*));
+	if(host_rsp_list==null)return;
+	hvm->virtual_cpu=noir_alloc_nonpg_memory(hvm->cpu_count*sizeof(noir_svm_vcpu));
+	if(hvm->virtual_cpu)
+	{
+		u32 i=0;
+		for(;i<hvm->cpu_count;i++)
+		{
+			noir_svm_vcpu_p vcpu=&hvm->virtual_cpu[i];
+			vcpu->vmcb.virt=noir_alloc_contd_memory(page_size);
+			if(vcpu->vmcb.virt)
+				vcpu->vmcb.phys=noir_get_physical_address(vcpu->vmcb.virt);
+			else
+				goto alloc_failure;
+			vcpu->hsave.virt=noir_alloc_contd_memory(page_size);
+			if(vcpu->hsave.virt)
+				vcpu->hsave.phys=noir_get_physical_address(vcpu->hsave.virt);
+			else
+				goto alloc_failure;
+			vcpu->hv_stack=noir_alloc_nonpg_memory(nvc_stack_size);
+			if(vcpu->hv_stack)
+				host_rsp_list[i]=vcpu->hv_stack;
+			else
+				goto alloc_failure;
+		}
+	}
+	hvm->relative_hvm=(noir_svm_hvm_p)hvm->reserved;
+	hvm->relative_hvm->msrpm.virt=noir_alloc_contd_memory(2*page_size);
+	if(hvm->relative_hvm->msrpm.virt)
+		hvm->relative_hvm->msrpm.phys=noir_get_physical_address(hvm->relative_hvm->msrpm.virt);
+	else
+		goto alloc_failure;
+	hvm->relative_hvm->iopm.virt=noir_alloc_contd_memory(3*page_size);
+	if(hvm->relative_hvm->iopm.virt)
+		hvm->relative_hvm->iopm.phys=noir_get_physical_address(hvm->relative_hvm->iopm.virt);
+	else
+		goto alloc_failure;
+	if(hvm->virtual_cpu==null)goto alloc_failure;
+	noir_generic_call(nvc_svm_subvert_processor_thunk,hvm->virtual_cpu);
+alloc_failure:
+	nvc_svm_cleanup(hvm);
 }

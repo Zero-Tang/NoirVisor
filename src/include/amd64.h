@@ -30,6 +30,8 @@
 #define amd64_fs_base					0xC0000100
 #define amd64_gs_base					0xC0000101
 #define amd64_kernel_gs_base			0xC0000102
+#define amd64_vmcr						0xC0010114
+#define amd64_hsave_pa					0xC0010117
 
 //This is used for defining AMD64 architectural interrupt vectors.
 #define amd64_divide_error				0
