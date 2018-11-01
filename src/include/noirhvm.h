@@ -24,6 +24,12 @@
 #define amd_processor			1
 #define unknown_processor		0xff
 
+//Processor State of Virtualization
+#define noir_virt_off			0
+#define noir_virt_on			1
+#define noir_virt_trans			2
+#define noir_virt_nesting		3
+
 //Stack Size = 64KB
 #define nvc_stack_size			0x10000
 
@@ -47,6 +53,7 @@ typedef struct _noir_hypervisor
 	u32 cpu_count;
 	char vendor_string[13];
 	u8 cpu_manuf;
+	//Use a 64-bit notation for an 8-byte alignment.
 	u64 reserved[0x10];	//Reserve 128 bytes for Relative HVM.
 }noir_hypervisor,*noir_hypervisor_p;
 

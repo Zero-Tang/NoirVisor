@@ -44,24 +44,35 @@ bool nvc_is_svm_supported()
 	return false;
 }
 
-void nvc_svm_enable()
+u8 nvc_svm_enable()
 {
 	u64 efer=noir_rdmsr(amd64_efer);
 	efer|=amd64_efer_svme_bit;
 	noir_wrmsr(amd64_efer,efer);
+	efer=noir_rdmsr(amd64_efer);
+	return noir_bt(efer,amd64_efer_svme)?noir_virt_trans:noir_virt_off;
 }
 
-void nvc_svm_disable()
+u8 nvc_svm_disable()
 {
 	u64 efer=noir_rdmsr(amd64_efer);
 	efer&=~amd64_efer_svme_bit;
 	noir_wrmsr(amd64_efer,efer);
+	efer=noir_rdmsr(amd64_efer);
+	return noir_bt(efer,amd64_efer_svme)?noir_virt_trans:noir_virt_off;
+}
+
+ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_ptr gip)
+{
+	;
+	return (ulong_ptr)vcpu->vmcb.phys;
 }
 
 void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 {
-	nvc_svm_enable();
+	vcpu->status=nvc_svm_enable();
 	noir_wrmsr(amd64_hsave_pa,vcpu->hsave.phys);
+	vcpu->status=nvc_svm_subvert_processor_a(vcpu);
 }
 
 void static nvc_svm_subvert_processor_thunk(void* context,u32 processor_id)
