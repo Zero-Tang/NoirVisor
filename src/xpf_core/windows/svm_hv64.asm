@@ -15,6 +15,7 @@
 extern nvc_svm_subvert_processor_i:qword
 extern host_rsp_list:qword
 
+; Macro for pushing all GPRs to stack.
 pushaq macro
 	
 	push r15
@@ -36,6 +37,7 @@ pushaq macro
 	
 endm
 
+; Macro for poping all GPRs from stack.
 popaq macro
 
 	pop rax
@@ -57,6 +59,7 @@ popaq macro
 
 endm
 
+; A simple implementation for vmmcall instruction.
 noir_svm_vmmcall proc
 
 	vmmcall

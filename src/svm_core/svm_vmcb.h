@@ -53,7 +53,8 @@ typedef enum _svm_vmcb_offset
 	iopm_physical_address=0x40,
 	msrpm_physical_address=0x48,
 	tsc_offset=0x50,
-	asid_control=0x58,
+	guest_asid=0x58,
+	tlb_control=0x5C,
 	avid_control=0x60,
 	guest_interrupt=0x68,
 	exit_code=0x70,
@@ -78,52 +79,52 @@ typedef enum _svm_vmcb_offset
 	//State Save Area - SEV-ES Disabled
 	//ES
 	guest_es_selector=0x400,
-	guest_es_attributes=0x402,
+	guest_es_attrib=0x402,
 	guest_es_limit=0x404,
 	guest_es_base=0x408,
 	//CS
 	guest_cs_selector=0x410,
-	guest_cs_attributes=0x412,
+	guest_cs_attrib=0x412,
 	guest_cs_limit=0x414,
 	guest_cs_base=0x418,
 	//SS
 	guest_ss_selector=0x420,
-	guest_ss_attributes=0x422,
+	guest_ss_attrib=0x422,
 	guest_ss_limit=0x424,
 	guest_ss_base=0x428,
 	//DS
 	guest_ds_selector=0x430,
-	guest_ds_attributes=0x432,
+	guest_ds_attrib=0x432,
 	guest_ds_limit=0x434,
 	guest_ds_base=0x438,
 	//FS
 	guest_fs_selector=0x440,
-	guest_fs_attributes=0x442,
+	guest_fs_attrib=0x442,
 	guest_fs_limit=0x444,
 	guest_fs_base=0x448,
 	//GS
 	guest_gs_selector=0x450,
-	guest_gs_attributes=0x452,
+	guest_gs_attrib=0x452,
 	guest_gs_limit=0x454,
 	guest_gs_base=0x458,
 	//GDTR
 	guest_gdtr_selector=0x460,
-	guest_gdtr_attributes=0x462,
+	guest_gdtr_attrib=0x462,
 	guest_gdtr_limit=0x464,
 	guest_gdtr_base=0x468,
 	//LDTR
 	guest_ldtr_selector=0x470,
-	guest_ldtr_attributes=0x472,
+	guest_ldtr_attrib=0x472,
 	guest_ldtr_limit=0x474,
 	guest_ldtr_base=0x478,
 	//IDTR
 	guest_idtr_selector=0x400,
-	guest_idtr_attributes=0x402,
+	guest_idtr_attrib=0x402,
 	guest_idtr_limit=0x404,
 	guest_idtr_base=0x408,
 	//TR
 	guest_tr_selector=0x400,
-	guest_tr_attributes=0x402,
+	guest_tr_attrib=0x402,
 	guest_tr_limit=0x404,
 	guest_tr_base=0x408,
 	//

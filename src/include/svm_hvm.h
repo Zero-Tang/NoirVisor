@@ -20,20 +20,21 @@ typedef struct _memory_descriptor
 	u64 phys;
 }memory_descriptor,*memory_descriptor_p;
 
-typedef struct _noir_svm_vcpu
-{
-	memory_descriptor vmcb;
-	memory_descriptor hsave;
-	void* hv_stack;
-	u8 status;
-}noir_svm_vcpu,*noir_svm_vcpu_p;
-
 //Optimize Memory Usage of MSRPM and IOPM.
 typedef struct _noir_svm_hvm
 {
 	memory_descriptor msrpm;
 	memory_descriptor iopm;
 }noir_svm_hvm,*noir_svm_hvm_p;
+
+typedef struct _noir_svm_vcpu
+{
+	memory_descriptor vmcb;
+	memory_descriptor hsave;
+	void* hv_stack;
+	noir_svm_hvm_p relative_hvm;
+	u8 status;
+}noir_svm_vcpu,*noir_svm_vcpu_p;
 
 u8 nvc_svm_subvert_processor_a(noir_svm_vcpu_p vcpu);
 void** host_rsp_list=null;

@@ -21,7 +21,7 @@
 typedef struct _segment_register
 {
 	u16 selector;
-	u16 attributes;
+	u16 attrib;
 	u32 limit;
 	u64 base;
 }segment_register,*segment_register_p;

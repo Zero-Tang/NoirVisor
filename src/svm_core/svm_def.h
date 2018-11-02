@@ -14,9 +14,9 @@
 
 #include <nvdef.h>
 
-#define svm_cpuid_support_bit		2
+#define svm_attrib(a)		(u16)(a&0xFF)|((a&0xF000)>>4)
 
-typedef union _nhv_svm_cr_intercept
+typedef union _nvc_svm_cr_intercept
 {
 	struct
 	{
@@ -38,19 +38,19 @@ typedef union _nhv_svm_cr_intercept
 		u16 cr15;
 	};
 	u16 value;
-}nhv_svm_cr_intercept,*nhv_svm_cr_intercept_p;
+}nvc_svm_cr_intercept,*nvc_svm_cr_intercept_p;
 
-typedef union _nhv_svm_cra_intercept
+typedef union _nvc_svm_cra_intercept
 {
 	struct
 	{
-		nhv_svm_cr_intercept read;
-		nhv_svm_cr_intercept write;
+		nvc_svm_cr_intercept read;
+		nvc_svm_cr_intercept write;
 	};
 	u32 value;
-}nhv_svm_cra_intercept,*nhv_svm_cra_intercept_p;
+}nvc_svm_cra_intercept,*nvc_svm_cra_intercept_p;
 
-typedef union _nhv_svm_dr_intercept
+typedef union _nvc_svm_dr_intercept
 {
 	struct
 	{
@@ -72,19 +72,19 @@ typedef union _nhv_svm_dr_intercept
 		u16 dr15;
 	};
 	u16 value;
-}nhv_svm_dr_intercept,*nhv_svm_dr_intercept_p;
+}nvc_svm_dr_intercept,*nvc_svm_dr_intercept_p;
 
-typedef union _nhv_svm_dra_intercept
+typedef union _nvc_svm_dra_intercept
 {
 	struct
 	{
-		nhv_svm_dr_intercept read;
-		nhv_svm_dr_intercept write;
+		nvc_svm_dr_intercept read;
+		nvc_svm_dr_intercept write;
 	};
 	u32 value;
-}nhv_svm_dra_intercept,*nhv_svm_dra_intercept_p;
+}nvc_svm_dra_intercept,*nvc_svm_dra_intercept_p;
 
-typedef union _nhv_svm_instruction_intercept1
+typedef union _nvc_svm_instruction_intercept1
 {
 	struct
 	{
@@ -122,9 +122,9 @@ typedef union _nhv_svm_instruction_intercept1
 		u32 intercept_shutdown:1;
 	};
 	u32 value;
-}nhv_svm_instruction_intercept1,*nhv_svm_instruction_intercept1_p;
+}nvc_svm_instruction_intercept1,*nvc_svm_instruction_intercept1_p;
 
-typedef union _nhv_svm_instruction_intercept2
+typedef union _nvc_svm_instruction_intercept2
 {
 	struct
 	{
@@ -146,14 +146,14 @@ typedef union _nhv_svm_instruction_intercept2
 		u16 intercept_post_efer_write:1;
 	};
 	u16 value;
-}nhv_svm_instruction_intercept2,*nhv_svm_instruction_intercept2_p;
+}nvc_svm_instruction_intercept2,*nvc_svm_instruction_intercept2_p;
 
-#define nhv_svm_tlb_control_do_nothing			0
-#define nhv_svm_tlb_control_flush_entire		1
-#define nhv_svm_tlb_control_flush_guest			3
-#define nhv_svm_tlb_control_flush_non_global	7
+#define nvc_svm_tlb_control_do_nothing			0
+#define nvc_svm_tlb_control_flush_entire		1
+#define nvc_svm_tlb_control_flush_guest			3
+#define nvc_svm_tlb_control_flush_non_global	7
 
-typedef union _nhv_svm_asid_control
+typedef union _nvc_svm_asid_control
 {
 	struct
 	{
@@ -162,9 +162,9 @@ typedef union _nhv_svm_asid_control
 		u8 reserved[3];
 	};
 	u64 value;
-}nhv_svm_asid_control,*nhv_svm_asid_control_p;
+}nvc_svm_asid_control,*nvc_svm_asid_control_p;
 
-typedef union _nhv_svm_avic_control
+typedef union _nvc_svm_avic_control
 {
 	struct
 	{
@@ -183,9 +183,9 @@ typedef union _nhv_svm_avic_control
 		u64 reserved4:24;
 	};
 	u64 value;
-}nhv_svm_avic_control,*nhv_svm_avic_control_p;
+}nvc_svm_avic_control,*nvc_svm_avic_control_p;
 
-typedef union _nhv_svm_guest_interrupt
+typedef union _nvc_svm_guest_interrupt
 {
 	struct
 	{
@@ -194,9 +194,9 @@ typedef union _nhv_svm_guest_interrupt
 		u64 reserved:62;
 	};
 	u64 value;
-}nhv_svm_guest_interrupt,*nhv_svm_guest_interrupt_p;
+}nvc_svm_guest_interrupt,*nvc_svm_guest_interrupt_p;
 
-typedef union _nhv_svm_npt_control
+typedef union _nvc_svm_npt_control
 {
 	struct
 	{
@@ -205,9 +205,9 @@ typedef union _nhv_svm_npt_control
 		u64 enable_sev_es:1;
 	};
 	u64 value;
-}nhv_svm_npt_control,*nhv_svm_npt_control_p;
+}nvc_svm_npt_control,*nvc_svm_npt_control_p;
 
-typedef union _nhv_svm_lbr_virtualization_control
+typedef union _nvc_svm_lbr_virtualization_control
 {
 	struct
 	{
@@ -216,15 +216,15 @@ typedef union _nhv_svm_lbr_virtualization_control
 		u64 reserved:62;
 	};
 	u64 value;
-}nhv_svm_lbr_virtualization_control,*nhv_svm_lbr_virtualization_control_p;
+}nvc_svm_lbr_virtualization_control,*nvc_svm_lbr_virtualization_control_p;
 
-typedef struct _nhv_svm_fetched_instruction
+typedef struct _nvc_svm_fetched_instruction
 {
 	u8 number_of_bytes;
 	u8 instruction_bytes[15];
-}nhv_svm_fetched_instruction,*nhv_svm_fetched_instruction_p;
+}nvc_svm_fetched_instruction,*nvc_svm_fetched_instruction_p;
 
-typedef struct _nhv_svm_avic_physical_table
+typedef struct _nvc_svm_avic_physical_table
 {
 	struct
 	{
@@ -234,4 +234,4 @@ typedef struct _nhv_svm_avic_physical_table
 		u64 reserved2:12;
 	};
 	u64 value;
-}nhv_svm_avic_physical_table,*nhv_svm_avic_physical_table_p;
+}nvc_svm_avic_physical_table,*nvc_svm_avic_physical_table_p;
