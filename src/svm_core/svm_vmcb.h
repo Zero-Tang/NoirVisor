@@ -118,15 +118,15 @@ typedef enum _svm_vmcb_offset
 	guest_ldtr_limit=0x474,
 	guest_ldtr_base=0x478,
 	//IDTR
-	guest_idtr_selector=0x400,
-	guest_idtr_attrib=0x402,
-	guest_idtr_limit=0x404,
-	guest_idtr_base=0x408,
+	guest_idtr_selector=0x480,
+	guest_idtr_attrib=0x482,
+	guest_idtr_limit=0x484,
+	guest_idtr_base=0x488,
 	//TR
-	guest_tr_selector=0x400,
-	guest_tr_attrib=0x402,
-	guest_tr_limit=0x404,
-	guest_tr_base=0x408,
+	guest_tr_selector=0x490,
+	guest_tr_attrib=0x492,
+	guest_tr_limit=0x494,
+	guest_tr_base=0x498,
 	//
 	guest_cpl=0x4CB,
 	guest_efer=0x4CC,

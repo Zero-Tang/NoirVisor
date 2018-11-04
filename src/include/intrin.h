@@ -66,6 +66,17 @@
 #define noir_rdmsr		__readmsr
 #define noir_wrmsr		__writemsr
 
+//Store-String instructions.
+#define noir_stosb		__stosb
+#define noir_stosw		__stosw
+#define noir_stosd		__stosd
+#if defined(_amd64)
+#define noir_stosq		__stosq
+#define noir_stosp		__stosq
+#else
+#define noir_stosp		__stosd
+#endif
+
 //Cleat/Set RFlags.IF
 #define noir_cli	_disable
 #define noir_sti	_enable

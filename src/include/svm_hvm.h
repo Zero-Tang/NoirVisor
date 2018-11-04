@@ -14,6 +14,8 @@
 
 #include <nvdef.h>
 
+#define noir_svm_callexit		1
+
 typedef struct _memory_descriptor
 {
 	void* virt;
@@ -37,4 +39,7 @@ typedef struct _noir_svm_vcpu
 }noir_svm_vcpu,*noir_svm_vcpu_p;
 
 u8 nvc_svm_subvert_processor_a(noir_svm_vcpu_p vcpu);
+
+#if !defined(_svm_exit)
 void** host_rsp_list=null;
+#endif

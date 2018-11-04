@@ -23,7 +23,7 @@ Also note that, you have create certain directories required by the batch compli
 
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal.
-Currently, NoirVisor supports the Windows Operating System higher than Windows Server 2000, running as a kernel-mode driver.
+Currently, NoirVisor supports the Windows Operating System newer than or same as Windows XP, running as a kernel-mode driver.
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status

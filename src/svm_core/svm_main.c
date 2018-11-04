@@ -56,6 +56,8 @@ u8 nvc_svm_enable()
 	return noir_bt(efer,amd64_efer_svme)?noir_virt_trans:noir_virt_off;
 }
 
+//Do not invoke this function.
+//By testing, this leads to a fault to VMware vCPU.
 u8 nvc_svm_disable()
 {
 	u64 efer=noir_rdmsr(amd64_efer);
@@ -143,11 +145,13 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	list1.intercept_msr=1;
 	list2.value=0;
 	list2.intercept_vmrun=1;
+	list2.intercept_vmmcall=1;
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction1,list1.value);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction2,list2.value);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,iopm_physical_address,vcpu->relative_hvm->iopm.phys);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,msrpm_physical_address,vcpu->relative_hvm->msrpm.phys);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_asid,1);		//ASID must be non-zero.
+	//We will assign a guest asid other than 1 as we are nesting a hypervisor.
 	//Load Partial Guest State by vmload and continue subversion.
 	noir_svm_vmload((ulong_ptr)vcpu->vmcb.phys);
 	return (ulong_ptr)vcpu->vmcb.phys;
@@ -218,7 +222,7 @@ void nvc_svm_subvert_system(noir_hypervisor_p hvm)
 				goto alloc_failure;
 			vcpu->hv_stack=noir_alloc_nonpg_memory(nvc_stack_size);
 			if(vcpu->hv_stack)
-				host_rsp_list[i]=vcpu->hv_stack;
+				host_rsp_list[i]=(void*)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-0x20);
 			else
 				goto alloc_failure;
 			vcpu->relative_hvm=(noir_svm_hvm_p)hvm->reserved;
@@ -237,6 +241,34 @@ void nvc_svm_subvert_system(noir_hypervisor_p hvm)
 		goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;
 	noir_generic_call(nvc_svm_subvert_processor_thunk,hvm->virtual_cpu);
+	return;
 alloc_failure:
 	nvc_svm_cleanup(hvm);
+}
+
+void static nvc_svm_restore_processor(noir_svm_vcpu_p vcpu)
+{
+	//Leave Guest Mode by vmmcall if we are in Guest Mode.
+	if(vcpu->status==noir_virt_on)
+		noir_svm_vmmcall(noir_svm_callexit,(ulong_ptr)vcpu);
+	//Mark the processor is in "off" status as we are in Host Mode now.
+	if(vcpu->status==noir_virt_trans)
+		vcpu->status=noir_virt_off;
+	//nvc_svm_disable();
+}
+
+void static nvc_svm_restore_processor_thunk(void* context,u32 processor_id)
+{
+	noir_svm_vcpu_p vcpu=(noir_svm_vcpu_p)context;
+	nvc_svm_restore_processor(vcpu);
+}
+
+void nvc_svm_restore_system(noir_hypervisor_p hvm)
+{
+	if(hvm->virtual_cpu)
+	{
+		u32 i=0;
+		noir_generic_call(nvc_svm_restore_processor_thunk,hvm->virtual_cpu);
+		nvc_svm_cleanup(hvm);
+	}
 }

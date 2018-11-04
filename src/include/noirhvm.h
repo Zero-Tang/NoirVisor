@@ -38,7 +38,7 @@ typedef struct _noir_hypervisor
 #if defined(_vt_drv)
 	noir_vt_vcpu_p virtual_cpu;
 	noir_vt_hvm_p relative_hvm;
-#elif defined(_svm_drv)
+#elif defined(_svm_drv) || defined(_svm_exit)
 	noir_svm_vcpu_p virtual_cpu;
 	noir_svm_hvm_p relative_hvm;
 #else
@@ -59,4 +59,6 @@ typedef struct _noir_hypervisor
 
 #if defined(_central_hvm)
 noir_hypervisor_p hvm=null;
+#else
+extern noir_hypervisor_p hvm;
 #endif

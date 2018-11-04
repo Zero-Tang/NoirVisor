@@ -12,7 +12,8 @@
 
 .code
 
-extern nvc_svm_subvert_processor_i:qword
+extern nvc_svm_subvert_processor_i:proc
+extern nvc_svm_exit_handler:proc
 extern host_rsp_list:qword
 
 ; Macro for pushing all GPRs to stack.

@@ -62,6 +62,28 @@ typedef struct _noir_processor_state
 	u64 gsswap;
 }noir_processor_state,*noir_processor_state_p;
 
+typedef struct _noir_gpr_state
+{
+	ulong_ptr rax;
+	ulong_ptr rcx;
+	ulong_ptr rdx;
+	ulong_ptr rbx;
+	ulong_ptr rsp;
+	ulong_ptr rbp;
+	ulong_ptr rsi;
+	ulong_ptr rdi;
+#if defined(_amd64)
+	u64 r8;
+	u64 r9;
+	u64 r10;
+	u64 r11;
+	u64 r12;
+	u64 r13;
+	u64 r14;
+	u64 r15;
+#endif
+}noir_gpr_state,*noir_gpr_state_p;
+
 typedef void (*noir_broadcast_worker)(void* context,u32 processor_id);
 
 void noir_save_processor_state(noir_processor_state_p);
