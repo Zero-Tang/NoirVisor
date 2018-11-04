@@ -14,13 +14,73 @@
 
 #include <nvdef.h>
 
+#define intercepted_cr_read(x)		x+0x0
+#define intercepted_cr_write(x)		x+0x10
+#define intercepted_dr_read(x)		x+0x20
+#define intercepted_dr_write(x)		x+0x30
+#define intercepted_exception(x)	x+0x40
+#define intercepted_interrupt		0x60
+#define intercepted_nmi				0x61
+#define intercepted_smi				0x62
+#define intercepted_init			0x63
+#define intercepted_vintr			0x64
+#define intercepted_cr0_tsmp		0x65
+#define intercepted_sidt			0x66
+#define intercepted_sgdt			0x67
+#define intercepted_sldt			0x68
+#define intercepted_str				0x69
+#define intercepted_lidt			0x6A
+#define intercepted_lgdt			0x6B
+#define intercepted_lldt			0x6C
+#define intercepted_ltr				0x6D
+#define intercepted_rdtsc			0x6E
+#define intercepted_rdpmc			0x6F
+#define intercepted_pushf			0x70
+#define intercepted_popf			0x71
+#define intercepted_cpuid			0x72
+#define intercepted_rsm				0x73
+#define intercepted_iret			0x74
+#define intercepted_int				0x75
+#define intercepted_invd			0x76
+#define intercepted_pause			0x77
+#define intercepted_hlt				0x78
+#define intercepted_invlpg			0x79
+#define intercepted_invlpga			0x7A
+#define intercepted_io				0x7B
+#define intercepted_msr				0x7C
+#define intercepted_task_switch		0x7D
+#define intercepted_ferr_freeze		0x7E
+#define intercepted_shutdown		0x7F
+#define intercepted_vmrun			0x80
+#define intercepted_vmmcall			0x81
+#define intercepted_vmload			0x82
+#define intercepted_vmsave			0x83
+#define intercepted_stgi			0x84
+#define intercepted_clgi			0x85
+#define intercepted_skinit			0x86
+#define intercepted_rdtscp			0x87
+#define intercepted_icebp			0x88
+#define intercepted_wbinvd			0x89
+#define intercepted_monitor			0x8A
+#define intercepted_mwait			0x8B
+#define intercepted_mwait_cond		0x8C
+#define intercepted_xsetbv			0x8D
+#define intercepted_efer_w_trap		0x8F
+#define intercepted_cr_w_trap(x)	x+0x90
+#define nested_page_fault			0x400
+#define avic_incomplete_ipi			0x401
+#define avic_no_acceleration		0x402
+#define intercepted_vmgexit			0x403
+
+#define invalid_guest_state			-1
+
 #define noir_svm_maximum_code1		0x100
 #define noir_svm_maximum_code2		0x4
 
 typedef void (fastcall *noir_svm_exit_handler_routine)
 (
  noir_gpr_state_p gpr_state,
- void* vmcb
+ noir_svm_vcpu_p vcpu
 );
 
 noir_svm_exit_handler_routine** svm_exit_handlers=null;

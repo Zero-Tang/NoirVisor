@@ -17,6 +17,16 @@
 
 #define page_size		0x1000
 
+typedef union _large_integer
+{
+	struct
+	{
+		u32 low;
+		u32 high;
+	};
+	u64 value;
+}large_integer,*large_integer_p;
+
 //Processor Facility
 typedef struct _segment_register
 {

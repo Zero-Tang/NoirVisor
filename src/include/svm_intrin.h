@@ -14,6 +14,17 @@
 
 #include "nvdef.h"
 
+u32 inline svm_msrpm_bit(u8 bitmap,u32 index,u8 operation)
+{
+	if(bitmap==1)
+		return index*2+operation;
+	if(bitmap==2)
+		return (index-0xC0000000)*2+operation;
+	if(bitmap==3)
+		return (index-0xC0010000)*2+operation;
+	return 0;
+}
+
 #if defined(_msvc)
 #define noir_svm_vmrun		__svm_vmrun
 #define noir_svm_vmload		__svm_vmload

@@ -36,6 +36,11 @@ typedef struct _noir_svm_vcpu
 	void* hv_stack;
 	noir_svm_hvm_p relative_hvm;
 	u8 status;
+	struct
+	{
+		u64 hsave_gpa;
+		bool svme;
+	}nested_hvm;
 }noir_svm_vcpu,*noir_svm_vcpu_p;
 
 u8 nvc_svm_subvert_processor_a(noir_svm_vcpu_p vcpu);

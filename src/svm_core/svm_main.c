@@ -67,6 +67,24 @@ u8 nvc_svm_disable()
 	return noir_bt(efer,amd64_efer_svme)?noir_virt_trans:noir_virt_off;
 }
 
+void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm)
+{
+	void* bitmap1=(void*)((ulong_ptr)hvm->relative_hvm->msrpm.virt+0);
+	void* bitmap2=(void*)((ulong_ptr)hvm->relative_hvm->msrpm.virt+0x800);
+	void* bitmap3=(void*)((ulong_ptr)hvm->relative_hvm->msrpm.virt+0x1000);
+	//Setup basic MSR-Intercepts that may interfere with SVM normal operations.
+	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,0));
+	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,1));
+	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,0));
+	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,1));
+	//Setup custom MSR-Interception.
+#if defined(_amd64)
+	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,0));			//Hide MSR Hook
+#else
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(2,amd64_sysenter_eip,0));		//Hide MSR Hook
+#endif
+}
+
 ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_ptr gip)
 {
 	//Save Processor State
@@ -240,6 +258,7 @@ void nvc_svm_subvert_system(noir_hypervisor_p hvm)
 	else
 		goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;
+	nvc_svm_setup_msr_hook(hvm);
 	noir_generic_call(nvc_svm_subvert_processor_thunk,hvm->virtual_cpu);
 	return;
 alloc_failure:
