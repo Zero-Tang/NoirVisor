@@ -73,6 +73,7 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm)
 	void* bitmap2=(void*)((ulong_ptr)hvm->relative_hvm->msrpm.virt+0x800);
 	void* bitmap3=(void*)((ulong_ptr)hvm->relative_hvm->msrpm.virt+0x1000);
 	//Setup basic MSR-Intercepts that may interfere with SVM normal operations.
+	//This is also for nested virtualization.
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,0));
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,1));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,0));
@@ -162,14 +163,17 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	list1.value=0;
 	list1.intercept_msr=1;
 	list2.value=0;
-	list2.intercept_vmrun=1;
+	list2.intercept_vmrun=1;	//The vmrun should always be intercepted as required by AMD.
 	list2.intercept_vmmcall=1;
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction1,list1.value);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction2,list2.value);
+	//Setup IOPM and MSRPM.
 	noir_svm_vmwrite64(vcpu->vmcb.virt,iopm_physical_address,vcpu->relative_hvm->iopm.phys);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,msrpm_physical_address,vcpu->relative_hvm->msrpm.phys);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_asid,1);		//ASID must be non-zero.
 	//We will assign a guest asid other than 1 as we are nesting a hypervisor.
+	//Enable Global Interrupt.
+	noir_svm_stgi();
 	//Load Partial Guest State by vmload and continue subversion.
 	noir_svm_vmload((ulong_ptr)vcpu->vmcb.phys);
 	return (ulong_ptr)vcpu->vmcb.phys;

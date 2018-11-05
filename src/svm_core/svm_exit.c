@@ -22,9 +22,22 @@
 #include "svm_exit.h"
 #include "svm_def.h"
 
+//Unexpected VM-Exit occured. You may want to debug your code if this function is invoked.
 void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	nv_dprintf("Unhandled VM-Exit!\n");
+	void* vmcb=vcpu->vmcb.virt;
+	i32 code=noir_svm_vmread32(vmcb,exit_code);
+	/*
+	  Following conditions might cause the default handler to be invoked:
+	  1. You have set an unwanted flag in VMCB of interception.
+	  2. You forgot to write a handler for the VM-Exit.
+	  3. You forgot to set the handler address to the Exit Handler Group.
+
+	  Use the printed Intercept Code to debug.
+	  For example, you received 0x401 as the intercept code.
+	  This means you enabled nested paging but did not set a #NPF handler.
+	*/
+	nv_dprintf("Unhandled VM-Exit! Intercept Code: 0x%X\n",code);
 }
 
 //Expected Intercept Code: 0x72
@@ -48,14 +61,17 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
+	//The index of MSR is saved in ecx register (32-bit).
 	u32 index=(u32)gpr_state->rcx;
+	//Determine the type of operation.
 	bool op_write=noir_svm_vmread8(vmcb,exit_info1);
 	large_integer val={0};
-	val.low=(u32)gpr_state->rax;
-	val.high=(u32)gpr_state->rdx;
 	//
 	if(op_write)
 	{
+		//Get the value to be written.
+		val.low=(u32)gpr_state->rax;
+		val.high=(u32)gpr_state->rdx;
 		switch(index)
 		{
 			case amd64_efer:
@@ -69,6 +85,7 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 			}
 			case amd64_hsave_pa:
 			{
+				//Store the physical address of Host-Save Area to nested HVM structure.
 				vcpu->nested_hvm.hsave_gpa=val.value;
 				break;
 			}
@@ -80,15 +97,19 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 		{
 			case amd64_efer:
 			{
+				//Read the EFER value from VMCB.
 				val.value=noir_svm_vmread64(vmcb,guest_efer);
+				//The SVME bit should be filtered.
 				val.value&=(vcpu->nested_hvm.svme<<amd64_efer_svme);
 				break;
 			}
 			case amd64_hsave_pa:
 			{
+				//Read the physical address of Host-Save Area from nested HVM structure.
 				val.value=vcpu->nested_hvm.hsave_gpa=val.value;
 				break;
 			}
+			//To be implemented in future.
 #if defined(_amd64)
 			case amd64_lstar:
 			{
@@ -122,20 +143,37 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 	;
 }
 
+//Expected Intercept Code: -1
+void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	;
+}
+
 void nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)
 {
+	//Get Virtual CPU and the linear address of VMCB.
 	noir_svm_vcpu_p vcpu=&hvm->virtual_cpu[processor_id];
 	void* vmcb_va=vcpu->vmcb.virt;
+	//Read the Intercept Code.
 	i32 intercept_code=noir_svm_vmread32(vmcb_va,exit_code);
+	//Determine the group and number of interception.
 	u8 code_group=(u8)((intercept_code&0xC00)>>10);
 	u16 code_num=(u16)(intercept_code&0x3FF);
+	//rax is saved to VMCB, not GPR state.
 	gpr_state->rax=noir_svm_vmread(vmcb_va,guest_rax);
+	//Check if the interception is due to invalid guest state.
+	//Invoke the handler accordingly.
 	if(intercept_code==-1)
 		nvc_svm_default_handler(gpr_state,vcpu);
 	else
 		svm_exit_handlers[code_group][code_num](gpr_state,vcpu);
+	//Since rax register is operated, save to VMCB.
 	noir_svm_vmwrite(vmcb_va,guest_rax,gpr_state->rax);
+	//The rax in GPR state should be the physical address of VMCB
+	//in order to execute the vmrun instruction properly.
 	gpr_state->rax=(ulong_ptr)vcpu->vmcb.phys;
+	//After VM-Exit, Global Interrupt is always disabled. So enable it before vmrun.
+	noir_svm_stgi();
 }
 
 bool nvc_build_exit_handler()
@@ -150,6 +188,7 @@ bool nvc_build_exit_handler()
 		if(svm_exit_handlers[0] && svm_exit_handlers[1])
 		{
 			//Initialize it with default-handler.
+			//Using stos instruction could accelerate the initialization.
 			noir_stosp(svm_exit_handlers[0],(ulong_ptr)nvc_svm_default_handler,noir_svm_maximum_code1);
 			noir_stosp(svm_exit_handlers[1],(ulong_ptr)nvc_svm_default_handler,noir_svm_maximum_code2);
 		}
@@ -175,13 +214,18 @@ bool nvc_build_exit_handler()
 
 void nvc_teardown_exit_handler()
 {
+	//Check if Exit Handler Group array is allocated.
 	if(svm_exit_handlers)
 	{
+		//Check if Exit Handler Groups are allocated.
+		//Free them accordingly.
 		if(svm_exit_handlers[0])noir_free_nonpg_memory(svm_exit_handlers[0]);
 		if(svm_exit_handlers[1])noir_free_nonpg_memory(svm_exit_handlers[1]);
 		if(svm_exit_handlers[2])noir_free_nonpg_memory(svm_exit_handlers[2]);
 		if(svm_exit_handlers[3])noir_free_nonpg_memory(svm_exit_handlers[3]);
+		//Free the Exit Handler Group array.
 		noir_free_nonpg_memory(svm_exit_handlers);
+		//Mark as released.
 		svm_exit_handlers=null;
 	}
 }
