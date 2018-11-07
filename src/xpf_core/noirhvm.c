@@ -17,6 +17,16 @@
 #include <noirhvm.h>
 #include <intrin.h>
 
+bool noir_is_under_hvm()
+{
+	u32 c=0;
+	//cpuid[eax=1].ecx[bit 31] could indicate hypervisor's presence.
+	noir_cpuid(1,0,null,null,&c,null);
+	//If it is read as one. There must be a hypervisor.
+	//Otherwise, it is inconclusive to determine the presence.
+	return noir_bt(&c,31);
+}
+
 void nvc_build_hypervisor()
 {
 	hvm=noir_alloc_nonpg_memory(sizeof(noir_hypervisor));
