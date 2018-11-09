@@ -58,6 +58,13 @@ typedef struct _noir_hypervisor
 }noir_hypervisor,*noir_hypervisor_p;
 
 #if defined(_central_hvm)
+//Functions from VT Core.
+bool nvc_is_vt_supported();
+//Functions from SVM Core.
+bool nvc_is_svm_supported();
+bool nvc_svm_subvert_system(noir_hypervisor_p hvm);
+void nvc_svm_restore_system(noir_hypervisor_p hvm);
+//Central Hypervisor Structure.
 noir_hypervisor_p hvm=null;
 #else
 extern noir_hypervisor_p hvm;

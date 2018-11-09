@@ -15,6 +15,7 @@
 #include <nvdef.h>
 #include <noirhvm.h>
 #include <nvbdk.h>
+#include <nvstatus.h>
 #include <svm_intrin.h>
 #include <intrin.h>
 #include <amd64.h>
@@ -220,12 +221,15 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm)
 		noir_free_nonpg_memory(host_rsp_list);
 }
 
-void nvc_svm_subvert_system(noir_hypervisor_p hvm)
+noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm)
 {
 	hvm->cpu_count=noir_get_processor_count();
 	host_rsp_list=noir_alloc_nonpg_memory(hvm->cpu_count*sizeof(void*));
-	if(host_rsp_list==null)return;
+	if(host_rsp_list==null)return noir_insufficient_resources;
 	hvm->virtual_cpu=noir_alloc_nonpg_memory(hvm->cpu_count*sizeof(noir_svm_vcpu));
+	//Implementation of Generic Call might differ.
+	//In subversion routine, it might not be allowed to allocate memory.
+	//Thus allocate everything at this moment, even if it costs more on single processor core.
 	if(hvm->virtual_cpu)
 	{
 		u32 i=0;
@@ -263,10 +267,13 @@ void nvc_svm_subvert_system(noir_hypervisor_p hvm)
 		goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;
 	nvc_svm_setup_msr_hook(hvm);
+	nv_dprintf("All allocations are done, start subversion!\n");
 	noir_generic_call(nvc_svm_subvert_processor_thunk,hvm->virtual_cpu);
-	return;
+	return noir_success;
 alloc_failure:
+	nv_dprintf("Allocation failure!\n");
 	nvc_svm_cleanup(hvm);
+	return noir_insufficient_resources;
 }
 
 void static nvc_svm_restore_processor(noir_svm_vcpu_p vcpu)

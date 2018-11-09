@@ -14,6 +14,7 @@
 
 #include <nvdef.h>
 #include <nvbdk.h>
+#include <nvstatus.h>
 #include <noirhvm.h>
 #include <intrin.h>
 
@@ -27,7 +28,7 @@ bool noir_is_under_hvm()
 	return noir_bt(&c,31);
 }
 
-void nvc_build_hypervisor()
+noir_status nvc_build_hypervisor()
 {
 	hvm=noir_alloc_nonpg_memory(sizeof(noir_hypervisor));
 	if(hvm)
@@ -45,10 +46,22 @@ void nvc_build_hypervisor()
 		{
 			case intel_processor:
 			{
+				nv_dprintf("Support to Intel VT-x is not yet implemented!\n");
+				return noir_not_implemented;
 				break;
 			}
 			case amd_processor:
 			{
+				if(nvc_is_svm_supported())
+				{
+					nv_dprintf("Starting subversion with SVM Engine!\n");
+					return nvc_svm_subvert_system(hvm);
+				}
+				else
+				{
+					nv_dprintf("Your processor does not support AMD-V!\n");
+					return noir_svm_not_supported;
+				}
 				break;
 			}
 			default:
@@ -57,5 +70,31 @@ void nvc_build_hypervisor()
 				break;
 			}
 		}
+	}
+	return noir_insufficient_resources;
+}
+
+void nvc_teardown_hypervisor()
+{
+	if(hvm)
+	{
+		switch(hvm->cpu_manuf)
+		{
+			case intel_processor:
+			{
+				break;
+			}
+			case amd_processor:
+			{
+				nvc_svm_restore_system(hvm);
+				break;
+			}
+			default:
+			{
+				nv_dprintf("Unknown Processor!\n");
+				break;
+			}
+		}
+		noir_free_nonpg_memory(hvm);
 	}
 }
