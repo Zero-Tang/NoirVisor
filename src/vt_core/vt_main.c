@@ -15,6 +15,7 @@
 #include <nvdef.h>
 #include <intrin.h>
 #include <ia32.h>
+#include "vmxdef.h"
 
 bool nvc_is_vt_supported()
 {
@@ -23,6 +24,18 @@ bool nvc_is_vt_supported()
 	if(noir_bt(&c,ia32_cpuid_vmx))
 	{
 		bool basic_supported=true;
+		ia32_vmx_basic_msr vt_basic;
+		vt_basic.value=noir_rdmsr(ia32_vmx_basic);
+		if(vt_basic.memory_type==6)		//Make sure CPU supports Write-Back VMCS.
+		{
+			ia32_vmx_priproc_ctrl_msr prictrl_msr;
+			if(vt_basic.use_true_msr)
+				prictrl_msr.value=noir_rdmsr(ia32_vmx_true_priproc_ctrl);
+			else
+				prictrl_msr.value=noir_rdmsr(ia32_vmx_priproc_ctrl);
+			//Support of MSR-Bitmap is essential.
+			basic_supported&=prictrl_msr.allowed1_settings.use_msr_bitmap;
+		}
 		return basic_supported;
 	}
 	return false;
