@@ -9,23 +9,11 @@
   without any warranty (no matter implied warranty or merchantability
   or fitness for a particular purpose, etc.).
 
-  File Location: /xpf_core/windows/winhvm.c
+  File Location: /xpf_core/windows/winhvm.h
 */
 
 #include <ntddk.h>
 #include <windef.h>
-#include <nvstatus.h>
 
-NTSTATUS NoirBuildHypervisor()
-{
-	noir_status st=nvc_build_hypervisor;
-	switch(st)
-	{
-		case noir_success:
-			return STATUS_SUCCESS;
-		case noir_insufficient_resources:
-			return STATUS_INSUFFICIENT_RESOURCES;
-		default:
-			return STATUS_UNSUCCESSFUL;
-	}
-}
+noir_status nvc_build_hypervisor();
+void nvc_teardown_hypervisor();

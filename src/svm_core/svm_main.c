@@ -48,6 +48,12 @@ bool nvc_is_svm_supported()
 	return false;
 }
 
+bool nvc_is_svm_disabled()
+{
+	u64 vmcr=noir_rdmsr(amd64_vmcr);
+	return noir_bt(vmcr,amd64_vmcr_svmdis);
+}
+
 u8 nvc_svm_enable()
 {
 	u64 efer=noir_rdmsr(amd64_efer);

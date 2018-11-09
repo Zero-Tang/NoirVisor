@@ -12,8 +12,6 @@
   File Location: /include/noirhvm.h
 */
 
-#include <nvdef.h>
-
 /*
   Introduction to NV-Status layout:
   NV-Status is a 32-bit value and are consisted of following parts:
@@ -39,7 +37,7 @@
   +-----+-----------+-----------------------------------------------+
 */
 
-typedef u32 noir_status;
+typedef unsigned int noir_status;
 
 /*
   Status Indicator: noir_success
