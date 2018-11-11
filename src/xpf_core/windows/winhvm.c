@@ -15,10 +15,11 @@
 #include <ntddk.h>
 #include <windef.h>
 #include <nvstatus.h>
+#include "winhvm.h"
 
 NTSTATUS NoirBuildHypervisor()
 {
-	noir_status st=nvc_build_hypervisor;
+	noir_status st=nvc_build_hypervisor();
 	switch(st)
 	{
 		case noir_success:
@@ -28,4 +29,9 @@ NTSTATUS NoirBuildHypervisor()
 		default:
 			return STATUS_UNSUCCESSFUL;
 	}
+}
+
+void NoirTeardownHypervisor()
+{
+	nvc_teardown_hypervisor();
 }

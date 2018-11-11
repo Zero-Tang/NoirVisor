@@ -131,6 +131,7 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 }
 
 //Expected Intercept Code: 0x80
+//This is the cornerstone of nesting virtualization.
 void static fastcall nvc_svm_vmrun_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	nv_dprintf("VM-Exit occured by vmrun instruction!\n");
@@ -140,7 +141,38 @@ void static fastcall nvc_svm_vmrun_handler(noir_gpr_state_p gpr_state,noir_svm_v
 //Expected Intercept Code: 0x81
 void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	;
+	u32 vmmcall_func=(u32)gpr_state->rcx;
+	ulong_ptr context=gpr_state->rdx;
+	ulong_ptr gsp=noir_svm_vmread(vcpu->vmcb.virt,guest_rsp);
+	ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
+	switch(vmmcall_func)
+	{
+		case noir_svm_callexit:
+		{
+			//Validate the caller to prevent malicious unloading request.
+			if(gip>=hvm->hv_image.base && gip<hvm->hv_image.base+hvm->hv_image.size)
+			{
+				//Save the address to return.
+				gpr_state->rax=noir_svm_vmread(vcpu->vmcb.virt,next_rip);
+				//Save the GPR state.
+				gsp-=sizeof(noir_gpr_state)+sizeof(void*);
+				memcpy((void*)gsp,gpr_state,sizeof(noir_gpr_state));
+				*(ulong_ptr*)(gsp+sizeof(noir_gpr_state))=noir_svm_vmread(vcpu->vmcb.virt,guest_rflags);
+				//Mark the processor is in transition mode.
+				vcpu->status=noir_virt_trans;
+				//Return to the caller at Host Mode.
+				nvc_svm_return(gsp);
+			}
+			//If execution goes here, then the invoker is malicious.
+			nv_dprintf("Malicious call of exit!\n");
+			break;
+		}
+		default:
+		{
+			nv_dprintf("Unknown vmmcall function!\n");
+			break;
+		}
+	}
 }
 
 //Expected Intercept Code: -1

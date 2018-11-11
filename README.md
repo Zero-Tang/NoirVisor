@@ -28,7 +28,7 @@ If there is already a hypervisor running in the system, make sure it supports na
 
 # Development Status
 Project NoirVisor is now focused on developping hypervisor for AMD-V.
-Intel VT-x is not yet supported.
+Intel VT-x is not in this branch of development. Go to "intel_vt-x_dev" branch.
 
 # License
 All the codes with NoirVisor are licensed under MIT License.

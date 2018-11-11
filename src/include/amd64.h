@@ -17,6 +17,8 @@
 #define amd64_efer_svme			12
 #define amd64_efer_svme_bit		0x1000
 
+#define amd64_vmcr_svmdis		4
+
 //This is used for defining MSRs
 #define amd64_sysenter_cs				0x174
 #define amd64_sysenter_esp				0x175

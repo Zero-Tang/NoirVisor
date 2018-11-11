@@ -74,11 +74,11 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 	{
 		case IOCTL_Subvert:
 		{
-			break;
+			NoirBuildHypervisor();
 		}
 		case IOCTL_Restore:
 		{
-			break;
+			NoirTeardownHypervisor();
 		}
 		default:
 		{

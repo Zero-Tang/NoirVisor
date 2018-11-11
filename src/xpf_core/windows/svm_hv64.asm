@@ -68,6 +68,18 @@ noir_svm_vmmcall proc
 
 noir_svm_vmmcall endp
 
+nvc_svm_return proc
+
+	;Switch the stack to the guest.
+	mov rsp,rcx
+	;GPR state has already been saved to the stack by VMM.
+	popaq
+	popfq
+	;The target rip is saved to rax register.
+	jmp rax
+
+nvc_svm_return endp
+
 nvc_svm_exit_handler_a proc
 
 	; At this moment, VM-Exit occured.
