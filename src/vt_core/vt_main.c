@@ -3,18 +3,22 @@
 
   Copyright 2018, Zero Tang. All rights reserved.
 
-  This file is memory management facility on Windows.
+  This file is the basic driver of Intel VT-x.
 
   This program is distributed in the hope that it will be useful, but 
   without any warranty (no matter implied warranty or merchantability
   or fitness for a particular purpose, etc.).
 
-  File Location: /xpf_core/memory.c
+  File Location: /vt_core/vt_main.c
 */
 
 #include <nvdef.h>
+#include <nvstatus.h>
+#include <nvbdk.h>
+#include <vt_intrin.h>
 #include <intrin.h>
 #include <ia32.h>
+#include "vmcs.h"
 #include "vmxdef.h"
 
 bool nvc_is_vt_supported()

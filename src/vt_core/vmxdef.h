@@ -287,9 +287,6 @@ typedef union _vmx_segment_access_right
 	u32 value;
 }vmx_segment_access_right,*vmx_segment_access_right_p;
 
-u8 nhv_vt_subvert_processor_a(nhv_vt_virtual_cpu_p virtual_cpu,noir_processor_state_p processor_state);
-extern void nhv_vt_exit_handler_a();
-
 u32 inline vmx_lar(u16 attributes)
 {
 	vmx_segment_access_right ar;
