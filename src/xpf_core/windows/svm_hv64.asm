@@ -90,6 +90,7 @@ nvc_svm_exit_handler_a proc
 	movzx rdx,byte ptr gs:[184h]
 	sub rsp,20h
 	; Call Exit Handler
+	call nvc_svm_exit_handler
 	add rsp,20h
 	; Restore all the GPRs.
 	; Certain context should be revised by VMM.

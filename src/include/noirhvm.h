@@ -13,9 +13,9 @@
 */
 
 #include "nvdef.h"
-#if defined(_vt_drv)
+#if defined(_vt_drv) || defined(_vt_exit)
 #include "vt_hvm.h"
-#elif defined(_svm_drv)
+#elif defined(_svm_drv) || defined(_svm_exit)
 #include "svm_hvm.h"
 #endif
 
@@ -35,7 +35,7 @@
 
 typedef struct _noir_hypervisor
 {
-#if defined(_vt_drv)
+#if defined(_vt_drv) || defined(_vt_exit)
 	noir_vt_vcpu_p virtual_cpu;
 	noir_vt_hvm_p relative_hvm;
 #elif defined(_svm_drv) || defined(_svm_exit)

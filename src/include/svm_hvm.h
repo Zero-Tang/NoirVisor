@@ -46,6 +46,6 @@ typedef struct _noir_svm_vcpu
 u8 nvc_svm_subvert_processor_a(noir_svm_vcpu_p vcpu);
 void nvc_svm_return(ulong_ptr gsp);
 
-#if !defined(_svm_exit)
+#if defined(_svm_drv)
 void** host_rsp_list=null;
 #endif
