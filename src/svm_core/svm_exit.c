@@ -208,7 +208,7 @@ void nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)
 	noir_svm_stgi();
 }
 
-bool nvc_build_exit_handler()
+bool nvc_svm_build_exit_handler()
 {
 	//Allocate the array of Exit-Handler Group
 	svm_exit_handlers=noir_alloc_nonpg_memory(sizeof(void*)*4);
@@ -244,7 +244,7 @@ bool nvc_build_exit_handler()
 	return false;
 }
 
-void nvc_teardown_exit_handler()
+void nvc_svm_teardown_exit_handler()
 {
 	//Check if Exit Handler Group array is allocated.
 	if(svm_exit_handlers)
