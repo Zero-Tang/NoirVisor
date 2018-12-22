@@ -7,7 +7,7 @@
   without any warranty (no matter implied warranty of merchantablity
   or fitness for a particular purpose, etc.).
 
-  File location: /include/vt/vmcs.h
+  File location: /include/vt/vt_vmcs.h
 
   Update Time: Sept.21th, 2018
 */
@@ -57,8 +57,8 @@ typedef enum _vmx_vmcs_encoding
 	eoi_exit_bitmap2=0x2020,
 	eoi_exit_bitmap3=0x2022,
 	eptp_list_address=0x2024,
-	vm_read_bitmap_address=0x2026,
-	vm_write_bitmap_address=0x2028,
+	vmread_bitmap_address=0x2026,
+	vmwrite_bitmap_address=0x2028,
 	virtualization_exception_information_address=0x202A,
 	xss_exiting_bitmap=0x202C,
 	encls_exiting_bitmap=0x202E,

@@ -66,6 +66,12 @@ bool nvc_svm_subvert_system(noir_hypervisor_p hvm);
 void nvc_svm_restore_system(noir_hypervisor_p hvm);
 //Central Hypervisor Structure.
 noir_hypervisor_p hvm=null;
+ulong_ptr system_cr3=0;
+ulong_ptr orig_system_call=0;
 #else
 extern noir_hypervisor_p hvm;
+extern ulong_ptr system_cr3;
+extern ulong_ptr orig_system_call;
 #endif
+
+extern void noir_system_call();

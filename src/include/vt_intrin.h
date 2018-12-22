@@ -14,6 +14,10 @@
 
 #include "nvdef.h"
 
+#define vmx_success			0
+#define vmx_fail_valid		1
+#define vmx_fail_invalid	2
+
 typedef struct _invept_descriptor
 {
 	u64 eptp;
