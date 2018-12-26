@@ -13,7 +13,7 @@
 */
 
 #include "nvdef.h"
-#if defined(_vt_drv)
+#if defined(_vt_drv) || defined(_vt_exit)
 #include "vt_hvm.h"
 #elif defined(_svm_drv)
 #include "svm_hvm.h"
@@ -35,7 +35,7 @@
 
 typedef struct _noir_hypervisor
 {
-#if defined(_vt_drv)
+#if defined(_vt_drv) || defined(_vt_exit)
 	noir_vt_vcpu_p virtual_cpu;
 	noir_vt_hvm_p relative_hvm;
 #elif defined(_svm_drv) || defined(_svm_exit)
@@ -60,16 +60,18 @@ typedef struct _noir_hypervisor
 #if defined(_central_hvm)
 //Functions from VT Core.
 bool nvc_is_vt_supported();
+bool nvc_vt_subvert_system(noir_hypervisor_p hvm);
+void nvc_vt_restore_system(noir_hypervisor_p hvm);
 //Functions from SVM Core.
 bool nvc_is_svm_supported();
 bool nvc_svm_subvert_system(noir_hypervisor_p hvm);
 void nvc_svm_restore_system(noir_hypervisor_p hvm);
 //Central Hypervisor Structure.
-noir_hypervisor_p hvm=null;
+noir_hypervisor_p hvm_p=null;
 ulong_ptr system_cr3=0;
 ulong_ptr orig_system_call=0;
 #else
-extern noir_hypervisor_p hvm;
+extern noir_hypervisor_p hvm_p;
 extern ulong_ptr system_cr3;
 extern ulong_ptr orig_system_call;
 #endif

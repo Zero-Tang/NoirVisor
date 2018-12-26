@@ -294,6 +294,7 @@ typedef struct ia32_vmx_msr_auto
 	u64 data;
 }ia32_vmx_msr_auto,*ia32_vmx_msr_auto_p;
 
+#if defined(_vt_drv)
 char* vt_error_message[0x20]=
 {
 	"Invalid Error, Number=0!",										//Error=0
@@ -334,3 +335,4 @@ char* vt_error_message[0x20]=
 	"Invalid Error, Number=30!",									//Error=30
 	"Invalid Error, Number=31!"										//Error=31
 };
+#endif

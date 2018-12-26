@@ -80,6 +80,9 @@
 //Cleat/Set RFlags.IF
 #define noir_cli	_disable
 #define noir_sti	_enable
+
+//Invalidate Processor Cache
+#define noir_wbinvd		__wbinvd
 #endif
 
 //The rest are done by inline functions.

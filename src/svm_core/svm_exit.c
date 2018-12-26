@@ -152,7 +152,7 @@ void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir
 void nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)
 {
 	//Get Virtual CPU and the linear address of VMCB.
-	noir_svm_vcpu_p vcpu=&hvm->virtual_cpu[processor_id];
+	noir_svm_vcpu_p vcpu=&hvm_p->virtual_cpu[processor_id];
 	void* vmcb_va=vcpu->vmcb.virt;
 	//Read the Intercept Code.
 	i32 intercept_code=noir_svm_vmread32(vmcb_va,exit_code);
