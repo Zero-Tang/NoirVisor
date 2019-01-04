@@ -74,10 +74,12 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 	{
 		case IOCTL_Subvert:
 		{
+			NoirBuildHypervisor();
 			break;
 		}
 		case IOCTL_Restore:
 		{
+			NoirTeardownHypervisor();
 			break;
 		}
 		default:
@@ -94,6 +96,13 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 	return st;
 }
 
+void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Context OPTIONAL,IN ULONG Count)
+{
+	system_cr3=__readcr3();
+	orig_system_call=__readmsr(0xC0000082);
+	NoirGetNtOpenProcessIndex();
+}
+
 NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING RegistryPath)
 {
 	NTSTATUS st=STATUS_UNSUCCESSFUL;
@@ -105,6 +114,7 @@ NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING Regis
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]=NoirDispatchIoControl;
 	DriverObject->DriverUnload=NoirDriverUnload;
 	//Create Device and corresponding Symbolic Name
+	IoRegisterDriverReinitialization(DriverObject,NoirDriverReinitialize,NULL);
 	st=IoCreateDevice(DriverObject,0,&uniDevName,FILE_DEVICE_UNKNOWN,FILE_DEVICE_SECURE_OPEN,FALSE,&DeviceObject);
 	if(NT_SUCCESS(st))
 	{

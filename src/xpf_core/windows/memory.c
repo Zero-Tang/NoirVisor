@@ -17,7 +17,7 @@
 
 void* noir_alloc_contd_memory(size_t length)
 {
-	LARGE_INTEGER M={0xFFFFFFFFFFFFFFFF};
+	PHYSICAL_ADDRESS M={0xFFFFFFFFFFFFFFFF};
 	PVOID p=MmAllocateContiguousMemory(length,M);
 	if(p)RtlZeroMemory(p,length);
 	return p;

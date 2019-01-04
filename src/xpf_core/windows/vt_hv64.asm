@@ -93,7 +93,9 @@ noir_vt_vmcall endp
 
 nvc_vt_exit_handler_a proc
 
+	int 3
 	pushaq
+	mov rcx,rsp
 	sub rsp,20h
 	call nvc_vt_exit_handler
 	add rsp,20h
@@ -106,10 +108,11 @@ nvc_vt_subvert_processor_a proc
 
 	pushfq
 	pushaq
-	mov rdx,rsp
-	mov r8,vt_launched
+	mov r8,rsp
+	mov r9,vt_launched
 	sub rsp,20h
 	call nvc_vt_subvert_processor_i
+	int 3
 	;At this moment, VM-Entry resulted failure.
 	add rsp,20h
 	mov qword ptr [rsp],rax

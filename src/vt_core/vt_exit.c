@@ -23,6 +23,68 @@
 #include "vt_exit.h"
 #include "vt_def.h"
 
+void nvc_vt_dump_vmcs_guest_state()
+{
+	ulong_ptr v1,v2,v3,v4;
+	nv_dprintf("Dumping VMCS Guest State Area!\n");
+	noir_vt_vmread(guest_cs_selector,&v1);
+	noir_vt_vmread(guest_cs_access_rights,&v2);
+	noir_vt_vmread(guest_cs_limit,&v3);
+	noir_vt_vmread(guest_cs_base,&v4);
+	nv_dprintf("Guest CS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	noir_vt_vmread(guest_ds_selector,&v1);
+	noir_vt_vmread(guest_ds_access_rights,&v2);
+	noir_vt_vmread(guest_ds_limit,&v3);
+	noir_vt_vmread(guest_ds_base,&v4);
+	nv_dprintf("Guest DS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	noir_vt_vmread(guest_es_selector,&v1);
+	noir_vt_vmread(guest_es_access_rights,&v2);
+	noir_vt_vmread(guest_es_limit,&v3);
+	noir_vt_vmread(guest_es_base,&v4);
+	nv_dprintf("Guest ES Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	noir_vt_vmread(guest_fs_selector,&v1);
+	noir_vt_vmread(guest_fs_access_rights,&v2);
+	noir_vt_vmread(guest_fs_limit,&v3);
+	noir_vt_vmread(guest_fs_base,&v4);
+	nv_dprintf("Guest FS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	noir_vt_vmread(guest_gs_selector,&v1);
+	noir_vt_vmread(guest_gs_access_rights,&v2);
+	noir_vt_vmread(guest_gs_limit,&v3);
+	noir_vt_vmread(guest_gs_base,&v4);
+	nv_dprintf("Guest GS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	noir_vt_vmread(guest_ss_selector,&v1);
+	noir_vt_vmread(guest_ss_access_rights,&v2);
+	noir_vt_vmread(guest_ss_limit,&v3);
+	noir_vt_vmread(guest_ss_base,&v4);
+	nv_dprintf("Guest SS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	noir_vt_vmread(guest_tr_selector,&v1);
+	noir_vt_vmread(guest_tr_access_rights,&v2);
+	noir_vt_vmread(guest_tr_limit,&v3);
+	noir_vt_vmread(guest_tr_base,&v4);
+	nv_dprintf("Guest Task Register - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	noir_vt_vmread(guest_ldtr_selector,&v1);
+	noir_vt_vmread(guest_ldtr_access_rights,&v2);
+	noir_vt_vmread(guest_ldtr_limit,&v3);
+	noir_vt_vmread(guest_ldtr_base,&v4);
+	nv_dprintf("Guest LDT Register - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	noir_vt_vmread(guest_gdtr_limit,&v1);
+	noir_vt_vmread(guest_gdtr_base,&v2);
+	noir_vt_vmread(guest_idtr_limit,&v3);
+	noir_vt_vmread(guest_idtr_base,&v4);
+	nv_dprintf("Guest GDTR Limit: 0x%X\t Base: 0x%p\t Guest IDTR Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	noir_vt_vmread(guest_cr0,&v1);
+	noir_vt_vmread(guest_cr3,&v2);
+	noir_vt_vmread(guest_cr4,&v3);
+	noir_vt_vmread(guest_dr7,&v4);
+	nv_dprintf("Guest Control & Debug Registers - CR0: 0x%X\t CR3: 0x%p\t CR4: 0x%X\t DR7: 0x%X\n",v1,v2,v3,v4);
+	noir_vt_vmread(guest_rsp,&v1);
+	noir_vt_vmread(guest_rip,&v2);
+	noir_vt_vmread(guest_rflags,&v3);
+	nv_dprintf("Guest Special GPRs: Rsp: 0x%p\t Rip: 0x%p\t RFlags:0x%X\n",v1,v2,v3);
+	noir_vt_vmread(vmcs_link_pointer,&v4);
+	nv_dprintf("Guest VMCS Link Pointer: 0x%p\n",v4);
+}
+
 //This is the default exit-handler for unexpected VM-Exit.
 //You might want to debug your code if this function is invoked.
 void static fastcall nvc_vt_default_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
@@ -147,6 +209,7 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 void static fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
 	nv_dprintf("VM-Entry failed! Check the Guest-State in VMCS!\n");
+	nvc_vt_dump_vmcs_guest_state();
 }
 
 //Expected Exit Reason: 34
@@ -173,7 +236,10 @@ void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state)
 	noir_vt_vmread(vmexit_reason,&exit_reason);
 	noir_vt_vmread(guest_cr3,&cr3);
 	noir_writecr3(cr3);			//Switch to the guest paging structure before we continue.
-	vt_exit_handlers[exit_reason&0xFFFF](gpr_state,exit_reason);
+	if((exit_reason&0xFFFF)<vmx_maximum_exit_reason)
+		vt_exit_handlers[exit_reason&0xFFFF](gpr_state,exit_reason);
+	else
+		nvc_vt_default_handler(gpr_state,exit_reason);
 	//Guest RIP is supposed to be advanced in specific handlers, not here.
 	//Do not execute vmresume here. It will be done as this function returns.
 }
@@ -215,6 +281,7 @@ noir_status nvc_vt_build_exit_handlers()
 
 void nvc_vt_teardown_exit_handlers()
 {
-	noir_free_nonpg_memory(vt_exit_handlers);
+	if(vt_exit_handlers)
+		noir_free_nonpg_memory(vt_exit_handlers);
 	vt_exit_handlers=null;
 }

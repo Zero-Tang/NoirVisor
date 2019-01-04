@@ -23,4 +23,8 @@
 #define IOCTL_Subvert		CTL_CODE_GEN(0x801)
 #define IOCTL_Restore		CTL_CODE_GEN(0x802)
 
-void nvc_build_hypervisor();
+ULONG NoirBuildHypervisor();
+void NoirTeardownHypervisor();
+void NoirGetNtOpenProcessIndex();
+extern ULONG_PTR system_cr3;
+extern ULONG_PTR orig_system_call;

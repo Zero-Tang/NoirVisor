@@ -47,4 +47,6 @@ typedef struct _noir_vt_vcpu
 }noir_vt_vcpu,*noir_vt_vcpu_p;
 
 u8 nvc_vt_subvert_processor_a(noir_vt_vcpu_p vcpu);
+noir_status nvc_vt_build_exit_handlers();
+void nvc_vt_teardown_exit_handlers();
 extern void nvc_vt_exit_handler_a();

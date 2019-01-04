@@ -15,7 +15,9 @@
 
 #include <nvdef.h>
 
-#define page_size		0x1000
+#define page_size				0x1000
+
+#define selector_rplti_mask		0xfff8
 
 typedef union _large_integer
 {
@@ -61,6 +63,10 @@ typedef struct _noir_processor_state
 	ulong_ptr dr3;
 	ulong_ptr dr6;
 	ulong_ptr dr7;
+	u64 sysenter_cs;
+	u64 sysenter_esp;
+	u64 sysenter_eip;
+	u64 debug_ctrl;
 	u64 pat;
 	u64 efer;
 	u64 star;

@@ -41,34 +41,19 @@ void noir_save_processor_state(OUT PNOIR_PROCESSOR_STATE State)
 	State->Cr8=kState.SpecialRegisters.Cr8;
 #endif
 	//Save Debug Register State.
-	State->Dr0=kState.ContextFrame.Dr0;
-	State->Dr1=kState.ContextFrame.Dr1;
-	State->Dr2=kState.ContextFrame.Dr2;
-	State->Dr3=kState.ContextFrame.Dr3;
-	State->Dr6=kState.ContextFrame.Dr6;
-	State->Dr7=kState.ContextFrame.Dr7;
+	State->Dr0=kState.SpecialRegisters.KernelDr0;
+	State->Dr1=kState.SpecialRegisters.KernelDr1;
+	State->Dr2=kState.SpecialRegisters.KernelDr2;
+	State->Dr3=kState.SpecialRegisters.KernelDr3;
+	State->Dr6=kState.SpecialRegisters.KernelDr6;
+	State->Dr7=kState.SpecialRegisters.KernelDr7;
 	//Save Model Specific Register State.
-#if defined(_WIN64)
-	//Certain MSRs are already saved by System API in Win64.
-	//We may use these values directly for "optimization".
-	State->Star=kState.SpecialRegisters.MsrStar;
-	State->LStar=kState.SpecialRegisters.MsrLStar;
-	State->CStar=kState.SpecialRegisters.MsrCStar;
-	State->SfMask=kState.SpecialRegisters.MsrSyscallMask;
-	State->GsBase=kState.SpecialRegisters.MsrGsBase;
-	State->GsSwap=kState.SpecialRegisters.MsrGsSwap;
-#else
-	//No MSRs are saved by System API in Win32.
-	//We should save them by ourselves.
 	State->Star=__readmsr(MSR_STAR);
 	State->LStar=__readmsr(MSR_LSTAR);
 	State->CStar=__readmsr(MSR_CSTAR);
 	State->SfMask=__readmsr(MSR_SYSCALL_MASK);
 	State->GsBase=__readmsr(MSR_GSBASE);
 	State->GsSwap=__readmsr(MSR_KERNEL_GSBASE);
-#endif
-	//Following MSRs are not saved by System API.
-	//We should save them by ourselves.
 	State->SysEnterCs=__readmsr(MSR_SYSENTER_CS);
 	State->SysEnterEsp=__readmsr(MSR_SYSENTER_ESP);
 	State->SysEnterEip=__readmsr(MSR_SYSENTER_EIP);
@@ -85,37 +70,37 @@ void noir_save_processor_state(OUT PNOIR_PROCESSOR_STATE State)
 	//Save Segment Registers - Cs.
 	State->Cs.Selector=kState.ContextFrame.SegCs;
 	State->Cs.Attributes=NoirGetSegmentAttributes(kState.SpecialRegisters.Gdtr.Base,State->Cs.Selector);
-	State->Cs.Limit=__segmentlimit(State->Cs.Limit);
+	State->Cs.Limit=__segmentlimit(State->Cs.Selector);
 	State->Cs.Base.QuadPart=0;
 	//Save Segment Registers - Ds.
 	State->Ds.Selector=kState.ContextFrame.SegDs;
 	State->Ds.Attributes=NoirGetSegmentAttributes(kState.SpecialRegisters.Gdtr.Base,State->Ds.Selector);
-	State->Ds.Limit=__segmentlimit(State->Ds.Limit);
+	State->Ds.Limit=__segmentlimit(State->Ds.Selector);
 	State->Ds.Base.QuadPart=0;
 	//Save Segment Registers - Es.
 	State->Es.Selector=kState.ContextFrame.SegEs;
 	State->Es.Attributes=NoirGetSegmentAttributes(kState.SpecialRegisters.Gdtr.Base,State->Es.Selector);
-	State->Es.Limit=__segmentlimit(State->Es.Limit);
+	State->Es.Limit=__segmentlimit(State->Es.Selector);
 	State->Es.Base.QuadPart=0;
 	//Save Segment Registers - Fs.
 	State->Fs.Selector=kState.ContextFrame.SegFs;
 	State->Fs.Attributes=NoirGetSegmentAttributes(kState.SpecialRegisters.Gdtr.Base,State->Fs.Selector);
-	State->Fs.Limit=__segmentlimit(State->Fs.Limit);
+	State->Fs.Limit=__segmentlimit(State->Fs.Selector);
 	State->Fs.Base.QuadPart=State->FsBase;
 	//Save Segment Registers - Gs.
 	State->Gs.Selector=kState.ContextFrame.SegGs;
 	State->Gs.Attributes=NoirGetSegmentAttributes(kState.SpecialRegisters.Gdtr.Base,State->Gs.Selector);
-	State->Gs.Limit=__segmentlimit(State->Gs.Limit);
+	State->Gs.Limit=__segmentlimit(State->Gs.Selector);
 	State->Gs.Base.QuadPart=State->GsBase;
 	//Save Segment Registers - Ss.
 	State->Ss.Selector=kState.ContextFrame.SegSs;
 	State->Ss.Attributes=NoirGetSegmentAttributes(kState.SpecialRegisters.Gdtr.Base,State->Ss.Selector);
-	State->Ss.Limit=__segmentlimit(State->Ss.Limit);
+	State->Ss.Limit=__segmentlimit(State->Ss.Selector);
 	State->Ss.Base.QuadPart=0;
 	//Save Segment Registers - Tr.
 	State->Tr.Selector=kState.SpecialRegisters.Tr;
 	State->Tr.Attributes=NoirGetSegmentAttributes(kState.SpecialRegisters.Gdtr.Base,State->Tr.Selector);
-	State->Tr.Limit=__segmentlimit(State->Tr.Limit);
+	State->Tr.Limit=__segmentlimit(State->Tr.Selector);
 	//The Base Address of Task Register is somewhat special.
 	//It is located at KPCR.TssBase, which can be read via Fs or Gs Segment.
 #if defined(_WIN64)

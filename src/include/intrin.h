@@ -77,9 +77,12 @@
 #define noir_stosp		__stosd
 #endif
 
-//Cleat/Set RFlags.IF
+//Clear/Set RFlags.IF
 #define noir_cli	_disable
 #define noir_sti	_enable
+
+//Debug-Break
+#define noir_int3	__debugbreak
 
 //Invalidate Processor Cache
 #define noir_wbinvd		__wbinvd

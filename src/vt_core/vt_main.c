@@ -75,6 +75,25 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 		if(rhvm->msr_auto_list.virt)
 			noir_free_contd_memory(rhvm->msr_auto_list.virt);
 	}
+	nvc_vt_teardown_exit_handlers();
+}
+
+void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
+{
+	u64 entry_load=vcpu->relative_hvm->msr_auto_list.phys;
+	u64 exit_load=vcpu->relative_hvm->msr_auto_list.phys+0x400;
+	u64 exit_store=vcpu->relative_hvm->msr_auto_list.phys+0x800;
+	noir_vt_vmwrite(vmentry_msr_load_address,entry_load);
+	noir_vt_vmwrite(vmexit_msr_load_address,exit_load);
+	noir_vt_vmwrite(vmexit_msr_store_address,exit_store);
+	noir_vt_vmwrite(address_of_msr_bitmap,vcpu->relative_hvm->msr_bitmap.phys);
+#if defined(_amd64)
+	noir_vt_vmwrite(vmentry_msr_load_count,1);
+	noir_vt_vmwrite(vmexit_msr_load_count,1);
+#else
+	noir_vt_vmwrite(guest_msr_ia32_sysenter_eip,(ulong_ptr)noir_system_call);
+	noir_vt_vmwrite(host_msr_ia32_sysenter_eip,orig_system_call);
+#endif
 }
 
 void static nvc_vt_setup_msr_auto_list(noir_hypervisor_p hvm)
@@ -118,16 +137,16 @@ u8 static nvc_vt_enable(u64* vmxon_phys)
 {
 	u64 cr0=noir_readcr0();
 	u64 cr4=noir_readcr4();
-	cr0&=noir_rdmsr(ia32_vmx_cr0_fixed0);
-	cr0|=noir_rdmsr(ia32_vmx_cr0_fixed1);
-	cr4&=noir_rdmsr(ia32_vmx_cr4_fixed0);
-	cr4|=noir_rdmsr(ia32_vmx_cr4_fixed1);
+	cr0|=noir_rdmsr(ia32_vmx_cr0_fixed0);
+	cr0&=noir_rdmsr(ia32_vmx_cr0_fixed1);
+	cr4|=noir_rdmsr(ia32_vmx_cr4_fixed0);
+	cr4&=noir_rdmsr(ia32_vmx_cr4_fixed1);
 	noir_writecr0(cr0);
 	noir_writecr4(cr4);
 	return noir_vt_vmxon(vmxon_phys);
 }
 
-void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p)
+void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_ptr gsp,ulong_ptr gip)
 {
 	//Guest State Area - CS Segment
 	noir_vt_vmwrite(guest_cs_selector,state_p->cs.selector);
@@ -180,20 +199,32 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p)
 	noir_vt_vmwrite(guest_cr4,state_p->cr4);
 	//Guest State Area - Debug Controls
 	noir_vt_vmwrite(guest_dr7,state_p->dr7);
+	noir_vt_vmwrite(guest_msr_ia32_debug_ctrl,state_p->debug_ctrl);
 	//VMCS Link Pointer - Essential for VMX Nesting
 	noir_vt_vmwrite(vmcs_link_pointer,0xffffffffffffffff);
+	//Guest State Area - Flags, Stack Pointer, Instruction Pointer
+	noir_vt_vmwrite(guest_rsp,gsp);
+	noir_vt_vmwrite(guest_rip,gip);
+	noir_vt_vmwrite(guest_rflags,2);		//That the essential bit is set is fine.
 }
 
 void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_state_p state_p)
 {
 	//Host State Area - Segment Selectors
-	noir_vt_vmwrite(host_cs_selector,state_p->cs.selector);
-	noir_vt_vmwrite(host_ds_selector,state_p->ds.selector);
-	noir_vt_vmwrite(host_es_selector,state_p->es.selector);
-	noir_vt_vmwrite(host_fs_selector,state_p->fs.selector);
-	noir_vt_vmwrite(host_gs_selector,state_p->gs.selector);
-	noir_vt_vmwrite(host_ss_selector,state_p->ss.selector);
-	noir_vt_vmwrite(host_tr_selector,state_p->tr.selector);
+	noir_vt_vmwrite(host_cs_selector,state_p->cs.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_ds_selector,state_p->ds.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_es_selector,state_p->es.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_fs_selector,state_p->fs.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_gs_selector,state_p->gs.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_ss_selector,state_p->ss.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_tr_selector,state_p->tr.selector & selector_rplti_mask);
+	//Host State Area - Segment Bases
+	noir_vt_vmwrite(host_fs_base,state_p->fs.base);
+	noir_vt_vmwrite(host_gs_base,state_p->gs.base);
+	noir_vt_vmwrite(host_tr_base,state_p->tr.base);
+	//Host State Area - Descriptor Tables
+	noir_vt_vmwrite(host_gdtr_base,state_p->gdtr.base);
+	noir_vt_vmwrite(host_idtr_base,state_p->idtr.base);
 	//Host State Area - Control Registers
 	noir_vt_vmwrite(host_cr0,state_p->cr0);
 	noir_vt_vmwrite(host_cr3,system_cr3);	//We should use the system page table.
@@ -305,26 +336,40 @@ void static nvc_vt_setup_vmentry_controls(bool true_msr)
 	noir_vt_vmwrite(vmentry_controls,entry_ctrl.value);
 }
 
-u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,ulong_ptr gsp,ulong_ptr gip)
+void static nvc_vt_setup_control_area(bool true_msr)
+{
+	nvc_vt_setup_pinbased_controls(true_msr);
+	nvc_vt_setup_procbased_controls(true_msr);
+	nvc_vt_setup_vmexit_controls(true_msr);
+	nvc_vt_setup_vmentry_controls(true_msr);
+	noir_vt_vmwrite(cr0_guest_host_mask,0x80000001);		//Monitor PE and PG flags
+	noir_vt_vmwrite(cr4_guest_host_mask,0x6000);			//Monitor VMXE and SMXE flags
+}
+
+u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,ulong_ptr gip)
 {
 	ia32_vmx_basic_msr vt_basic;
+	u8 vst=0;
 	noir_processor_state state;
 	noir_save_processor_state(&state);
 	//Issue a sequence of vmwrite instructions to setup VMCS.
-	nvc_vt_setup_guest_state_area(&state);
-	nvc_vt_setup_host_state_area(vcpu,&state);
-	//Setup Control Area
 	vt_basic.value=noir_rdmsr(ia32_vmx_basic);
-	nvc_vt_setup_pinbased_controls(vt_basic.use_true_msr);
-	nvc_vt_setup_procbased_controls(vt_basic.use_true_msr);
-	nvc_vt_setup_vmexit_controls(vt_basic.use_true_msr);
-	nvc_vt_setup_vmentry_controls(vt_basic.use_true_msr);
-	//Guest State Area - Flags, Stack Pointer, Instruction Pointer
-	noir_vt_vmwrite(guest_rsp,gsp);
-	noir_vt_vmwrite(guest_rip,gip);
-	noir_vt_vmwrite(guest_rflags,2);		//That the essential bit is set is fine.
+	nvc_vt_setup_control_area(vt_basic.use_true_msr);
+	nvc_vt_setup_guest_state_area(&state,gsp,gip);
+	nvc_vt_setup_host_state_area(vcpu,&state);
+	nvc_vt_setup_msr_hook_p(vcpu);
 	//Everything are done, perform subversion.
-	return noir_vt_vmlaunch();
+	vst=noir_vt_vmlaunch();
+	if(vst==vmx_fail_valid)
+	{
+		u32 err_code;
+		noir_vt_vmread(vm_instruction_error,&err_code);
+		if(err_code<0x20)
+			nv_dprintf("Failed at VM-Entry, Code=%d\t Reason: %s\n",err_code,vt_error_message[err_code]);
+		else
+			nv_dprintf("VM-Entry failed with invalid code %d!\n",err_code);
+	}
+	return vst;
 }
 
 void static nvc_vt_subvert_processor(noir_vt_vcpu_p vcpu)
@@ -340,7 +385,8 @@ void static nvc_vt_subvert_processor(noir_vt_vcpu_p vcpu)
 			{
 				//At this time, VMCS has been pointed successfully.
 				//Start subverting.
-				vst=nvc_vt_subvert_processor_a(vcpu);
+				nv_dprintf("VMCS has been loaded to CPU successfully!\n");
+				nvc_vt_subvert_processor_a(vcpu);
 			}
 		}
 	}
@@ -353,6 +399,7 @@ void static nvc_vt_subvert_processor_thunk(void* context,u32 processor_id)
 	vt_basic.value=noir_rdmsr(ia32_vmx_basic);
 	*(u32*)vcpu[processor_id].vmxon.virt=(u32)vt_basic.revision_id;
 	*(u32*)vcpu[processor_id].vmcs.virt=(u32)vt_basic.revision_id;
+	nv_dprintf("Processor %d entered subversion routine!\n",processor_id);
 	nvc_vt_subvert_processor(&vcpu[processor_id]);
 }
 
@@ -401,9 +448,11 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 		hvm->relative_hvm->msr_auto_list.phys=noir_get_physical_address(hvm->relative_hvm->msr_auto_list.virt);
 	else
 		goto alloc_failure;
+	if(nvc_vt_build_exit_handlers()==noir_insufficient_resources)goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;
 	nv_dprintf("All allocations are done, start subversion!\n");
 	nvc_vt_setup_msr_hook(hvm);
+	nvc_vt_setup_msr_auto_list(hvm);
 	noir_generic_call(nvc_vt_subvert_processor_thunk,hvm->virtual_cpu);
 	return noir_success;
 alloc_failure:

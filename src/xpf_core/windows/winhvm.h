@@ -9,19 +9,11 @@
   without any warranty (no matter implied warranty or merchantability
   or fitness for a particular purpose, etc.).
 
-  File Location: /xpf_core/windows/winhvm.c
+  File Location: /xpf_core/windows/winhvm.h
 */
 
 #include <ntddk.h>
 #include <windef.h>
-#include "winhvm.h"
 
-ULONG NoirBuildHypervisor()
-{
-	return nvc_build_hypervisor();
-}
-
-void NoirTeardownHypervisor()
-{
-	nvc_teardown_hypervisor();
-}
+ULONG nvc_build_hypervisor();
+void nvc_teardown_hypervisor();
