@@ -22,3 +22,9 @@ void NoirGetNtOpenProcessIndex()
 	PVOID p=MmGetSystemRoutineAddress(&uniFuncName);
 	if(p)IndexOf_NtOpenProcess=*(PULONG)((ULONG_PTR)p+INDEX_OFFSET);
 }
+
+void NoirSetProtectedPID(IN ULONG NewPID)
+{
+	ProtPID=NewPID;
+	ProtPID&=0xFFFFFFFC;
+}

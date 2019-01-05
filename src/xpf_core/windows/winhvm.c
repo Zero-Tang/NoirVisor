@@ -25,3 +25,18 @@ void NoirTeardownHypervisor()
 {
 	nvc_teardown_hypervisor();
 }
+
+void NoirSaveImageInfo(IN PDRIVER_OBJECT DriverObject)
+{
+	if(DriverObject)
+	{
+		NvImageBase=DriverObject->DriverStart;
+		NvImageSize=DriverObject->DriverSize;
+	}
+}
+
+void nvc_store_image_info(OUT PVOID* Base,OUT PULONG Size)
+{
+	if(Base)*Base=NvImageBase;
+	if(Size)*Size=NvImageSize;
+}

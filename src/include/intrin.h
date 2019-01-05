@@ -77,6 +77,17 @@
 #define noir_stosp		__stosd
 #endif
 
+//Move-String instructions.
+#define noir_movsb		__movsb
+#define noir_movsw		__movsw
+#define noir_movsd		__movsd
+#if defined(_amd64)
+#define noir_movsq		__movsq
+#define noir_movsp		__movsq
+#else
+#define noir_movsp		__movsd
+#endif
+
 //Clear/Set RFlags.IF
 #define noir_cli	_disable
 #define noir_sti	_enable

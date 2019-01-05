@@ -42,6 +42,7 @@ noir_status nvc_build_hypervisor()
 			hvm_p->cpu_manuf=amd_processor;
 		else
 			hvm_p->cpu_manuf=unknown_processor;
+		nvc_store_image_info(&hvm_p->hv_image.base,&hvm_p->hv_image.size);
 		switch(hvm_p->cpu_manuf)
 		{
 			case intel_processor:
@@ -53,7 +54,7 @@ noir_status nvc_build_hypervisor()
 				}
 				else
 				{
-					nv_dprintf("Your processor does not supported Intel VT-x!\n");
+					nv_dprintf("Your processor does not support Intel VT-x!\n");
 					return noir_vmx_not_supported;
 				}
 				break;

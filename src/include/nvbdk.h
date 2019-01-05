@@ -116,6 +116,7 @@ void noir_free_paged_memory(void* virtual_address);
 u64 noir_get_physical_address(void* virtual_address);
 void* noir_map_physical_memory(u64 physical_address,size_t length);
 void noir_unmap_physical_memory(void* virtual_address,size_t length);
+void noir_copy_memory(void* dest,void* src,u32 cch);
 
 //Debugging Facility
 void cdecl nv_dprintf(const char* format,...);

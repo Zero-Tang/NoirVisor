@@ -74,12 +74,18 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 	{
 		case IOCTL_Subvert:
 		{
+			NoirSetProtectedPID((ULONG)PsGetCurrentProcessId());
 			NoirBuildHypervisor();
 			break;
 		}
 		case IOCTL_Restore:
 		{
 			NoirTeardownHypervisor();
+			break;
+		}
+		case IOCTL_SetPID:
+		{
+			NoirSetProtectedPID(*(PULONG)InputBuffer);
 			break;
 		}
 		default:
@@ -101,6 +107,7 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	system_cr3=__readcr3();
 	orig_system_call=__readmsr(0xC0000082);
 	NoirGetNtOpenProcessIndex();
+	NoirSaveImageInfo(DriverObject);
 }
 
 NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING RegistryPath)

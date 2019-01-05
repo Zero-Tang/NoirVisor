@@ -79,3 +79,8 @@ void noir_unmap_physical_memory(void* virtual_address,size_t length)
 {
 	MmUnmapIoSpace(virtual_address,length);
 }
+
+void noir_copy_memory(void* dest,void* src,size_t cch)
+{
+	RtlCopyMemory(dest,src,cch);
+}

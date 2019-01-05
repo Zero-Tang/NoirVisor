@@ -143,14 +143,42 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,u32 exit_r
 	ulong_ptr gip;
 	noir_vt_vmread(guest_rip,&gip);
 	//We should verify that the vmcall is not malicious.
-	//If rip is not in NoirVisor's image, The vmcall is malicious.
+	//If rip is not in NoirVisor's image, the vmcall is determined to be malicious.
 	if(gip>=hvm_p->hv_image.base && gip<hvm_p->hv_image.base+hvm_p->hv_image.size)
 	{
-		;
+		u32 index=(u32)gpr_state->rcx;
+		switch(index)
+		{
+			case noir_vt_callexit:
+			{
+				noir_vt_vcpu_p vcpu=(noir_vt_vcpu_p)gpr_state->rdx;
+				noir_gpr_state_p saved_state=(noir_gpr_state_p)vcpu->hv_stack;
+				ulong_ptr gsp,gflags;
+				u32 inslen=3;		//By default, vmcall uses 3 bytes.
+				noir_vt_vmread(guest_rsp,&gsp);
+				noir_vt_vmread(guest_rflags,&gflags);
+				noir_vt_vmread(vmexit_instruction_length,&inslen);
+				//We may allocate space from unused HV-Stack
+				noir_movsp(saved_state,gpr_state,sizeof(void*)*2);
+				saved_state->rax=gip+inslen;
+				saved_state->rcx=gflags&0x3f7f96;		//Clear ZF and CF bits.
+				saved_state->rdx=gsp;
+				//Mark vCPU is in transition state
+				vcpu->status=noir_virt_trans;
+				nvc_vt_resume_without_entry(saved_state);
+				break;
+			}
+			default:
+			{
+				nv_dprintf("Unknown vmcall index!\n");
+				break;
+			}
+		}
 	}
 	else
 	{
 		nv_dprintf("Malicious vmcall!\n");
+		noir_vt_advance_rip();
 	}
 }
 

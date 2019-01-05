@@ -91,9 +91,23 @@ noir_vt_vmcall proc
 
 noir_vt_vmcall endp
 
+nvc_vt_resume_without_entry proc
+
+	mov rsp,rcx
+	popaq
+	; In the restored GPR layout, we have:
+	; rax=rip
+	; rcx=rflags
+	; rdx=rsp
+	mov rsp,rdx		; Restore stack pointer
+	push rcx
+	popfq			; Restore flags register
+	jmp rax			; Restore instruction pointer
+
+nvc_vt_resume_without_entry endp
+
 nvc_vt_exit_handler_a proc
 
-	int 3
 	pushaq
 	mov rcx,rsp
 	sub rsp,20h
@@ -112,7 +126,6 @@ nvc_vt_subvert_processor_a proc
 	mov r9,vt_launched
 	sub rsp,20h
 	call nvc_vt_subvert_processor_i
-	int 3
 	;At this moment, VM-Entry resulted failure.
 	add rsp,20h
 	mov qword ptr [rsp],rax

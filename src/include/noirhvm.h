@@ -67,6 +67,7 @@ bool nvc_is_svm_supported();
 bool nvc_svm_subvert_system(noir_hypervisor_p hvm);
 void nvc_svm_restore_system(noir_hypervisor_p hvm);
 //Central Hypervisor Structure.
+void nvc_store_image_info(ulong_ptr* base,u32* size);
 noir_hypervisor_p hvm_p=null;
 ulong_ptr system_cr3=0;
 ulong_ptr orig_system_call=0;

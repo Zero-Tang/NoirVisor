@@ -22,9 +22,12 @@
 
 #define IOCTL_Subvert		CTL_CODE_GEN(0x801)
 #define IOCTL_Restore		CTL_CODE_GEN(0x802)
+#define IOCTL_SetPID		CTL_CODE_GEN(0x803)
 
 ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();
 void NoirGetNtOpenProcessIndex();
+void NoirSaveImageInfo(IN PDRIVER_OBJECT DriverObject);
+void NoirSetProtectedPID(IN ULONG NewPID);
 extern ULONG_PTR system_cr3;
 extern ULONG_PTR orig_system_call;

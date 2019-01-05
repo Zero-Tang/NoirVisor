@@ -17,3 +17,6 @@
 
 ULONG nvc_build_hypervisor();
 void nvc_teardown_hypervisor();
+
+PVOID NvImageBase=NULL;
+ULONG NvImageSize=0;

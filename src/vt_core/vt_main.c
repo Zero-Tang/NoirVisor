@@ -141,9 +141,19 @@ u8 static nvc_vt_enable(u64* vmxon_phys)
 	cr0&=noir_rdmsr(ia32_vmx_cr0_fixed1);
 	cr4|=noir_rdmsr(ia32_vmx_cr4_fixed0);
 	cr4&=noir_rdmsr(ia32_vmx_cr4_fixed1);
+	//Note that CR4.VMXE is included in MSR info.
 	noir_writecr0(cr0);
 	noir_writecr4(cr4);
 	return noir_vt_vmxon(vmxon_phys);
+}
+
+u8 static nvc_vt_disable()
+{
+	u64 cr4=noir_readcr4();
+	noir_vt_vmxoff();
+	noir_btr((u32*)&cr4,ia32_cr4_vmxe);
+	noir_writecr4(cr4);		//Only CR4.VMXE is essential to be cleared.
+	return noir_virt_off;
 }
 
 void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_ptr gsp,ulong_ptr gip)
@@ -200,7 +210,7 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	//Guest State Area - Debug Controls
 	noir_vt_vmwrite(guest_dr7,state_p->dr7);
 	noir_vt_vmwrite(guest_msr_ia32_debug_ctrl,state_p->debug_ctrl);
-	//VMCS Link Pointer - Essential for VMX Nesting
+	//VMCS Link Pointer - Essential for Accelerated VMX Nesting
 	noir_vt_vmwrite(vmcs_link_pointer,0xffffffffffffffff);
 	//Guest State Area - Flags, Stack Pointer, Instruction Pointer
 	noir_vt_vmwrite(guest_rsp,gsp);
@@ -282,6 +292,7 @@ void static nvc_vt_setup_procbased_controls(bool true_msr)
 		//Setup Secondary Processor-Based VM-Execution Controls
 		proc_ctrl2.value=0;
 		proc_ctrl2.enable_rdtscp=1;
+		//proc_ctrl2.enable_vpid=1;		//Avoid unnecessary TLB flushing with VPID
 		proc_ctrl2.enable_invpcid=1;
 		proc_ctrl2.enable_xsaves_xrstors=1;
 		//Filter unsupported fields.
@@ -336,6 +347,11 @@ void static nvc_vt_setup_vmentry_controls(bool true_msr)
 	noir_vt_vmwrite(vmentry_controls,entry_ctrl.value);
 }
 
+void static nvc_vt_setup_memory_virtualization()
+{
+	noir_vt_vmwrite(virtual_processor_identifier,1);
+}
+
 void static nvc_vt_setup_control_area(bool true_msr)
 {
 	nvc_vt_setup_pinbased_controls(true_msr);
@@ -358,6 +374,7 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	nvc_vt_setup_guest_state_area(&state,gsp,gip);
 	nvc_vt_setup_host_state_area(vcpu,&state);
 	nvc_vt_setup_msr_hook_p(vcpu);
+	vcpu->status=noir_virt_on;
 	//Everything are done, perform subversion.
 	vst=noir_vt_vmlaunch();
 	if(vst==vmx_fail_valid)
@@ -368,6 +385,7 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 			nv_dprintf("Failed at VM-Entry, Code=%d\t Reason: %s\n",err_code,vt_error_message[err_code]);
 		else
 			nv_dprintf("VM-Entry failed with invalid code %d!\n",err_code);
+		vcpu->status=noir_virt_trans;
 	}
 	return vst;
 }
@@ -377,6 +395,7 @@ void static nvc_vt_subvert_processor(noir_vt_vcpu_p vcpu)
 	u8 vst=nvc_vt_enable(&vcpu->vmxon.phys);
 	if(vst==vmx_success)
 	{
+		vcpu->status=noir_virt_trans;
 		vst=noir_vt_vmclear(&vcpu->vmcs.phys);
 		if(vst==vmx_success)
 		{
@@ -463,12 +482,20 @@ alloc_failure:
 
 void static nvc_vt_restore_processor(noir_vt_vcpu_p vcpu)
 {
-	;
+	//If we are under VMX Non-Root Operation, trigger VM-Exit.
+	if(vcpu->status==noir_virt_on)
+		noir_vt_vmcall(noir_vt_callexit,(ulong_ptr)vcpu);
+	//At this moment, we are now under VMX Root Operation.
+	if(vcpu->status==noir_virt_trans)
+		vcpu->status=nvc_vt_disable();
+	else
+		nv_dprintf("Failed to leave VMX Non-Root Operation!\n");
 }
 
 void static nvc_vt_restore_processor_thunk(void* context,u32 processor_id)
 {
 	noir_vt_vcpu_p vcpu=(noir_vt_vcpu_p)context;
+	nv_dprintf("Processor %d entered restoration routine!\n",processor_id);
 	nvc_vt_restore_processor(&vcpu[processor_id]);
 }
 
