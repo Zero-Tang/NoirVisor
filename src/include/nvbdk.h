@@ -105,6 +105,7 @@ typedef void (*noir_broadcast_worker)(void* context,u32 processor_id);
 void noir_save_processor_state(noir_processor_state_p);
 void noir_generic_call(noir_broadcast_worker worker,void* context);
 u32 noir_get_processor_count();
+u32 noir_get_current_processor();
 
 //Memory Facility
 void* noir_alloc_contd_memory(size_t length);

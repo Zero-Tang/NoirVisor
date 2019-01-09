@@ -82,6 +82,27 @@ typedef enum _vmx_vmexit_reason
 	intercept_xrstors=64
 }vmx_vmexit_reason,*vmx_vmexit_reason_p;
 
+#define ia32_external_interrupt			0
+#define ia32_non_maskable_interrupt		2
+#define ia32_hardware_exception			3
+#define ia32_software_interrupt			4
+#define ia32_prisw_exception			5
+#define ia32_software_exception			6
+#define ia32_other_event				7
+
+typedef union _ia32_vmentry_interruption_information_field
+{
+	struct
+	{
+		u32 vector:8;
+		u32 type:3;
+		u32 deliver:1;
+		u32 reserved:19;
+		u32 valid:1;
+	};
+	u32 value;
+}ia32_vmentry_interruption_information_field,*ia32_vmentry_interruption_information_field_p;
+
 typedef void (fastcall *noir_vt_exit_handler_routine)
 (
  noir_gpr_state_p gpr_state,
@@ -166,4 +187,16 @@ void inline noir_vt_advance_rip()
 	noir_vt_vmread(guest_rip,&gip);
 	noir_vt_vmread(vmexit_instruction_length,&len);
 	noir_vt_vmwrite(guest_rip,gip+len);
+}
+
+void inline noir_vt_inject_event(u8 vector,u8 type,bool deliver,u32 length)
+{
+	ia32_vmentry_interruption_information_field event_field;
+	event_field.value=0;
+	event_field.valid=1;
+	event_field.deliver=deliver;
+	event_field.vector=vector;
+	event_field.type=type;
+	noir_vt_vmwrite(vmentry_interruption_information_field,event_field.value);
+	noir_vt_vmwrite(vmentry_instruction_length,length);
 }

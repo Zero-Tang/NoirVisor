@@ -28,6 +28,7 @@ typedef struct _noir_vt_hvm
 	memory_descriptor io_bitmap_a;
 	memory_descriptor io_bitmap_b;
 	memory_descriptor msr_auto_list;
+	u64 eptp;
 }noir_vt_hvm,*noir_vt_hvm_p;
 
 typedef struct _noir_vt_msr_entry
@@ -43,6 +44,7 @@ typedef struct _noir_vt_vcpu
 	memory_descriptor vmcs;
 	void* hv_stack;
 	noir_vt_hvm_p relative_hvm;
+	void* ept_manager;
 	u8 status;
 }noir_vt_vcpu,*noir_vt_vcpu_p;
 

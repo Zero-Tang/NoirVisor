@@ -22,6 +22,7 @@
 #include "vt_vmcs.h"
 #include "vt_exit.h"
 #include "vt_def.h"
+#include "vt_ept.h"
 
 void nvc_vt_dump_vmcs_guest_state()
 {
@@ -142,8 +143,7 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,u32 exit_r
 {
 	ulong_ptr gip;
 	noir_vt_vmread(guest_rip,&gip);
-	//We should verify that the vmcall is not malicious.
-	//If rip is not in NoirVisor's image, the vmcall is determined to be malicious.
+	//We should verify that the vmcall is inside the NoirVisor's image.
 	if(gip>=hvm_p->hv_image.base && gip<hvm_p->hv_image.base+hvm_p->hv_image.size)
 	{
 		u32 index=(u32)gpr_state->rcx;
@@ -153,6 +153,8 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,u32 exit_r
 			{
 				noir_vt_vcpu_p vcpu=(noir_vt_vcpu_p)gpr_state->rdx;
 				noir_gpr_state_p saved_state=(noir_gpr_state_p)vcpu->hv_stack;
+				invept_descriptor ied;
+				invvpid_descriptor ivd;
 				ulong_ptr gsp,gflags;
 				u32 inslen=3;		//By default, vmcall uses 3 bytes.
 				noir_vt_vmread(guest_rsp,&gsp);
@@ -163,6 +165,14 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,u32 exit_r
 				saved_state->rax=gip+inslen;
 				saved_state->rcx=gflags&0x3f7f96;		//Clear ZF and CF bits.
 				saved_state->rdx=gsp;
+				//Invalidate all TLBs associated with EPT and VPID.
+				ied.eptp=0;
+				ied.reserved=0;
+				noir_vt_invept(ept_global_invd,&ied);
+				ivd.vpid=0;
+				ivd.reserved[0]=ivd.reserved[1]=ivd.reserved[2]=0;
+				ivd.linear_address=0;
+				noir_vt_invvpid(vpid_global_invd,&ivd);
 				//Mark vCPU is in transition state
 				vcpu->status=noir_virt_trans;
 				nvc_vt_resume_without_entry(saved_state);
@@ -177,8 +187,33 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,u32 exit_r
 	}
 	else
 	{
-		nv_dprintf("Malicious vmcall!\n");
-		noir_vt_advance_rip();
+		//If vmcall is not inside the NoirVisor's image,
+		//we consider this is a regular VMX instruction
+		//execution not in VMX Non-Root Operation.
+		//Note that this is Nested VMX scenario.
+		//Check status of vCPU.
+		u32 proc_id=noir_get_current_processor();
+		noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[proc_id];
+		if(vcpu->status==noir_virt_nesting)
+		{
+			ulong_ptr gflags;
+			u64 linked_vmcs;
+			noir_vt_vmread(guest_rflags,&gflags);
+			noir_vt_vmread(vmcs_link_pointer,&linked_vmcs);
+			gflags&=0x3f7702;		//Clear CF PF AF ZF SF OF bits
+			if(linked_vmcs==0xffffffffffffffff)
+				noir_bts((u32*)&gflags,0);		//At this moment, valid VMCS is not loaded.
+			else
+				noir_bts((u32*)&gflags,6);		//At this moment, valid VMCS is loaded.
+			noir_vt_vmwrite(guest_rflags,gflags);
+			noir_vt_advance_rip();
+		}
+		else
+		{
+			//At this moment, vCPU did not enter VMX operation.
+			//Issue a #UD exception to Guest.
+			noir_vt_inject_event(ia32_invalid_opcode,ia32_hardware_exception,false,0);
+		}
 	}
 }
 
@@ -248,6 +283,37 @@ void static fastcall nvc_vt_invalid_msr_loading(noir_gpr_state_p gpr_state,u32 e
 	nv_dprintf("VM-Entry failed! Check the MSR-Auto list in VMCS!\n");
 }
 
+//Expected Exit Reason: 48
+//This is VM-Exit of obligation on EPT.
+//Specifically, this handler is invoked on EPT-based stealth hook.
+void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+{
+	ia32_ept_violation_qualification info;
+	u64 gpa,cr3;
+	nv_dprintf("EPT Violation Occured!\n");
+	noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&info);
+	noir_vt_vmread(guest_physical_address,&gpa);
+	noir_vt_vmread(guest_cr3,&cr3);
+	nv_dprintf("Qualification Code: 0x%X\t GPA=0x%llX\t CR3=0x%llX\n",info.value,gpa,cr3);
+	nvc_gpa_to_hpa(hvm_p->virtual_cpu->ept_manager,gpa);
+	if(info.gva_valid)
+	{
+		u64 gva;
+		noir_vt_vmread(guest_linear_address,&gva);
+		nv_dprintf("Guest Linear Address is available! GVA:0x%p\n",gva);
+	}
+	noir_int3();
+}
+
+//Expected Exit Reason: 49
+//This is VM-Exit of obligation on EPT.
+//You may want to debug your code if this handler is invoked.
+void static fastcall nvc_vt_ept_misconfig_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+{
+	nv_dprintf("EPT Misconfiguration Occured!\n");
+	noir_int3();
+}
+
 //Expected Exit Reason: 55
 //This is VM-Exit of obligation.
 void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
@@ -299,8 +365,10 @@ noir_status nvc_vt_build_exit_handlers()
 		vt_exit_handlers[intercept_rdmsr]=nvc_vt_rdmsr_handler;
 		vt_exit_handlers[invalid_guest_state]=nvc_vt_invalid_guest_state;
 		vt_exit_handlers[msr_loading_failure]=nvc_vt_invalid_msr_loading;
+		vt_exit_handlers[ept_violation]=nvc_vt_ept_violation_handler;
+		vt_exit_handlers[ept_misconfiguration]=nvc_vt_ept_misconfig_handler;
 		vt_exit_handlers[intercept_invept]=nvc_vt_vmx_handler;
-		vt_exit_handlers[intercept_invept]=nvc_vt_vmx_handler;
+		vt_exit_handlers[intercept_invvpid]=nvc_vt_vmx_handler;
 		vt_exit_handlers[intercept_xsetbv]=nvc_vt_xsetbv_handler;
 		return noir_success;
 	}

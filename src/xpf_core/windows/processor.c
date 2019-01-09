@@ -116,6 +116,11 @@ ULONG32 noir_get_processor_count()
 	return KeQueryActiveProcessorCount(&af);
 }
 
+ULONG32 noir_get_current_processor()
+{
+	return KeGetCurrentProcessorNumber();
+}
+
 void static NoirDpcRT(IN PKDPC Dpc,IN PVOID DeferedContext OPTIONAL,IN PVOID SystemArgument1 OPTIONAL,IN PVOID SystemArgument2 OPTIONAL)
 {
 	noir_broadcast_worker worker=(noir_broadcast_worker)SystemArgument1;

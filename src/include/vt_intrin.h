@@ -14,6 +14,14 @@
 
 #include "nvdef.h"
 
+#define ept_single_invd		1
+#define ept_global_invd		2
+
+#define vpid_indiva_invd	0
+#define vpid_single_invd	1
+#define vpid_global_invd	2
+#define vpid_sicrgb_invd	3
+
 #define vmx_success			0
 #define vmx_fail_valid		1
 #define vmx_fail_invalid	2

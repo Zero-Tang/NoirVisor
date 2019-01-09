@@ -21,6 +21,7 @@
 #include <ia32.h>
 #include "vt_vmcs.h"
 #include "vt_def.h"
+#include "vt_ept.h"
 
 bool nvc_is_vt_supported()
 {
@@ -63,6 +64,7 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 					noir_free_contd_memory(vcpu->vmcs.virt);
 				if(vcpu->hv_stack)
 					noir_free_nonpg_memory(vcpu->hv_stack);
+				nvc_ept_cleanup(vcpu->ept_manager);
 			}
 			noir_free_nonpg_memory(hvm->virtual_cpu);
 		}
@@ -291,6 +293,7 @@ void static nvc_vt_setup_procbased_controls(bool true_msr)
 		proc_ctrl2_msr.value=noir_rdmsr(ia32_vmx_2ndproc_ctrl);
 		//Setup Secondary Processor-Based VM-Execution Controls
 		proc_ctrl2.value=0;
+		proc_ctrl2.enable_ept=1;		//Use Intel EPT.
 		proc_ctrl2.enable_rdtscp=1;
 		//proc_ctrl2.enable_vpid=1;		//Avoid unnecessary TLB flushing with VPID
 		proc_ctrl2.enable_invpcid=1;
@@ -347,9 +350,38 @@ void static nvc_vt_setup_vmentry_controls(bool true_msr)
 	noir_vt_vmwrite(vmentry_controls,entry_ctrl.value);
 }
 
-void static nvc_vt_setup_memory_virtualization()
+void static nvc_vt_setup_memory_virtualization(noir_vt_vcpu_p vcpu)
 {
-	noir_vt_vmwrite(virtual_processor_identifier,1);
+	ia32_vmx_ept_vpid_cap_msr ev_cap;
+	ev_cap.value=noir_rdmsr(ia32_vmx_ept_vpid_cap);
+	if(ev_cap.support_wb_ept)			//We are only capable of using Write-Back cached memory.
+	{
+		/*
+			We require following supportability of Intel EPT:
+			Execute-Only Translation - This is used for stealth inline hook.
+			2MB-paging - This is used for reducing memory consumption.
+			(It can be better that processor supports 1GB-paging. However,
+			 VMware does not support emulating 1GB-paging for Intel EPT.)
+			Support invept Instruction - This is used for invalidating EPT TLB.
+		*/
+		bool ept_support_req=true;
+		ept_support_req&=ev_cap.support_exec_only_translation;
+		ept_support_req&=ev_cap.support_2mb_paging;
+		ept_support_req&=ev_cap.support_invept;
+		ept_support_req&=ev_cap.support_single_context_invept;
+		ept_support_req&=ev_cap.support_all_context_invept;
+		if(ept_support_req)
+		{
+			//All required EPT features are supported, continue virtualization.
+			noir_ept_manager_p eptm=(noir_ept_manager_p)vcpu->ept_manager;
+			noir_vt_vmwrite(ept_pointer,eptm->eptp.phys.value);
+		}
+	}
+	//For VPID, we need Single-Context invalidation only as well.
+	//Note that VPID is used for unnecessary TLB flushing,
+	//which might bring significant performance penalty.
+	if(ev_cap.support_sc_invvpid && ev_cap.support_ac_invvpid)
+		noir_vt_vmwrite(virtual_processor_identifier,1);
 }
 
 void static nvc_vt_setup_control_area(bool true_msr)
@@ -373,6 +405,7 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	nvc_vt_setup_control_area(vt_basic.use_true_msr);
 	nvc_vt_setup_guest_state_area(&state,gsp,gip);
 	nvc_vt_setup_host_state_area(vcpu,&state);
+	nvc_vt_setup_memory_virtualization(vcpu);
 	nvc_vt_setup_msr_hook_p(vcpu);
 	vcpu->status=noir_virt_on;
 	//Everything are done, perform subversion.
@@ -444,6 +477,9 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 				goto alloc_failure;
 			vcpu->hv_stack=noir_alloc_nonpg_memory(nvc_stack_size);
 			if(vcpu->hv_stack==null)
+				goto alloc_failure;
+			vcpu->ept_manager=(void*)nvc_ept_build_identity_map();
+			if(vcpu->ept_manager==null)
 				goto alloc_failure;
 			vcpu->relative_hvm=(noir_vt_hvm_p)hvm->reserved;
 		}

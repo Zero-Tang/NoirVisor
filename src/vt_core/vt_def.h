@@ -262,7 +262,10 @@ typedef union _ia32_vmx_ept_vpid_cap_msr
 		u64 reserved6:5;						//bits	27-31
 		u64	support_invvpid:1;					//bit	32
 		u64	reserved7:7;						//bits	33-39
-		u64 supported_invvpid_type:4;			//bits	40-43
+		u64 support_ia_invvpid:1;				//bit	40
+		u64 support_sc_invvpid:1;				//bit	41
+		u64 support_ac_invvpid:1;				//bit	42
+		u64 support_scrg_invvpid:1;				//bit	43
 		u64 reserved8:20;						//bits	44-63
 	};
 	u64 value;
