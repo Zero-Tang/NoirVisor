@@ -134,8 +134,9 @@ typedef union _ia32_ept_pde
 		u64 accessed:1;
 		u64 ignored0:1;
 		u64 umx:1;
+		u64 ignored1:1;
 		u64 pte_offset:40;
-		u64 ignored1:12;
+		u64 ignored2:12;
 	};
 	u64 value;
 }ia32_ept_pde,*ia32_ept_pde_p;
@@ -144,22 +145,30 @@ typedef union _ia32_ept_pte
 {
 	struct
 	{
-		u64 read:1;
-		u64 write:1;
-		u64 execute:1;
-		u64 memory_type:3;
-		u64 ignore_pat:1;
-		u64 ignored0:1;
-		u64 accessed:1;
-		u64 dirty:1;
-		u64 umx:1;
-		u64 ignored1:1;
+		u64 read:1;			//Bit	0
+		u64 write:1;		//Bit	1
+		u64 execute:1;		//Bit	2
+		u64 memory_type:3;	//Bits	3-5
+		u64 ignore_pat:1;	//Bit	6
+		u64 ignored0:1;		//Bit	7
+		u64 accessed:1;		//Bit	8
+		u64 dirty:1;		//Bit	9
+		u64 umx:1;			//Bit	10
+		u64 ignored1:1;		//Bit	11
 		u64 page_offset:40;
 		u64 ignored2:11;
 		u64 suppress_ve:1;
 	};
 	u64 value;
 }ia32_ept_pte,*ia32_ept_pte_p;
+
+typedef struct _noir_ept_pte_descriptor
+{
+	ia32_ept_pte_p virt;
+	u64 phys;
+	u64 gpa_start;
+	struct _noir_ept_pte_descriptor* next;
+}noir_ept_pte_descriptor,*noir_ept_pte_descriptor_p;
 
 typedef struct _noir_ept_manager
 {
@@ -178,6 +187,11 @@ typedef struct _noir_ept_manager
 		ia32_ept_large_pde_p* virt;
 		u64* phys;
 	}pde;
+	struct
+	{
+		noir_ept_pte_descriptor_p head;
+		noir_ept_pte_descriptor_p tail;
+	}pte;
 }noir_ept_manager,*noir_ept_manager_p;
 
 typedef union _ia32_ept_violation_qualification
@@ -204,4 +218,3 @@ typedef union _ia32_ept_violation_qualification
 
 noir_ept_manager_p nvc_ept_build_identity_map();
 void nvc_ept_cleanup(noir_ept_manager_p eptm);
-u64 nvc_gpa_to_hpa(noir_ept_manager_p eptm,u64 gpa);

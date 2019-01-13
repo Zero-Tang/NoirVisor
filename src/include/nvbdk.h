@@ -16,6 +16,9 @@
 #include <nvdef.h>
 
 #define page_size				0x1000
+#define page_4kb_size			0x1000
+#define page_2mb_size			0x200000
+#define page_1gb_size			0x40000000
 
 #define selector_rplti_mask		0xfff8
 

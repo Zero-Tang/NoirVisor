@@ -13,7 +13,7 @@
 */
 
 #include "nvdef.h"
-#if defined(_vt_drv) || defined(_vt_exit)
+#if defined(_vt_drv) || defined(_vt_exit) || defined(_vt_ept)
 #include "vt_hvm.h"
 #elif defined(_svm_drv)
 #include "svm_hvm.h"
@@ -57,6 +57,17 @@ typedef struct _noir_hypervisor
 	u64 reserved[0x10];	//Reserve 128 bytes for Relative HVM.
 }noir_hypervisor,*noir_hypervisor_p;
 
+#if !defined(_central_hvm)
+typedef struct _noir_hook_page
+{
+	memory_descriptor orig;
+	memory_descriptor hook;
+	void* pte_descriptor;
+	struct _noir_hook_page* next;
+}noir_hook_page,*noir_hook_page_p;
+extern noir_hook_page_p noir_hook_pages;
+#endif
+
 #if defined(_central_hvm)
 //Functions from VT Core.
 bool nvc_is_vt_supported();
@@ -76,5 +87,4 @@ extern noir_hypervisor_p hvm_p;
 extern ulong_ptr system_cr3;
 extern ulong_ptr orig_system_call;
 #endif
-
 extern void noir_system_call();

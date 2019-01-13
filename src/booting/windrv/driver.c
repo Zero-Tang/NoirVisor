@@ -108,6 +108,7 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	orig_system_call=__readmsr(0xC0000082);
 	NoirGetNtOpenProcessIndex();
 	NoirSaveImageInfo(DriverObject);
+	NoirBuildHookedPages();
 }
 
 NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING RegistryPath)

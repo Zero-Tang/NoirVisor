@@ -23,20 +23,71 @@
 #include "vt_ept.h"
 #include "vt_def.h"
 
-u64 nvc_gpa_to_hpa(noir_ept_manager_p eptm,u64 gpa)
+bool nvc_ept_insert_pte(noir_ept_manager_p eptm,noir_hook_page_p nhp)
 {
-	ia32_addr_translator trans;
-	u64 hpa;
-	trans.value=gpa;
-	if(trans.pml4e_offset)
-		nv_dprintf("Access to Address higher than 512GB!\n");
-	nv_dprintf("GPA=0x%llX to HPA translation requested!\n",gpa);
-	nv_dprintf("PML4E Offset=0x%X\t Record=0x%llX\n",trans.pml4e_offset,eptm->eptp.virt[trans.pml4e_offset].value);
-	nv_dprintf("PDPTE Offset=0x%X\t Record=0x%llX\n",trans.pdpte_offset,eptm->pdpt.virt[trans.pdpte_offset].value);
-	nv_dprintf("PDE Offset=0x%X\t Record=0x%llX\n",trans.pde_offset,eptm->pde.virt[trans.pdpte_offset][trans.pde_offset].value);
-	hpa=eptm->pde.virt[trans.pdpte_offset][trans.pde_offset].page_offset<<21|trans.pte_offset<<12|trans.page_offset;
-	nv_dprintf("Final Result: HPA=0x%llX\n",hpa);
-	return hpa;
+	noir_hook_page_p cur_h=nhp;
+	while(cur_h)
+	{
+		noir_ept_pte_descriptor_p cur_d=eptm->pte.head;
+		ia32_addr_translator addr;
+		addr.value=nhp->orig.phys;
+		while(cur_d)
+		{
+			//Find if the desired page has already been described.
+			if(nhp->orig.phys>=cur_d->gpa_start && nhp->orig.phys<cur_d->gpa_start+page_2mb_size)
+				break;
+			cur_d=cur_d->next;
+		}
+		if(cur_d==null)
+		{
+			//The desired page is not described.
+			//Describe the page, then perform hooking.
+			ia32_ept_pde_p pde_p=(ia32_ept_pde_p)&eptm->pde.virt[addr.pdpte_offset][addr.pde_offset];
+			u32 i=0;
+			cur_d=noir_alloc_nonpg_memory(sizeof(noir_ept_pte_descriptor));
+			if(cur_d==null)return false;
+			cur_d->virt=noir_alloc_contd_memory(page_size);
+			if(cur_d->virt==null)return false;
+			cur_d->phys=noir_get_physical_address(cur_d->virt);
+			cur_d->gpa_start=(addr.pdpte_offset<<18)+(addr.pde_offset<<9);
+			//Setup identity map.
+			for(;i<512;i++)
+			{
+				cur_d->virt[i].value=0;
+				cur_d->virt[i].read=1;
+				cur_d->virt[i].write=1;
+				cur_d->virt[i].execute=1;
+				cur_d->virt[i].memory_type=ia32_write_back;
+				cur_d->virt[i].page_offset=cur_d->gpa_start+i;
+			}
+			cur_d->gpa_start<<=12;
+			//Insert to descriptor linked-list.
+			if(eptm->pte.head)
+			{
+				eptm->pte.tail->next=cur_d;
+				eptm->pte.tail=cur_d;
+			}
+			else
+			{
+				eptm->pte.head=cur_d;
+				eptm->pte.tail=cur_d;
+			}
+			//Reset the Page-Directory Entry
+			pde_p->reserved0=0;
+			pde_p->large_pde=0;
+			pde_p->pte_offset=cur_d->phys>>12;
+		}
+		//At this moment, we assume the desired page is described.
+		cur_h->pte_descriptor=(void*)&cur_d->virt[addr.pte_offset];
+		//Reset the page translation.
+		cur_d->virt[addr.pte_offset].page_offset=nhp->hook.phys>>12;
+		//Clear R/W but Reserve X.
+		cur_d->virt[addr.pte_offset].read=0;
+		cur_d->virt[addr.pte_offset].write=0;
+		//Go to Setup the Next Hook.
+		cur_h=cur_h->next;
+	}
+	return true;
 }
 
 void nvc_ept_cleanup(noir_ept_manager_p eptm)
@@ -136,6 +187,7 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 			eptm->pdpt.virt[i].write=1;
 			eptm->pdpt.virt[i].execute=1;
 		}
+		nvc_ept_insert_pte(eptm,noir_hook_pages);
 		//Build Page Map Level-4 Entry (PML4E)
 		eptm->pdpt.phys=noir_get_physical_address(eptm->pdpt.virt);
 		eptm->eptp.virt->value=0;

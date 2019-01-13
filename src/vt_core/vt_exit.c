@@ -288,21 +288,49 @@ void static fastcall nvc_vt_invalid_msr_loading(noir_gpr_state_p gpr_state,u32 e
 //Specifically, this handler is invoked on EPT-based stealth hook.
 void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
-	ia32_ept_violation_qualification info;
-	u64 gpa,cr3;
-	nv_dprintf("EPT Violation Occured!\n");
-	noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&info);
+	noir_hook_page_p nhp=noir_hook_pages;
+	u64 gpa;
 	noir_vt_vmread(guest_physical_address,&gpa);
-	noir_vt_vmread(guest_cr3,&cr3);
-	nv_dprintf("Qualification Code: 0x%X\t GPA=0x%llX\t CR3=0x%llX\n",info.value,gpa,cr3);
-	nvc_gpa_to_hpa(hvm_p->virtual_cpu->ept_manager,gpa);
-	if(info.gva_valid)
+	nv_dprintf("EPT Violation Occured at GPA=0x%llX!\n",gpa);
+	while(nhp)
 	{
-		u64 gva;
-		noir_vt_vmread(guest_linear_address,&gva);
-		nv_dprintf("Guest Linear Address is available! GVA:0x%p\n",gva);
+		if(gpa>=nhp->orig.phys && gpa<nhp->orig.phys+page_size)
+		{
+			ia32_ept_violation_qualification info;
+			invept_descriptor ied;
+			//The violated page is found. Perform page-substitution
+			ia32_ept_pte_p pte_p=(ia32_ept_pte_p)nhp->pte_descriptor;
+			u32 proc_num=noir_get_current_processor();
+			noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[proc_num];
+			noir_ept_manager_p eptm=(noir_ept_manager_p)vcpu->ept_manager;
+			noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&info);
+			if(info.read || info.write)
+			{
+				//If the access is read or write, we grant
+				//read/write permission but revoke execute permission
+				//and substitute the page to be original page
+				pte_p->read=1;
+				pte_p->write=1;
+				pte_p->execute=0;
+				pte_p->page_offset=nhp->orig.phys>>12;
+			}
+			else if(info.execute)
+			{
+				//If the access is execute, we grant
+				//execute permission but revoke read/write permission
+				//and substitute the page to be hooked page
+				pte_p->read=0;
+				pte_p->write=0;
+				pte_p->execute=1;
+				pte_p->page_offset=nhp->hook.phys>>12;
+			}
+			//Since Paging Structure is revised, invalidate the EPT TLB.
+			ied.reserved=0;
+			ied.eptp=eptm->eptp.phys.value;
+			noir_vt_invept(ept_single_invd,&ied);
+			break;
+		}
 	}
-	noir_int3();
 }
 
 //Expected Exit Reason: 49

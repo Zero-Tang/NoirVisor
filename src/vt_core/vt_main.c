@@ -295,7 +295,7 @@ void static nvc_vt_setup_procbased_controls(bool true_msr)
 		proc_ctrl2.value=0;
 		proc_ctrl2.enable_ept=1;		//Use Intel EPT.
 		proc_ctrl2.enable_rdtscp=1;
-		//proc_ctrl2.enable_vpid=1;		//Avoid unnecessary TLB flushing with VPID
+		proc_ctrl2.enable_vpid=1;		//Avoid unnecessary TLB flushing with VPID
 		proc_ctrl2.enable_invpcid=1;
 		proc_ctrl2.enable_xsaves_xrstors=1;
 		//Filter unsupported fields.
@@ -373,11 +373,11 @@ void static nvc_vt_setup_memory_virtualization(noir_vt_vcpu_p vcpu)
 		if(ept_support_req)
 		{
 			//All required EPT features are supported, continue virtualization.
+			//Note that different vCPUs use different EPTP.
 			noir_ept_manager_p eptm=(noir_ept_manager_p)vcpu->ept_manager;
 			noir_vt_vmwrite(ept_pointer,eptm->eptp.phys.value);
 		}
 	}
-	//For VPID, we need Single-Context invalidation only as well.
 	//Note that VPID is used for unnecessary TLB flushing,
 	//which might bring significant performance penalty.
 	if(ev_cap.support_sc_invvpid && ev_cap.support_ac_invvpid)
