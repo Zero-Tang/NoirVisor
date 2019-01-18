@@ -16,6 +16,9 @@
 
 #define noir_vt_callexit		1
 
+#define noir_nvt_vmxe			0
+#define noir_nvt_vmxon			1
+
 typedef struct _memory_descriptor
 {
 	void* virt;
@@ -38,6 +41,13 @@ typedef struct _noir_vt_msr_entry
 	u64 value;
 }noir_vt_msr_entry,*noir_vt_msr_entry_p;
 
+typedef struct _noir_vt_nested_vcpu
+{
+	memory_descriptor vmxon;
+	memory_descriptor vmcs;
+	u32 status;
+}noir_vt_nested_vcpu,*noir_vt_nested_vcpu_p;
+
 typedef struct _noir_vt_vcpu
 {
 	memory_descriptor vmxon;
@@ -45,6 +55,7 @@ typedef struct _noir_vt_vcpu
 	void* hv_stack;
 	noir_vt_hvm_p relative_hvm;
 	void* ept_manager;
+	noir_vt_nested_vcpu nested_vcpu;
 	u8 status;
 }noir_vt_vcpu,*noir_vt_vcpu_p;
 

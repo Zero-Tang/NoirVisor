@@ -198,22 +198,26 @@ typedef union _ia32_ept_violation_qualification
 {
 	struct
 	{
-		u64 read:1;
-		u64 write:1;
-		u64 execute:1;
-		u64 readable:1;
-		u64 writable:1;
-		u64 executable:1;
-		u64 umx_allowed:1;
-		u64 gva_valid:1;
-		u64 translation_violation:1;
-		u64 um_address:1;
-		u64 rw_address:1;
-		u64 ex_address:1;
-		u64 iret_nmi_block:1;
-		u64 reserved:51;
+		ulong_ptr read:1;
+		ulong_ptr write:1;
+		ulong_ptr execute:1;
+		ulong_ptr readable:1;
+		ulong_ptr writable:1;
+		ulong_ptr executable:1;
+		ulong_ptr umx_allowed:1;
+		ulong_ptr gva_valid:1;
+		ulong_ptr translation_violation:1;
+		ulong_ptr um_address:1;
+		ulong_ptr rw_address:1;
+		ulong_ptr ex_address:1;
+		ulong_ptr iret_nmi_block:1;
+#if defined(_amd64)
+		ulong_ptr reserved:51;
+#else
+		ulong_ptr reserved:19;
+#endif
 	};
-	u64 value;
+	ulong_ptr value;
 }ia32_ept_violation_qualification,*ia32_ept_violation_qualification_p;
 
 noir_ept_manager_p nvc_ept_build_identity_map();

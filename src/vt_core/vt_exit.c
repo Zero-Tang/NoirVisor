@@ -155,10 +155,11 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,u32 exit_r
 				noir_gpr_state_p saved_state=(noir_gpr_state_p)vcpu->hv_stack;
 				invept_descriptor ied;
 				invvpid_descriptor ivd;
-				ulong_ptr gsp,gflags;
+				ulong_ptr gsp,gflags,gcr3;
 				u32 inslen=3;		//By default, vmcall uses 3 bytes.
 				noir_vt_vmread(guest_rsp,&gsp);
 				noir_vt_vmread(guest_rflags,&gflags);
+				noir_vt_vmread(guest_cr3,&gcr3);
 				noir_vt_vmread(vmexit_instruction_length,&inslen);
 				//We may allocate space from unused HV-Stack
 				noir_movsp(saved_state,gpr_state,sizeof(void*)*2);
@@ -173,6 +174,7 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,u32 exit_r
 				ivd.reserved[0]=ivd.reserved[1]=ivd.reserved[2]=0;
 				ivd.linear_address=0;
 				noir_vt_invvpid(vpid_global_invd,&ivd);
+				noir_writecr3(gcr3);
 				//Mark vCPU is in transition state
 				vcpu->status=noir_virt_trans;
 				nvc_vt_resume_without_entry(saved_state);
@@ -230,7 +232,90 @@ void static fastcall nvc_vt_vmx_handler(noir_gpr_state_p gpr_state,u32 exit_reas
 //Besides, we need to virtualize CR4.VMXE and CR4.SMXE here.
 void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
-	noir_vt_advance_rip();
+	//On default NoirVisor's setting of VMCS, this handler only traps writes to CR0 and CR4.
+	u32 cur_proc=noir_get_current_processor();
+	noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[cur_proc];
+	ia32_cr_access_qualification info;
+	bool advance_ip=true;
+	noir_vt_vmread(vmexit_qualification,&info);
+	switch(info.access_type)
+	{
+		case 0:
+		{
+			//Write to Control Register is intercepted!
+			switch(info.cr_num)
+			{
+				case 0:
+				{
+					ulong_ptr data=((ulong_ptr*)gpr_state)[info.gpr_num];
+					//If Guest attempts to clear bits unsupported by VMX, inject #GP.
+					if((data & 0x80000021)!=0x80000021)
+					{
+						noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0);
+						advance_ip=false;
+					}
+					//If Guest attempts to set bits unsupported by CPU, inject #GP.
+					else if(data & 0x1ffaffc0)
+					{
+						noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0);
+						advance_ip=false;
+					}
+					//Otherwise, perform setup.
+					else
+					{
+						noir_vt_vmwrite(guest_cr0,data);
+						noir_vt_vmwrite(cr0_read_shadow,data);
+					}
+					break;
+				}
+				case 4:
+				{
+					ulong_ptr data=((ulong_ptr*)gpr_state)[info.gpr_num];
+					//If Guest attempts to write CR4.VMXE, mark vCPU as Nexted-VMX-Enabled(Disabled).
+					u32 vmxe_mask=noir_bt((u32*)&data,ia32_cr4_vmxe)<<noir_nvt_vmxe;
+					vcpu->nested_vcpu.status|=vmxe_mask;
+					vcpu->nested_vcpu.status&=~vmxe_mask;
+					noir_vt_vmwrite(cr4_read_shadow,vmxe_mask);
+					break;
+				}
+				default:
+				{
+					nv_dprintf("Unexpected write to Control Register is intercepted!\n");
+					break;
+				}
+			}
+			break;
+		}
+		case 1:
+		{
+			//Read from Control Register is intercepted!
+			nv_dprintf("Unexpected read from Control Register is intercepted!\n");
+			break;
+		}
+		case 2:
+		{
+			//Clts instruction is intercepted!
+			//By default setting of VMCS, we won't go here.
+			nv_dprintf("Check your CR0 Guest-Host Mask!\n");
+			break;
+		}
+		case 3:
+		{
+			//Lmsw instruction is intercepted!
+			//We monitor bit 0 of CR0, we might go here as lmsw overwrites bits 0-3.
+			ulong_ptr msw=info.lmsw_src&0xf;
+			if(noir_bt((u32*)&msw,0))
+			{
+				ulong_ptr gcr0;
+				noir_vt_vmread(guest_cr0,&gcr0);
+				gcr0|=msw;
+				gcr0&=~msw;
+				noir_vt_vmwrite(guest_cr0,gcr0);
+			}
+			break;
+		}
+	}
+	if(advance_ip)noir_vt_advance_rip();
 }
 
 //Expected Exit Reason: 31
@@ -303,7 +388,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32
 			u32 proc_num=noir_get_current_processor();
 			noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[proc_num];
 			noir_ept_manager_p eptm=(noir_ept_manager_p)vcpu->ept_manager;
-			noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&info);
+			noir_vt_vmread(vmexit_qualification,&info);
 			if(info.read || info.write)
 			{
 				//If the access is read or write, we grant
@@ -354,10 +439,7 @@ void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,u32 exit_r
 void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state)
 {
 	u32 exit_reason;
-	ulong_ptr cr3;
 	noir_vt_vmread(vmexit_reason,&exit_reason);
-	noir_vt_vmread(guest_cr3,&cr3);
-	noir_writecr3(cr3);			//Switch to the guest paging structure before we continue.
 	if((exit_reason&0xFFFF)<vmx_maximum_exit_reason)
 		vt_exit_handlers[exit_reason&0xFFFF](gpr_state,exit_reason);
 	else

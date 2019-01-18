@@ -58,6 +58,9 @@ typedef struct _NOIR_HOOK_PAGE
 	struct _NOIR_HOOK_PAGE* NextHook;
 }NOIR_HOOK_PAGE,*PNOIR_HOOK_PAGE;
 
+PVOID NoirAllocateContiguousMemory(IN ULONG Length);
+ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress);
+
 NTSETINFORMATIONFILE	NtSetInformationFile=NULL,Old_NtSetInformationFile=NULL;
 PNOIR_HOOK_PAGE noir_hook_pages=NULL;
 ULONG IndexOf_NtOpenProcess=0x23;		//This is hard-code on Windows 7 x64.

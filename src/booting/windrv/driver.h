@@ -30,5 +30,6 @@ void NoirGetNtOpenProcessIndex();
 void NoirSaveImageInfo(IN PDRIVER_OBJECT DriverObject);
 void NoirSetProtectedPID(IN ULONG NewPID);
 void NoirBuildHookedPages();
+void NoirTeardownHookedPages();
 extern ULONG_PTR system_cr3;
 extern ULONG_PTR orig_system_call;

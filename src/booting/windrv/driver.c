@@ -49,6 +49,7 @@ PVOID static NoirGetOutputBuffer(IN PIRP Irp)
 void NoirDriverUnload(IN PDRIVER_OBJECT DriverObject)
 {
 	UNICODE_STRING uniLinkName=RTL_CONSTANT_STRING(LINK_NAME);
+	NoirTeardownHookedPages();
 	IoDeleteSymbolicLink(&uniLinkName);
 	IoDeleteDevice(DriverObject->DeviceObject);
 }

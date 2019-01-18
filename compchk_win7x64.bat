@@ -5,9 +5,10 @@ set libpath=C:\WinDDK\7600.16385.1\lib
 set binpath=.\bin\compchk_win7x64
 set objpath=.\bin\compchk_win7x64\Intermediate
 
-title Compiling NoirVisor
+title Compiling NoirVisor, Checked Build, 64-Bit Windows (AMD64 Architecture)
 echo Project: NoirVisor
 echo Platform: 64-Bit Windows
+echo Preset: Debug/Checked Build
 echo Powered by zero.tangptr@gmail.com
 pause
 
@@ -37,7 +38,7 @@ echo Compiling Core of Cross-Platform Framework (XPF)...
 
 %ddkpath%\amd64\cl.exe .\src\xpf_core\windows\processor.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\processor.cod" /Fo"%objpath%\processor.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
 
-%ddkpath%\amd64\cl.exe .\src\xpf_core\windows\hooks.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /D"BEA_USE_STDCALL" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\hooks.cod" /Fo"%objpath%\hooks.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
+%ddkpath%\amd64\cl.exe .\src\xpf_core\windows\hooks.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /D"BEA_ENGINE_STATIC" /D"BEA_USE_STDCALL" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\hooks.cod" /Fo"%objpath%\hooks.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
 
 %ddkpath%\amd64\cl.exe .\src\xpf_core\windows\winhvm.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\winhvm.cod" /Fo"%objpath%\winhvm.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
 

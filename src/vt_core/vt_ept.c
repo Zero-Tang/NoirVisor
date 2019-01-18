@@ -112,6 +112,17 @@ void nvc_ept_cleanup(noir_ept_manager_p eptm)
 			}
 			noir_free_nonpg_memory(eptm->pde.virt);
 		}
+		if(eptm->pte.head)
+		{
+			noir_ept_pte_descriptor_p cur=eptm->pte.head;
+			while(cur)
+			{
+				noir_ept_pte_descriptor_p next=cur->next;
+				noir_free_contd_memory(cur->virt);
+				noir_free_nonpg_memory(cur);
+				cur=next;
+			}
+		}
 	}
 }
 
@@ -187,7 +198,8 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 			eptm->pdpt.virt[i].write=1;
 			eptm->pdpt.virt[i].execute=1;
 		}
-		nvc_ept_insert_pte(eptm,noir_hook_pages);
+		if(nvc_ept_insert_pte(eptm,noir_hook_pages)==false)
+			goto alloc_failure;
 		//Build Page Map Level-4 Entry (PML4E)
 		eptm->pdpt.phys=noir_get_physical_address(eptm->pdpt.virt);
 		eptm->eptp.virt->value=0;
@@ -202,6 +214,7 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 	}
 	else
 	{
+alloc_failure:
 		nvc_ept_cleanup(eptm);
 		nv_dprintf("Allocation Failure! Failed to build EPT paging structure!\n");
 		eptm=null;

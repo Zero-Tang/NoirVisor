@@ -84,3 +84,16 @@ void noir_copy_memory(void* dest,void* src,size_t cch)
 {
 	RtlCopyMemory(dest,src,cch);
 }
+
+//Some Additional repetitive functions
+ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress)
+{
+	PHYSICAL_ADDRESS pa=MmGetPhysicalAddress(VirtualAddress);
+	return pa.QuadPart;
+}
+
+PVOID NoirAllocateContiguousMemory(IN ULONG Length)
+{
+	PHYSICAL_ADDRESS MaxAddr={0xFFFFFFFFFFFFFFFF};
+	return MmAllocateContiguousMemory(Length,MaxAddr);
+}

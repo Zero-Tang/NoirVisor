@@ -209,6 +209,8 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	noir_vt_vmwrite(guest_cr0,state_p->cr0);
 	noir_vt_vmwrite(guest_cr3,state_p->cr3);
 	noir_vt_vmwrite(guest_cr4,state_p->cr4);
+	noir_vt_vmwrite(cr0_read_shadow,state_p->cr0);
+	noir_vt_vmwrite(cr4_read_shadow,state_p->cr4);
 	//Guest State Area - Debug Controls
 	noir_vt_vmwrite(guest_dr7,state_p->dr7);
 	noir_vt_vmwrite(guest_msr_ia32_debug_ctrl,state_p->debug_ctrl);
@@ -390,8 +392,8 @@ void static nvc_vt_setup_control_area(bool true_msr)
 	nvc_vt_setup_procbased_controls(true_msr);
 	nvc_vt_setup_vmexit_controls(true_msr);
 	nvc_vt_setup_vmentry_controls(true_msr);
-	noir_vt_vmwrite(cr0_guest_host_mask,0x80000001);		//Monitor PE and PG flags
-	noir_vt_vmwrite(cr4_guest_host_mask,0x6000);			//Monitor VMXE and SMXE flags
+	noir_vt_vmwrite(cr0_guest_host_mask,0x80000021);		//Monitor PE, NE and PG flags
+	noir_vt_vmwrite(cr4_guest_host_mask,0x2000);			//Monitor VMXE flags
 }
 
 u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,ulong_ptr gip)
@@ -455,6 +457,14 @@ void static nvc_vt_subvert_processor_thunk(void* context,u32 processor_id)
 	nvc_vt_subvert_processor(&vcpu[processor_id]);
 }
 
+/*
+  In NoirVisor, allocations of VMXON region and VMCS, etc. are performed in Single CPU.
+  It is not Multi-CPU designed in two reasons:
+  Performance consumption is not so significant.
+  In Windows, this routine is expected to be executed in Passive IRQL. However, in the per-CPU
+  routine, it is executed in DPC-Level (KeInsertQueueDpc) or IPI-Level (KeIpiGenericCall), where
+  memory allocations are significantly restricted (DPC-Level) or even prohibited (IPI-Level).
+*/
 noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 {
 	hvm->cpu_count=noir_get_processor_count();

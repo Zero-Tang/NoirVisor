@@ -39,12 +39,6 @@ ULONG GetPatchSize(IN PVOID Code,IN ULONG Length)
 	return s;
 }
 
-ULONG64 static NoirGetPhysicalAddress(IN PVOID VirtualAddress)
-{
-	PHYSICAL_ADDRESS pa=MmGetPhysicalAddress(VirtualAddress);
-	return pa.QuadPart;
-}
-
 NTSTATUS static fake_NtSetInformationFile(IN HANDLE FileHandle,OUT PIO_STATUS_BLOCK IoStatusBlock,IN PVOID FileInformation,IN ULONG Length,IN FILE_INFORMATION_CLASS FileInformationClass)
 {
 	if(FileInformationClass==FileDispositionInformation)
@@ -88,6 +82,13 @@ void static NoirHookNtSetInformationFile(IN PVOID HookedAddress)
 	Old_NtSetInformationFile=ExAllocatePool(NonPagedPool,PatchSize+DetourLength);
 	if(Old_NtSetInformationFile)
 	{
+		/*
+		  I have checked the methods by tandasat, who wrote the DdiMon and SimpleSvmHook.
+		  His way of rip redirecting somewhat lacks robustness.
+		  He uses a byte CC to inject a debug-break and intercept it with a VM-Exit.
+		  This would significantly increase performance consumption in high-rate functions.
+		  My implementation aims to reduce such performance consumption, where VM-Exit is avoided.
+		*/
 #if defined(_WIN64)
 		//This shellcode can breach the 4GB-limit in AMD64 architecture.
 		//No register would be destroyed.
@@ -97,13 +98,17 @@ void static NoirHookNtSetInformationFile(IN PVOID HookedAddress)
 		  mov rax, proxy	-- 48 B8 XX XX XX XX XX XX XX XX
 		  xchg [rsp],rax	-- 48 87 04 24
 		  ret				-- C3
-		  16 bytes in total.
+		  16 bytes in total. This shellcode is provided By AyalaRs.
+		  This could be perfect ShellCode in my opinion.
+		  Note that all functions in Windows Kernel are 16-bytes aligned.
+		  Thus, this shellcode would not break next function.
 		*/
 		BYTE HookCode[16]={0x50,0x48,0xB8,0,0,0,0,0,0,0,0,0x48,0x87,0x04,0x24,0xC3};
 		BYTE DetourCode[14]={0xFF,0x25,0x0,0x0,0x0,0x0,0,0,0,0,0,0,0,0};
 		*(PULONG64)((ULONG64)HookCode+3)=(ULONG64)fake_NtSetInformationFile;
 		*(PULONG64)((ULONG64)DetourCode+6)=(ULONG64)NtSetInformationFile+PatchSize;
 #else
+		//In Win32, this is a common trick of eip redirecting.
 		BYTE HookCode[5]={0xE9,0,0,0,0};
 		BYTE DetourCode[5]={0xE9,0,0,0,0};
 		*(PULONG)((ULONG)HookCode+1)=(ULONG)fake_NtSetInformationFile-(ULONG)NtSetInformationFile-5;
@@ -120,12 +125,11 @@ void NoirBuildHookedPages()
 	HookPages=ExAllocatePool(NonPagedPool,sizeof(NOIR_HOOK_PAGE));
 	if(HookPages)
 	{
-		PHYSICAL_ADDRESS MaxAddr={0xFFFFFFFFFFFFFFFF};
 		UNICODE_STRING uniFuncName=RTL_CONSTANT_STRING(L"NtSetInformationFile");
 		NtSetInformationFile=MmGetSystemRoutineAddress(&uniFuncName);
 		HookPages->OriginalPage.VirtualAddress=NoirGetPageBase(NtSetInformationFile);
 		HookPages->OriginalPage.PhysicalAddress=NoirGetPhysicalAddress(HookPages->OriginalPage.VirtualAddress);
-		HookPages->HookedPage.VirtualAddress=MmAllocateContiguousMemory(PAGE_SIZE,MaxAddr);
+		HookPages->HookedPage.VirtualAddress=NoirAllocateContiguousMemory(PAGE_SIZE);
 		if(HookPages->HookedPage.VirtualAddress)
 		{
 			USHORT PageOffset=(USHORT)((ULONG_PTR)NtSetInformationFile&0xFFF);
@@ -134,6 +138,28 @@ void NoirBuildHookedPages()
 			NoirHookNtSetInformationFile((PVOID)((ULONG_PTR)HookPages->HookedPage.VirtualAddress+PageOffset));
 		}
 		HookPages->NextHook=NULL;
+	}
+}
+
+void NoirTeardownHookedPages()
+{
+	if(HookPages)
+	{
+		PNOIR_HOOK_PAGE CurHp=HookPages;
+		while(CurHp)
+		{
+			PNOIR_HOOK_PAGE NextHp=CurHp->NextHook;
+			if(CurHp->HookedPage.VirtualAddress)
+				MmFreeContiguousMemory(CurHp->HookedPage.VirtualAddress);
+			ExFreePool(CurHp);
+			CurHp=NextHp;
+		}
+		HookPages=NULL;
+	}
+	if(Old_NtSetInformationFile)
+	{
+		ExFreePool(Old_NtSetInformationFile);
+		Old_NtSetInformationFile=NULL;
 	}
 }
 

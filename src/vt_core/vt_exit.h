@@ -103,6 +103,24 @@ typedef union _ia32_vmentry_interruption_information_field
 	u32 value;
 }ia32_vmentry_interruption_information_field,*ia32_vmentry_interruption_information_field_p;
 
+typedef union _ia32_cr_access_qualification
+{
+	struct
+	{
+		ulong_ptr cr_num:4;			//Bits	0-3
+		ulong_ptr access_type:2;	//Bits	4-5
+		ulong_ptr lmsw_type:1;		//Bit	6
+		ulong_ptr reserved0:1;		//Bit	7
+		ulong_ptr gpr_num:4;		//Bits	8-11
+		ulong_ptr reserved1:4;		//Bits	12-15
+		ulong_ptr lmsw_src:16;		//Bits	16-31
+#if defined(_amd64)
+		ulong_ptr reserved2:32;
+#endif
+	};
+	ulong_ptr value;
+}ia32_cr_access_qualification,*ia32_cr_access_qualification_p;
+
 typedef void (fastcall *noir_vt_exit_handler_routine)
 (
  noir_gpr_state_p gpr_state,
