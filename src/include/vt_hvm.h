@@ -14,6 +14,8 @@
 
 #include <nvdef.h>
 
+#define noir_vt_cpuid_submask	0x195a890
+
 #define noir_vt_callexit		1
 
 #define noir_nvt_vmxe			0
@@ -31,7 +33,9 @@ typedef struct _noir_vt_hvm
 	memory_descriptor io_bitmap_a;
 	memory_descriptor io_bitmap_b;
 	memory_descriptor msr_auto_list;
-	u64 eptp;
+	u32 std_leaftotal;
+	u32 ext_leaftotal;
+	u32 cpuid_submask;
 }noir_vt_hvm,*noir_vt_hvm_p;
 
 typedef struct _noir_vt_msr_entry
@@ -40,6 +44,20 @@ typedef struct _noir_vt_msr_entry
 	u32 reserved;
 	u64 value;
 }noir_vt_msr_entry,*noir_vt_msr_entry_p;
+
+typedef struct _noir_vt_cpuid_info
+{
+	u32 eax;
+	u32 ebx;
+	u32 ecx;
+	u32 edx;
+}noir_vt_cpuid_info,*noir_vt_cpuid_info_p;
+
+typedef struct _noir_vt_cached_cpuid
+{
+	noir_vt_cpuid_info* std_leaf;		//0x00000000 - 0x0FFFFFFF
+	noir_vt_cpuid_info* ext_leaf;		//0x80000000 - 0xFFFFFFFF
+}noir_vt_cached_cpuid,*noir_vt_cached_cpuid_p;
 
 typedef struct _noir_vt_nested_vcpu
 {
@@ -55,6 +73,7 @@ typedef struct _noir_vt_vcpu
 	void* hv_stack;
 	noir_vt_hvm_p relative_hvm;
 	void* ept_manager;
+	noir_vt_cached_cpuid cpuid_cache;
 	noir_vt_nested_vcpu nested_vcpu;
 	u8 status;
 }noir_vt_vcpu,*noir_vt_vcpu_p;

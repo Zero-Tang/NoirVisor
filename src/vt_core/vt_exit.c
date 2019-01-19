@@ -113,9 +113,67 @@ void static fastcall nvc_vt_task_switch_handler(noir_gpr_state_p gpr_state,u32 e
 //This is VM-Exit of obligation.
 void static fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
+	u32 cur_proc=noir_get_current_processor();
+	noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[cur_proc];
 	u32 leaf=(u32)gpr_state->rax;
 	u32 subleaf=(u32)gpr_state->rcx;
-	noir_cpuid(leaf,subleaf,(u32*)&gpr_state->rax,(u32*)&gpr_state->rbx,(u32*)&gpr_state->rcx,(u32*)&gpr_state->rdx);
+	if(noir_bt(&leaf,31))
+	{
+		//At this moment, Extended CPUID leaf is invoked.
+		if(leaf>vcpu->relative_hvm->ext_leaftotal+0x80000000)
+		{
+			//Leaf is invalid. No need to check the cache.
+			*(u32*)&gpr_state->rax=0;
+			*(u32*)&gpr_state->rbx=0;
+			*(u32*)&gpr_state->rcx=0;
+			*(u32*)&gpr_state->rdx=0;
+		}
+		else
+		{
+			//On Intel Processors, no subleaf exists on extended leaf.
+			*(u32*)&gpr_state->rax=vcpu->cpuid_cache.ext_leaf[leaf-0x80000000].eax;
+			*(u32*)&gpr_state->rbx=vcpu->cpuid_cache.ext_leaf[leaf-0x80000000].ebx;
+			*(u32*)&gpr_state->rcx=vcpu->cpuid_cache.ext_leaf[leaf-0x80000000].ecx;
+			*(u32*)&gpr_state->rdx=vcpu->cpuid_cache.ext_leaf[leaf-0x80000000].edx;
+		}
+	}
+	else
+	{
+		//At this moment, Standard CPUID leaf is invoked.
+		if(leaf>vcpu->relative_hvm->std_leaftotal)
+		{
+			//Leaf is invalid. No need to check the cache.
+			*(u32*)&gpr_state->rax=0;
+			*(u32*)&gpr_state->rbx=0;
+			*(u32*)&gpr_state->rcx=0;
+			*(u32*)&gpr_state->rdx=0;
+		}
+		else
+		{
+			//We need to check if subleaf hits the cache.
+			bool cache_hit=false;
+			if(leaf<32)
+			{
+				if(noir_bt(&vcpu->relative_hvm->cpuid_submask,leaf))
+					cache_hit=(subleaf==0);
+				else
+					cache_hit=true;
+			}
+			if(cache_hit)
+			{
+				//If cache is hit, use cached info.
+				*(u32*)&gpr_state->rax=vcpu->cpuid_cache.std_leaf[leaf].eax;
+				*(u32*)&gpr_state->rbx=vcpu->cpuid_cache.std_leaf[leaf].ebx;
+				*(u32*)&gpr_state->rcx=vcpu->cpuid_cache.std_leaf[leaf].ecx;
+				*(u32*)&gpr_state->rdx=vcpu->cpuid_cache.std_leaf[leaf].edx;
+			}
+			else
+			{
+				//Otherwise, invoke cpuid.
+				noir_cpuid(leaf,subleaf,(u32*)&gpr_state->rax,(u32*)&gpr_state->rbx,(u32*)&gpr_state->rcx,(u32*)&gpr_state->rdx);
+			}
+		}
+	}
 	noir_vt_advance_rip();
 }
 

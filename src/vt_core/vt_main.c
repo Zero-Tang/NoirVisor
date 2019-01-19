@@ -396,6 +396,16 @@ void static nvc_vt_setup_control_area(bool true_msr)
 	noir_vt_vmwrite(cr4_guest_host_mask,0x2000);			//Monitor VMXE flags
 }
 
+void static nvc_vt_setup_cpuid_cache(noir_vt_vcpu_p vcpu)
+{
+	noir_vt_cached_cpuid_p cache=&vcpu->cpuid_cache;
+	u32 i;
+	for(i=1;i<=vcpu->relative_hvm->std_leaftotal;i++)
+		noir_cpuid(i,0,&cache->std_leaf[i].eax,&cache->std_leaf[i].ebx,&cache->std_leaf[i].ecx,&cache->std_leaf[i].edx);
+	for(i=0x80000001;i<=vcpu->relative_hvm->ext_leaftotal+0x80000000;i++)
+		noir_cpuid(i,0,&cache->ext_leaf[i].eax,&cache->ext_leaf[i].ebx,&cache->ext_leaf[i].ecx,&cache->ext_leaf[i].edx);
+}
+
 u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,ulong_ptr gip)
 {
 	ia32_vmx_basic_msr vt_basic;
@@ -409,6 +419,7 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	nvc_vt_setup_host_state_area(vcpu,&state);
 	nvc_vt_setup_memory_virtualization(vcpu);
 	nvc_vt_setup_msr_hook_p(vcpu);
+	nvc_vt_setup_cpuid_cache(vcpu);
 	vcpu->status=noir_virt_on;
 	//Everything are done, perform subversion.
 	vst=noir_vt_vmlaunch();
@@ -455,6 +466,32 @@ void static nvc_vt_subvert_processor_thunk(void* context,u32 processor_id)
 	*(u32*)vcpu[processor_id].vmcs.virt=(u32)vt_basic.revision_id;
 	nv_dprintf("Processor %d entered subversion routine!\n",processor_id);
 	nvc_vt_subvert_processor(&vcpu[processor_id]);
+}
+
+bool static nvc_vt_build_cpuid_cache(noir_hypervisor_p hvm)
+{
+	noir_vt_cpuid_info vistd,viext;
+	noir_vt_cached_cpuid_p cache;
+	u32 i=0;
+	noir_cpuid(0,0,&vistd.eax,&vistd.ebx,&vistd.ecx,&vistd.edx);
+	hvm->relative_hvm->std_leaftotal=vistd.eax;
+	noir_cpuid(0x80000000,0,&viext.eax,&viext.ebx,&viext.ecx,&viext.edx);
+	hvm->relative_hvm->ext_leaftotal=viext.eax-0x80000000;
+	for(cache=&hvm->virtual_cpu[i].cpuid_cache;i<hvm->cpu_count;cache=&hvm->virtual_cpu[++i].cpuid_cache)
+	{
+		cache->std_leaf=noir_alloc_nonpg_memory((hvm->relative_hvm->std_leaftotal+1)*4);
+		if(cache->std_leaf)
+			*cache->std_leaf=vistd;
+		else
+			return false;
+		cache->ext_leaf=noir_alloc_nonpg_memory((hvm->relative_hvm->ext_leaftotal+1)*4);
+		if(cache->ext_leaf==null)
+			*cache->ext_leaf=viext;
+		else
+			return false;
+	}
+	hvm->relative_hvm->cpuid_submask=noir_vt_cpuid_submask;
+	return true;
 }
 
 /*
@@ -513,6 +550,7 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 		hvm->relative_hvm->msr_auto_list.phys=noir_get_physical_address(hvm->relative_hvm->msr_auto_list.virt);
 	else
 		goto alloc_failure;
+	if(nvc_vt_build_cpuid_cache(hvm)==false)goto alloc_failure;
 	if(nvc_vt_build_exit_handlers()==noir_insufficient_resources)goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;
 	nv_dprintf("All allocations are done, start subversion!\n");
