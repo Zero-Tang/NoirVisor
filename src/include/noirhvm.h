@@ -13,11 +13,7 @@
 */
 
 #include "nvdef.h"
-<<<<<<< HEAD
-#if defined(_vt_drv) || defined(_vt_exit)
-=======
 #if defined(_vt_drv) || defined(_vt_exit) || defined(_vt_ept)
->>>>>>> intel_vt-x_dev
 #include "vt_hvm.h"
 #elif defined(_svm_drv) || defined(_svm_exit)
 #include "svm_hvm.h"

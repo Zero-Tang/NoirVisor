@@ -75,10 +75,7 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 	{
 		case IOCTL_Subvert:
 		{
-<<<<<<< HEAD
-=======
 			NoirSetProtectedPID((ULONG)PsGetCurrentProcessId());
->>>>>>> intel_vt-x_dev
 			NoirBuildHypervisor();
 			break;
 		}
@@ -87,7 +84,6 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			NoirTeardownHypervisor();
 			break;
 		}
-<<<<<<< HEAD
 		case IOCTL_NvVer:
 		{
 			*(PULONG)OutputBuffer=NoirVisorVersion();
@@ -101,11 +97,11 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		case IOCTL_CpuPn:
 		{
 			NoirGetProcessorName(OutputBuffer);
-=======
+			break;
+		}
 		case IOCTL_SetPID:
 		{
 			NoirSetProtectedPID(*(PULONG)InputBuffer);
->>>>>>> intel_vt-x_dev
 			break;
 		}
 		default:

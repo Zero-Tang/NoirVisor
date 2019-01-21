@@ -22,21 +22,16 @@
 
 #define IOCTL_Subvert		CTL_CODE_GEN(0x801)
 #define IOCTL_Restore		CTL_CODE_GEN(0x802)
-<<<<<<< HEAD
+#define IOCTL_SetPID		CTL_CODE_GEN(0x803)
 #define IOCTL_NvVer			CTL_CODE_GEN(0x810)
 #define IOCTL_CpuVs			CTL_CODE_GEN(0x811)
 #define IOCTL_CpuPn			CTL_CODE_GEN(0x812)
 
-NTSTATUS NoirBuildHypervisor();
+ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();
 ULONG NoirVisorVersion();
 void NoirGetVendorString(OUT PSTR VendorString);
 void NoirGetProcessorName(OUT PSTR ProcessorName);
-=======
-#define IOCTL_SetPID		CTL_CODE_GEN(0x803)
-
-ULONG NoirBuildHypervisor();
-void NoirTeardownHypervisor();
 void NoirGetNtOpenProcessIndex();
 void NoirSaveImageInfo(IN PDRIVER_OBJECT DriverObject);
 void NoirSetProtectedPID(IN ULONG NewPID);
@@ -44,4 +39,3 @@ void NoirBuildHookedPages();
 void NoirTeardownHookedPages();
 extern ULONG_PTR system_cr3;
 extern ULONG_PTR orig_system_call;
->>>>>>> intel_vt-x_dev

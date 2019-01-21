@@ -150,7 +150,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 		case noir_svm_callexit:
 		{
 			//Validate the caller to prevent malicious unloading request.
-			if(gip>=hvm->hv_image.base && gip<hvm->hv_image.base+hvm->hv_image.size)
+			if(gip>=hvm_p->hv_image.base && gip<hvm_p->hv_image.base+hvm_p->hv_image.size)
 			{
 				//Save the address to return.
 				gpr_state->rax=noir_svm_vmread(vcpu->vmcb.virt,next_rip);

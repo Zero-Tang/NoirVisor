@@ -14,10 +14,6 @@
 
 #include <ntddk.h>
 #include <windef.h>
-<<<<<<< HEAD
-#include <nvstatus.h>
-=======
->>>>>>> intel_vt-x_dev
 #include "winhvm.h"
 
 ULONG NoirBuildHypervisor()
@@ -30,7 +26,6 @@ void NoirTeardownHypervisor()
 	nvc_teardown_hypervisor();
 }
 
-<<<<<<< HEAD
 ULONG NoirVisorVersion()
 {
 	return noir_visor_version();
@@ -44,7 +39,8 @@ void NoirGetVendorString(OUT PSTR VendorString)
 void NoirGetProcessorName(OUT PSTR ProcessorName)
 {
 	noir_get_processor_name(ProcessorName);
-=======
+}
+
 void NoirSaveImageInfo(IN PDRIVER_OBJECT DriverObject)
 {
 	if(DriverObject)
@@ -58,5 +54,4 @@ void nvc_store_image_info(OUT PVOID* Base,OUT PULONG Size)
 {
 	if(Base)*Base=NvImageBase;
 	if(Size)*Size=NvImageSize;
->>>>>>> intel_vt-x_dev
 }
