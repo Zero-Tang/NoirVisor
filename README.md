@@ -28,13 +28,7 @@ Currently, NoirVisor supports the Windows Operating System newer than or same as
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor is now focused on developping hypervisor for AMD-V.
-<<<<<<< HEAD
-Intel VT-x is not in this branch of development. Go to "intel_vt-x_dev" branch.
-=======
-This branch is for developping the hypervisor for Intel VT-x.
-For AMD-V, go to the master branch.
->>>>>>> intel_vt-x_dev
+Project NoirVisor has finished developping the basic hypervisor on Intel VT-x. Now it focuses on AMD-V development.
 
 # License
 All the codes, except the BeaEngine, with NoirVisor are licensed under MIT License.
