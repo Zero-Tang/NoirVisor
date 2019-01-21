@@ -49,24 +49,33 @@ bool noir_is_under_hvm()
 
 noir_status nvc_build_hypervisor()
 {
-	hvm=noir_alloc_nonpg_memory(sizeof(noir_hypervisor));
-	if(hvm)
+	hvm_p=noir_alloc_nonpg_memory(sizeof(noir_hypervisor));
+	if(hvm_p)
 	{
 		u32 m=0;
-		noir_cpuid(0,0,&m,(u32*)&hvm->vendor_string[0],(u32*)&hvm->vendor_string[8],(u32*)&hvm->vendor_string[4]);
-		hvm->vendor_string[12]=0;
-		if(strcmp(hvm->vendor_string,"GenuineIntel")==0)
-			hvm->cpu_manuf=intel_processor;
-		else if(strcmp(hvm->vendor_string,"AuthenticAMD")==0)
-			hvm->cpu_manuf=amd_processor;
+		noir_cpuid(0,0,&m,(u32*)&hvm_p->vendor_string[0],(u32*)&hvm_p->vendor_string[8],(u32*)&hvm_p->vendor_string[4]);
+		hvm_p->vendor_string[12]=0;
+		if(strcmp(hvm_p->vendor_string,"GenuineIntel")==0)
+			hvm_p->cpu_manuf=intel_processor;
+		else if(strcmp(hvm_p->vendor_string,"AuthenticAMD")==0)
+			hvm_p->cpu_manuf=amd_processor;
 		else
-			hvm->cpu_manuf=unknown_processor;
-		switch(hvm->cpu_manuf)
+			hvm_p->cpu_manuf=unknown_processor;
+		nvc_store_image_info(&hvm_p->hv_image.base,&hvm_p->hv_image.size);
+		switch(hvm_p->cpu_manuf)
 		{
 			case intel_processor:
 			{
-				nv_dprintf("Support to Intel VT-x is not yet implemented!\n");
-				return noir_not_implemented;
+				if(nvc_is_vt_supported())
+				{
+					nv_dprintf("Starting subversion with VMX Engine!\n");
+					return nvc_vt_subvert_system(hvm_p);
+				}
+				else
+				{
+					nv_dprintf("Your processor does not support Intel VT-x!\n");
+					return noir_vmx_not_supported;
+				}
 				break;
 			}
 			case amd_processor:
@@ -74,7 +83,7 @@ noir_status nvc_build_hypervisor()
 				if(nvc_is_svm_supported())
 				{
 					nv_dprintf("Starting subversion with SVM Engine!\n");
-					return nvc_svm_subvert_system(hvm);
+					return nvc_svm_subvert_system(hvm_p);
 				}
 				else
 				{
@@ -95,17 +104,18 @@ noir_status nvc_build_hypervisor()
 
 void nvc_teardown_hypervisor()
 {
-	if(hvm)
+	if(hvm_p)
 	{
-		switch(hvm->cpu_manuf)
+		switch(hvm_p->cpu_manuf)
 		{
 			case intel_processor:
 			{
+				nvc_vt_restore_system(hvm_p);
 				break;
 			}
 			case amd_processor:
 			{
-				nvc_svm_restore_system(hvm);
+				nvc_svm_restore_system(hvm_p);
 				break;
 			}
 			default:
@@ -114,6 +124,6 @@ void nvc_teardown_hypervisor()
 				break;
 			}
 		}
-		noir_free_nonpg_memory(hvm);
+		noir_free_nonpg_memory(hvm_p);
 	}
 }

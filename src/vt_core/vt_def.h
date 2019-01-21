@@ -7,16 +7,16 @@
   without any warranty (no matter implied warranty of merchantablity
   or fitness for a particular purpose, etc.).
 
-  File location: /include/vt/vmxdef.h
+  File location: /include/vt/vt_def.h
 
-  Update Time: Sept.12th, 2018
+  Update Time: Dec.22nd, 2018
 */
 
 #include <nvdef.h>
 
 #define vmx_cpuid_support_bit		5
 
-#define vmx_success(s)				s==0
+#define vt_attrib(s,a)				(u32)(a|(s==0?0x10000:0))
 
 typedef union _ia32_vmx_basic_msr
 {
@@ -262,7 +262,10 @@ typedef union _ia32_vmx_ept_vpid_cap_msr
 		u64 reserved6:5;						//bits	27-31
 		u64	support_invvpid:1;					//bit	32
 		u64	reserved7:7;						//bits	33-39
-		u64 supported_invvpid_type:4;			//bits	40-43
+		u64 support_ia_invvpid:1;				//bit	40
+		u64 support_sc_invvpid:1;				//bit	41
+		u64 support_ac_invvpid:1;				//bit	42
+		u64 support_scrg_invvpid:1;				//bit	43
 		u64 reserved8:20;						//bits	44-63
 	};
 	u64 value;
@@ -287,19 +290,14 @@ typedef union _vmx_segment_access_right
 	u32 value;
 }vmx_segment_access_right,*vmx_segment_access_right_p;
 
-u8 nhv_vt_subvert_processor_a(nhv_vt_virtual_cpu_p virtual_cpu,noir_processor_state_p processor_state);
-extern void nhv_vt_exit_handler_a();
-
-u32 inline vmx_lar(u16 attributes)
+typedef struct ia32_vmx_msr_auto
 {
-	vmx_segment_access_right ar;
-	ar.value=attributes;
-	ar.reserved0=0;
-	ar.reserved1=0;
-	ar.unusable=!ar.present;
-	return ar.value;
-}
+	u32 index;
+	u32 reserved;
+	u64 data;
+}ia32_vmx_msr_auto,*ia32_vmx_msr_auto_p;
 
+#if defined(_vt_drv)
 char* vt_error_message[0x20]=
 {
 	"Invalid Error, Number=0!",										//Error=0
@@ -340,3 +338,4 @@ char* vt_error_message[0x20]=
 	"Invalid Error, Number=30!",									//Error=30
 	"Invalid Error, Number=31!"										//Error=31
 };
+#endif

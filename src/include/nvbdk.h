@@ -15,7 +15,12 @@
 
 #include <nvdef.h>
 
-#define page_size		0x1000
+#define page_size				0x1000
+#define page_4kb_size			0x1000
+#define page_2mb_size			0x200000
+#define page_1gb_size			0x40000000
+
+#define selector_rplti_mask		0xfff8
 
 typedef union _large_integer
 {
@@ -61,6 +66,10 @@ typedef struct _noir_processor_state
 	ulong_ptr dr3;
 	ulong_ptr dr6;
 	ulong_ptr dr7;
+	u64 sysenter_cs;
+	u64 sysenter_esp;
+	u64 sysenter_eip;
+	u64 debug_ctrl;
 	u64 pat;
 	u64 efer;
 	u64 star;
@@ -99,6 +108,7 @@ typedef void (*noir_broadcast_worker)(void* context,u32 processor_id);
 void noir_save_processor_state(noir_processor_state_p);
 void noir_generic_call(noir_broadcast_worker worker,void* context);
 u32 noir_get_processor_count();
+u32 noir_get_current_processor();
 
 //Memory Facility
 void* noir_alloc_contd_memory(size_t length);
@@ -110,6 +120,7 @@ void noir_free_paged_memory(void* virtual_address);
 u64 noir_get_physical_address(void* virtual_address);
 void* noir_map_physical_memory(u64 physical_address,size_t length);
 void noir_unmap_physical_memory(void* virtual_address,size_t length);
+void noir_copy_memory(void* dest,void* src,u32 cch);
 
 //Debugging Facility
 void cdecl nv_dprintf(const char* format,...);

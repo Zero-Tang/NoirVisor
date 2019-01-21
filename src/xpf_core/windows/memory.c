@@ -17,7 +17,7 @@
 
 void* noir_alloc_contd_memory(size_t length)
 {
-	LARGE_INTEGER M={0xFFFFFFFFFFFFFFFF};
+	PHYSICAL_ADDRESS M={0xFFFFFFFFFFFFFFFF};
 	PVOID p=MmAllocateContiguousMemory(length,M);
 	if(p)RtlZeroMemory(p,length);
 	return p;
@@ -78,4 +78,22 @@ void* noir_map_physical_memory(ULONG64 physical_address,size_t length)
 void noir_unmap_physical_memory(void* virtual_address,size_t length)
 {
 	MmUnmapIoSpace(virtual_address,length);
+}
+
+void noir_copy_memory(void* dest,void* src,size_t cch)
+{
+	RtlCopyMemory(dest,src,cch);
+}
+
+//Some Additional repetitive functions
+ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress)
+{
+	PHYSICAL_ADDRESS pa=MmGetPhysicalAddress(VirtualAddress);
+	return pa.QuadPart;
+}
+
+PVOID NoirAllocateContiguousMemory(IN ULONG Length)
+{
+	PHYSICAL_ADDRESS MaxAddr={0xFFFFFFFFFFFFFFFF};
+	return MmAllocateContiguousMemory(Length,MaxAddr);
 }

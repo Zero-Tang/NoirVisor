@@ -19,7 +19,8 @@ DO NOT PROVIDE CODES WITH C++ WHICH INVOLVES THE NoirVisor Core IN YOUR PULL-REQ
 
 # Build
 To build a kernel-mode driver on Windows, you should install Windows Driver Kit 7.1.0 to default path on C disk. Then run the provided batch file to build it.
-Also note that, you have create certain directories required by the batch complilation.
+Also note that, you have to create certain directories required by the batch complilation.
+You may download the WDK 7.1.0 from Microsoft: https://www.microsoft.com/en-us/download/details.aspx?id=11800
 
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal.
@@ -28,7 +29,13 @@ If there is already a hypervisor running in the system, make sure it supports na
 
 # Development Status
 Project NoirVisor is now focused on developping hypervisor for AMD-V.
+<<<<<<< HEAD
 Intel VT-x is not in this branch of development. Go to "intel_vt-x_dev" branch.
+=======
+This branch is for developping the hypervisor for Intel VT-x.
+For AMD-V, go to the master branch.
+>>>>>>> intel_vt-x_dev
 
 # License
-All the codes with NoirVisor are licensed under MIT License.
+All the codes, except the BeaEngine, with NoirVisor are licensed under MIT License.
+BeaEngine, as declared by BeatriX, is licensed under Lesser GPL v3. Therefore, partial code, under this repository, from BeaEngine are licensed under LGPL v3.

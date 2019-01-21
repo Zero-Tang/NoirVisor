@@ -7,7 +7,7 @@
   without any warranty (no matter implied warranty of merchantablity
   or fitness for a particular purpose, etc.).
 
-  File location: /include/vt/vmcs.h
+  File location: /include/vt/vt_vmcs.h
 
   Update Time: Sept.21th, 2018
 */
@@ -57,8 +57,8 @@ typedef enum _vmx_vmcs_encoding
 	eoi_exit_bitmap2=0x2020,
 	eoi_exit_bitmap3=0x2022,
 	eptp_list_address=0x2024,
-	vm_read_bitmap_address=0x2026,
-	vm_write_bitmap_address=0x2028,
+	vmread_bitmap_address=0x2026,
+	vmwrite_bitmap_address=0x2028,
 	virtualization_exception_information_address=0x202A,
 	xss_exiting_bitmap=0x202C,
 	encls_exiting_bitmap=0x202E,
@@ -71,10 +71,10 @@ typedef enum _vmx_vmcs_encoding
 	guest_msr_ia32_pat=0x2804,
 	guest_msr_ia32_efer=0x2806,
 	guest_msr_ia32_perf_global_ctrl=0x2808,
-	guest_ept_pdpte0=0x280A,
-	guest_ept_pdpte1=0x280C,
-	guest_ept_pdpte2=0x280E,
-	guest_ept_pdpte3=0x2810,
+	guest_pdpte0=0x280A,
+	guest_pdpte1=0x280C,
+	guest_pdpte2=0x280E,
+	guest_pdpte3=0x2810,
 	guest_msr_ia32_bound_config=0x2812,
 	//64-Bit Host State Fields
 	host_msr_ia32_pat=0x2C00,
