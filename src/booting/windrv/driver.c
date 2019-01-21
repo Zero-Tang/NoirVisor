@@ -82,6 +82,21 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			NoirTeardownHypervisor();
 			break;
 		}
+		case IOCTL_NvVer:
+		{
+			*(PULONG)OutputBuffer=NoirVisorVersion();
+			break;
+		}
+		case IOCTL_CpuVs:
+		{
+			NoirGetVendorString(OutputBuffer);
+			break;
+		}
+		case IOCTL_CpuPn:
+		{
+			NoirGetProcessorName(OutputBuffer);
+			break;
+		}
 		default:
 		{
 			break;

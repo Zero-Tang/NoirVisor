@@ -22,6 +22,12 @@
 
 #define IOCTL_Subvert		CTL_CODE_GEN(0x801)
 #define IOCTL_Restore		CTL_CODE_GEN(0x802)
+#define IOCTL_NvVer			CTL_CODE_GEN(0x810)
+#define IOCTL_CpuVs			CTL_CODE_GEN(0x811)
+#define IOCTL_CpuPn			CTL_CODE_GEN(0x812)
 
 NTSTATUS NoirBuildHypervisor();
 void NoirTeardownHypervisor();
+ULONG NoirVisorVersion();
+void NoirGetVendorString(OUT PSTR VendorString);
+void NoirGetProcessorName(OUT PSTR ProcessorName);

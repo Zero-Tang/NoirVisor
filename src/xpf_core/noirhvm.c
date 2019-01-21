@@ -18,6 +18,25 @@
 #include <noirhvm.h>
 #include <intrin.h>
 
+u32 noir_visor_version()
+{
+	u16 major=1;
+	u16 minor=0;
+	return major<<16|minor;
+}
+
+void noir_get_vendor_string(char* vendor_string)
+{
+	noir_cpuid(0,0,null,(u32*)&vendor_string[0],(u32*)&vendor_string[8],(u32*)&vendor_string[4]);
+}
+
+void noir_get_processor_name(char* processor_name)
+{
+	noir_cpuid(0x80000002,0,(u32*)&processor_name[0x0],(u32*)&processor_name[0x4],(u32*)&processor_name[0x8],(u32*)&processor_name[0xC]);
+	noir_cpuid(0x80000003,0,(u32*)&processor_name[0x10],(u32*)&processor_name[0x14],(u32*)&processor_name[0x18],(u32*)&processor_name[0x1C]);
+	noir_cpuid(0x80000004,0,(u32*)&processor_name[0x20],(u32*)&processor_name[0x24],(u32*)&processor_name[0x28],(u32*)&processor_name[0x2C]);
+}
+
 bool noir_is_under_hvm()
 {
 	u32 c=0;

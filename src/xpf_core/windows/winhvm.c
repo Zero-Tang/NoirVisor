@@ -17,21 +17,27 @@
 #include <nvstatus.h>
 #include "winhvm.h"
 
-NTSTATUS NoirBuildHypervisor()
+ULONG NoirBuildHypervisor()
 {
-	noir_status st=nvc_build_hypervisor();
-	switch(st)
-	{
-		case noir_success:
-			return STATUS_SUCCESS;
-		case noir_insufficient_resources:
-			return STATUS_INSUFFICIENT_RESOURCES;
-		default:
-			return STATUS_UNSUCCESSFUL;
-	}
+	return nvc_build_hypervisor();
 }
 
 void NoirTeardownHypervisor()
 {
 	nvc_teardown_hypervisor();
+}
+
+ULONG NoirVisorVersion()
+{
+	return noir_visor_version();
+}
+
+void NoirGetVendorString(OUT PSTR VendorString)
+{
+	noir_get_vendor_string(VendorString);
+}
+
+void NoirGetProcessorName(OUT PSTR ProcessorName)
+{
+	noir_get_processor_name(ProcessorName);
 }
