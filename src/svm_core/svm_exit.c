@@ -178,7 +178,8 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 //Expected Intercept Code: -1
 void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	;
+	nv_dprintf("[Processor %d] Guest State is Invalid! VMCB: 0x%p\n",vcpu->proc_id,vcpu->vmcb.virt);
+	//Dump State in VMCB and Print them to Debugger.
 }
 
 void nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)
@@ -196,7 +197,7 @@ void nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)
 	//Check if the interception is due to invalid guest state.
 	//Invoke the handler accordingly.
 	if(intercept_code==-1)
-		nvc_svm_default_handler(gpr_state,vcpu);
+		nvc_svm_invalid_guest_state(gpr_state,vcpu);
 	else
 		svm_exit_handlers[code_group][code_num](gpr_state,vcpu);
 	//Since rax register is operated, save to VMCB.

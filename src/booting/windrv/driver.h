@@ -23,6 +23,8 @@
 #define IOCTL_Subvert		CTL_CODE_GEN(0x801)
 #define IOCTL_Restore		CTL_CODE_GEN(0x802)
 #define IOCTL_SetPID		CTL_CODE_GEN(0x803)
+#define IOCTL_SetNs			CTL_CODE_GEN(0x804)
+#define IOCTL_SetVs			CTL_CODE_GEN(0x805)
 #define IOCTL_NvVer			CTL_CODE_GEN(0x810)
 #define IOCTL_CpuVs			CTL_CODE_GEN(0x811)
 #define IOCTL_CpuPn			CTL_CODE_GEN(0x812)
@@ -39,3 +41,5 @@ void NoirBuildHookedPages();
 void NoirTeardownHookedPages();
 extern ULONG_PTR system_cr3;
 extern ULONG_PTR orig_system_call;
+extern PSTR virtual_vstr;
+extern PSTR virtual_nstr;

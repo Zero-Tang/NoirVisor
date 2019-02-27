@@ -35,6 +35,7 @@ typedef struct _noir_svm_vcpu
 	memory_descriptor hsave;
 	void* hv_stack;
 	noir_svm_hvm_p relative_hvm;
+	u32 proc_id;
 	u8 status;
 	struct
 	{

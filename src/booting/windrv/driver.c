@@ -22,7 +22,11 @@ PVOID static NoirGetInputBuffer(IN PIRP Irp)
 	if(irpsp->MajorFunction==IRP_MJ_DEVICE_CONTROL || irpsp->MajorFunction==IRP_MJ_INTERNAL_DEVICE_CONTROL)
 	{
 		ULONG IoCode=irpsp->Parameters.DeviceIoControl.IoControlCode;
-		if(IoCode & METHOD_BUFFERED || IoCode & METHOD_IN_DIRECT || IoCode & METHOD_OUT_DIRECT)
+		if(IoCode & METHOD_BUFFERED)
+			return Irp->AssociatedIrp.SystemBuffer;
+		else if(IoCode & METHOD_IN_DIRECT)
+			return Irp->AssociatedIrp.SystemBuffer;
+		else if(IoCode & METHOD_OUT_DIRECT)
 			return Irp->AssociatedIrp.SystemBuffer;
 		else
 			return irpsp->Parameters.DeviceIoControl.Type3InputBuffer;
@@ -84,6 +88,21 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			NoirTeardownHypervisor();
 			break;
 		}
+		case IOCTL_SetPID:
+		{
+			NoirSetProtectedPID(*(PULONG)InputBuffer);
+			break;
+		}
+		case IOCTL_SetVs:
+		{
+			RtlCopyMemory(virtual_vstr,InputBuffer,12);
+			break;
+		}
+		case IOCTL_SetNs:
+		{
+			RtlCopyMemory(virtual_nstr,InputBuffer,48);
+			break;
+		}
 		case IOCTL_NvVer:
 		{
 			*(PULONG)OutputBuffer=NoirVisorVersion();
@@ -97,11 +116,6 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		case IOCTL_CpuPn:
 		{
 			NoirGetProcessorName(OutputBuffer);
-			break;
-		}
-		case IOCTL_SetPID:
-		{
-			NoirSetProtectedPID(*(PULONG)InputBuffer);
 			break;
 		}
 		default:

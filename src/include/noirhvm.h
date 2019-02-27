@@ -82,6 +82,8 @@ void nvc_store_image_info(ulong_ptr* base,u32* size);
 noir_hypervisor_p hvm_p=null;
 ulong_ptr system_cr3=0;
 ulong_ptr orig_system_call=0;
+char virtual_vstr[13]="AuthenticAMD\0";
+char virtual_nstr[49]="AMD Ryzen 7 1700 Eight-Core Processor\0";
 #else
 extern noir_hypervisor_p hvm_p;
 extern ulong_ptr system_cr3;

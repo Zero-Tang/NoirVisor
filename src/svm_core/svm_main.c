@@ -100,6 +100,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	nvc_svm_enable();
 	noir_save_processor_state(&state);
 	//Setup State-Save Area
+	noir_int3();
 	//Save Segment State - CS
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_cs_selector,state.cs.selector);
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_cs_attrib,svm_attrib(state.cs.attrib));
@@ -150,6 +151,10 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_cr2,state.cr2);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_cr3,state.cr3);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_cr4,state.cr4);
+#if defined(_amd64)
+	//Save Task Priority Register (CR8)
+	noir_svm_vmwrite8(vcpu->vmcb.virt,avid_control,(u8)state.cr8);
+#endif
 	//Save Debug Registers
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_dr6,state.dr6);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_dr7,state.dr7);
@@ -180,6 +185,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	//We will assign a guest asid other than 1 as we are nesting a hypervisor.
 	//Enable Global Interrupt.
 	noir_svm_stgi();
+	noir_int3();
 	//Load Partial Guest State by vmload and continue subversion.
 	noir_svm_vmload((ulong_ptr)vcpu->vmcb.phys);
 	return (ulong_ptr)vcpu->vmcb.phys;
@@ -198,6 +204,7 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 void static nvc_svm_subvert_processor_thunk(void* context,u32 processor_id)
 {
 	noir_svm_vcpu_p vcpu=(noir_svm_vcpu_p)context;
+	vcpu[processor_id].proc_id=processor_id;
 	nvc_svm_subvert_processor(&vcpu[processor_id]);
 }
 
