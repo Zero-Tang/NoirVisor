@@ -14,7 +14,6 @@
 
 extern nvc_svm_subvert_processor_i:proc
 extern nvc_svm_exit_handler:proc
-extern host_rsp_list:qword
 
 ; Macro for pushing all GPRs to stack.
 pushaq macro
@@ -70,12 +69,17 @@ noir_svm_vmmcall endp
 
 nvc_svm_return proc
 
-	;Switch the stack to the guest.
+	; Switch the stack where state is saved.
 	mov rsp,rcx
-	;GPR state has already been saved to the stack by VMM.
+	; GPR state has already been saved to the stack by VMM.
 	popaq
 	popfq
-	;The target rip is saved to rax register.
+	; The target rsp is saved to rdx register.
+	mov rsp,rdx
+	; The target rflags is saved to rcx register.
+	push rcx
+	popfq
+	; The target rip is saved to rax register.
 	jmp rax
 
 nvc_svm_return endp
@@ -107,6 +111,8 @@ nvc_svm_subvert_processor_a proc
 
 	pushfq
 	pushaq
+	push rcx
+	mov rcx,qword ptr[rcx+8]
 	mov rdx,rsp
 	mov r8,svm_launched
 	sub rsp,20h
@@ -116,12 +122,9 @@ nvc_svm_subvert_processor_a proc
 	call nvc_svm_subvert_processor_i
 	add rsp,20h
 	; Now, rax stores the physical address of VMCB.
-	; Save rsp from host-rsp list.
-	mov rdx,host_rsp_list
-	; gs:[184h] stores the processor index.
-	movzx rcx,byte ptr gs:[184h]
-	; Switch rsp to host stack.
-	mov rsp,qword ptr[rdx+rcx*8]
+	; Switch stack to host stack now.
+	pop rcx
+	mov rsp,rcx
 	; Stack is switched, launch guest now.
 	; At this moment, the vmrun instruction
 	; behaves like vmlaunch in Intel VT-x.

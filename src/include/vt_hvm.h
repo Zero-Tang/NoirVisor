@@ -14,6 +14,7 @@
 
 #include <nvdef.h>
 
+// This is Intel specific.
 #define noir_vt_cpuid_submask	0x195a890
 
 #define noir_vt_callexit		1
