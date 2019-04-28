@@ -13,8 +13,8 @@
 */
 
 #include <nvdef.h>
-#include <noirhvm.h>
 #include <nvbdk.h>
+#include <noirhvm.h>
 #include <nvstatus.h>
 #include <svm_intrin.h>
 #include <intrin.h>
@@ -93,8 +93,8 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 
 void static nvc_svm_setup_cpuid_cache(noir_svm_vcpu_p vcpu)
 {
-	noir_svm_cpuid_info_p std_cache=&vcpu->cpuid_cache.std_leaf;
-	noir_svm_cpuid_info_p ext_cache=&vcpu->cpuid_cache.ext_leaf;
+	noir_svm_cpuid_info_p std_cache=vcpu->cpuid_cache.std_leaf;
+	noir_svm_cpuid_info_p ext_cache=vcpu->cpuid_cache.ext_leaf;
 	u32 i;
 	for(i=1;i<=vcpu->relative_hvm->std_leaftotal;i++)
 		noir_cpuid(i,0,&std_cache->eax,&std_cache->ebx,&std_cache->ecx,&std_cache->edx);
@@ -262,14 +262,14 @@ bool static nvc_svm_build_cpuid_cache(noir_hypervisor_p hvm_p)
 	hvm_p->relative_hvm->ext_leaftotal=viext.eax-0x80000000;
 	for(;i<hvm_p->cpu_count;cache=&hvm_p->virtual_cpu[++i].cpuid_cache)
 	{
-		cache->std_leaf=noir_alloc_nonpg_memory((hvm->relative_hvm->std_leaftotal+1)*sizeof(noir_svm_cpuid_info);
+		cache->std_leaf=noir_alloc_nonpg_memory((hvm_p->relative_hvm->std_leaftotal+1)*sizeof(noir_svm_cpuid_info));
 		if(cache->std_leaf)
-			*cache=vistd;
+			*cache->std_leaf=vistd;
 		else
 			return false;
-		cache->ext_leaf=noir_alloc_nonpg_memory((hvm->relative_hvm->ext_leaftotal+1)*sizeof(noir_svm_cpuid_info);
+		cache->ext_leaf=noir_alloc_nonpg_memory((hvm_p->relative_hvm->ext_leaftotal+1)*sizeof(noir_svm_cpuid_info));
 		if(cache->ext_leaf)
-			*cache=viext;
+			*cache->ext_leaf=viext;
 		else
 			return false;
 	}

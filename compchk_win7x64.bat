@@ -44,6 +44,8 @@ echo Compiling Core of Cross-Platform Framework (XPF)...
 
 %ddkpath%\amd64\cl.exe .\src\xpf_core\noirhvm.c /I".\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_central_hvm" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\noirhvm.cod" /Fo"%objpath%\noirhvm.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
 
+%ddkpath%\amd64\cl.exe .\src\xpf_core\ci.c /I".\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_central_hvm" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\ci.cod" /Fo"%objpath%\ci.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
+
 %ddkpath%\amd64\ml64.exe /W3 /WX /Zf /Zd /Fo"%objpath%\svm_hv64.obj" /c /nologo .\src\xpf_core\windows\svm_hv64.asm
 
 %ddkpath%\amd64\ml64.exe /W3 /WX /Zf /Zd /Fo"%objpath%\vt_hv64.obj" /c /nologo .\src\xpf_core\windows\vt_hv64.asm
@@ -51,7 +53,7 @@ echo Compiling Core of Cross-Platform Framework (XPF)...
 %ddkpath%\amd64\ml64.exe /W3 /WX /Zf /Zd /Fo"%objpath%\msrhook64.obj" /c /nologo .\src\xpf_core\windows\msrhook64.asm
 
 echo ============Start Linking============
-%ddkpath%\amd64\link.exe "%objpath%\driver.obj" "%objpath%\vt_main.obj" "%objpath%\vt_exit.obj" "%objpath%\vt_ept.obj" "%objpath%\svm_main.obj" "%objpath%\svm_exit.obj" "%objpath%\BeaEngine.obj" "%objpath%\memory.obj" "%objpath%\debug.obj" "%objpath%\processor.obj" "%objpath%\hooks.obj" "%objpath%\winhvm.obj" "%objpath%\noirhvm.obj" "%objpath%\svm_hv64.obj" "%objpath%\vt_hv64.obj" "%objpath%\msrhook64.obj" /LIBPATH:"%libpath%\win7\amd64" /NODEFAULTLIB "ntoskrnl.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
+%ddkpath%\amd64\link.exe "%objpath%\driver.obj" "%objpath%\vt_main.obj" "%objpath%\vt_exit.obj" "%objpath%\vt_ept.obj" "%objpath%\svm_main.obj" "%objpath%\svm_exit.obj" "%objpath%\BeaEngine.obj" "%objpath%\memory.obj" "%objpath%\debug.obj" "%objpath%\processor.obj" "%objpath%\hooks.obj" "%objpath%\winhvm.obj" "%objpath%\noirhvm.obj" "%objpath%\ci.obj" "%objpath%\svm_hv64.obj" "%objpath%\vt_hv64.obj" "%objpath%\msrhook64.obj" /LIBPATH:"%libpath%\win7\amd64" /NODEFAULTLIB "ntoskrnl.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
 
 echo ============Start Signing============
 %ddkpath%\signtool.exe sign /v /f .\ztnxtest.pfx /t http://timestamp.globalsign.com/scripts/timestamp.dll %binpath%\NoirVisor.sys

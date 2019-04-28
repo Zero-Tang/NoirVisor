@@ -97,6 +97,14 @@
 
 //Invalidate Processor Cache
 #define noir_wbinvd		__wbinvd
+
+//SSE4.2 CRC32
+#define noir_crc32_u8	_mm_crc32_u8
+#define noir_crc32_u16	_mm_crc32_u16
+#define noir_crc32_u32	_mm_crc32_u32
+#if defined(_amd64)
+#define noir_crc32_u64	(u32)_mm_crc32_u64
+#endif
 #endif
 
 //The rest are done by inline functions.

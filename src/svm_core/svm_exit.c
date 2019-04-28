@@ -51,11 +51,11 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	{
 		// At this moment, the CPUID goes to a extended leaf.
 		// Check whether info is cached or not.
-		if(noir_bt(&vcpu->relative_hvm.cpuid_ext_submask,ia))
+		if(noir_bt(&vcpu->relative_hvm->cpuid_ext_submask,ia))
 		{
 			// Value of ECX other than zero is not cached.
 			if(ic)
-				noir_cpuid(ia,ic,&gpr_state->rax,&gpr_state->rbx,&gpr_state->rcx,&gpr_state->rdx);
+				noir_cpuid(ia,ic,(u32*)&gpr_state->rax,(u32*)&gpr_state->rbx,(u32*)&gpr_state->rcx,(u32*)&gpr_state->rdx);
 			else
 				goto ext_cached;
 		}
@@ -66,16 +66,17 @@ ext_cached:
 			*(u32*)gpr_state->rbx=vcpu->cpuid_cache.ext_leaf[ia-0x80000000].ebx;
 			*(u32*)gpr_state->rcx=vcpu->cpuid_cache.ext_leaf[ia-0x80000000].ecx;
 			*(u32*)gpr_state->rdx=vcpu->cpuid_cache.ext_leaf[ia-0x80000000].edx;
+		}
 	}
 	else
 	{
 		// At this moment, the CPUID goes to a standard leaf.
 		// Check whether info is cached or not.
-		if(noir_bt(&vcpu->relative_hvm.cpuid_std_submask,ia))
+		if(noir_bt(&vcpu->relative_hvm->cpuid_std_submask,ia))
 		{
 			// Value of ECX other than zero is not cached.
 			if(ic)
-				noir_cpuid(ia,ic,&gpr_state->rax,&gpr_state->rbx,&gpr_state->rcx,&gpr_state->rdx);
+				noir_cpuid(ia,ic,(u32*)&gpr_state->rax,(u32*)&gpr_state->rbx,(u32*)&gpr_state->rcx,(u32*)&gpr_state->rdx);
 			else
 				goto std_cached;
 		}
