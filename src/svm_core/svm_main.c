@@ -96,9 +96,9 @@ void static nvc_svm_setup_cpuid_cache(noir_svm_vcpu_p vcpu)
 	noir_svm_cpuid_info_p std_cache=vcpu->cpuid_cache.std_leaf;
 	noir_svm_cpuid_info_p ext_cache=vcpu->cpuid_cache.ext_leaf;
 	u32 i;
-	for(i=1;i<=vcpu->relative_hvm->std_leaftotal;std_cache=vcpu->cpuid_cache.std_leaf[++i])
+	for(i=1;i<=vcpu->relative_hvm->std_leaftotal;std_cache=&vcpu->cpuid_cache.std_leaf[++i])
 		noir_cpuid(i,0,&std_cache->eax,&std_cache->ebx,&std_cache->ecx,&std_cache->edx);
-	for(i=0x80000001;i<=vcpu->relative_hvm->ext_leaftotal+0x80000000;ext_cache=vcpu->cpuid_cache.ext_leaf[++i])
+	for(i=0x80000001;i<=vcpu->relative_hvm->ext_leaftotal+0x80000000;ext_cache=&vcpu->cpuid_cache.ext_leaf[(++i)-0x80000000])
 		noir_cpuid(i,0,&ext_cache->eax,&ext_cache->ebx,&ext_cache->ecx,&ext_cache->edx);
 }
 

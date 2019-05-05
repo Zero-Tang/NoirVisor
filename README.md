@@ -35,9 +35,13 @@ Develop an AMD-V based hypervisor. <br>
 Develop a length-disassemble engine so that BeaEngine will be discarded and the entire project will be under MIT license.
 
 # Completed Features
-- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows
-- Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows
+- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, Intel Processor.
+- Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel Processor.
+- CPUID caching architecture.
 
 # License
 All the codes, except the BeaEngine, with NoirVisor are licensed under MIT License. <br>
-BeaEngine, as declared by BeatriX, is licensed under Lesser GPL v3. Therefore, partial code, under this repository, from BeaEngine are licensed under LGPL v3. 
+BeaEngine, as declared by BeatriX, is licensed under Lesser GPL v3. Therefore, partial code, under this repository, from BeaEngine are licensed under LGPL v3.
+
+# Code of Conduct
+The Code of Conduct is added to NoirVisor Project since May.5th, 2019. Please follow rule when contributing.
