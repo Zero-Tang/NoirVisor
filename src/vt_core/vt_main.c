@@ -403,7 +403,7 @@ void static nvc_vt_setup_cpuid_cache(noir_vt_vcpu_p vcpu)
 	for(i=1;i<=vcpu->relative_hvm->std_leaftotal;i++)
 		noir_cpuid(i,0,&cache->std_leaf[i].eax,&cache->std_leaf[i].ebx,&cache->std_leaf[i].ecx,&cache->std_leaf[i].edx);
 	for(i=0x80000001;i<=vcpu->relative_hvm->ext_leaftotal+0x80000000;i++)
-		noir_cpuid(i,0,&cache->ext_leaf[i].eax,&cache->ext_leaf[i].ebx,&cache->ext_leaf[i].ecx,&cache->ext_leaf[i].edx);
+		noir_cpuid(i,0,&cache->ext_leaf[i-0x80000000].eax,&cache->ext_leaf[i-0x80000000].ebx,&cache->ext_leaf[i-0x80000000].ecx,&cache->ext_leaf[i-0x80000000].edx);
 }
 
 u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,ulong_ptr gip)
@@ -485,7 +485,7 @@ bool static nvc_vt_build_cpuid_cache(noir_hypervisor_p hvm)
 		else
 			return false;
 		cache->ext_leaf=noir_alloc_nonpg_memory((hvm->relative_hvm->ext_leaftotal+1)*sizeof(noir_vt_cpuid_info));
-		if(cache->ext_leaf==null)
+		if(cache->ext_leaf)
 			*cache->ext_leaf=viext;
 		else
 			return false;
