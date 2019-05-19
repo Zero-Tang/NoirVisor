@@ -409,6 +409,18 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 	noir_vt_advance_rip();
 }
 
+//Expected Exit Reason: 32
+void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+{
+	u32 index=(u32)gpr_state->rcx;
+	large_integer val;
+	val.low=(u32)gpr_state->rax;
+	val.high=(u32)gpr_state->rdx;
+	nv_dprintf("Unexpected wrmsr is intercepted! Index=0x%X\t Value=0x%08X`%08X\n",index,val.low,val.high);
+	noir_wrmsr(index,val.value);
+	noir_vt_advance_rip();
+}
+
 //Expected Exit Reason: 33
 //This is VM-Exit of obligation.
 //You may want to debug your code if this handler is invoked.
@@ -531,6 +543,7 @@ noir_status nvc_vt_build_exit_handlers()
 		vt_exit_handlers[intercept_vmxon]=nvc_vt_vmx_handler;
 		vt_exit_handlers[cr_access]=nvc_vt_cr_access_handler;
 		vt_exit_handlers[intercept_rdmsr]=nvc_vt_rdmsr_handler;
+		vt_exit_handlers[intercept_wrmsr]=nvc_vt_wrmsr_handler;
 		vt_exit_handlers[invalid_guest_state]=nvc_vt_invalid_guest_state;
 		vt_exit_handlers[msr_loading_failure]=nvc_vt_invalid_msr_loading;
 		vt_exit_handlers[ept_violation]=nvc_vt_ept_violation_handler;

@@ -60,6 +60,8 @@ typedef struct _NOIR_HOOK_PAGE
 
 PVOID NoirAllocateContiguousMemory(IN ULONG Length);
 ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress);
+ULONG SizeOfCode(IN PVOID Code,IN ULONG Architecture);
+ULONG GetPatchSize(IN PVOID Code,IN ULONG Length);
 
 NTSETINFORMATIONFILE	NtSetInformationFile=NULL,Old_NtSetInformationFile=NULL;
 PNOIR_HOOK_PAGE noir_hook_pages=NULL;

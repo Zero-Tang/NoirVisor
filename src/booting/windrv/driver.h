@@ -29,6 +29,8 @@
 #define IOCTL_CpuVs			CTL_CODE_GEN(0x811)
 #define IOCTL_CpuPn			CTL_CODE_GEN(0x812)
 
+void LDE_Initialize();
+void LDE_Finalize();
 ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();
 ULONG NoirVisorVersion();

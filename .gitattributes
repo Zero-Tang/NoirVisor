@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+*.c linguist-language=C
+*.h linguist-language=C
+*.asm linguist-language=Assembly

@@ -1,5 +1,4 @@
 # NoirVisor
-
 NoirVisor - Hardware-Accelerated Hypervisor solution with support to complex functions and purposes and nested virtualization.
 
 # Introduction
@@ -29,10 +28,10 @@ Currently, NoirVisor supports the Windows Operating System newer than or same as
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has finished developping the basic hypervisor on Intel VT-x.
+Project NoirVisor has finished developping the basic hypervisor on Intel VT-x. <br>
 Now NoirVisor has two future development plans: <br>
 Develop an AMD-V based hypervisor. <br>
-Develop a length-disassemble engine so that BeaEngine will be discarded and the entire project will be under MIT license.
+Develop Hypervisor-Platform compatible hypervisor for Windows 10 Redstone.
 
 # Completed Features
 - Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, Intel Processor.
@@ -40,8 +39,7 @@ Develop a length-disassemble engine so that BeaEngine will be discarded and the 
 - CPUID caching architecture.
 
 # License
-All the codes, except the BeaEngine, with NoirVisor are licensed under MIT License. <br>
-BeaEngine, as declared by BeatriX, is licensed under Lesser GPL v3. Therefore, partial code, under this repository, from BeaEngine are licensed under LGPL v3.
+This repository is under MIT license.
 
 # Code of Conduct
 The Code of Conduct is added to NoirVisor Project since May.5th, 2019. Please follow rule when contributing.

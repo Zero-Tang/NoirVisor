@@ -175,4 +175,7 @@ typedef struct _KPROCESSOR_STATE
 
 typedef void(*noir_broadcast_worker)(void* context,ULONG ProcessorNumber);
 
-NTKERNELAPI void __cdecl KeSaveStateForHibernate(OUT PKPROCESSOR_STATE State);
+NTSYSAPI void NTAPI RtlCaptureContext(OUT PCONTEXT ContextRecord);
+ULONG_PTR __readcr2();
+void __sgdt(OUT PUSHORT dest);
+USHORT __str();

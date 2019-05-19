@@ -330,7 +330,7 @@ char* vt_error_message[0x20]=
 	//Error=24
 	"vmcall is given invalid SMM-Monitor features! (Are you attempting to activate dual-monitor treatment?)",
 	//Error=25
-	"VM-Entry failed due to invalid VM-Exeuction Control! (Are attempting to return from SMM?)",
+	"VM-Entry failed due to invalid VM-Execution Control! (Are attempting to return from SMM?)",
 	//Error=26,
 	"Invalid Error, Number=27!"										//Error=27
 	"VM-Entry failed due to events blocked by mov ss!",				//Error=28

@@ -451,7 +451,8 @@ void static nvc_vt_subvert_processor(noir_vt_vcpu_p vcpu)
 				//At this time, VMCS has been pointed successfully.
 				//Start subverting.
 				nv_dprintf("VMCS has been loaded to CPU successfully!\n");
-				nvc_vt_subvert_processor_a(vcpu);
+				vst=nvc_vt_subvert_processor_a(vcpu);
+				nv_dprintf("Subversion Indicator: %d\n",vst);
 			}
 		}
 	}

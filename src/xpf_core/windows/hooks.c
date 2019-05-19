@@ -14,30 +14,7 @@
 
 #include <ntddk.h>
 #include <windef.h>
-#include "BeaEngine.h"
 #include "hooks.h"
-
-ULONG SizeOfCode(IN PVOID Code,IN ULONG Architecture)
-{
-	DISASM dis={0};
-	dis.EIP=(ULONG_PTR)Code;
-	dis.VirtualAddr=dis.EIP;
-	dis.Archi=Architecture;
-	dis.Options=MasmSyntax|NoTabulation|SuffixedNumeral|ShowSegmentRegs;
-	return Disasm(&dis);
-}
-
-ULONG GetPatchSize(IN PVOID Code,IN ULONG Length)
-{
-	ULONG_PTR p=(ULONG_PTR)Code;
-	ULONG s=0;
-	while(s<Length)
-	{
-		ULONG const l=SizeOfCode((PVOID)p,sizeof(void*)*16-64);
-		s+=l;p+=l;
-	}
-	return s;
-}
 
 NTSTATUS static fake_NtSetInformationFile(IN HANDLE FileHandle,OUT PIO_STATUS_BLOCK IoStatusBlock,IN PVOID FileInformation,IN ULONG Length,IN FILE_INFORMATION_CLASS FileInformationClass)
 {
