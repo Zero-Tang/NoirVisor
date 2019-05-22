@@ -35,10 +35,10 @@
 
 typedef struct _noir_hypervisor
 {
-#if defined(_vt_drv) || defined(_vt_exit)
+#if defined(_vt_drv) || defined(_vt_exit) || defined(_vt_ept)
 	noir_vt_vcpu_p virtual_cpu;
 	noir_vt_hvm_p relative_hvm;
-#elif defined(_svm_drv) || defined(_svm_exit)
+#elif defined(_svm_drv) || defined(_svm_exit) || defined(_svm_npt)
 	noir_svm_vcpu_p virtual_cpu;
 	noir_svm_hvm_p relative_hvm;
 #else

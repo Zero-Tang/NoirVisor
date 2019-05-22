@@ -184,14 +184,15 @@ typedef struct _noir_ept_manager
 	}pdpt;
 	struct
 	{
-		ia32_ept_large_pde_p* virt;
-		u64* phys;
+		ia32_ept_large_pde_p virt;
+		u64 phys;
 	}pde;
 	struct
 	{
 		noir_ept_pte_descriptor_p head;
 		noir_ept_pte_descriptor_p tail;
 	}pte;
+	memory_descriptor blank_page;
 }noir_ept_manager,*noir_ept_manager_p;
 
 typedef union _ia32_ept_violation_qualification
@@ -220,5 +221,6 @@ typedef union _ia32_ept_violation_qualification
 	ulong_ptr value;
 }ia32_ept_violation_qualification,*ia32_ept_violation_qualification_p;
 
+bool nvc_ept_protect_hypervisor(noir_hypervisor_p hvm,noir_ept_manager_p eptm);
 noir_ept_manager_p nvc_ept_build_identity_map();
 void nvc_ept_cleanup(noir_ept_manager_p eptm);

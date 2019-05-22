@@ -19,7 +19,7 @@ Extended Page Table. This is also known as EPT. This feature enables the stealth
 
 # Stealth MSR-hook Algorithm
 This feature utilizes the processor ability to intercept rdmsr instruction. <br>
-Set the bit in bitmap to intercept the LSTAR or SYSCALL_EIP MSR-read. <br>
+Set the bit in bitmap to intercept the LSTAR or SYSENTER_EIP MSR-read. <br>
 On interception, edit the eax and edx register to represent the original value. <br>
 Don't forget to set the bit in primary processor-based execution control in VMCS.
 
@@ -37,6 +37,9 @@ On VM-Exit, NoirVisor should locate the hook page by GPA (Guest Physical Address
 # CPUID Cache
 This feature could enhance the performance of CPUID-induced VM-Exit on Nested-VMM scenario. (e.g NoirVisor running in a Virtual Machine.) It might slightly lower down the performance on Non-Nested scenario, but generally should have a good performance no matter the scenario. <br>
 However, due to complexity of sub-leaf for cpuid instruction, caching architecture in NoirVisor could only accelerate scenarios under ecx=0.
+
+# Critical Hypervisor Protection
+This feature is an essential security feature. I found this feature missing in most open-source light-weight hypervisor project. The key is that VMCS and other essential pages are not protected through Intel EPT even if they enabled Intel EPT. It should be pointed out that a malware can be aware of the format of VMCS of a specific processor. In this regard, malware may corrupt the VMCS through memory access instruction.
 
 # Future Feature (Roadmap)
 In future, NoirVisor would implement support to VMX-nesting in VT-Core. VMCS-shadowing would be implemented as well.

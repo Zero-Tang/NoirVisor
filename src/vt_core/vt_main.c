@@ -505,11 +505,11 @@ bool static nvc_vt_build_cpuid_cache(noir_hypervisor_p hvm)
 */
 noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 {
+	u32 i=0;
 	hvm->cpu_count=noir_get_processor_count();
 	hvm->virtual_cpu=noir_alloc_nonpg_memory(hvm->cpu_count*sizeof(noir_vt_vcpu));
 	if(hvm->virtual_cpu)
 	{
-		u32 i=0;
 		for(;i<hvm->cpu_count;i++)
 		{
 			noir_vt_vcpu_p vcpu=&hvm->virtual_cpu[i];
@@ -554,9 +554,12 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 	if(nvc_vt_build_cpuid_cache(hvm)==false)goto alloc_failure;
 	if(nvc_vt_build_exit_handlers()==noir_insufficient_resources)goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;
-	nv_dprintf("All allocations are done, start subversion!\n");
 	nvc_vt_setup_msr_hook(hvm);
 	nvc_vt_setup_msr_auto_list(hvm);
+	for(i=0;i<hvm->cpu_count;i++)
+		if(nvc_ept_protect_hypervisor(hvm,(noir_ept_manager_p)hvm->virtual_cpu[i].ept_manager)==false)
+			goto alloc_failure;
+	nv_dprintf("All allocations are done, start subversion!\n");
 	noir_generic_call(nvc_vt_subvert_processor_thunk,hvm->virtual_cpu);
 	return noir_success;
 alloc_failure:

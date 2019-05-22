@@ -445,6 +445,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32
 {
 	noir_hook_page_p nhp=noir_hook_pages;
 	u64 gpa;
+	bool advance=true;
 	noir_vt_vmread(guest_physical_address,&gpa);
 	nv_dprintf("EPT Violation Occured at GPA=0x%llX!\n",gpa);
 	while(nhp)
@@ -479,6 +480,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32
 				pte_p->execute=1;
 				pte_p->page_offset=nhp->hook.phys>>12;
 			}
+			advance=false;
 			//Since Paging Structure is revised, invalidate the EPT TLB.
 			ied.reserved=0;
 			ied.eptp=eptm->eptp.phys.value;
@@ -486,6 +488,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32
 			break;
 		}
 	}
+	if(advance)noir_vt_advance_rip();
 }
 
 //Expected Exit Reason: 49

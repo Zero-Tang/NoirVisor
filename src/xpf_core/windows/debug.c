@@ -16,6 +16,14 @@
 #include <windef.h>
 #include <stdarg.h>
 
+void __cdecl NoirDebugPrint(const char* Format,...)
+{
+	va_list arg_list;
+	va_start(arg_list,Format);
+	vDbgPrintExWithPrefix("[NoirVisor - Driver] ",DPFLTR_IHVDRIVER_ID,DPFLTR_INFO_LEVEL,Format,arg_list);
+	va_end(arg_list);
+}
+
 void __cdecl nv_dprintf(const char* format,...)
 {
 	va_list arg_list;

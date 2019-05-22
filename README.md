@@ -37,6 +37,7 @@ Develop Hypervisor-Platform compatible hypervisor for Windows 10 Redstone.
 - Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, Intel Processor.
 - Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel Processor.
 - CPUID caching architecture.
+- Critical Hypervisor Protection on Intel VT-x by Intel EPT.
 
 # License
 This repository is under MIT license.
