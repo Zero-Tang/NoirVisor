@@ -25,15 +25,23 @@
 #define IOCTL_SetPID		CTL_CODE_GEN(0x803)
 #define IOCTL_SetNs			CTL_CODE_GEN(0x804)
 #define IOCTL_SetVs			CTL_CODE_GEN(0x805)
+#define IOCTL_SetName		CTL_CODE_GEN(0x806)
 #define IOCTL_NvVer			CTL_CODE_GEN(0x810)
 #define IOCTL_CpuVs			CTL_CODE_GEN(0x811)
 #define IOCTL_CpuPn			CTL_CODE_GEN(0x812)
+#define IOCTL_OsVer			CTL_CODE_GEN(0x813)
+#define IOCTL_VirtCap		CTL_CODE_GEN(0x814)
 
 void LDE_Initialize();
 void LDE_Finalize();
+NTSTATUS NoirBuildProtectedFile();
+void NoirTeardownProtectedFile();
+void NoirSetProtectedFile(IN PWSTR FileName);
+NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength);
 ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();
 ULONG NoirVisorVersion();
+ULONG NoirQueryVirtualizationSupportability();
 void NoirGetVendorString(OUT PSTR VendorString);
 void NoirGetProcessorName(OUT PSTR ProcessorName);
 void NoirGetNtOpenProcessIndex();

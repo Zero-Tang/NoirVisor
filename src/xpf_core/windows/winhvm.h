@@ -15,11 +15,13 @@
 #include <ntddk.h>
 #include <windef.h>
 
+void __cdecl NoirDebugPrint(const char* Format,...);
 ULONG nvc_build_hypervisor();
 void nvc_teardown_hypervisor();
 ULONG noir_visor_version();
 void noir_get_vendor_string(char* vendor_string);
 void noir_get_processor_name(char* processor_name);
+ULONG noir_get_virtualization_supportability();
 
 PVOID NvImageBase=NULL;
 ULONG NvImageSize=0;

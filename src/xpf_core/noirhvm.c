@@ -37,6 +37,27 @@ void noir_get_processor_name(char* processor_name)
 	noir_cpuid(0x80000004,0,(u32*)&processor_name[0x20],(u32*)&processor_name[0x24],(u32*)&processor_name[0x28],(u32*)&processor_name[0x2C]);
 }
 
+u32 noir_get_virtualization_supportability()
+{
+	char vstr[13];
+	bool basic=false;		// Basic Intel VT-x/AMD-V
+	bool slat=false;		// Basic Intel EPT/AMD NPT
+	bool acnest=false;		// Accelerated Virtualization Nesting
+	u32 result=0;
+	noir_cpuid(0,0,null,(u32*)&vstr[0],(u32*)&vstr[8],(u32*)&vstr[4]);
+	vstr[12]=0;
+	if(strcmp(vstr,"GenuineIntel")==0)
+	{
+		basic=nvc_is_vt_supported();
+		slat=nvc_is_ept_supported();
+		acnest=nvc_is_vmcs_shadowing_supported();
+	}
+	result|=basic<<0;
+	result|=slat<<1;
+	result|=acnest<<2;
+	return result;
+}
+
 bool noir_is_under_hvm()
 {
 	u32 c=0;

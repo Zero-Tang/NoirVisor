@@ -54,6 +54,7 @@ void NoirDriverUnload(IN PDRIVER_OBJECT DriverObject)
 {
 	UNICODE_STRING uniLinkName=RTL_CONSTANT_STRING(LINK_NAME);
 	NoirTeardownHookedPages();
+	NoirTeardownProtectedFile();
 	LDE_Finalize();
 	IoDeleteSymbolicLink(&uniLinkName);
 	IoDeleteDevice(DriverObject->DeviceObject);
@@ -104,6 +105,11 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			RtlCopyMemory(virtual_nstr,InputBuffer,48);
 			break;
 		}
+		case IOCTL_SetName:
+		{
+			NoirSetProtectedFile((PWSTR)InputBuffer);
+			break;
+		}
 		case IOCTL_NvVer:
 		{
 			*(PULONG)OutputBuffer=NoirVisorVersion();
@@ -117,6 +123,16 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		case IOCTL_CpuPn:
 		{
 			NoirGetProcessorName(OutputBuffer);
+			break;
+		}
+		case IOCTL_OsVer:
+		{
+			NoirGetSystemVersion(OutputBuffer,OutputSize);
+			break;
+		}
+		case IOCTL_VirtCap:
+		{
+			*(PULONG)OutputBuffer=NoirQueryVirtualizationSupportability();
 			break;
 		}
 		default:
@@ -141,6 +157,7 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	NoirGetNtOpenProcessIndex();
 	NoirSaveImageInfo(DriverObject);
 	NoirBuildHookedPages();
+	NoirBuildProtectedFile();
 }
 
 NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING RegistryPath)

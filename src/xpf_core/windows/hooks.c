@@ -14,33 +14,86 @@
 
 #include <ntddk.h>
 #include <windef.h>
+#include <ntstrsafe.h>
 #include "hooks.h"
+
+NTSTATUS NoirBuildProtectedFile()
+{
+	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
+	NoirProtectedFile=ExAllocatePool(NonPagedPool,PAGE_SIZE);
+	if(NoirProtectedFile)
+	{
+		RtlZeroMemory(NoirProtectedFile,PAGE_SIZE);
+		st=ExInitializeResourceLite(&NoirProtectedFile->Lock);
+		if(NT_SUCCESS(st))
+		{
+			NoirProtectedFile->MaximumLength=PAGE_SIZE-sizeof(NOIR_PROTECTED_FILE_NAME);
+			RtlStringCbCopyW(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength,L"NoirVisor.sys");
+			RtlStringCbLengthW(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength,&NoirProtectedFile->Length);
+		}
+	}
+	return st;
+}
+
+void NoirTeardownProtectedFile()
+{
+	if(NoirProtectedFile)
+	{
+		ExDeleteResourceLite(&NoirProtectedFile->Lock);
+		ExFreePool(NoirProtectedFile);
+	}
+}
+
+void NoirSetProtectedFile(IN PWSTR FileName)
+{
+	if(NoirProtectedFile)
+	{
+		KeEnterCriticalRegion();
+		if(ExAcquireResourceExclusive(&NoirProtectedFile->Lock,TRUE))
+		{
+			RtlZeroMemory(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength);
+			RtlStringCbCopyW(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength,FileName);
+			RtlStringCbLengthW(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength,&NoirProtectedFile->Length);
+			ExReleaseResourceLite(&NoirProtectedFile->Lock);
+		}
+		KeLeaveCriticalRegion();
+	}
+}
+
+BOOLEAN NoirIsProtectedFile(IN PWSTR FilePath)
+{
+	BOOLEAN Result=FALSE;
+	if(NoirProtectedFile)
+	{
+		KeEnterCriticalRegion();
+		if(ExAcquireSharedStarveExclusive(&NoirProtectedFile->Lock,TRUE))
+		{
+			PWSTR FileName=wcsrchr(FilePath,L'\\');
+			if(FileName)
+			{
+				FileName++;
+				Result=(_wcsnicmp(NoirProtectedFile->FileName,FileName,NoirProtectedFile->MaximumLength)==0);
+			}
+			ExReleaseResourceLite(&NoirProtectedFile->Lock);
+		}
+		KeLeaveCriticalRegion();
+	}
+	return Result;
+}
 
 NTSTATUS static fake_NtSetInformationFile(IN HANDLE FileHandle,OUT PIO_STATUS_BLOCK IoStatusBlock,IN PVOID FileInformation,IN ULONG Length,IN FILE_INFORMATION_CLASS FileInformationClass)
 {
 	if(FileInformationClass==FileDispositionInformation)
 	{
 		NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
-		PFILE_NAME_INFORMATION FileNameInfo=ExAllocatePool(NonPagedPool,PAGE_SIZE);
+		PFILE_NAME_INFORMATION FileNameInfo=ExAllocatePool(PagedPool,PAGE_SIZE);
 		if(FileNameInfo)
 		{
 			RtlZeroMemory(FileNameInfo,PAGE_SIZE);
 			st=ZwQueryInformationFile(FileHandle,IoStatusBlock,FileNameInfo,PAGE_SIZE,FileNameInformation);
 			if(NT_SUCCESS(st))
 			{
-				PWSTR const NameEnd=(PWSTR)((ULONG_PTR)FileNameInfo->FileName+FileNameInfo->FileNameLength);
-				PWSTR const ShorterStart=(PWSTR)((ULONG_PTR)NameEnd-NoirProtectedFileNameCb);
-				ULONG i=0;
-				BOOLEAN Equal=TRUE;
-				for(;i<NoirProtectedFileNameCch;i++)
-				{
-					if(ShorterStart[i]!=NoirProtectedFileName[i])
-					{
-						Equal=FALSE;
-						break;
-					}
-				}
-				if(Equal)
+				if(NoirIsProtectedFile(FileNameInfo->FileName))
 					st=STATUS_DEVICE_PAPER_EMPTY;
 				else
 					st=Old_NtSetInformationFile(FileHandle,IoStatusBlock,FileInformation,Length,FileInformationClass);

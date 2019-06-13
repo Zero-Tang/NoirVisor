@@ -47,6 +47,49 @@ bool nvc_is_vt_supported()
 	return false;
 }
 
+bool nvc_is_vmcs_shadowing_supported()
+{
+	ia32_vmx_basic_msr vt_basic;
+	ia32_vmx_priproc_ctrl_msr prictrl_msr;
+	vt_basic.value=noir_rdmsr(ia32_vmx_basic);
+	if(vt_basic.use_true_msr)
+		prictrl_msr.value=noir_rdmsr(ia32_vmx_true_priproc_ctrl);
+	else
+		prictrl_msr.value=noir_rdmsr(ia32_vmx_priproc_ctrl);
+	if(prictrl_msr.allowed1_settings.activate_secondary_controls)
+	{
+		ia32_vmx_2ndproc_ctrl_msr secctrl_msr;
+		secctrl_msr.value=noir_rdmsr(ia32_vmx_2ndproc_ctrl);
+		return secctrl_msr.allowed1_settings.vmcs_shadowing;
+	}
+	return false;
+}
+
+bool nvc_is_ept_supported()
+{
+	ia32_vmx_ept_vpid_cap_msr ev_cap;
+	ev_cap.value=noir_rdmsr(ia32_vmx_ept_vpid_cap);
+	if(ev_cap.support_wb_ept)
+	{
+		/*
+			We require following supportability of Intel EPT:
+			Execute-Only Translation - This is used for stealth inline hook.
+			2MB-paging - This is used for reducing memory consumption.
+			(It can be better that processor supports 1GB-paging. However,
+			 VMware does not support emulating 1GB-paging for Intel EPT.)
+			Support invept Instruction - This is used for invalidating EPT TLB.
+		*/
+		bool ept_support_req=true;
+		ept_support_req&=ev_cap.support_exec_only_translation;
+		ept_support_req&=ev_cap.support_2mb_paging;
+		ept_support_req&=ev_cap.support_invept;
+		ept_support_req&=ev_cap.support_single_context_invept;
+		ept_support_req&=ev_cap.support_all_context_invept;
+		return ept_support_req;
+	}
+	return false;
+}
+
 void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 {
 	if(hvm)

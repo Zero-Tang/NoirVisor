@@ -71,6 +71,8 @@ extern noir_hook_page_p noir_hook_pages;
 #if defined(_central_hvm)
 //Functions from VT Core.
 bool nvc_is_vt_supported();
+bool nvc_is_ept_supported();
+bool nvc_is_vmcs_shadowing_supported();
 bool nvc_vt_subvert_system(noir_hypervisor_p hvm);
 void nvc_vt_restore_system(noir_hypervisor_p hvm);
 //Functions from SVM Core.

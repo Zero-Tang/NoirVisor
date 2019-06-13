@@ -58,12 +58,21 @@ typedef struct _NOIR_HOOK_PAGE
 	struct _NOIR_HOOK_PAGE* NextHook;
 }NOIR_HOOK_PAGE,*PNOIR_HOOK_PAGE;
 
+typedef struct _NOIR_PROTECTED_FILE_NAME
+{
+	ERESOURCE Lock;
+	SIZE_T Length;
+	SIZE_T MaximumLength;
+	WCHAR FileName[1];
+}NOIR_PROTECTED_FILE_NAME,*PNOIR_PROTECTED_FILE_NAME;
+
 PVOID NoirAllocateContiguousMemory(IN ULONG Length);
 ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress);
 ULONG SizeOfCode(IN PVOID Code,IN ULONG Architecture);
 ULONG GetPatchSize(IN PVOID Code,IN ULONG Length);
 
 NTSETINFORMATIONFILE	NtSetInformationFile=NULL,Old_NtSetInformationFile=NULL;
+PNOIR_PROTECTED_FILE_NAME NoirProtectedFile=NULL;
 PNOIR_HOOK_PAGE noir_hook_pages=NULL;
 ULONG IndexOf_NtOpenProcess=0x23;		//This is hard-code on Windows 7 x64.
 ULONG ProtPID=0;
