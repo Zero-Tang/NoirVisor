@@ -226,7 +226,8 @@ bool nvc_ept_protect_hypervisor(noir_hypervisor_p hvm,noir_ept_manager_p eptm)
 			// Protect EPT Paging Structure.
 			result&=nvc_ept_update_pte(eptm,eptmt->eptp.phys.value,eptm->blank_page.phys,true,true,true);
 			result&=nvc_ept_update_pte(eptm,eptmt->pdpt.phys,eptm->blank_page.phys,true,true,true);
-			result&=nvc_ept_update_pde(eptm,eptmt->pde.phys,false,false,false);
+			// Allow Guest read the original PDE so that EPT-violation VM-Exits can be reduced.
+			result&=nvc_ept_update_pde(eptm,eptmt->pde.phys,true,false,false);
 			// It is unnecessary to protect the PTEs here.
 			// Even if the malware changes the PTE, it wouldn't work
 			// as long as we don't invalidate the relevant EPT TLB.

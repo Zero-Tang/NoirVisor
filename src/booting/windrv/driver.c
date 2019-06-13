@@ -21,12 +21,12 @@ PVOID static NoirGetInputBuffer(IN PIRP Irp)
 	PIO_STACK_LOCATION irpsp=IoGetCurrentIrpStackLocation(Irp);
 	if(irpsp->MajorFunction==IRP_MJ_DEVICE_CONTROL || irpsp->MajorFunction==IRP_MJ_INTERNAL_DEVICE_CONTROL)
 	{
-		ULONG IoCode=irpsp->Parameters.DeviceIoControl.IoControlCode;
-		if(IoCode & METHOD_BUFFERED)
+		ULONG Method=METHOD_FROM_CTL_CODE(irpsp->Parameters.DeviceIoControl.IoControlCode);
+		if(Method==METHOD_BUFFERED)
 			return Irp->AssociatedIrp.SystemBuffer;
-		else if(IoCode & METHOD_IN_DIRECT)
+		else if(Method==METHOD_IN_DIRECT)
 			return Irp->AssociatedIrp.SystemBuffer;
-		else if(IoCode & METHOD_OUT_DIRECT)
+		else if(Method==METHOD_OUT_DIRECT)
 			return Irp->AssociatedIrp.SystemBuffer;
 		else
 			return irpsp->Parameters.DeviceIoControl.Type3InputBuffer;
@@ -39,12 +39,12 @@ PVOID static NoirGetOutputBuffer(IN PIRP Irp)
 	PIO_STACK_LOCATION irpsp=IoGetCurrentIrpStackLocation(Irp);
 	if(irpsp->MajorFunction==IRP_MJ_DEVICE_CONTROL || irpsp->MajorFunction==IRP_MJ_INTERNAL_DEVICE_CONTROL)
 	{
-		ULONG IoCode=irpsp->Parameters.DeviceIoControl.IoControlCode;
-		if(IoCode & METHOD_BUFFERED)
-			return Irp->AssociatedIrp.SystemBuffer;
-		if(IoCode & METHOD_OUT_DIRECT)
+		ULONG Method=METHOD_FROM_CTL_CODE(irpsp->Parameters.DeviceIoControl.IoControlCode);
+		if(Method==METHOD_BUFFERED)
+			return Irp->UserBuffer;
+		else if(Method==METHOD_OUT_DIRECT)
 			return MmGetSystemAddressForMdlSafe(Irp->MdlAddress,HighPagePriority);
-		if(IoCode & METHOD_NEITHER)
+		else if(Method==METHOD_NEITHER)
 			return Irp->UserBuffer;
 	}
 	return NULL;

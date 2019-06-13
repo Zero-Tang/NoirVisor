@@ -32,7 +32,7 @@ void noir_get_vendor_string(char* vendor_string)
 
 void noir_get_processor_name(char* processor_name)
 {
-	noir_cpuid(0x80000002,0,(u32*)&processor_name[0x0],(u32*)&processor_name[0x4],(u32*)&processor_name[0x8],(u32*)&processor_name[0xC]);
+	noir_cpuid(0x80000002,0,(u32*)&processor_name[0x00],(u32*)&processor_name[0x04],(u32*)&processor_name[0x08],(u32*)&processor_name[0x0C]);
 	noir_cpuid(0x80000003,0,(u32*)&processor_name[0x10],(u32*)&processor_name[0x14],(u32*)&processor_name[0x18],(u32*)&processor_name[0x1C]);
 	noir_cpuid(0x80000004,0,(u32*)&processor_name[0x20],(u32*)&processor_name[0x24],(u32*)&processor_name[0x28],(u32*)&processor_name[0x2C]);
 }
