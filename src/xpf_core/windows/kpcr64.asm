@@ -1,6 +1,6 @@
 ; NoirVisor - Hardware-Accelerated Hypervisor solution
 ; 
-; Copyright 2019, Zero Tang. All rights reserved.
+; Copyright 2018-2019, Zero Tang. All rights reserved.
 ;
 ; This file is a supplementary library for 64-bit processor utility.
 ;

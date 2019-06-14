@@ -1,15 +1,15 @@
 /*
   NoirVisor - A cross-platform designed HyperVisor
 
+  Copyright 2018-2019, Zero Tang. All rights reserved.
+
   This file defines constants and basic structures for Intel VT-x.
 
   This program is distributed in the hope that it will be useful, but
-  without any warranty (no matter implied warranty of merchantablity
+  without any warranty (no matter implied warranty of merchantability
   or fitness for a particular purpose, etc.).
 
   File location: /include/vt/vt_def.h
-
-  Update Time: Dec.22nd, 2018
 */
 
 #include <nvdef.h>

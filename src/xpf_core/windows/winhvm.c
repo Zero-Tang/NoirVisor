@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018, Zero Tang. All rights reserved.
+  Copyright 2018-2019, Zero Tang. All rights reserved.
 
   This file is the HyperVisor Invoker on Windows Platform.
 
@@ -14,6 +14,7 @@
 
 #include <ntddk.h>
 #include <windef.h>
+#include <ntimage.h>
 #include <ntstrsafe.h>
 #include "winhvm.h"
 
@@ -103,4 +104,35 @@ void nvc_store_image_info(OUT PVOID* Base,OUT PULONG Size)
 {
 	if(Base)*Base=NvImageBase;
 	if(Size)*Size=NvImageSize;
+}
+
+BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase)
+{
+	PIMAGE_DOS_HEADER DosHead=(PIMAGE_DOS_HEADER)ImageBase;
+	if(DosHead->e_magic==IMAGE_DOS_SIGNATURE)
+	{
+		PIMAGE_NT_HEADERS NtHead=(PIMAGE_NT_HEADERS)((ULONG_PTR)ImageBase+DosHead->e_lfanew);
+		if(NtHead->Signature==IMAGE_NT_SIGNATURE)
+		{
+			PIMAGE_SECTION_HEADER SectionHeaders=(PIMAGE_SECTION_HEADER)((ULONG_PTR)NtHead+sizeof(IMAGE_NT_HEADERS));
+			USHORT NumberOfSections=NtHead->FileHeader.NumberOfSections;
+			USHORT i=0;
+			for(;i<NumberOfSections;i++)
+			{
+				if(_strnicmp(SectionHeaders[i].Name,".text",8)==0)
+				{
+					PVOID CodeBase=(PVOID)((ULONG_PTR)ImageBase+SectionHeaders[i].VirtualAddress);
+					ULONG CodeSize=SectionHeaders[i].SizeOfRawData;
+					NoirDebugPrint("Code Base: 0x%p\t Size: 0x%X\n",CodeBase,CodeSize);
+					noir_initialize_ci(CodeBase,CodeSize);
+				}
+			}
+		}
+	}
+	return FALSE;
+}
+
+void NoirFinalizeCodeIntegrity()
+{
+	noir_finalize_ci();
 }

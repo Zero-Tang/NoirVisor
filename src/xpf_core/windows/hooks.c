@@ -49,7 +49,7 @@ void NoirSetProtectedFile(IN PWSTR FileName)
 	if(NoirProtectedFile)
 	{
 		KeEnterCriticalRegion();
-		if(ExAcquireResourceExclusive(&NoirProtectedFile->Lock,TRUE))
+		if(ExAcquireResourceExclusiveLite(&NoirProtectedFile->Lock,TRUE))
 		{
 			RtlZeroMemory(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength);
 			RtlStringCbCopyW(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength,FileName);

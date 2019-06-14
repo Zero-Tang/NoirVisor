@@ -1,15 +1,15 @@
 /*
   NoirVisor - A cross-platform designed HyperVisor
 
+  Copyright 2018-2019, Zero Tang. All rights reserved.
+
   This file defines encodings of VMCS.
 
-  This program is distributed in the hope that it will be usefull, but
-  without any warranty (no matter implied warranty of merchantablity
+  This program is distributed in the hope that it will be useful, but
+  without any warranty (no matter implied warranty or merchantability
   or fitness for a particular purpose, etc.).
 
-  File location: /include/vt/vt_vmcs.h
-
-  Update Time: Sept.21th, 2018
+  File Location: /include/vt/vt_vmcs.h
 */
 
 typedef enum _vmx_vmcs_encoding

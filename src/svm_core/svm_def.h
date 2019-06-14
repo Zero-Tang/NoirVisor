@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018, Zero Tang. All rights reserved.
+  Copyright 2018-2019, Zero Tang. All rights reserved.
 
   This file defines constants and basic structures for AMD-V.
 
@@ -20,22 +20,22 @@ typedef union _nvc_svm_cr_intercept
 {
 	struct
 	{
-		u16 cr0;
-		u16 cr1;
-		u16 cr2;
-		u16 cr3;
-		u16 cr4;
-		u16 cr5;
-		u16 cr6;
-		u16 cr7;
-		u16 cr8;
-		u16 cr9;
-		u16 cr10;
-		u16 cr11;
-		u16 cr12;
-		u16 cr13;
-		u16 cr14;
-		u16 cr15;
+		u16 cr0:1;
+		u16 cr1:1;
+		u16 cr2:1;
+		u16 cr3:1;
+		u16 cr4:1;
+		u16 cr5:1;
+		u16 cr6:1;
+		u16 cr7:1;
+		u16 cr8:1;
+		u16 cr9:1;
+		u16 cr10:1;
+		u16 cr11:1;
+		u16 cr12:1;
+		u16 cr13:1;
+		u16 cr14:1;
+		u16 cr15:1;
 	};
 	u16 value;
 }nvc_svm_cr_intercept,*nvc_svm_cr_intercept_p;
@@ -54,22 +54,22 @@ typedef union _nvc_svm_dr_intercept
 {
 	struct
 	{
-		u16 dr0;
-		u16 dr1;
-		u16 dr2;
-		u16 dr3;
-		u16 dr4;
-		u16 dr5;
-		u16 dr6;
-		u16 dr7;
-		u16 dr8;
-		u16 dr9;
-		u16 dr10;
-		u16 dr11;
-		u16 dr12;
-		u16 dr13;
-		u16 dr14;
-		u16 dr15;
+		u16 dr0:1;
+		u16 dr1:1;
+		u16 dr2:1;
+		u16 dr3:1;
+		u16 dr4:1;
+		u16 dr5:1;
+		u16 dr6:1;
+		u16 dr7:1;
+		u16 dr8:1;
+		u16 dr9:1;
+		u16 dr10:1;
+		u16 dr11:1;
+		u16 dr12:1;
+		u16 dr13:1;
+		u16 dr14:1;
+		u16 dr15:1;
 	};
 	u16 value;
 }nvc_svm_dr_intercept,*nvc_svm_dr_intercept_p;

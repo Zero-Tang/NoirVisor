@@ -19,8 +19,9 @@ Query processor count. <br>
 Partial virtualization engine code that necessarily written in assembly.
 
 # CI (Code Integrity)
-Code Integrity is a component that ensures codes in NoirVisor is not tampered. <br>
-It works like PatchGuard in 64-bit Windows. In NoirVisor, checksum of CI is implemented by CRC32 Castagnoli Algorithm.
+Code Integrity is a component that ensures codes in NoirVisor is not tampered by malicious software. <br>
+It works like PatchGuard in 64-bit Windows. In NoirVisor, checksum of CI is implemented by CRC32 Castagnoli Algorithm. <br>
+By now, CI is enforced through timer-based enforcement. It would be better that we implement hardware-based enforcement (through Intel EPT or AMD NPT) so that enforcement would be in real-time.
 
 # Roadmap
 Implement support to other platforms (e.g Linux, MacOS, etc...).

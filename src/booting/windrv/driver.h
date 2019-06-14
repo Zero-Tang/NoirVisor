@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018, Zero Tang. All rights reserved.
+  Copyright 2018-2019, Zero Tang. All rights reserved.
 
   This file is the kernel-mode driver framework of Windows.
 
@@ -42,6 +42,8 @@ ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();
 ULONG NoirVisorVersion();
 ULONG NoirQueryVirtualizationSupportability();
+BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase);
+void NoirFinalizeCodeIntegrity();
 void NoirGetVendorString(OUT PSTR VendorString);
 void NoirGetProcessorName(OUT PSTR ProcessorName);
 void NoirGetNtOpenProcessIndex();

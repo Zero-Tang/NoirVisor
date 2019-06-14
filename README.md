@@ -22,6 +22,10 @@ Also note that, you have to create certain directories required by the batch com
 You may download the WDK 7.1.0 from Microsoft: https://www.microsoft.com/en-us/download/details.aspx?id=11800 <br>
 Note that you should execute the build_prep.bat to make directories for first-time compilation.
 
+# Test
+There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://github.com/Zero-Tang/NoirVisorLoader <br>
+If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher.
+
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. <br>
 Currently, NoirVisor supports the Windows Operating System newer than or same as Windows XP, running as a kernel-mode driver. <br>
@@ -38,6 +42,7 @@ Develop Hypervisor-Platform compatible hypervisor for Windows 10 Redstone.
 - Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel Processor.
 - CPUID caching architecture.
 - Critical Hypervisor Protection on Intel VT-x by Intel EPT.
+- Software-Level Code Integrity Enforcement.
 
 # License
 This repository is under MIT license.

@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2019, Zero Tang. All rights reserved.
+  Copyright 2018-2019, Zero Tang. All rights reserved.
 
   This file is the CI (Code Integrity) Component.
 
@@ -17,15 +17,8 @@
 #include <intrin.h>
 #include "ci.h"
 
-bool noir_check_sse42()
-{
-	u32 ecx;
-	noir_cpuid(1,0,null,null,&ecx,null);
-	return noir_bt(&ecx,20);
-}
-
 // Use CRC32 Castagnoli Algorithm.
-u32 noir_crc32_page_std(void* page)
+u32 static noir_crc32_page_std(ulong_ptr page)
 {
 	u8* buf=(u8*)page;
 	u32 crc=0xffffffff;
@@ -38,50 +31,55 @@ u32 noir_crc32_page_std(void* page)
     return crc;
 }
 
-// SSE4.2 Accelerated CRC32-Castagnoli
-u32 noir_crc32_page_sse(void* page)
+u32 static stdcall noir_ci_enforcement_worker(void* context)
 {
-	u32 crc=0xffffffff;
-	u32 i=0;
-#if defined(_amd64)
-	u64* buf=(u64*)page;
-	for(;i<page_size>>3;i++)
-		crc=noir_crc32_u64(crc,buf[i]);
-#else
-	u32* buf=(u32*)page;
-	for(;i<page_size>>2;i++)
-		crc=noir_crc32_u32(crc,buf[i]);
-#endif
-	return crc;
+	noir_ci_context_p ncie=(noir_ci_context_p)context;
+	while(noir_locked_cmpxchg(&ncie->signal,1,1)==0)
+	{
+		u32 i=ncie->selected++;
+		ulong_ptr page=ncie->base+(i<<12);
+		u32 crc=noir_crc32_page(page);
+		nv_tracef("[CI] Page 0x%p scanned. CRC32C=0x%08X\n",page,crc);
+		if(crc!=ncie->page_crc[i])
+			nv_panicf("[CI] CI detected corruption in Page 0x%p!\n",page);
+		if(ncie->selected==ncie->pages)
+			ncie->selected=0;
+		noir_sleep(5000);
+	}
+	noir_exit_thread(0);
+	return 0;
 }
 
 bool noir_initialize_ci(void* section,u32 size)
 {
-	const u32 page_num=size>>12;
-	// Sections not aligned on page is not allowed.
-	if((ulong_ptr)section&0xfff)return false;
-	if((ulong_ptr)section&0xfff)return false;
-	// Sections smaller than one page is not allowed.
-	if(page_num==0)return false;
+	u32 page_num=size>>12;
+	if(size & 0xfff)page_num++;
 	// Check supportability of SSE4.2
 	if(noir_check_sse42())
-		noir_crc32_page_func=noir_crc32_page_sse;
+		noir_crc32_page=noir_crc32_page_sse;
 	else
-		noir_crc32_page_func=noir_crc32_page_std;
+		noir_crc32_page=noir_crc32_page_std;
 	noir_ci=noir_alloc_nonpg_memory(sizeof(noir_ci_context)+page_num*4);
 	if(noir_ci)
 	{
 		u32 i=0;
 		noir_ci->pages=page_num;
-		noir_ci->page_crc=(u32*)((ulong_ptr)noir_ci+sizeof(noir_ci_context));
+		noir_ci->base=(ulong_ptr)section;
 		for(;i<page_num;i++)
-		return true;
+			noir_ci->page_crc[i]=noir_crc32_page(noir_ci->base+(i<<12));
+		noir_ci->ci_thread=noir_create_thread(noir_ci_enforcement_worker,noir_ci);
+		if(noir_ci->ci_thread)
+			return true;
+		else
+			noir_free_nonpg_memory(noir_ci);
 	}
 	return false;
 }
 
 void noir_finalize_ci()
 {
+	noir_locked_inc(&noir_ci->signal);
+	noir_join_thread(noir_ci->ci_thread);
 	noir_free_nonpg_memory(noir_ci);
 	noir_ci=null;
 }

@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018, Zero Tang. All rights reserved.
+  Copyright 2018-2019, Zero Tang. All rights reserved.
 
   This file is memory management facility on Windows.
 
@@ -9,7 +9,7 @@
   without any warranty (no matter implied warranty or merchantability
   or fitness for a particular purpose, etc.).
 
-  File Location: /xpf_core/memory.c
+  File Location: /xpf_core/windows/memory.c
 */
 
 #include <ntddk.h>

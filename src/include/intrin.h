@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018, Zero Tang. All rights reserved.
+  Copyright 2018-2019, Zero Tang. All rights reserved.
 
   This file defines compiler intrinsics.
 
@@ -98,13 +98,15 @@
 //Invalidate Processor Cache
 #define noir_wbinvd		__wbinvd
 
-//SSE4.2 CRC32
-#define noir_crc32_u8	_mm_crc32_u8
-#define noir_crc32_u16	_mm_crc32_u16
-#define noir_crc32_u32	_mm_crc32_u32
-#if defined(_amd64)
-#define noir_crc32_u64	(u32)_mm_crc32_u64
-#endif
+//Atomic Operations
+#define noir_locked_add			_InterlockedAdd
+#define noir_locked_inc			_InterlockedIncrement
+#define noir_locked_dec			_InterlockedDecrement
+#define noir_locked_and			_InterlockedAnd
+#define noir_locked_or			_InterlockedOr
+#define noir_locked_xor			_InterlockedXor
+#define noir_locked_xchg		_InterlockedExchange
+#define noir_locked_cmpxchg		_InterlockedCompareExchange
 #endif
 
 //The rest are done by inline functions.

@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018, Zero Tang. All rights reserved.
+  Copyright 2018-2019, Zero Tang. All rights reserved.
 
   This file is the HyperVisor Invoker on Windows Platform.
 
@@ -22,6 +22,8 @@ ULONG noir_visor_version();
 void noir_get_vendor_string(char* vendor_string);
 void noir_get_processor_name(char* processor_name);
 ULONG noir_get_virtualization_supportability();
+BOOLEAN noir_initialize_ci(PVOID section,ULONG size);
+void noir_finalize_ci();
 
 PVOID NvImageBase=NULL;
 ULONG NvImageSize=0;

@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2019, Zero Tang. All rights reserved.
+  Copyright 2018-2019, Zero Tang. All rights reserved.
 
   This file is the CI (Code Integrity) Component.
 
@@ -14,17 +14,23 @@
 
 #include <nvdef.h>
 
-typedef u32 (fastcall *noir_crc32_page)(void* page);
+typedef u32 (fastcall *noir_crc32_page_func)(ulong_ptr page);
 
 typedef struct _noir_ci_context
 {
+	noir_thread ci_thread;
+	u32v signal;
 	u32 pages;
-	void* start_address;
-	u32* page_crc;
+	ulong_ptr base;
+	u32 selected;
+	u32 page_crc[1];
 }noir_ci_context,*noir_ci_context_p;
 
+u32 fastcall noir_crc32_page_sse(ulong_ptr page);
+bool fastcall noir_check_sse42();
+
 noir_ci_context_p noir_ci=null;
-noir_crc32_page noir_crc32_page_func=null;
+noir_crc32_page_func noir_crc32_page=null;
 
 const u32 crc32c_table[256]=
 {

@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018, Zero Tang. All rights reserved.
+  Copyright 2018-2019, Zero Tang. All rights reserved.
 
   This file is the basic development kit of NoirVisor.
   Do not include definitions related to virtualization in this header.
@@ -128,3 +128,19 @@ void noir_copy_memory(void* dest,void* src,u32 cch);
 void cdecl nv_dprintf(const char* format,...);
 void cdecl nv_tracef(const char* format,...);
 void cdecl nv_panicf(const char* format,...);
+
+//Threading Facility
+typedef u32 (stdcall *noir_thread_procedure)(void* context);
+typedef void* noir_thread;
+typedef void* noir_reslock;
+
+noir_thread noir_create_thread(noir_thread_procedure procedure,void* context);
+void noir_exit_thread(u32 status);
+bool noir_join_thread(noir_thread thread);
+void noir_sleep(u64 ms);
+noir_reslock noir_initialize_reslock();
+void noir_finalize_reslock(noir_reslock lock);
+void noir_acquire_reslock_shared(noir_reslock lock);
+void noir_acquire_reslock_shared_ex(noir_reslock lock);
+void noir_acquire_reslock_exclusive(noir_reslock lock);
+void noir_release_reslock(noir_reslock lock);

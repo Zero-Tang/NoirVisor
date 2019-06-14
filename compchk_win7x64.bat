@@ -38,7 +38,9 @@ echo Compiling Core of Cross-Platform Framework (XPF)...
 
 %ddkpath%\amd64\cl.exe .\src\xpf_core\windows\processor.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\processor.cod" /Fo"%objpath%\processor.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
 
-%ddkpath%\amd64\cl.exe .\src\xpf_core\windows\hooks.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /D"BEA_ENGINE_STATIC" /D"BEA_USE_STDCALL" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\hooks.cod" /Fo"%objpath%\hooks.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
+%ddkpath%\amd64\cl.exe .\src\xpf_core\windows\thread.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\thread.cod" /Fo"%objpath%\thread.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
+
+%ddkpath%\amd64\cl.exe .\src\xpf_core\windows\hooks.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\hooks.cod" /Fo"%objpath%\hooks.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
 
 %ddkpath%\amd64\cl.exe .\src\xpf_core\windows\winhvm.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\winhvm.cod" /Fo"%objpath%\winhvm.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
 
@@ -54,8 +56,10 @@ echo Compiling Core of Cross-Platform Framework (XPF)...
 
 %ddkpath%\amd64\ml64.exe /W3 /WX /Zf /Zd /Fo"%objpath%\kpcr64.obj" /c /nologo .\src\xpf_core\windows\kpcr64.asm
 
+%ddkpath%\amd64\ml64.exe /W3 /WX /Zf /Zd /Fo"%objpath%\crc32_x64.obj" /c /nologo .\src\xpf_core\windows\crc32_x64.asm
+
 echo ============Start Linking============
-%ddkpath%\amd64\link.exe "%objpath%\driver.obj" "%objpath%\vt_main.obj" "%objpath%\vt_exit.obj" "%objpath%\vt_ept.obj" "%objpath%\svm_main.obj" "%objpath%\svm_exit.obj" "%objpath%\LDE.obj" "%objpath%\memory.obj" "%objpath%\debug.obj" "%objpath%\processor.obj" "%objpath%\hooks.obj" "%objpath%\winhvm.obj" "%objpath%\noirhvm.obj" "%objpath%\ci.obj" "%objpath%\svm_hv64.obj" "%objpath%\vt_hv64.obj" "%objpath%\msrhook64.obj" "%objpath%\kpcr64.obj" /LIBPATH:"%libpath%\win7\amd64" /NODEFAULTLIB "ntoskrnl.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
+%ddkpath%\amd64\link.exe "%objpath%\driver.obj" "%objpath%\vt_main.obj" "%objpath%\vt_exit.obj" "%objpath%\vt_ept.obj" "%objpath%\svm_main.obj" "%objpath%\svm_exit.obj" "%objpath%\LDE.obj" "%objpath%\memory.obj" "%objpath%\debug.obj" "%objpath%\processor.obj" "%objpath%\thread.obj" "%objpath%\hooks.obj" "%objpath%\winhvm.obj" "%objpath%\noirhvm.obj" "%objpath%\ci.obj" "%objpath%\svm_hv64.obj" "%objpath%\vt_hv64.obj" "%objpath%\msrhook64.obj" "%objpath%\kpcr64.obj" "%objpath%\crc32_x64.obj" /LIBPATH:"%libpath%\win7\amd64" /NODEFAULTLIB "ntoskrnl.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
 
 echo ============Start Signing============
 %ddkpath%\signtool.exe sign /v /f .\ztnxtest.pfx /t http://timestamp.globalsign.com/scripts/timestamp.dll %binpath%\NoirVisor.sys
