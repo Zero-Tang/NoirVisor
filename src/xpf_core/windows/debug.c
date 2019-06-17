@@ -24,6 +24,22 @@ void __cdecl NoirDebugPrint(const char* Format,...)
 	va_end(arg_list);
 }
 
+void __cdecl nvci_tracef(const char* format,...)
+{
+	va_list arg_list;
+	va_start(arg_list,format);
+	vDbgPrintExWithPrefix("[NoirVisor - CI Log] ",DPFLTR_IHVDRIVER_ID,DPFLTR_TRACE_LEVEL,format,arg_list);
+	va_end(arg_list);
+}
+
+void __cdecl nvci_panicf(const char* format,...)
+{
+	va_list arg_list;
+	va_start(arg_list,format);
+	vDbgPrintExWithPrefix("[NoirVisor - CI Panic] ",DPFLTR_IHVDRIVER_ID,DPFLTR_ERROR_LEVEL,format,arg_list);
+	va_end(arg_list);
+}
+
 void __cdecl nv_dprintf(const char* format,...)
 {
 	va_list arg_list;

@@ -15,6 +15,8 @@
 #include <ntifs.h>
 #include <windef.h>
 
+NTSYSAPI NTSTATUS NTAPI ZwAlertThread(IN HANDLE ThreadHandle);
+
 // Essential Multi-Threading Facility.
 HANDLE noir_create_thread(IN PKSTART_ROUTINE StartRoutine,IN PVOID Context)
 {
@@ -41,12 +43,20 @@ BOOLEAN noir_join_thread(IN HANDLE ThreadHandle)
 	return FALSE;
 }
 
+BOOLEAN noir_alert_thread(IN HANDLE ThreadHandle)
+{
+	NTSTATUS st=ZwAlertThread(ThreadHandle);
+	if(st==STATUS_SUCCESS)
+		return TRUE;
+	return FALSE;
+}
+
 // Sleep
 void noir_sleep(IN ULONG64 ms)
 {
 	LARGE_INTEGER Time;
 	Time.QuadPart=ms*(-10000);
-	KeDelayExecutionThread(KernelMode,FALSE,&Time);
+	KeDelayExecutionThread(KernelMode,TRUE,&Time);
 }
 
 // Resource Lock (R/W Lock)

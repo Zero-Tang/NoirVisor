@@ -33,19 +33,26 @@ u32 static noir_crc32_page_std(ulong_ptr page)
 
 u32 static stdcall noir_ci_enforcement_worker(void* context)
 {
+	// Retrieve Thread Context
 	noir_ci_context_p ncie=(noir_ci_context_p)context;
+	// Check exit signal.
 	while(noir_locked_cmpxchg(&ncie->signal,1,1)==0)
 	{
+		// Select a page to enforce CI.
 		u32 i=ncie->selected++;
 		ulong_ptr page=ncie->base+(i<<12);
+		// Perform Enforcement.
 		u32 crc=noir_crc32_page(page);
-		nv_tracef("[CI] Page 0x%p scanned. CRC32C=0x%08X\n",page,crc);
+		nvci_tracef("Page 0x%p scanned. CRC32C=0x%08X\n",page,crc);
 		if(crc!=ncie->page_crc[i])
-			nv_panicf("[CI] CI detected corruption in Page 0x%p!\n",page);
+			nvci_panicf("CI detected corruption in Page 0x%p!\n",page);
+		// Restore if exceeded.
 		if(ncie->selected==ncie->pages)
 			ncie->selected=0;
-		noir_sleep(5000);
+		// Clock.
+		noir_sleep(ci_enforcement_delay);
 	}
+	// Thread is about to exit.
 	noir_exit_thread(0);
 	return 0;
 }
@@ -59,14 +66,17 @@ bool noir_initialize_ci(void* section,u32 size)
 		noir_crc32_page=noir_crc32_page_sse;
 	else
 		noir_crc32_page=noir_crc32_page_std;
+	// Setup CI Enforcement Worker Thread.
 	noir_ci=noir_alloc_nonpg_memory(sizeof(noir_ci_context)+page_num*4);
 	if(noir_ci)
 	{
 		u32 i=0;
 		noir_ci->pages=page_num;
 		noir_ci->base=(ulong_ptr)section;
+		// Initialize Pages Checksums.
 		for(;i<page_num;i++)
 			noir_ci->page_crc[i]=noir_crc32_page(noir_ci->base+(i<<12));
+		// Create Worker Thread.
 		noir_ci->ci_thread=noir_create_thread(noir_ci_enforcement_worker,noir_ci);
 		if(noir_ci->ci_thread)
 			return true;
@@ -78,8 +88,13 @@ bool noir_initialize_ci(void* section,u32 size)
 
 void noir_finalize_ci()
 {
+	// Set the signal.
 	noir_locked_inc(&noir_ci->signal);
+	// Wake up thread if sleeping.
+	noir_alert_thread(noir_ci->ci_thread);
+	// Wait for exit.
 	noir_join_thread(noir_ci->ci_thread);
+	// Finalization.
 	noir_free_nonpg_memory(noir_ci);
 	noir_ci=null;
 }

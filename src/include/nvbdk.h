@@ -128,6 +128,8 @@ void noir_copy_memory(void* dest,void* src,u32 cch);
 void cdecl nv_dprintf(const char* format,...);
 void cdecl nv_tracef(const char* format,...);
 void cdecl nv_panicf(const char* format,...);
+void cdecl nvci_tracef(const char* format,...);
+void cdecl nvci_panicf(const char* format,...);
 
 //Threading Facility
 typedef u32 (stdcall *noir_thread_procedure)(void* context);
@@ -137,6 +139,7 @@ typedef void* noir_reslock;
 noir_thread noir_create_thread(noir_thread_procedure procedure,void* context);
 void noir_exit_thread(u32 status);
 bool noir_join_thread(noir_thread thread);
+bool noir_alert_thread(noir_thread thread);
 void noir_sleep(u64 ms);
 noir_reslock noir_initialize_reslock();
 void noir_finalize_reslock(noir_reslock lock);

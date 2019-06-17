@@ -14,6 +14,10 @@
 
 #include <nvdef.h>
 
+#if !defined(ci_enforcement_delay)
+#define ci_enforcement_delay 50000
+#endif
+
 typedef u32 (fastcall *noir_crc32_page_func)(ulong_ptr page);
 
 typedef struct _noir_ci_context
