@@ -14,6 +14,7 @@ NoirVisor is developed in highest focus on nested virtualization. It is not curr
 
 # Announcement to all contributors
 NoirVisor is coded in the C programming language and the assembly since it is procedure-oriented designed. <br>
+Contributing Guidelines are available in repository. For details, see the markdown file in the root directory of repository. <br>
 DO NOT PROVIDE CODES WITH C++ WHICH INVOLVES THE NoirVisor Core IN YOUR PULL-REQUEST!
 
 # Build
