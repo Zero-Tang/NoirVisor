@@ -10,7 +10,8 @@ AMD Processors based on AMD64 Architecture, with support to AMD-V. Nested Paging
 Other processors based on x86 architecture may be supported in future.
 
 # Nested Virtualization
-NoirVisor is developed in highest focus on nested virtualization. It is not currently supported, but will be developed in future.
+NoirVisor is developed in highest focus on nested virtualization. It is not currently supported, but will be developed in future. <br>
+Algorithm regarding the Nested Virtualization was stated down in the readme files in directories.
 
 # Announcement to all contributors
 NoirVisor is coded in the C programming language and the assembly since it is procedure-oriented designed. <br>

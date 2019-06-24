@@ -8,13 +8,18 @@
   This program is distributed in the hope that it will be useful, but 
   without any warranty (no matter implied warranty or merchantability
   or fitness for a particular purpose, etc.).
+  
+  Reference:
+  Appendix C, Volume 3D,
+  Intel 64 and IA-32 Architectures Software Developer's Manual
+  Order Number (Combined Volumes: 325462-070US, May 2019)
 
   File Location: /vt_core/vt_exit.h
 */
 
 #include <nvdef.h>
 
-#define vmx_maximum_exit_reason		65
+#define vmx_maximum_exit_reason		69
 
 typedef enum _vmx_vmexit_reason
 {
@@ -79,7 +84,10 @@ typedef enum _vmx_vmexit_reason
 	intercept_rdseed=61,
 	pml_full=62,
 	intercept_xsaves=63,
-	intercept_xrstors=64
+	intercept_xrstors=64,
+	spp_related_event=66,
+	intercept_umwait=67,
+	intercept_tpause=68
 }vmx_vmexit_reason,*vmx_vmexit_reason_p;
 
 #define ia32_external_interrupt			0
@@ -194,6 +202,10 @@ char* vmx_exit_msg[vmx_maximum_exit_reason]=
 	"Page-Modification Log is full!",						//Reason=62
 	"XSAVES instruction is intercepted!",					//Reason=63
 	"XRSTORS instruction is intercepted!",					//Reason=64
+	"Unknown Exit, Reason=65",								//Reason=65
+	"Sub-Page Miss or Misconfiguration is intercepted!",	//Reason=66
+	"UMWAIT instruction is intercepted!",					//Reason=67
+	"TPAUSE instruction is intercepted!"					//Reason=68
 };
 
 noir_vt_exit_handler_routine* vt_exit_handlers=null;

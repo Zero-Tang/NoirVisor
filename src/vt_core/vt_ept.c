@@ -33,15 +33,15 @@ bool nvc_ept_insert_pte(noir_ept_manager_p eptm,noir_hook_page_p nhp)
 		addr.value=nhp->orig.phys;
 		while(cur_d)
 		{
-			//Find if the desired page has already been described.
+			// Find if the desired page has already been described.
 			if(nhp->orig.phys>=cur_d->gpa_start && nhp->orig.phys<cur_d->gpa_start+page_2mb_size)
 				break;
 			cur_d=cur_d->next;
 		}
 		if(cur_d==null)
 		{
-			//The desired page is not described.
-			//Describe the page, then perform hooking.
+			// The desired page is not described.
+			// Describe the page, then perform hooking.
 			u32 index=(u32)((addr.pdpte_offset<<9)+addr.pde_offset);
 			ia32_ept_pde_p pde_p=(ia32_ept_pde_p)&eptm->pde.virt[index];
 			u32 i=0;
@@ -51,7 +51,7 @@ bool nvc_ept_insert_pte(noir_ept_manager_p eptm,noir_hook_page_p nhp)
 			if(cur_d->virt==null)return false;
 			cur_d->phys=noir_get_physical_address(cur_d->virt);
 			cur_d->gpa_start=(addr.pdpte_offset<<18)+(addr.pde_offset<<9);
-			//Setup identity map.
+			// Setup identity map.
 			for(;i<512;i++)
 			{
 				cur_d->virt[i].value=0;
@@ -62,7 +62,7 @@ bool nvc_ept_insert_pte(noir_ept_manager_p eptm,noir_hook_page_p nhp)
 				cur_d->virt[i].page_offset=cur_d->gpa_start+i;
 			}
 			cur_d->gpa_start<<=12;
-			//Insert to descriptor linked-list.
+			// Insert to descriptor linked-list.
 			if(eptm->pte.head)
 			{
 				eptm->pte.tail->next=cur_d;
@@ -73,19 +73,19 @@ bool nvc_ept_insert_pte(noir_ept_manager_p eptm,noir_hook_page_p nhp)
 				eptm->pte.head=cur_d;
 				eptm->pte.tail=cur_d;
 			}
-			//Reset the Page-Directory Entry
+			// Reset the Page-Directory Entry
 			pde_p->reserved0=0;
 			pde_p->large_pde=0;
 			pde_p->pte_offset=cur_d->phys>>12;
 		}
-		//At this moment, we assume the desired page is described.
+		// At this moment, we assume the desired page is described.
 		cur_h->pte_descriptor=(void*)&cur_d->virt[addr.pte_offset];
-		//Reset the page translation.
+		// Reset the page translation.
 		cur_d->virt[addr.pte_offset].page_offset=nhp->hook.phys>>12;
-		//Clear R/W but Reserve X.
+		// Clear R/W but Reserve X.
 		cur_d->virt[addr.pte_offset].read=0;
 		cur_d->virt[addr.pte_offset].write=0;
-		//Go to Setup the Next Hook.
+		// Go to Setup the Next Hook.
 		cur_h=cur_h->next;
 	}
 	return true;
@@ -284,7 +284,7 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 			for(;j<512;j++)
 			{
 				const u32 k=(i<<9)+j;
-				//Build Page-Directory Entries (PDEs)
+				// Build Page-Directory Entries (PDEs)
 				eptm->pde.virt[k].value=0;
 				eptm->pde.virt[k].page_offset=k;
 				eptm->pde.virt[k].read=1;
@@ -293,7 +293,7 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 				eptm->pde.virt[k].memory_type=ia32_write_back;
 				eptm->pde.virt[k].large_pde=1;
 			}
-			//Build Page-Directory-Pointer-Table Entries (PDPTEs)
+			// Build Page-Directory-Pointer-Table Entries (PDPTEs)
 			eptm->pdpt.virt[i].value=0;
 			eptm->pdpt.virt[i].pde_offset=(eptm->pde.phys>>12)+i;
 			eptm->pdpt.virt[i].read=1;
@@ -302,14 +302,14 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 		}
 		if(nvc_ept_insert_pte(eptm,noir_hook_pages)==false)
 			goto alloc_failure;
-		//Build Page Map Level-4 Entry (PML4E)
+		// Build Page Map Level-4 Entry (PML4E)
 		eptm->pdpt.phys=noir_get_physical_address(eptm->pdpt.virt);
 		eptm->eptp.virt->value=0;
 		eptm->eptp.virt->pdpte_offset=eptm->pdpt.phys>>12;
 		eptm->eptp.virt->read=1;
 		eptm->eptp.virt->write=1;
 		eptm->eptp.virt->execute=1;
-		//Make EPT-Pointer (EPTP)
+		// Make EPT-Pointer (EPTP)
 		eptm->eptp.phys.value=noir_get_physical_address(eptm->eptp.virt);
 		eptm->eptp.phys.memory_type=ia32_write_back;
 		eptm->eptp.phys.walk_length=3;
