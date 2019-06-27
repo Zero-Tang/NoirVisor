@@ -57,13 +57,17 @@ typedef struct _noir_vt_cpuid_info
 typedef struct _noir_vt_cached_cpuid
 {
 	noir_vt_cpuid_info* std_leaf;		//0x00000000 - 0x0FFFFFFF
-	noir_vt_cpuid_info* ext_leaf;		//0x80000000 - 0xFFFFFFFF
+	noir_vt_cpuid_info* ext_leaf;		//0x80000000 - 0x8FFFFFFF
 }noir_vt_cached_cpuid,*noir_vt_cached_cpuid_p;
 
 typedef struct _noir_vt_nested_vcpu
 {
 	memory_descriptor vmxon;
-	memory_descriptor vmcs;
+	// Abstracted-to-user VMCS.
+	memory_descriptor vmcs_c;
+	// Abstracted-to-CPU VMCS.
+	memory_descriptor vmcs_t;
+	u64 vmx_msr[0x12];
 	u32 status;
 }noir_vt_nested_vcpu,*noir_vt_nested_vcpu_p;
 
@@ -84,3 +88,9 @@ noir_status nvc_vt_build_exit_handlers();
 void nvc_vt_teardown_exit_handlers();
 void nvc_vt_resume_without_entry(noir_gpr_state_p state);
 extern void nvc_vt_exit_handler_a();
+void noir_vt_vmsuccess();
+void noir_vt_vmfail_invalid();
+void noir_vt_vmfail_valid();
+void noir_vt_vmfail(noir_vt_nested_vcpu_p nested_vcpu,u32 message);
+bool noir_vt_nested_vmread(void* vmcs,u32 encoding,ulong_ptr* data);
+bool noir_vt_nested_vmwrite(void* vmcs,u32 encoding,ulong_ptr data);

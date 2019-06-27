@@ -63,3 +63,7 @@ typedef enum
 #endif
 
 #define null	(void*)0
+#define maxu8	0xff
+#define maxu16	0xffff
+#define maxu32	0xffffffff
+#define maxu64	0xffffffffffffffff

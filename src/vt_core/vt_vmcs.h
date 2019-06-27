@@ -192,3 +192,128 @@ typedef enum _vmx_vmcs_encoding
 	host_rsp=0x6C14,
 	host_rip=0x6C16
 }vmx_vmcs_encoding,*vmx_vmcs_encoding_p;
+
+/*
+  In NoirVisor's Nested Virtualization, the
+  convention is given as the followings:
+
+  Offset	Length		Information
+  0x0		0x100		VMCS Basic Header
+  0x100		0x100		Read-Only Area
+  0x100		0x40		16-Bit Read-Only Field
+  0x140		0x40		64-Bit Read-Only Field
+  0x180		0x40		32-Bit Read-Only Field
+  0x1C0		0x40		Natual-Width Read-Only Field
+  0x200		0x200		Host State Area
+  0x200		0x80		16-Bit Host-State Field
+  0x280		0x80		64-Bit Host-State Field
+  0x300		0x80		32-Bit Host-State-Field
+  0x380		0x80		Natural-Width Host-State Field
+  0x400		0x400		Guest State Area
+  0x400		0x80		16-Bit Guest-State Field
+  0x480		0x180		64-Bit Guest-State Field
+  0x600		0x100		32-Bit Guest-State Field
+  0x700		0x100		Natural-Width Guest-State Field
+  0x800		0x400		Control Area
+  0x800		0x80		16-Bit Control Field
+  0x880		0x180		64-Bit Control Field
+  0xA00		0x100		32-Bit Control Field
+  0xB00		0x100		Natural-Width Control Field
+  0xC00		0x400		Reserved.
+*/
+
+/*
+  VMCS Field has following encodings;
+  31					14	12	12	10			1	0
+  +---------------------+---+---+---+-----------+---+
+  | Reserved			| W | R | T | Field		| H	|
+  +---------------------+---+---+---+-----------+---+
+  W: Width indicator
+  R: Reserved
+  T: Type
+  H: Higher 32 Bit
+*/
+
+typedef union _ia32_vmx_vmcs_encoding
+{
+	struct
+	{
+		u32 hi:1;
+		u32 field:10;
+		u32 type:2;
+		u32 reserved1:1;
+		u32 width:2;
+		u32 reserved2:18;
+	};
+	u32 value;
+}ia32_vmx_vmcs_encoding,*ia32_vmx_vmcs_encoding_p;
+
+#if defined(_vt_nvcpu)
+const u16 noir_vt_vmcs_redirection[4][4]=
+{
+//	Control		Read-Only	Guest	Host
+	{0x800,		0x100,		0x400,	0x200},		// 16-Bit Fields
+	{0x880,		0x140,		0x480,	0x280},		// 64-Bit Fields
+	{0xA00,		0x180,		0x600,	0x300},		// 32-Bit Fields
+	{0xB00,		0x1C0,		0x700,	0x380}		// Natural-Width
+};
+
+const u8 noir_vt_vmcs_limit[4][4]=
+{
+//	Control		Read-Only	Guest	Host
+	{0x3,		0x0,		0x10,	0x7},		// 16-Bit Fields
+	{0x1A,		0x1,		0xA,	0x3},		// 64-Bit Fields
+	{0x11,		0x8,		0x17,	0x1},		// 32-Bit Fields
+	{0x8,		0x6,		0x13,	0xB}		// Natural-Width
+};
+
+const u8 noir_vt_vmcs_field_size[4]={2,8,4,sizeof(void*)};
+#endif
+
+// This structure should have 256 bytes at maximum
+typedef struct _noir_vt_nested_vmcs_header
+{
+	// Common Header as Required by Intel.
+	struct
+	{
+		u32 revision_id:31;
+		u32 shadowing:1;
+	};
+	u32 vmx_abort_indicator;
+	// Reserved 32 bytes for future Intel Modifications.
+	u64 reserved[4];
+	// 216 bytes remaining.
+	union
+	{
+		// Use clean-bits to cache VMCS info.
+		// Value of zero means VMCS is totally uncached.
+		// These fields are unlikely to be revised.
+		struct
+		{
+			// Segment Register State.
+			u64 sreg:1;
+			// Control Register State
+			u64 creg:1;
+			// Debug Register State.
+			u64 dreg:1;
+			// Virtual Processor Identifier.
+			u64 vpid:1;
+			// Pin, PriProc, 2ndProc, Exit, Entry.
+			u64 ctrl:1;
+			// MSR-Bitmap, I/O-Bitmap Address
+			u64 pmpa:1;
+			// Auto-Load/Store MSR List
+			u64 amsr:1;
+			// Guest MSRs stored in VMCS.
+			u64 gmsr:1;
+			// Host State Area
+			u64 host:1;
+			u64 reserved:54;
+			// VMCS Status indicator.
+			u64 active:1;
+			u64 launched:1;
+		};
+		u64 value;
+	}clean_fields;
+	u64 related_vmxon;
+}noir_vt_nested_vmcs_header,*noir_vt_nested_vmcs_header_p;

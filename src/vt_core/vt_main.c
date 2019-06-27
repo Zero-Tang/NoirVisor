@@ -105,6 +105,8 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 					noir_free_contd_memory(vcpu->vmxon.virt);
 				if(vcpu->vmcs.virt)
 					noir_free_contd_memory(vcpu->vmcs.virt);
+				if(vcpu->nested_vcpu.vmcs_t.virt)
+					noir_free_contd_memory(vcpu->nested_vcpu.vmcs_t.virt);
 				if(vcpu->hv_stack)
 					noir_free_nonpg_memory(vcpu->hv_stack);
 				nvc_ept_cleanup(vcpu->ept_manager);
@@ -176,6 +178,25 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 #else
 	noir_set_bitmap(read_bitmap_low,ia32_sysenter_eip);			// Hide MSR Hook
 #endif
+	// Setup Nested Virtualization MSR Hook.
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_basic);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_pinbased_ctrl);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_priproc_ctrl);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_exit_ctrl);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_entry_ctrl);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_misc);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_cr0_fixed0);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_cr0_fixed1);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_cr4_fixed0);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_cr4_fixed1);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_vmcs_enum);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_2ndproc_ctrl);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_ept_vpid_cap);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_true_pinbased_ctrl);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_true_priproc_ctrl);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_true_exit_ctrl);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_true_entry_ctrl);
+	noir_set_bitmap(read_bitmap_low,ia32_vmx_vmfunc);
 }
 
 u8 static nvc_vt_enable(u64* vmxon_phys)
@@ -253,7 +274,7 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	noir_vt_vmwrite(guest_cr3,state_p->cr3);
 	noir_vt_vmwrite(guest_cr4,state_p->cr4);
 	noir_vt_vmwrite(cr0_read_shadow,state_p->cr0);
-	noir_vt_vmwrite(cr4_read_shadow,state_p->cr4);
+	noir_vt_vmwrite(cr4_read_shadow,state_p->cr4 & ~ia32_cr4_vmxe_bit);
 	// Guest State Area - Debug Controls
 	noir_vt_vmwrite(guest_dr7,state_p->dr7);
 	noir_vt_vmwrite(guest_msr_ia32_debug_ctrl,state_p->debug_ctrl);
@@ -508,6 +529,7 @@ void static nvc_vt_subvert_processor_thunk(void* context,u32 processor_id)
 	vt_basic.value=noir_rdmsr(ia32_vmx_basic);
 	*(u32*)vcpu[processor_id].vmxon.virt=(u32)vt_basic.revision_id;
 	*(u32*)vcpu[processor_id].vmcs.virt=(u32)vt_basic.revision_id;
+	*(u32*)vcpu[processor_id].nested_vcpu.vmcs_t.virt=(u32)vt_basic.revision_id;
 	nv_dprintf("Processor %d entered subversion routine!\n",processor_id);
 	nvc_vt_subvert_processor(&vcpu[processor_id]);
 }
@@ -564,6 +586,11 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 			vcpu->vmxon.virt=noir_alloc_contd_memory(page_size);
 			if(vcpu->vmxon.virt)
 				vcpu->vmxon.phys=noir_get_physical_address(vcpu->vmxon.virt);
+			else
+				goto alloc_failure;
+			vcpu->nested_vcpu.vmcs_t.virt=noir_alloc_contd_memory(page_size);
+			if(vcpu->nested_vcpu.vmcs_t.virt)
+				vcpu->nested_vcpu.vmcs_t.phys=noir_get_physical_address(vcpu->nested_vcpu.vmcs_t.virt);
 			else
 				goto alloc_failure;
 			vcpu->hv_stack=noir_alloc_nonpg_memory(nvc_stack_size);

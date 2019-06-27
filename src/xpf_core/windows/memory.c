@@ -87,6 +87,22 @@ void noir_copy_memory(void* dest,void* src,size_t cch)
 	RtlCopyMemory(dest,src,cch);
 }
 
+void* noir_find_virt_by_phys(ULONG64 physical_address)
+{
+	PHYSICAL_ADDRESS pa;
+	pa.QuadPart=physical_address;
+	/*
+	  The WDK Document claims that MmGetVirtualForPhysical
+	  is a routine reserved for system use.
+	  However, I think this is the perfect solution to resolve
+	  the physical address issue in virtualization nesting.
+
+	  As described in WRK v1.2, MmGetVirtualForPhysical could run
+	  at any IRQL, given that the address is in system space.
+	*/
+	return MmGetVirtualForPhysical(pa);
+}
+
 void* noir_alloc_2mb_page()
 {
 	PHYSICAL_ADDRESS L={0};

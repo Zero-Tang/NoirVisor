@@ -308,6 +308,35 @@ typedef struct ia32_vmx_msr_auto
 	u64 data;
 }ia32_vmx_msr_auto,*ia32_vmx_msr_auto_p;
 
+typedef enum _ia32_vmx_instruction_error
+{
+	vmcall_in_vmx_root=1,
+	vmclear_with_invalid_pa=2,
+	vmclear_with_vmxon_region=3,
+	vmlaunch_non_clear_vmcs=4,
+	vmresume_non_launched_vmcs=5,
+	vmresume_after_vmxoff=6,
+	vmentry_failed_invalid_control_fields=7,
+	vmentry_failed_invalid_host_state=8,
+	vmptrld_with_invalid_pa=9,
+	vmptrld_with_vmxon_region=10,
+	vmptrld_with_incorrect_revid=11,
+	vmrw_unsupported_field=12,
+	vmwrite_to_read_only_field=13,
+	vmxon_in_vmx_root=15,
+	vmentry_failed_invalid_executive_vmcs=16,
+	vmentry_failed_non_launched_executive_vmcs=17,
+	vmentry_failed_executive_vmcs_not_vmxon=18,
+	vmentry_failed_non_clear_vmcs=19,
+	vmcall_invalid_exit_control=20,
+	vmcall_incorrect_mseg_revision_id=22,
+	vmxoff_under_dual_monitor_treatment=23,
+	vmcall_invalid_smm_monitor_feature=24,
+	vmentry_failed_invalid_execution_control=25,
+	vmentry_failed_movss_blocked_events=26,
+	invept_invvpid_invalid_operand=28
+}ia32_vmx_instruction_error,*ia32_vmx_instruction_error_p;
+
 #if defined(_vt_drv)
 char* vt_error_message[0x20]=
 {
@@ -342,9 +371,9 @@ char* vt_error_message[0x20]=
 	"vmcall is given invalid SMM-Monitor features! (Are you attempting to activate dual-monitor treatment?)",
 	//Error=25
 	"VM-Entry failed due to invalid VM-Execution Control! (Are attempting to return from SMM?)",
-	//Error=26,
+	"VM-Entry failed due to events blocked by mov ss!",				//Error=26,
 	"Invalid Error, Number=27!"										//Error=27
-	"VM-Entry failed due to events blocked by mov ss!",				//Error=28
+	"Invalid Operand to invept/invvpid Instructions!",				//Error=28
 	"Invalid Error, Number=29!",									//Error=29
 	"Invalid Error, Number=30!",									//Error=30
 	"Invalid Error, Number=31!"										//Error=31

@@ -115,13 +115,13 @@ typedef union _ia32_cr_access_qualification
 {
 	struct
 	{
-		ulong_ptr cr_num:4;			//Bits	0-3
-		ulong_ptr access_type:2;	//Bits	4-5
-		ulong_ptr lmsw_type:1;		//Bit	6
-		ulong_ptr reserved0:1;		//Bit	7
-		ulong_ptr gpr_num:4;		//Bits	8-11
-		ulong_ptr reserved1:4;		//Bits	12-15
-		ulong_ptr lmsw_src:16;		//Bits	16-31
+		ulong_ptr cr_num:4;			// Bits	0-3
+		ulong_ptr access_type:2;	// Bits	4-5
+		ulong_ptr lmsw_type:1;		// Bit	6
+		ulong_ptr reserved0:1;		// Bit	7
+		ulong_ptr gpr_num:4;		// Bits	8-11
+		ulong_ptr reserved1:4;		// Bits	12-15
+		ulong_ptr lmsw_src:16;		// Bits	16-31
 #if defined(_amd64)
 		ulong_ptr reserved2:32;
 #endif
@@ -129,83 +129,186 @@ typedef union _ia32_cr_access_qualification
 	ulong_ptr value;
 }ia32_cr_access_qualification,*ia32_cr_access_qualification_p;
 
+typedef union _ia32_vmexit_instruction_information
+{
+	// ins, outs instructions use this field.
+	struct
+	{
+		u32 reserved1:7;			// Bits	0-6
+		u32 address_size:3;			// Bits 7-9
+		u32 reserved2:5;			// Bits 10-14
+		u32 segment:3;				// Bits 15-17
+		u32 reserved3:14;			// Bits 18-31
+	}f0;
+	// invept, invpcid, invvpid instructions use this field.
+	struct
+	{
+		u32 scaling:2;				// Bits	0-1
+		u32 reserved1:5;			// Bits	2-6
+		u32 address_size:3;			// Bits 7-9
+		u32 reserved2:5;			// Bits	10-14
+		u32 segment:3;				// Bits 15-17
+		u32 index:4;				// Bits 18-21
+		u32 index_invalid:1;		// Bit	22
+		u32 base:4;					// Bits	23-26
+		u32 base_invalid:1;			// Bit	27
+		u32 reg2:4;					// Bits	28-31
+	}f1;
+	// lidt, lgdt, sidt, sgdt instructions use this field.
+	struct
+	{
+		u32 scaling:2;				// Bits	0-1
+		u32 reserved1:5;			// Bits	2-6
+		u32 address_size:3;			// Bits 7-9
+		u32 reserved2:1;			// Bit	10
+		u32 operand_size:1;			// Bit	11
+		u32 reserved3:3;			// Bits	12-14
+		u32 segment:3;				// Bits 15-17
+		u32 index:4;				// Bits 18-21
+		u32 index_invalid:1;		// Bit	22
+		u32 base:4;					// Bits	23-26
+		u32 base_invalid:1;			// Bit	27
+		u32 instruction_id:2;		// Bits	28-29
+		u32 reserved4:2;			// Bits	30-31
+	}f2;
+	// lldt, ltr, sldt, str instructions use this field.
+	struct
+	{
+		u32 scaling:2;				// Bits	0-1
+		u32 reserved1:1;			// Bit	2
+		u32 reg1:4;					// Bits	3-6
+		u32 address_size:3;			// Bits 7-9
+		u32 use_register:1;			// Bit	10
+		u32 reserved2:4;			// Bits	11-14
+		u32 segment:3;				// Bits 15-17
+		u32 index:4;				// Bits 18-21
+		u32 index_invalid:1;		// Bit	22
+		u32 base:4;					// Bits	23-26
+		u32 base_invalid:1;			// Bit	27
+		u32 instruction_id:2;		// Bits	28-29
+		u32 reserved3:2;			// Bits	30-31
+	}f3;
+	// rdrand, rdseed, tpause, umwait instructions use this field.
+	struct
+	{
+		u32 reserved1:3;			// Bits	0-2
+		u32 operand_reg:4;			// Bits 3-6
+		u32 reserved2:4;			// Bits 7-10
+		u32 operand_size:2;			// Bits 11-12
+		u32 reserved3:19;			// Bits 13-31
+	}f4;
+	// vmclear, vmptrld, vmptrst, vmxon, xrstors, xsaves
+	// instructions use this field.
+	struct
+	{
+		u32 scaling:2;				// Bits	0-1
+		u32 reserved1:5;			// Bits	2-6
+		u32 address_size:3;			// Bits 7-9
+		u32 reserved2:5;			// Bits	10-14
+		u32 segment:3;				// Bits 15-17
+		u32 index:4;				// Bits 18-21
+		u32 index_invalid:1;		// Bit	22
+		u32 base:4;					// Bits	23-26
+		u32 base_invalid:1;			// Bit	27
+		u32 instruction_id:2;		// Bits	28-29
+		u32 reserved3:2;			// Bits	30-31
+	}f5;
+	// vmread, vmwrite instructions use this field.
+	struct
+	{
+		u32 scaling:2;				// Bits	0-1
+		u32 reserved1:1;			// Bit	2
+		u32 reg1:4;					// Bits	3-6
+		u32 address_size:3;			// Bits 7-9
+		u32 use_register:1;			// Bit	10
+		u32 reserved2:4;			// Bits	11-14
+		u32 segment:3;				// Bits 15-17
+		u32 index:4;				// Bits 18-21
+		u32 index_invalid:1;		// Bit	22
+		u32 base:4;					// Bits	23-26
+		u32 base_invalid:1;			// Bit	27
+		u32 reg2:4;					// Bits	28-31
+	}f6;
+	u32 value;
+}ia32_vmexit_instruction_information,*ia32_vmexit_instruction_information_p;
+
 typedef void (fastcall *noir_vt_exit_handler_routine)
 (
  noir_gpr_state_p gpr_state,
  u32 exit_reason
 );
 
-char* vmx_exit_msg[vmx_maximum_exit_reason]=
+const char* vmx_exit_msg[vmx_maximum_exit_reason]=
 {
-	"Exception or NMI is intercepted!",						//Reason=0
-	"External Interrupt is intercepted!",					//Reason=1
-	"Triple fault is intercepted!",							//Reason=2
-	"An INIT signal arrived!",								//Reason=3
-	"Startup-IPI arrived!",									//Reason=4
-	"I/O System-Management Interrupt is intercepted!",		//Reason=5
-	"Other System-Management Interrupt is intercepted!",	//Reason=6
-	"Exit is due to Interrupt Window!",						//Reason=7
-	"Exit is due to NMI Window!",							//Reason=8
-	"Task Switch is intercepted!",							//Reason=9
-	"CPUID instruction is intercepted!",					//Reason=10
-	"GETSEC instruction is intercepted!",					//Reason=11
-	"HLT instruction is intercepted!",						//Reason=12
-	"INVD instruction is intercepted!",						//Reason=13
-	"INVLPG instruction is intercepted!",					//Reason=14
-	"RDPMC instruction is intercepted!",					//Reason=15
-	"RDTSC instruction is intercepted!",					//Reason=16
-	"RSM instruction is intercepted!",						//Reason=17
-	"VMCALL instruction is intercepted!",					//Reason=18
-	"VMCLEAR instruction is intercepted!",					//Reason=19
-	"VMLAUNCH instruction is intercepted!",					//Reason=20
-	"VMPTRLD instruction is intercepted!",					//Reason=21
-	"VMPTRST instruction is intercepted!",					//Reason=22
-	"VMREAD instruction is intercepted!",					//Reason=23
-	"VMRESUME instruction is intercepted!",					//Reason=24
-	"VMWRITE instruction is intercepted!",					//Reason=25
-	"VMXOFF instruction is intercepted!",					//Reason=26
-	"VMXON instruction is intercepted!",					//Reason=27
-	"Control-Register access is intercepted!",				//Reason=28
-	"Debug-Register access is intercepted!",				//Reason=29
-	"I/O instruction is intercepted!",						//Reason=30
-	"RDMSR instruction is intercepted!",					//Reason=31
-	"WRMSR instruction is intercepted!",					//Reason=32
-	"VM-Entry failed due to Invalid Guest-State!",			//Reason=33
-	"VM-Entry failed due to MSR-Loading!",					//Reason=34
-	"Unknown Exit, Reason=35!",								//Reason=35
-	"MWAIT instruction is intercepted!",					//Reason=36
-	"Exit is due to Monitor Trap Flag!",					//Reason=37
-	"Unknown Exit, Reason=38!",								//Reason=38
-	"MONITOR instruction is intercepted!",					//Reason=39
-	"PAUSE instruction is intercepted!",					//Reason=40
-	"VM-Entry failed due to Machine-Check Event!",			//Reason=41
-	"Unknown Exit, Reason=42!",								//Reason=42
-	"TPR is below threshold!",								//Reason=43
-	"APIC access is intercepted!",							//Reason=44
-	"EOI-Virtualization is performed!",						//Reason=45
-	"Access to GDTR or IDTR is intercepted!",				//Reason=46
-	"Access to LDTR or TR is intercepted!",					//Reason=47
-	"EPT Violation is intercepted!",						//Reason=48
-	"EPT Misconfiguration is intercepted!",					//Reason=49
-	"INVEPT instruction is intercepted!",					//Reason=50
-	"RDTSCP instruction is intercepted!",					//Reason=51
-	"VMX-preemption Timer is expired!",						//Reason=52
-	"INVVPID instruction is intercepted!",					//Reason=53
-	"WBINVD instruction is intercepted!",					//Reason=54
-	"XSETBV instruction is intercepted!",					//Reason=55
-	"APIC write is intercepted!",							//Reason=56
-	"RDRAND instruction is intercepted!",					//Reason=57
-	"INVPCID instruction is intercepted!",					//Reason=58
-	"WBINVD instruction is intercepted!",					//Reason=59
-	"ENCLS instruction is intercepted!",					//Reason=60
-	"RDSEED instruction is intercepted!",					//Reason=61
-	"Page-Modification Log is full!",						//Reason=62
-	"XSAVES instruction is intercepted!",					//Reason=63
-	"XRSTORS instruction is intercepted!",					//Reason=64
-	"Unknown Exit, Reason=65",								//Reason=65
-	"Sub-Page Miss or Misconfiguration is intercepted!",	//Reason=66
-	"UMWAIT instruction is intercepted!",					//Reason=67
-	"TPAUSE instruction is intercepted!"					//Reason=68
+	"Exception or NMI is intercepted!",						// Reason=0
+	"External Interrupt is intercepted!",					// Reason=1
+	"Triple fault is intercepted!",							// Reason=2
+	"An INIT signal arrived!",								// Reason=3
+	"Startup-IPI arrived!",									// Reason=4
+	"I/O System-Management Interrupt is intercepted!",		// Reason=5
+	"Other System-Management Interrupt is intercepted!",	// Reason=6
+	"Exit is due to Interrupt Window!",						// Reason=7
+	"Exit is due to NMI Window!",							// Reason=8
+	"Task Switch is intercepted!",							// Reason=9
+	"CPUID instruction is intercepted!",					// Reason=10
+	"GETSEC instruction is intercepted!",					// Reason=11
+	"HLT instruction is intercepted!",						// Reason=12
+	"INVD instruction is intercepted!",						// Reason=13
+	"INVLPG instruction is intercepted!",					// Reason=14
+	"RDPMC instruction is intercepted!",					// Reason=15
+	"RDTSC instruction is intercepted!",					// Reason=16
+	"RSM instruction is intercepted!",						// Reason=17
+	"VMCALL instruction is intercepted!",					// Reason=18
+	"VMCLEAR instruction is intercepted!",					// Reason=19
+	"VMLAUNCH instruction is intercepted!",					// Reason=20
+	"VMPTRLD instruction is intercepted!",					// Reason=21
+	"VMPTRST instruction is intercepted!",					// Reason=22
+	"VMREAD instruction is intercepted!",					// Reason=23
+	"VMRESUME instruction is intercepted!",					// Reason=24
+	"VMWRITE instruction is intercepted!",					// Reason=25
+	"VMXOFF instruction is intercepted!",					// Reason=26
+	"VMXON instruction is intercepted!",					// Reason=27
+	"Control-Register access is intercepted!",				// Reason=28
+	"Debug-Register access is intercepted!",				// Reason=29
+	"I/O instruction is intercepted!",						// Reason=30
+	"RDMSR instruction is intercepted!",					// Reason=31
+	"WRMSR instruction is intercepted!",					// Reason=32
+	"VM-Entry failed due to Invalid Guest-State!",			// Reason=33
+	"VM-Entry failed due to MSR-Loading!",					// Reason=34
+	"Unknown Exit, Reason=35!",								// Reason=35
+	"MWAIT instruction is intercepted!",					// Reason=36
+	"Exit is due to Monitor Trap Flag!",					// Reason=37
+	"Unknown Exit, Reason=38!",								// Reason=38
+	"MONITOR instruction is intercepted!",					// Reason=39
+	"PAUSE instruction is intercepted!",					// Reason=40
+	"VM-Entry failed due to Machine-Check Event!",			// Reason=41
+	"Unknown Exit, Reason=42!",								// Reason=42
+	"TPR is below threshold!",								// Reason=43
+	"APIC access is intercepted!",							// Reason=44
+	"EOI-Virtualization is performed!",						// Reason=45
+	"Access to GDTR or IDTR is intercepted!",				// Reason=46
+	"Access to LDTR or TR is intercepted!",					// Reason=47
+	"EPT Violation is intercepted!",						// Reason=48
+	"EPT Misconfiguration is intercepted!",					// Reason=49
+	"INVEPT instruction is intercepted!",					// Reason=50
+	"RDTSCP instruction is intercepted!",					// Reason=51
+	"VMX-preemption Timer is expired!",						// Reason=52
+	"INVVPID instruction is intercepted!",					// Reason=53
+	"WBINVD instruction is intercepted!",					// Reason=54
+	"XSETBV instruction is intercepted!",					// Reason=55
+	"APIC write is intercepted!",							// Reason=56
+	"RDRAND instruction is intercepted!",					// Reason=57
+	"INVPCID instruction is intercepted!",					// Reason=58
+	"WBINVD instruction is intercepted!",					// Reason=59
+	"ENCLS instruction is intercepted!",					// Reason=60
+	"RDSEED instruction is intercepted!",					// Reason=61
+	"Page-Modification Log is full!",						// Reason=62
+	"XSAVES instruction is intercepted!",					// Reason=63
+	"XRSTORS instruction is intercepted!",					// Reason=64
+	"Unknown Exit, Reason=65",								// Reason=65
+	"Sub-Page Miss or Misconfiguration is intercepted!",	// Reason=66
+	"UMWAIT instruction is intercepted!",					// Reason=67
+	"TPAUSE instruction is intercepted!"					// Reason=68
 };
 
 noir_vt_exit_handler_routine* vt_exit_handlers=null;
@@ -219,7 +322,7 @@ void inline noir_vt_advance_rip()
 	noir_vt_vmwrite(guest_rip,gip+len);
 }
 
-void inline noir_vt_inject_event(u8 vector,u8 type,bool deliver,u32 length)
+void inline noir_vt_inject_event(u8 vector,u8 type,bool deliver,u32 length,u32 err_code)
 {
 	ia32_vmentry_interruption_information_field event_field;
 	event_field.value=0;
@@ -228,5 +331,6 @@ void inline noir_vt_inject_event(u8 vector,u8 type,bool deliver,u32 length)
 	event_field.vector=vector;
 	event_field.type=type;
 	noir_vt_vmwrite(vmentry_interruption_information_field,event_field.value);
+	if(deliver)noir_vt_vmwrite(vmentry_exception_error_code,err_code);
 	noir_vt_vmwrite(vmentry_instruction_length,length);
 }

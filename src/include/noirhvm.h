@@ -13,7 +13,7 @@
 */
 
 #include "nvdef.h"
-#if defined(_vt_drv) || defined(_vt_exit) || defined(_vt_ept)
+#if defined(_vt_drv) || defined(_vt_exit) || defined(_vt_ept) || defined(_vt_nvcpu)
 #include "vt_hvm.h"
 #elif defined(_svm_drv) || defined(_svm_exit)
 #include "svm_hvm.h"
