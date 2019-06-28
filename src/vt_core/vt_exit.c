@@ -661,7 +661,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32
 	u64 gpa;
 	bool advance=true;
 	noir_vt_vmread(guest_physical_address,&gpa);
-	while(nhp)
+	for(;nhp;nhp=nhp->next)
 	{
 		if(gpa>=nhp->orig.phys && gpa<nhp->orig.phys+page_size)
 		{
@@ -702,7 +702,6 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32
 			noir_vt_invept(ept_single_invd,&ied);
 			break;
 		}
-		nhp=nhp->next;
 	}
 	if(advance)noir_vt_advance_rip();
 }

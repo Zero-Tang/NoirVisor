@@ -43,7 +43,7 @@ u32 static stdcall noir_ci_enforcement_worker(void* context)
 		ulong_ptr page=ncie->base+(i<<12);
 		// Perform Enforcement.
 		u32 crc=noir_crc32_page(page);
-		nvci_tracef("Page 0x%p scanned. CRC32C=0x%08X\n",page,crc);
+		nvci_tracef("Page 0x%p scanned. CRC32C=0x%08X - No Anomaly.\n",page,crc);
 		if(crc!=ncie->page_crc[i])
 			nvci_panicf("CI detected corruption in Page 0x%p!\n",page);
 		// Restore if exceeded.
