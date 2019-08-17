@@ -17,9 +17,21 @@
 #define amd64_efer_svme			12
 #define amd64_efer_svme_bit		0x1000
 
-#define amd64_vmcr_svmdis		4
+// This is used for SVM Control Register Flags
+#define amd64_vmcr_dpd				0
+#define amd64_vmcr_r_init			1
+#define amd64_vmcr_disa20m			2
+#define amd64_vmcr_lock				3
+#define amd64_vmcr_svmdis			4
 
-//This is used for defining MSRs
+// This is used for SMM Control Flags
+#define amd64_smmctrl_dismiss			0
+#define amd64_smmctrl_enter				1
+#define amd64_smmctrl_smi_cycle			2
+#define amd64_smmctrl_exit				3
+#define amd64_smmctrl_rsm_cycle			4
+
+// This is used for defining MSRs
 #define amd64_sysenter_cs				0x174
 #define amd64_sysenter_esp				0x175
 #define amd64_sysenter_eip				0x176
@@ -28,14 +40,18 @@
 #define amd64_efer						0xC0000080
 #define amd64_star						0xC0000081
 #define amd64_lstar						0xC0000082
-#define amd64_fmask						0xC0000084
+#define amd64_cstar						0xC0000083
+#define amd64_sfmask					0xC0000084
 #define amd64_fs_base					0xC0000100
 #define amd64_gs_base					0xC0000101
 #define amd64_kernel_gs_base			0xC0000102
+#define amd64_tsc_ratio					0xC0000104
 #define amd64_vmcr						0xC0010114
+#define amd64_ignne						0xC0010115
+#define amd64_smm_ctrl					0xC0010116
 #define amd64_hsave_pa					0xC0010117
 
-//This is used for defining AMD64 architectural interrupt vectors.
+// This is used for defining AMD64 architectural interrupt vectors.
 #define amd64_divide_error				0
 #define amd64_debug_exception			1
 #define amd64_nmi_interrupt				2
@@ -56,10 +72,34 @@
 #define amd64_machine_check				18
 #define amd64_simd_exception			19
 
-//This is used for defining AMD64 architectural cpuid flags.
-#define amd64_cpuid_svm				2
-#define amd64_cpuid_svm_bit			0x4
-#define amd64_cpuid_decoder			7
-#define amd64_cpuid_decoder_bit		0x80
-#define amd64_cpuid_nrips			3
-#define amd64_cpuid_nrips_bit		0x8
+// This is used for defining AMD64 architectural cpuid flags.
+#define amd64_cpuid_svm					2
+#define amd64_cpuid_svm_bit				0x4
+
+// CPUID flags for SVM Features
+#define amd64_cpuid_npt					0
+#define amd64_cpuid_npt_bit				0x1
+#define amd64_cpuid_lbr_virt			1
+#define amd64_cpuid_lbr_virt_bit		0x2
+#define amd64_cpuid_svm_lock			2
+#define amd64_cpuid_svm_lock_bit		0x4
+#define amd64_cpuid_nrips				3
+#define amd64_cpuid_nrips_bit			0x8
+#define amd64_cpuid_tsc_msr				4
+#define amd64_cpuid_tsc_msr_bit			0x10
+#define amd64_cpuid_vmcb_clean			5
+#define amd64_cpuid_vmcb_clean_bit		0x20
+#define amd64_cpuid_flush_asid			6
+#define amd64_cpuid_flush_asid_bit		0x40
+#define amd64_cpuid_decoder				7
+#define amd64_cpuid_decoder_bit			0x80
+#define amd64_cpuid_pause_flt			10
+#define amd64_cpuid_pause_flt_bit		0x400
+#define amd64_cpuid_pflt_thrshld		12
+#define amd64_cpuid_pflt_thrshld_bit	0x1000
+#define amd64_cpuid_avic				13
+#define amd64_cpuid_avic_bit			0x2000
+#define amd64_cpuid_vmsvirt				15
+#define amd64_cpuid_vmsvirt_bit			0x8000
+#define amd64_cpuid_vgif				16
+#define amd64_cpuid_vgif_bit			0x10000

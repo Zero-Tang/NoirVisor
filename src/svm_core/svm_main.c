@@ -27,8 +27,8 @@ bool nvc_is_svm_supported()
 	u32 a,b,c,d;
 	char vs[13];
 	noir_cpuid(0x80000000,0,&a,(u32*)&vs[0],(u32*)&vs[8],(u32*)&vs[4]);vs[12]=0;
-	//Make sure that processor is produced by AMD and
-	//maximum supported cpuid leaf is higher than 0x8000000A
+	// Make sure that processor is produced by AMD and
+	// maximum supported cpuid leaf is higher than 0x8000000A
 	if(strcmp(vs,"AuthenticAMD")==0 && a>=0x8000000A)
 	{
 		noir_cpuid(0x80000001,0,null,null,&c,null);
@@ -36,16 +36,36 @@ bool nvc_is_svm_supported()
 		{
 			bool basic_supported=true;
 			noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
-			//At least one ASID should be available.
+			// At least one ASID should be available.
 			basic_supported&=(b>0);
-			//Decode Assists is the required feature.
+			// Decode Assists is the required feature.
 			basic_supported&=noir_bt(&d,amd64_cpuid_decoder);
-			//Next RIP Saving is the required feature.
+			// Next RIP Saving is the required feature.
 			basic_supported&=noir_bt(&d,amd64_cpuid_nrips);
 			return basic_supported;
 		}
 	}
 	return false;
+}
+
+bool nvc_is_npt_supported()
+{
+	u32 a,b,c,d;
+	bool npt_support=true;
+	noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
+	npt_support&=noir_bt(&d,amd64_cpuid_npt);
+	npt_support&=noir_bt(&d,amd64_cpuid_vmcb_clean);
+	return npt_support;
+}
+
+bool nvc_is_acnested_svm_supported()
+{
+	u32 a,b,c,d;
+	bool acnv_support=true;
+	noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
+	acnv_support&=noir_bt(&d,amd64_cpuid_vmsvirt);
+	acnv_support&=noir_bt(&d,amd64_cpuid_vgif);
+	return acnv_support;
 }
 
 bool nvc_is_svm_disabled()
@@ -77,17 +97,17 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	void* bitmap1=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0);
 	void* bitmap2=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0x800);
 	void* bitmap3=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0x1000);
-	//Setup basic MSR-Intercepts that may interfere with SVM normal operations.
-	//This is also for nested virtualization.
+	// Setup basic MSR-Intercepts that may interfere with SVM normal operations.
+	// This is also for nested virtualization.
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,0));
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,1));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,0));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,1));
-	//Setup custom MSR-Interception.
+	// Setup custom MSR-Interception.
 #if defined(_amd64)
-	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,0));			//Hide MSR Hook
+	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,0));			// Hide MSR Hook
 #else
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(2,amd64_sysenter_eip,0));		//Hide MSR Hook
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(2,amd64_sysenter_eip,0));		// Hide MSR Hook
 #endif
 }
 
@@ -104,101 +124,100 @@ void static nvc_svm_setup_cpuid_cache(noir_svm_vcpu_p vcpu)
 
 ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_ptr gip)
 {
-	//Save Processor State
+	// Save Processor State
 	noir_processor_state state;
 	nvc_svm_instruction_intercept1 list1;
 	nvc_svm_instruction_intercept2 list2;
 	nvc_svm_enable();
 	nvc_svm_setup_cpuid_cache(vcpu);
 	noir_save_processor_state(&state);
-	//Setup State-Save Area
-	noir_int3();
-	//Save Segment State - CS
+	// Setup State-Save Area
+	// Save Segment State - CS
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_cs_selector,state.cs.selector);
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_cs_attrib,svm_attrib(state.cs.attrib));
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_cs_limit,state.cs.limit);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_cs_base,state.cs.base);
-	//Save Segment State - DS
+	// Save Segment State - DS
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_ds_selector,state.ds.selector);
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_ds_attrib,svm_attrib(state.ds.attrib));
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_ds_limit,state.ds.limit);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_ds_base,state.ds.base);
-	//Save Segment State - ES
+	// Save Segment State - ES
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_es_selector,state.es.selector);
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_es_attrib,svm_attrib(state.es.attrib));
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_es_limit,state.es.limit);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_es_base,state.es.base);
-	//Save Segment State - FS
+	// Save Segment State - FS
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_fs_selector,state.fs.selector);
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_fs_attrib,svm_attrib(state.fs.attrib));
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_fs_limit,state.fs.limit);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_fs_base,state.fs.base);
-	//Save Segment State - GS
+	// Save Segment State - GS
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_gs_selector,state.gs.selector);
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_gs_attrib,svm_attrib(state.gs.attrib));
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_gs_limit,state.gs.limit);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_gs_base,state.gs.base);
-	//Save Segment State - SS
+	// Save Segment State - SS
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_ss_selector,state.ss.selector);
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_ss_attrib,svm_attrib(state.ss.attrib));
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_ss_limit,state.ss.limit);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_ss_base,state.ss.base);
-	//Save Segment State - TR
+	// Save Segment State - TR
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_tr_selector,state.tr.selector);
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_tr_attrib,svm_attrib(state.tr.attrib));
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_tr_limit,state.tr.limit);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_tr_base,state.tr.base);
-	//Save GDTR and IDTR
+	// Save GDTR and IDTR
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_gdtr_limit,state.gdtr.limit);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_gdtr_base,state.gdtr.base);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_idtr_limit,state.idtr.limit);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_idtr_base,state.idtr.base);
-	//Save Segment State - LDTR
+	// Save Segment State - LDTR
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_ldtr_selector,state.ldtr.selector);
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_ldtr_attrib,svm_attrib(state.ldtr.attrib));
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_ldtr_limit,state.ldtr.limit);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_ldtr_base,state.ldtr.base);
-	//Save Control Registers
+	// Save Control Registers
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_cr0,state.cr0);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_cr2,state.cr2);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_cr3,state.cr3);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_cr4,state.cr4);
 #if defined(_amd64)
-	//Save Task Priority Register (CR8)
+	// Save Task Priority Register (CR8)
 	noir_svm_vmwrite8(vcpu->vmcb.virt,avid_control,(u8)state.cr8);
 #endif
-	//Save Debug Registers
+	// Save Debug Registers
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_dr6,state.dr6);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_dr7,state.dr7);
-	//Save RFlags, RSP and RIP
+	// Save RFlags, RSP and RIP
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rflags,2);	//Fixed bit should be set.
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rsp,gsp);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
-	//Save Model Specific Registers.
+	// Save Model Specific Registers.
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_pat,state.pat);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_efer,state.efer);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_star,state.star);
-	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,state.lstar);
+	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,(u64)noir_system_call);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_cstar,state.cstar);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_sfmask,state.sfmask);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_kernel_gs_base,state.gsswap);
-	//Setup Control Area
+	// Setup Control Area
 	list1.value=0;
 	list1.intercept_msr=1;
 	list2.value=0;
-	list2.intercept_vmrun=1;	//The vmrun should always be intercepted as required by AMD.
+	list2.intercept_vmrun=1;	// The vmrun should always be intercepted as required by AMD.
 	list2.intercept_vmmcall=1;
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction1,list1.value);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction2,list2.value);
-	//Setup IOPM and MSRPM.
+	// Setup IOPM and MSRPM.
 	noir_svm_vmwrite64(vcpu->vmcb.virt,iopm_physical_address,vcpu->relative_hvm->iopm.phys);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,msrpm_physical_address,vcpu->relative_hvm->msrpm.phys);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_asid,1);		//ASID must be non-zero.
-	//We will assign a guest asid other than 1 as we are nesting a hypervisor.
-	//Enable Global Interrupt.
+	// We will assign a guest asid other than 1 as we are nesting a hypervisor.
+	// Enable Global Interrupt.
 	noir_svm_stgi();
 	noir_int3();
-	//Load Partial Guest State by vmload and continue subversion.
+	// Load Partial Guest State by vmload and continue subversion.
 	noir_svm_vmload((ulong_ptr)vcpu->vmcb.phys);
 	return (ulong_ptr)vcpu->vmcb.phys;
 }
@@ -283,9 +302,9 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	hvm_p->cpu_count=noir_get_processor_count();
 	if(nvc_svm_build_exit_handler()==false)return noir_insufficient_resources;
 	hvm_p->virtual_cpu=noir_alloc_nonpg_memory(hvm_p->cpu_count*sizeof(noir_svm_vcpu));
-	//Implementation of Generic Call might differ.
-	//In subversion routine, it might not be allowed to allocate memory.
-	//Thus allocate everything at this moment, even if it costs more on single processor core.
+	// Implementation of Generic Call might differ.
+	// In subversion routine, it might not be allowed to allocate memory.
+	// Thus allocate everything at this moment, even if it costs more on single processor core.
 	if(hvm_p->virtual_cpu)
 	{
 		u32 i=0;
@@ -332,10 +351,10 @@ alloc_failure:
 
 void static nvc_svm_restore_processor(noir_svm_vcpu_p vcpu)
 {
-	//Leave Guest Mode by vmmcall if we are in Guest Mode.
+	// Leave Guest Mode by vmmcall if we are in Guest Mode.
 	if(vcpu->status==noir_virt_on)
 		noir_svm_vmmcall(noir_svm_callexit,(ulong_ptr)vcpu);
-	//Mark the processor is in "off" status as we are in Host Mode now.
+	// Mark the processor is in "off" status as we are in Host Mode now.
 	if(vcpu->status==noir_virt_trans)
 		vcpu->status=noir_virt_off;
 	nvc_svm_disable();

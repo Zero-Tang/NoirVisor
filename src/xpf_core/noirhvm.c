@@ -52,6 +52,12 @@ u32 noir_get_virtualization_supportability()
 		slat=nvc_is_ept_supported();
 		acnest=nvc_is_vmcs_shadowing_supported();
 	}
+	else if(strcmp(vstr,"AuthenticAMD")==0)
+	{
+		basic=nvc_is_svm_supported();
+		slat=nvc_is_npt_supported();
+		acnest=nvc_is_acnested_svm_supported();
+	}
 	result|=basic<<0;
 	result|=slat<<1;
 	result|=acnest<<2;

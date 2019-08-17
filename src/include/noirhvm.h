@@ -77,6 +77,8 @@ bool nvc_vt_subvert_system(noir_hypervisor_p hvm);
 void nvc_vt_restore_system(noir_hypervisor_p hvm);
 //Functions from SVM Core.
 bool nvc_is_svm_supported();
+bool nvc_is_npt_supported();
+bool nvc_is_acnested_svm_supported();
 bool nvc_svm_subvert_system(noir_hypervisor_p hvm);
 void nvc_svm_restore_system(noir_hypervisor_p hvm);
 //Central Hypervisor Structure.

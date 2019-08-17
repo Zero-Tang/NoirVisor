@@ -40,6 +40,34 @@ void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm
 	nv_dprintf("Unhandled VM-Exit! Intercept Code: 0x%X\n",code);
 }
 
+//Expected Intercept Code: -1
+void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	u64 efer;
+	ulong_ptr cr0,cr3,cr4;
+	ulong_ptr dr6,dr7;
+	u32 list1,list2;
+	u32 asid;
+	nv_dprintf("[Processor %d] Guest State is Invalid! VMCB: 0x%p\n",vcpu->proc_id,vmcb);
+	//Dump State in VMCB and Print them to Debugger.
+	efer=noir_svm_vmread64(vmcb,guest_efer);
+	nv_dprintf("Guest EFER MSR: 0x%llx\n",efer);
+	dr6=noir_svm_vmread(vmcb,guest_dr6);
+	dr7=noir_svm_vmread(vmcb,guest_dr7);
+	nv_dprintf("Guest DR6: 0x%p\t DR7: 0x%p\n",dr6,dr7);
+	cr0=noir_svm_vmread(vmcb,guest_cr0);
+	cr3=noir_svm_vmread(vmcb,guest_cr3);
+	cr4=noir_svm_vmread(vmcb,guest_cr4);
+	nv_dprintf("Guest CR0: 0x%p\t CR3: 0x%p\t CR4: 0x%p\n",cr0,cr3,cr4);
+	asid=noir_svm_vmread32(vmcb,guest_asid);
+	nv_dprintf("Guest ASID: %d\n",asid);
+	list1=noir_svm_vmread32(vmcb,intercept_instruction1);
+	list2=noir_svm_vmread32(vmcb,intercept_instruction2);
+	nv_dprintf("Control 1: 0x%X\t Control 2: 0x%X\n",list1,list2);
+	noir_int3();
+}
+
 //Expected Intercept Code: 0x72
 void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
@@ -89,6 +117,7 @@ std_cached:
 			*(u32*)gpr_state->rdx=vcpu->cpuid_cache.std_leaf[ia].edx;
 		}
 	}
+	noir_svm_advance_rip(vcpu->vmcb.virt);
 }
 
 //Expected Intercept Code: 0x7C
@@ -147,11 +176,13 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 #if defined(_amd64)
 			case amd64_lstar:
 			{
+				val.value=(u64)orig_system_call;
 				break;
 			}
 #else
 			case amd64_sysenter_eip:
 			{
+				val.value=(u64)orig_system_call;
 				break;
 			}
 #endif
@@ -162,6 +193,7 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 		*(u32*)&gpr_state->rax=val.low;
 		*(u32*)&gpr_state->rdx=val.high;
 	}
+	noir_svm_advance_rip(vcpu->vmcb.virt);
 }
 
 //Expected Intercept Code: 0x80
@@ -209,13 +241,6 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 			break;
 		}
 	}
-}
-
-//Expected Intercept Code: -1
-void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
-{
-	nv_dprintf("[Processor %d] Guest State is Invalid! VMCB: 0x%p\n",vcpu->proc_id,vcpu->vmcb.virt);
-	//Dump State in VMCB and Print them to Debugger.
 }
 
 void nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)

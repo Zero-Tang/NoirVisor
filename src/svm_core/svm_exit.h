@@ -84,3 +84,9 @@ typedef void (fastcall *noir_svm_exit_handler_routine)
 );
 
 noir_svm_exit_handler_routine** svm_exit_handlers=null;
+
+void inline noir_svm_advance_rip(void* vmcb)
+{
+	ulong_ptr nrip=noir_svm_vmread(vmcb,next_rip);
+	if(nrip)noir_svm_vmwrite(vmcb,guest_rip,nrip);
+}

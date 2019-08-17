@@ -129,7 +129,7 @@ typedef enum _svm_vmcb_offset
 	guest_tr_base=0x498,
 	//
 	guest_cpl=0x4CB,
-	guest_efer=0x4CC,
+	guest_efer=0x4D0,
 	guest_cr4=0x548,
 	guest_cr3=0x550,
 	guest_cr0=0x558,

@@ -22,14 +22,10 @@ PVOID static NoirGetInputBuffer(IN PIRP Irp)
 	if(irpsp->MajorFunction==IRP_MJ_DEVICE_CONTROL || irpsp->MajorFunction==IRP_MJ_INTERNAL_DEVICE_CONTROL)
 	{
 		ULONG Method=METHOD_FROM_CTL_CODE(irpsp->Parameters.DeviceIoControl.IoControlCode);
-		if(Method==METHOD_BUFFERED)
-			return Irp->AssociatedIrp.SystemBuffer;
-		else if(Method==METHOD_IN_DIRECT)
-			return Irp->AssociatedIrp.SystemBuffer;
-		else if(Method==METHOD_OUT_DIRECT)
-			return Irp->AssociatedIrp.SystemBuffer;
-		else
+		if(Method==METHOD_NEITHER)
 			return irpsp->Parameters.DeviceIoControl.Type3InputBuffer;
+		else
+			return Irp->AssociatedIrp.SystemBuffer;
 	}
 	return NULL;
 }
@@ -41,10 +37,10 @@ PVOID static NoirGetOutputBuffer(IN PIRP Irp)
 	{
 		ULONG Method=METHOD_FROM_CTL_CODE(irpsp->Parameters.DeviceIoControl.IoControlCode);
 		if(Method==METHOD_BUFFERED)
-			return Irp->UserBuffer;
+			return Irp->AssociatedIrp.SystemBuffer;
 		else if(Method==METHOD_OUT_DIRECT)
 			return MmGetSystemAddressForMdlSafe(Irp->MdlAddress,HighPagePriority);
-		else if(Method==METHOD_NEITHER)
+		else
 			return Irp->UserBuffer;
 	}
 	return NULL;
@@ -113,26 +109,31 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		}
 		case IOCTL_NvVer:
 		{
+			st=STATUS_SUCCESS;
 			*(PULONG)OutputBuffer=NoirVisorVersion();
 			break;
 		}
 		case IOCTL_CpuVs:
 		{
+			st=STATUS_SUCCESS;
 			NoirGetVendorString(OutputBuffer);
 			break;
 		}
 		case IOCTL_CpuPn:
 		{
+			st=STATUS_SUCCESS;
 			NoirGetProcessorName(OutputBuffer);
 			break;
 		}
 		case IOCTL_OsVer:
 		{
+			st=STATUS_SUCCESS;
 			NoirGetSystemVersion(OutputBuffer,OutputSize);
 			break;
 		}
 		case IOCTL_VirtCap:
 		{
+			st=STATUS_SUCCESS;
 			*(PULONG)OutputBuffer=NoirQueryVirtualizationSupportability();
 			break;
 		}

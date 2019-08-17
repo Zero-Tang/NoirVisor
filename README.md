@@ -35,8 +35,9 @@ If there is already a hypervisor running in the system, make sure it supports na
 
 # Development Status
 Project NoirVisor has finished developping the basic hypervisor on Intel VT-x. <br>
-Now NoirVisor has two future development plans: <br>
+Now NoirVisor has three future development plans: <br>
 Develop an AMD-V based hypervisor. <br>
+Develop Nested Virtualization. <br>
 Develop Hypervisor-Platform compatible hypervisor for Windows 10 Redstone.
 
 # Completed Features

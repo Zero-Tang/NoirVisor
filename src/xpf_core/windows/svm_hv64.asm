@@ -111,10 +111,10 @@ nvc_svm_subvert_processor_a proc
 
 	pushfq
 	pushaq
-	push rcx
-	mov rcx,qword ptr[rcx+8]
 	mov rdx,rsp
 	mov r8,svm_launched
+	push rcx
+	mov rcx,qword ptr[rcx+8]
 	sub rsp,20h
 	; First parameter is in rcx - vcpu
 	; Second parameter is in rdx - guest rsp
@@ -138,6 +138,7 @@ svm_launched:
 	; automatically by vmrun instruction.
 	; Now, restore all registers.
 	popaq
+	int 3
 	; Return that we are successful (noir_virt_on)
 	xor eax,eax
 	inc eax
