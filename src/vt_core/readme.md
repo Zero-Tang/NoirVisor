@@ -49,7 +49,7 @@ In future, NoirVisor has following plans:
 
 # VMX-Nesting Algorithm (Incomplete Version)
 To nest another working hypervisor is the highest focus of Project NoirVisor. However, starting from the repository creation, this goal has not been satisfied yet. Here, I will state down the algorithm and it will be updated in future as problems arises. <br>
-We will divide the problem into several sub-problems, as stated below: <br> 
+We will divide the problem into several sub-problems, as stated below:
 
 - Enable/Disable Nested VMX
 - Virtualize capability MSRs
@@ -64,7 +64,7 @@ We will divide the problem into several sub-problems, as stated below: <br>
 ## Glossary
 L0: This term refers to the Host context. <br>
 L1: This term refers to the Guest Context. <br>
-L2: This term refers to the Nested Guest Context. <br>
+L2: This term refers to the Nested Guest Context.
 
 ## Enable/Disable Nested VMX
 For this sub-problem, we intercept the VMXON/VMXOFF instructions and write to CR4.VMXE field. <br>
@@ -145,7 +145,7 @@ Therefore, nested VM-Entry, in concept is moving the processor from L1 to L2, bu
 
 ### L2 VMCS Programming Consideration
 In system, there might be multiple virtual machines running. Thus, there could be multiple VMCS in different states. How to implement the multi-NestedVMCS support? Followings are my algorithm design. <br>
-Make two kinds of VMCS for L2: <b> L2C and L2T </b>. <br>
+Make two kinds of VMCS for L2: <b> L2C and L2T </b>.
 
 - L2C-VMCS is where vmread and vmwrite instructions result. L2C is allocated by host. It is formatted hypervisor-implementation specific.
 - L2T-VMCS is where vmlaunch and vmresume instructions result. L2T is allocated by guest. It is formatted processor-implementation specific.

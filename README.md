@@ -11,7 +11,7 @@ Other processors based on x86 architecture may be supported in future.
 
 # Nested Virtualization
 NoirVisor is developed in highest focus on nested virtualization. It is not currently supported, but will be developed in future. <br>
-Algorithm regarding the Nested Virtualization was stated down in the readme files in directories.
+Algorithm regarding the Nested Virtualization was stated down in the readme files in VT-Core directory.
 
 # Announcement to all contributors
 NoirVisor is coded in the C programming language and the assembly since it is procedure-oriented designed. <br>
@@ -26,7 +26,8 @@ Note that you should execute the build_prep.bat to make directories for first-ti
 
 # Test
 There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://github.com/Zero-Tang/NoirVisorLoader <br>
-If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher.
+If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher. <br>
+If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine.
 
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. <br>
@@ -36,12 +37,12 @@ If there is already a hypervisor running in the system, make sure it supports na
 # Development Status
 Project NoirVisor has finished developping the basic hypervisor on Intel VT-x. <br>
 Now NoirVisor has three future development plans: <br>
-Develop an AMD-V based hypervisor. <br>
+Develop Nested Paging on SVM-Engine for NoirVisor. <br>
 Develop Nested Virtualization. <br>
 Develop Hypervisor-Platform compatible hypervisor for Windows 10 Redstone.
 
 # Completed Features
-- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, Intel Processor.
+- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel and AMD Processor.
 - Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel Processor.
 - CPUID caching architecture.
 - Critical Hypervisor Protection on Intel VT-x by Intel EPT.

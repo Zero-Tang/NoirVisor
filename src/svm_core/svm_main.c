@@ -80,16 +80,33 @@ u8 nvc_svm_enable()
 	efer|=amd64_efer_svme_bit;
 	noir_wrmsr(amd64_efer,efer);
 	efer=noir_rdmsr(amd64_efer);
-	return noir_bt(&efer,amd64_efer_svme)?noir_virt_trans:noir_virt_off;
+	if(noir_bt(&efer,amd64_efer_svme)==true)
+	{
+		u64 vmcr=noir_rdmsr(amd64_vmcr);
+		// Block and Disable A20M
+		noir_bts(&vmcr,amd64_vmcr_disa20m);
+		noir_wrmsr(amd64_vmcr,vmcr);
+		return noir_virt_trans;
+	}
+	return noir_virt_off;
 }
 
 u8 nvc_svm_disable()
 {
 	u64 efer=noir_rdmsr(amd64_efer);
+	// Disable SVM
 	efer&=~amd64_efer_svme_bit;
 	noir_wrmsr(amd64_efer,efer);
 	efer=noir_rdmsr(amd64_efer);
-	return noir_bt(&efer,amd64_efer_svme)?noir_virt_trans:noir_virt_off;
+	if(noir_bt(&efer,amd64_efer_svme)==false)
+	{
+		u64 vmcr=noir_rdmsr(amd64_vmcr);
+		// Unblock and Enable A20M
+		noir_btr(&vmcr,amd64_vmcr_disa20m);
+		noir_wrmsr(amd64_vmcr,vmcr);
+		return noir_virt_off;
+	}
+	return noir_virt_trans;
 }
 
 void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
@@ -107,7 +124,7 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 #if defined(_amd64)
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,0));			// Hide MSR Hook
 #else
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(2,amd64_sysenter_eip,0));		// Hide MSR Hook
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,0));		// Hide MSR Hook
 #endif
 }
 
@@ -216,7 +233,6 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	// We will assign a guest asid other than 1 as we are nesting a hypervisor.
 	// Enable Global Interrupt.
 	noir_svm_stgi();
-	noir_int3();
 	// Load Partial Guest State by vmload and continue subversion.
 	noir_svm_vmload((ulong_ptr)vcpu->vmcb.phys);
 	return (ulong_ptr)vcpu->vmcb.phys;
@@ -363,7 +379,8 @@ void static nvc_svm_restore_processor(noir_svm_vcpu_p vcpu)
 void static nvc_svm_restore_processor_thunk(void* context,u32 processor_id)
 {
 	noir_svm_vcpu_p vcpu=(noir_svm_vcpu_p)context;
-	nvc_svm_restore_processor(vcpu);
+	nv_dprintf("Processor %d entered restoration routine!\n",processor_id);
+	nvc_svm_restore_processor(&vcpu[processor_id]);
 }
 
 void nvc_svm_restore_system(noir_hypervisor_p hvm_p)

@@ -24,6 +24,7 @@ noir_get_segment_attributes endp
 
 noir_save_processor_state proc
 
+	; Function start. Initialize shadow space on stack.
 	sub rsp,20h
 	push rbx
 	mov rbx,rcx
@@ -228,8 +229,9 @@ noir_save_processor_state proc
 	mov dword ptr[rbx+158h],eax
 	mov dword ptr[rbx+15ch],edx
 
-	; MSR Saving Over
+	; MSR Saving is Over
 	pop rbx
+	; Function end. Finalize shadow space on stack.
 	add rsp,20h
 	ret
 
