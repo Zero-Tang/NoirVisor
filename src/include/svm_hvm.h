@@ -14,11 +14,15 @@
 
 #include <nvdef.h>
 
-//This is AMD specific
-#define noir_svm_cpuid_std_submask	0xFFFFE080
-#define noir_svm_cpuid_ext_submask	0x20000000
-
+// Definition of vmmcall Codes
 #define noir_svm_callexit			1
+
+// Definition of Enabled features
+#define noir_svm_vmcb_caching		1		// Bit 0
+#define noir_svm_nested_paging		2		// Bit 1
+#define noir_svm_flush_by_asid		4		// Bit 2
+#define noir_svm_virtual_gif		8		// Bit 3
+#define noir_svm_virtualized_vmls	16		// Bit 4
 
 typedef struct _memory_descriptor
 {
@@ -26,30 +30,24 @@ typedef struct _memory_descriptor
 	u64 phys;
 }memory_descriptor,*memory_descriptor_p;
 
-//Optimize Memory Usage of MSRPM and IOPM.
+// Optimize Memory Usage of MSRPM and IOPM.
 typedef struct _noir_svm_hvm
 {
 	memory_descriptor msrpm;
 	memory_descriptor iopm;
 	u32 std_leaftotal;
 	u32 ext_leaftotal;
-	u32 cpuid_std_submask;
-	u32 cpuid_ext_submask;
 }noir_svm_hvm,*noir_svm_hvm_p;
-
-typedef struct _noir_svm_cpuid_info
-{
-	u32 eax;
-	u32 ebx;
-	u32 ecx;
-	u32 edx;
-}noir_svm_cpuid_info,*noir_svm_cpuid_info_p;
 
 // Improve performance of CPUID virtualization under the nested scenario.
 typedef struct _noir_svm_cached_cpuid
 {
-	noir_svm_cpuid_info_p std_leaf;
-	noir_svm_cpuid_info_p ext_leaf;
+	// The info will be implementation specific.
+	// Different function leaf would have different structure.
+	void** std_leaf;	// 0x00000000-0x000000FF
+	void** hvm_leaf;	// 0x40000000-0x400000FF
+	void** ext_leaf;	// 0x80000000-0x800000FF
+	void** res_leaf;	// 0xC0000000-0xC00000FF
 }noir_svm_cached_cpuid,*noir_svm_cached_cpuid_p;
 
 typedef struct _noir_svm_nested_vcpu
@@ -68,6 +66,7 @@ typedef struct _noir_svm_vcpu
 	noir_svm_cached_cpuid cpuid_cache;
 	noir_svm_nested_vcpu nested_hvm;
 	u8 status;
+	u8 enabled_feature;
 }noir_svm_vcpu,*noir_svm_vcpu_p;
 
 // Layout of initial stack.

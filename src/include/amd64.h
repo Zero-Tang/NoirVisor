@@ -46,10 +46,22 @@
 #define amd64_gs_base					0xC0000101
 #define amd64_kernel_gs_base			0xC0000102
 #define amd64_tsc_ratio					0xC0000104
+
+// SVM/SMM Related MSRs
+#define amd64_smbase					0xC0010111
+#define amd64_smm_addr					0xC0010112
+#define amd64_smm_mask					0xC0010113
 #define amd64_vmcr						0xC0010114
 #define amd64_ignne						0xC0010115
 #define amd64_smm_ctrl					0xC0010116
 #define amd64_hsave_pa					0xC0010117
+#define amd64_svm_key					0xC0010118
+#define amd64_smm_key					0xC0010119
+#define amd64_local_smi_status			0xC001011A
+#define amd64_apic_doorbell				0xC001011B
+#define amd64_vmpage_flush				0xC001011E
+#define amd64_svm_ghcb_pa				0xC0010130
+#define amd64_sev_status				0xC0010131
 
 // This is used for defining AMD64 architectural interrupt vectors.
 #define amd64_divide_error				0
@@ -99,7 +111,7 @@
 #define amd64_cpuid_pflt_thrshld_bit	0x1000
 #define amd64_cpuid_avic				13
 #define amd64_cpuid_avic_bit			0x2000
-#define amd64_cpuid_vmsvirt				15
-#define amd64_cpuid_vmsvirt_bit			0x8000
+#define amd64_cpuid_vmlsvirt			15
+#define amd64_cpuid_vmlsvirt_bit		0x8000
 #define amd64_cpuid_vgif				16
 #define amd64_cpuid_vgif_bit			0x10000

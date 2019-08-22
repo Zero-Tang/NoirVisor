@@ -14,11 +14,11 @@
 
 #include <nvdef.h>
 
-#define intercepted_cr_read(x)		x+0x0
-#define intercepted_cr_write(x)		x+0x10
-#define intercepted_dr_read(x)		x+0x20
-#define intercepted_dr_write(x)		x+0x30
-#define intercepted_exception(x)	x+0x40
+#define intercepted_cr_read(x)		x
+#define intercepted_cr_write(x)		0x10+x
+#define intercepted_dr_read(x)		0x20+x
+#define intercepted_dr_write(x)		0x30+x
+#define intercepted_exception(x)	0x40+x
 #define intercepted_interrupt		0x60
 #define intercepted_nmi				0x61
 #define intercepted_smi				0x62
@@ -66,7 +66,7 @@
 #define intercepted_mwait_cond		0x8C
 #define intercepted_xsetbv			0x8D
 #define intercepted_efer_w_trap		0x8F
-#define intercepted_cr_w_trap(x)	x+0x90
+#define intercepted_cr_w_trap(x)	0x90+x
 #define nested_page_fault			0x400
 #define avic_incomplete_ipi			0x401
 #define avic_no_acceleration		0x402
@@ -83,7 +83,14 @@ typedef void (fastcall *noir_svm_exit_handler_routine)
  noir_svm_vcpu_p vcpu
 );
 
+typedef void (fastcall *noir_svm_cpuid_exit_handler)
+(
+ noir_gpr_state_p gpr_state,
+ noir_svm_vcpu_p vcpu
+);
+
 noir_svm_exit_handler_routine** svm_exit_handlers=null;
+extern noir_svm_cpuid_exit_handler** svm_cpuid_handlers;
 
 void inline noir_svm_advance_rip(void* vmcb)
 {

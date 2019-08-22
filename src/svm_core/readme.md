@@ -23,6 +23,7 @@ Don't forget to set the bit in interception list in VMCB.
 # Future Feature (Roadmap)
 In future, NoirVisor has following plans:
 
+- Remaster CPUID-caching architecture with flexible design
 - Implement SVM-Nesting
 - Implement NPT-based Code Integrity Enforcement
 - Implement NPT-based Stealth Inline Hook

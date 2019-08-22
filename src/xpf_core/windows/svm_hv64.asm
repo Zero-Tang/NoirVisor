@@ -129,7 +129,7 @@ nvc_svm_subvert_processor_a proc
 	mov rcx,qword ptr[system_cr3]
 	mov cr3,rcx
 	; Now, rax stores the physical address of VMCB.
-	; Switch stack to host stack now.
+	; Switch stack pointer to host stack now.
 	pop rcx
 	mov rsp,rcx
 	; Stack is switched, launch guest now.

@@ -63,7 +63,7 @@ bool nvc_is_acnested_svm_supported()
 	u32 a,b,c,d;
 	bool acnv_support=true;
 	noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
-	acnv_support&=noir_bt(&d,amd64_cpuid_vmsvirt);
+	acnv_support&=noir_bt(&d,amd64_cpuid_vmlsvirt);
 	acnv_support&=noir_bt(&d,amd64_cpuid_vgif);
 	return acnv_support;
 }
@@ -84,6 +84,8 @@ u8 nvc_svm_enable()
 	{
 		u64 vmcr=noir_rdmsr(amd64_vmcr);
 		// Block and Disable A20M
+		// Not sure about the reason, but
+		// Intel blocks A20M in vmxon.
 		noir_bts(&vmcr,amd64_vmcr_disa20m);
 		noir_wrmsr(amd64_vmcr,vmcr);
 		return noir_virt_trans;
@@ -102,6 +104,8 @@ u8 nvc_svm_disable()
 	{
 		u64 vmcr=noir_rdmsr(amd64_vmcr);
 		// Unblock and Enable A20M
+		// Not sure about the reason, but
+		// Intel unblocks A20M in vmxoff.
 		noir_btr(&vmcr,amd64_vmcr_disa20m);
 		noir_wrmsr(amd64_vmcr,vmcr);
 		return noir_virt_off;
@@ -130,21 +134,38 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 
 void static nvc_svm_setup_cpuid_cache(noir_svm_vcpu_p vcpu)
 {
-	noir_svm_cpuid_info_p std_cache=vcpu->cpuid_cache.std_leaf;
-	noir_svm_cpuid_info_p ext_cache=vcpu->cpuid_cache.ext_leaf;
-	u32 i;
-	for(i=1;i<=vcpu->relative_hvm->std_leaftotal;std_cache=&vcpu->cpuid_cache.std_leaf[++i])
-		noir_cpuid(i,0,&std_cache->eax,&std_cache->ebx,&std_cache->ecx,&std_cache->edx);
-	for(i=0x80000001;i<=vcpu->relative_hvm->ext_leaftotal+0x80000000;ext_cache=&vcpu->cpuid_cache.ext_leaf[(++i)-0x80000000])
-		noir_cpuid(i,0,&ext_cache->eax,&ext_cache->ebx,&ext_cache->ecx,&ext_cache->edx);
+	;
+}
+
+void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
+{
+	nvc_svm_instruction_intercept1 list1;
+	nvc_svm_instruction_intercept2 list2;
+	u32 a,b,c,d;
+	noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
+	// Basic features...
+	list1.value=0;
+	list1.intercept_msr=1;
+	list2.value=0;
+	list2.intercept_vmrun=1;	// The vmrun should always be intercepted as required by AMD.
+	list2.intercept_vmmcall=1;
+	// Policy: Enable as most features as possible.
+	// Save them to vCPU.
+	if(d & amd64_cpuid_vmcb_clean_bit)vcpu->enabled_feature|=noir_svm_vmcb_caching;
+	if(d & amd64_cpuid_npt_bit)vcpu->enabled_feature|=noir_svm_nested_paging;
+	if(d & amd64_cpuid_flush_asid_bit)vcpu->enabled_feature|=noir_svm_flush_by_asid;
+	if(d & amd64_cpuid_vgif_bit)vcpu->enabled_feature|=noir_svm_virtual_gif;
+	if(d & amd64_cpuid_vmlsvirt_bit)vcpu->enabled_feature|=noir_svm_virtualized_vmls;
+	// Enable in VMCB.
+	// Write to VMCB.
+	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction1,list1.value);
+	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction2,list2.value);
 }
 
 ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_ptr gip)
 {
 	// Save Processor State
 	noir_processor_state state;
-	nvc_svm_instruction_intercept1 list1;
-	nvc_svm_instruction_intercept2 list2;
 	nvc_svm_enable();
 	nvc_svm_setup_cpuid_cache(vcpu);
 	noir_save_processor_state(&state);
@@ -219,13 +240,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_sfmask,state.sfmask);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_kernel_gs_base,state.gsswap);
 	// Setup Control Area
-	list1.value=0;
-	list1.intercept_msr=1;
-	list2.value=0;
-	list2.intercept_vmrun=1;	// The vmrun should always be intercepted as required by AMD.
-	list2.intercept_vmmcall=1;
-	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction1,list1.value);
-	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction2,list2.value);
+	nvc_svm_setup_control_area(vcpu);
 	// Setup IOPM and MSRPM.
 	noir_svm_vmwrite64(vcpu->vmcb.virt,iopm_physical_address,vcpu->relative_hvm->iopm.phys);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,msrpm_physical_address,vcpu->relative_hvm->msrpm.phys);
@@ -235,6 +250,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	noir_svm_stgi();
 	// Load Partial Guest State by vmload and continue subversion.
 	noir_svm_vmload((ulong_ptr)vcpu->vmcb.phys);
+	// "Return" puts the value onto rax register.
 	return (ulong_ptr)vcpu->vmcb.phys;
 }
 
@@ -277,6 +293,8 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 				noir_free_nonpg_memory(vcpu->cpuid_cache.std_leaf);
 			if(vcpu->cpuid_cache.ext_leaf)
 				noir_free_nonpg_memory(vcpu->cpuid_cache.ext_leaf);
+			if(vcpu->cpuid_cache.hvm_leaf)
+				noir_free_nonpg_memory(vcpu->cpuid_cache.hvm_leaf);
 		}
 		noir_free_nonpg_memory(hvm_p->virtual_cpu);
 	}
@@ -288,28 +306,21 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 
 bool static nvc_svm_build_cpuid_cache(noir_hypervisor_p hvm_p)
 {
-	noir_svm_cpuid_info vistd,viext;
 	noir_svm_cached_cpuid_p cache=&hvm_p->virtual_cpu->cpuid_cache;
+	u32 stda,stdb,stdc,stdd;
+	u32 exta,extb,extc,extd;
 	u32 i=0;
-	noir_cpuid(0,0,&vistd.eax,&vistd.ebx,&vistd.ecx,&vistd.edx);
-	hvm_p->relative_hvm->std_leaftotal=vistd.eax;
-	noir_cpuid(0x80000000,0,&viext.eax,&viext.ebx,&viext.ecx,&viext.edx);
-	hvm_p->relative_hvm->ext_leaftotal=viext.eax-0x80000000;
+	noir_cpuid(0,0,&stda,&stdb,&stdc,&stdd);
+	hvm_p->relative_hvm->std_leaftotal=stda;
+	noir_cpuid(0x80000000,0,&exta,&extb,&extc,&extd);
+	hvm_p->relative_hvm->ext_leaftotal=exta-0x80000000;
 	for(;i<hvm_p->cpu_count;cache=&hvm_p->virtual_cpu[++i].cpuid_cache)
 	{
-		cache->std_leaf=noir_alloc_nonpg_memory((hvm_p->relative_hvm->std_leaftotal+1)*sizeof(noir_svm_cpuid_info));
-		if(cache->std_leaf)
-			*cache->std_leaf=vistd;
-		else
-			return false;
-		cache->ext_leaf=noir_alloc_nonpg_memory((hvm_p->relative_hvm->ext_leaftotal+1)*sizeof(noir_svm_cpuid_info));
-		if(cache->ext_leaf)
-			*cache->ext_leaf=viext;
-		else
-			return false;
+		cache->std_leaf=noir_alloc_nonpg_memory((hvm_p->relative_hvm->std_leaftotal+1)*sizeof(void**));
+		if(cache->std_leaf==null)return false;
+		cache->ext_leaf=noir_alloc_nonpg_memory((hvm_p->relative_hvm->ext_leaftotal+1)*sizeof(void**));
+		if(cache->ext_leaf==null)return false;
 	}
-	hvm_p->relative_hvm->cpuid_std_submask=noir_svm_cpuid_std_submask;
-	hvm_p->relative_hvm->cpuid_ext_submask=noir_svm_cpuid_ext_submask;
 	return true;
 }
 

@@ -14,8 +14,8 @@
 
 #include <nvdef.h>
 
-//Following designation allows us setup and dump VMCB data in the
-//way that we perform on Intel VT-x driver.
+// Following designation allows us to setup and dump VMCB
+// data in the way that we perform on Intel VT-x driver.
 #define noir_svm_vmread8(v,o)			*(u8*)((ulong_ptr)v+o)
 #define noir_svm_vmread16(v,o)			*(u16*)((ulong_ptr)v+o)
 #define noir_svm_vmread32(v,o)			*(u32*)((ulong_ptr)v+o)
@@ -34,11 +34,11 @@
 #define noir_svm_vmwrite	noir_svm_vmwrite64
 #endif
 
-//Misdefinition can be revised easily by this designation!
-//Since we simply define offsets, we won't need to consider alignment issues.
+// Misdefinition can be revised easily by this designation!
+// Since we simply define offsets, we won't need to consider alignment issues.
 typedef enum _svm_vmcb_offset
 {
-	//Control Area
+	// Control Area
 	intercept_read_cr=0x0,
 	intercept_write_cr=0x2,
 	intercept_access_cr=0x0,
@@ -75,54 +75,54 @@ typedef enum _svm_vmcb_offset
 	avic_logical_table_pointer=0xF0,
 	avic_physical_table=0xF8,
 	vmcb_state_save_pointer=0x108,
-	//Following offset definitions would be unusable if SEV-ES is enabled.
-	//State Save Area - SEV-ES Disabled
-	//ES
+	// Following offset definitions would be unusable if SEV-ES is enabled.
+	// State Save Area - SEV-ES Disabled
+	// ES
 	guest_es_selector=0x400,
 	guest_es_attrib=0x402,
 	guest_es_limit=0x404,
 	guest_es_base=0x408,
-	//CS
+	// CS
 	guest_cs_selector=0x410,
 	guest_cs_attrib=0x412,
 	guest_cs_limit=0x414,
 	guest_cs_base=0x418,
-	//SS
+	// SS
 	guest_ss_selector=0x420,
 	guest_ss_attrib=0x422,
 	guest_ss_limit=0x424,
 	guest_ss_base=0x428,
-	//DS
+	// DS
 	guest_ds_selector=0x430,
 	guest_ds_attrib=0x432,
 	guest_ds_limit=0x434,
 	guest_ds_base=0x438,
-	//FS
+	// FS
 	guest_fs_selector=0x440,
 	guest_fs_attrib=0x442,
 	guest_fs_limit=0x444,
 	guest_fs_base=0x448,
-	//GS
+	// GS
 	guest_gs_selector=0x450,
 	guest_gs_attrib=0x452,
 	guest_gs_limit=0x454,
 	guest_gs_base=0x458,
-	//GDTR
+	// GDTR
 	guest_gdtr_selector=0x460,
 	guest_gdtr_attrib=0x462,
 	guest_gdtr_limit=0x464,
 	guest_gdtr_base=0x468,
-	//LDTR
+	// LDTR
 	guest_ldtr_selector=0x470,
 	guest_ldtr_attrib=0x472,
 	guest_ldtr_limit=0x474,
 	guest_ldtr_base=0x478,
-	//IDTR
+	// IDTR
 	guest_idtr_selector=0x480,
 	guest_idtr_attrib=0x482,
 	guest_idtr_limit=0x484,
 	guest_idtr_base=0x488,
-	//TR
+	// TR
 	guest_tr_selector=0x490,
 	guest_tr_attrib=0x492,
 	guest_tr_limit=0x494,

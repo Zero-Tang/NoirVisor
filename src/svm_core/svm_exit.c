@@ -9,7 +9,7 @@
   without any warranty (no matter implied warranty or merchantability
   or fitness for a particular purpose, etc.).
 
-  File Location: /svm_core/svm_main.c
+  File Location: /svm_core/svm_exit.c
 */
 
 #include <nvdef.h>
@@ -74,49 +74,10 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	u32 ia=(u32)gpr_state->rax;
 	u32 ic=(u32)gpr_state->rcx;
 	// Here, we implement the cpuid cache to improve performance on nested VM scenario.
-	// First, check the leaf function.
-	if(noir_bt(&ia,31))
-	{
-		// At this moment, the CPUID goes to a extended leaf.
-		// Check whether info is cached or not.
-		if(noir_bt(&vcpu->relative_hvm->cpuid_ext_submask,ia))
-		{
-			// Value of ECX other than zero is not cached.
-			if(ic)
-				noir_cpuid(ia,ic,(u32*)&gpr_state->rax,(u32*)&gpr_state->rbx,(u32*)&gpr_state->rcx,(u32*)&gpr_state->rdx);
-			else
-				goto ext_cached;
-		}
-		else
-		{
-ext_cached:
-			*(u32*)gpr_state->rax=vcpu->cpuid_cache.ext_leaf[ia-0x80000000].eax;
-			*(u32*)gpr_state->rbx=vcpu->cpuid_cache.ext_leaf[ia-0x80000000].ebx;
-			*(u32*)gpr_state->rcx=vcpu->cpuid_cache.ext_leaf[ia-0x80000000].ecx;
-			*(u32*)gpr_state->rdx=vcpu->cpuid_cache.ext_leaf[ia-0x80000000].edx;
-		}
-	}
-	else
-	{
-		// At this moment, the CPUID goes to a standard leaf.
-		// Check whether info is cached or not.
-		if(noir_bt(&vcpu->relative_hvm->cpuid_std_submask,ia))
-		{
-			// Value of ECX other than zero is not cached.
-			if(ic)
-				noir_cpuid(ia,ic,(u32*)&gpr_state->rax,(u32*)&gpr_state->rbx,(u32*)&gpr_state->rcx,(u32*)&gpr_state->rdx);
-			else
-				goto std_cached;
-		}
-		else
-		{
-std_cached:
-			*(u32*)gpr_state->rax=vcpu->cpuid_cache.std_leaf[ia].eax;
-			*(u32*)gpr_state->rbx=vcpu->cpuid_cache.std_leaf[ia].ebx;
-			*(u32*)gpr_state->rcx=vcpu->cpuid_cache.std_leaf[ia].ecx;
-			*(u32*)gpr_state->rdx=vcpu->cpuid_cache.std_leaf[ia].edx;
-		}
-	}
+	// First, classify the leaf function.
+	u32 leaf_class=ia>>30;
+	u32 leaf_func=ia&0x3fffffff;
+	svm_cpuid_handlers[leaf_class][leaf_func](gpr_state,vcpu);
 	noir_svm_advance_rip(vcpu->vmcb.virt);
 }
 
@@ -236,7 +197,6 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				noir_writecr3(gcr3);
 				// Mark the processor is in transition mode.
 				vcpu->status=noir_virt_trans;
-				noir_int3();
 				// Return to the caller at Host Mode.
 				nvc_svm_return(saved_state);
 			}
@@ -265,6 +225,9 @@ void nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)
 	u16 code_num=(u16)(intercept_code&0x3FF);
 	// rax is saved to VMCB, not GPR state.
 	gpr_state->rax=noir_svm_vmread(vmcb_va,guest_rax);
+	// Set VMCB Cache State as all to be cached.
+	if(vcpu->enabled_feature & noir_svm_vmcb_caching)
+		noir_svm_vmwrite32(vmcb_va,vmcb_clean_bits,0xffffffff);
 	// Check if the interception is due to invalid guest state.
 	// Invoke the handler accordingly.
 	if(intercept_code==-1)
