@@ -22,6 +22,16 @@
 
 #define selector_rplti_mask		0xfff8
 
+// Classification of CPUID Leaf
+#define noir_cpuid_class(x)		x>>30
+#define noir_cpuid_index(x)		x & 0x3FFFFFFF
+
+// Classes of Leaves
+#define std_leaf_index	0	// CPUID Leaf of Standard	Functions
+#define hvm_leaf_index	1	// CPUID Leaf of Hypervisor	Functions
+#define ext_leaf_index	2	// CPUID Leaf of Extended	Functions
+#define res_leaf_index	3	// CPUID Leaf of Reserved	Functions
+
 typedef union _large_integer
 {
 	struct
@@ -32,7 +42,7 @@ typedef union _large_integer
 	u64 value;
 }large_integer,*large_integer_p;
 
-//Processor Facility
+// Processor Facility
 typedef struct _segment_register
 {
 	u16 selector;
@@ -110,7 +120,7 @@ void noir_generic_call(noir_broadcast_worker worker,void* context);
 u32 noir_get_processor_count();
 u32 noir_get_current_processor();
 
-//Memory Facility
+// Memory Facility
 void* noir_alloc_contd_memory(size_t length);
 void* noir_alloc_nonpg_memory(size_t length);
 void* noir_alloc_paged_memory(size_t length);
@@ -125,14 +135,14 @@ void noir_unmap_physical_memory(void* virtual_address,size_t length);
 void* noir_find_virt_by_phys(u64 physical_address);
 void noir_copy_memory(void* dest,void* src,u32 cch);
 
-//Debugging Facility
+// Debugging Facility
 void cdecl nv_dprintf(const char* format,...);
 void cdecl nv_tracef(const char* format,...);
 void cdecl nv_panicf(const char* format,...);
 void cdecl nvci_tracef(const char* format,...);
 void cdecl nvci_panicf(const char* format,...);
 
-//Threading Facility
+// Threading Facility
 typedef u32 (stdcall *noir_thread_procedure)(void* context);
 typedef void* noir_thread;
 typedef void* noir_reslock;

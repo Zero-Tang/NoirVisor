@@ -36,16 +36,18 @@ If there is already a hypervisor running in the system, make sure it supports na
 
 # Development Status
 Project NoirVisor has finished developping the basic hypervisor on Intel VT-x. <br>
-Now NoirVisor has three future development plans: <br>
-Remaster CPUID-caching architecture with a flexible design. <br>
-Develop Nested Paging with Stealth Hook on SVM-Engine for NoirVisor. <br>
-Develop Nested Virtualization. <br>
-Develop Hypervisor-Platform compatible hypervisor for Windows 10 Redstone.
+Now NoirVisor has five future development plans: <br>
+- Remaster CPUID-caching architecture with a flexible design. <br>
+- Develop Nested Paging with Stealth Hook on SVM-Engine for NoirVisor. <br>
+- Develop Nested Virtualization. <br>
+- Develop Hypervisor-Platform compatible hypervisor for Windows 10 Redstone. <br>
+- Port NoirVisor to 32-bit Windows platform.
 
 # Completed Features
 - Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel and AMD Processor.
 - Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel Processor.
-- CPUID caching architecture. (First Design)
+- Tagged Translation Lookaside Buffer by ASID/VPID feature.
+- CPUID caching architecture. (First Design, not quite efficient.)
 - Critical Hypervisor Protection on Intel VT-x by Intel EPT.
 - Software-Level Code Integrity Enforcement.
 

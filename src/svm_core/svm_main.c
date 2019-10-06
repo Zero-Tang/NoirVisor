@@ -151,11 +151,16 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	list2.intercept_vmmcall=1;
 	// Policy: Enable as most features as possible.
 	// Save them to vCPU.
-	if(d & amd64_cpuid_vmcb_clean_bit)vcpu->enabled_feature|=noir_svm_vmcb_caching;
-	if(d & amd64_cpuid_npt_bit)vcpu->enabled_feature|=noir_svm_nested_paging;
-	if(d & amd64_cpuid_flush_asid_bit)vcpu->enabled_feature|=noir_svm_flush_by_asid;
-	if(d & amd64_cpuid_vgif_bit)vcpu->enabled_feature|=noir_svm_virtual_gif;
-	if(d & amd64_cpuid_vmlsvirt_bit)vcpu->enabled_feature|=noir_svm_virtualized_vmls;
+	if(d & amd64_cpuid_vmcb_clean_bit)
+		vcpu->enabled_feature|=noir_svm_vmcb_caching;
+	if(d & amd64_cpuid_npt_bit)
+		vcpu->enabled_feature|=noir_svm_nested_paging;
+	if(d & amd64_cpuid_flush_asid_bit)
+		vcpu->enabled_feature|=noir_svm_flush_by_asid;
+	if(d & amd64_cpuid_vgif_bit)
+		vcpu->enabled_feature|=noir_svm_virtual_gif;
+	if(d & amd64_cpuid_vmlsvirt_bit)
+		vcpu->enabled_feature|=noir_svm_virtualized_vmls;
 	// Enable in VMCB.
 	// Write to VMCB.
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction1,list1.value);
@@ -244,7 +249,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	// Setup IOPM and MSRPM.
 	noir_svm_vmwrite64(vcpu->vmcb.virt,iopm_physical_address,vcpu->relative_hvm->iopm.phys);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,msrpm_physical_address,vcpu->relative_hvm->msrpm.phys);
-	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_asid,1);		//ASID must be non-zero.
+	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_asid,1);		// ASID must be non-zero.
 	// We will assign a guest asid other than 1 as we are nesting a hypervisor.
 	// Enable Global Interrupt.
 	noir_svm_stgi();
@@ -295,6 +300,8 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 				noir_free_nonpg_memory(vcpu->cpuid_cache.ext_leaf);
 			if(vcpu->cpuid_cache.hvm_leaf)
 				noir_free_nonpg_memory(vcpu->cpuid_cache.hvm_leaf);
+			if(vcpu->cpuid_cache.res_leaf)
+				noir_free_nonpg_memory(vcpu->cpuid_cache.res_leaf);
 		}
 		noir_free_nonpg_memory(hvm_p->virtual_cpu);
 	}
@@ -304,22 +311,25 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 		noir_free_contd_memory(hvm_p->relative_hvm->iopm.virt);
 }
 
-bool static nvc_svm_build_cpuid_cache(noir_hypervisor_p hvm_p)
+bool static nvc_svm_alloc_cpuid_cache(noir_hypervisor_p hvm_p)
 {
 	noir_svm_cached_cpuid_p cache=&hvm_p->virtual_cpu->cpuid_cache;
 	u32 stda,stdb,stdc,stdd;
 	u32 exta,extb,extc,extd;
 	u32 i=0;
 	noir_cpuid(0,0,&stda,&stdb,&stdc,&stdd);
-	hvm_p->relative_hvm->std_leaftotal=stda;
+	hvm_p->relative_hvm->std_leaftotal=++stda;
 	noir_cpuid(0x80000000,0,&exta,&extb,&extc,&extd);
-	hvm_p->relative_hvm->ext_leaftotal=exta-0x80000000;
+	hvm_p->relative_hvm->ext_leaftotal=++exta-0x80000000;
+	if(nvc_svm_build_cpuid_handler(stda,0,exta,0)==false)return false;
 	for(;i<hvm_p->cpu_count;cache=&hvm_p->virtual_cpu[++i].cpuid_cache)
 	{
-		cache->std_leaf=noir_alloc_nonpg_memory((hvm_p->relative_hvm->std_leaftotal+1)*sizeof(void**));
+		cache->std_leaf=noir_alloc_nonpg_memory(hvm_p->relative_hvm->std_leaftotal*sizeof(void**));
 		if(cache->std_leaf==null)return false;
-		cache->ext_leaf=noir_alloc_nonpg_memory((hvm_p->relative_hvm->ext_leaftotal+1)*sizeof(void**));
+		cache->ext_leaf=noir_alloc_nonpg_memory(hvm_p->relative_hvm->ext_leaftotal*sizeof(void**));
 		if(cache->ext_leaf==null)return false;
+		cache->max_leaf[std_leaf_index]=hvm_p->relative_hvm->std_leaftotal;
+		cache->max_leaf[ext_leaf_index]=hvm_p->relative_hvm->ext_leaftotal;
 	}
 	return true;
 }
@@ -365,7 +375,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	else
 		goto alloc_failure;
 	if(hvm_p->virtual_cpu==null)goto alloc_failure;
-	if(nvc_svm_build_cpuid_cache(hvm_p)==false)goto alloc_failure;
+	if(nvc_svm_alloc_cpuid_cache(hvm_p)==false)goto alloc_failure;
 	nvc_svm_setup_msr_hook(hvm_p);
 	nv_dprintf("All allocations are done, start subversion!\n");
 	noir_generic_call(nvc_svm_subvert_processor_thunk,hvm_p->virtual_cpu);
@@ -401,5 +411,7 @@ void nvc_svm_restore_system(noir_hypervisor_p hvm_p)
 		u32 i=0;
 		noir_generic_call(nvc_svm_restore_processor_thunk,hvm_p->virtual_cpu);
 		nvc_svm_cleanup(hvm_p);
+		nvc_svm_teardown_cpuid_handler();
+		nvc_svm_teardown_exit_handler();
 	}
 }

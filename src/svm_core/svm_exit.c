@@ -29,6 +29,7 @@ void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm
 	i32 code=noir_svm_vmread32(vmcb,exit_code);
 	/*
 	  Following conditions might cause the default handler to be invoked:
+
 	  1. You have set an unwanted flag in VMCB of interception.
 	  2. You forgot to write a handler for the VM-Exit.
 	  3. You forgot to set the handler address to the Exit Handler Group.
@@ -65,6 +66,7 @@ void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir
 	list1=noir_svm_vmread32(vmcb,intercept_instruction1);
 	list2=noir_svm_vmread32(vmcb,intercept_instruction2);
 	nv_dprintf("Control 1: 0x%X\t Control 2: 0x%X\n",list1,list2);
+	// Generate a debug-break.
 	noir_int3();
 }
 
@@ -75,9 +77,14 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	u32 ic=(u32)gpr_state->rcx;
 	// Here, we implement the cpuid cache to improve performance on nested VM scenario.
 	// First, classify the leaf function.
-	u32 leaf_class=ia>>30;
-	u32 leaf_func=ia&0x3fffffff;
-	svm_cpuid_handlers[leaf_class][leaf_func](gpr_state,vcpu);
+	u32 leaf_class=noir_cpuid_class(ia);
+	u32 leaf_func=noir_cpuid_index(ia);
+	// Second, filter invalid leaves, and invoke these valid.
+	if(vcpu->cpuid_cache.max_leaf[leaf_class]>=leaf_func)
+		svm_cpuid_handlers[leaf_class][leaf_func](gpr_state,vcpu);	// Invoke if valid.
+	else
+		nvc_svm_reserved_cpuid_handler(gpr_state,vcpu);
+	// Finally, advance the instruction pointer.
 	noir_svm_advance_rip(vcpu->vmcb.virt);
 }
 

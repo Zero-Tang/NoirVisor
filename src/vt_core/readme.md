@@ -6,6 +6,7 @@ All code in this directory should be cross-platform designed.
 vt_main.c is the code file that initializes, sets up, and finalizes the virtualization engine based on Intel VT-x. <br>
 vt_exit.c is the code file that handles all the VM-Exits derived from the processor. <br>
 vt_ept.c is the code file that initializes, sets up, and finalizes the page table based on Intel EPT. Note that it does not handle the EPT Violation. EPT Violation handler is in vt_exit.c <br>
+vt_nvcpu.c is the code file that supports Nested Virtualization for vCPU. <br>
 vt_def.h defines basic structures for Intel VT-x, including the MSR-based supporting facility. <br>
 vt_ept.h defines basic structures for Intel EPT, plus the EPT manager. <br>
 vt_exit.h defines basic constants, structures on VM-Exit. <br>

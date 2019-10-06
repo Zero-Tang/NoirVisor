@@ -19,14 +19,19 @@ Starting from your first contribution, you, nonetheless, cannot use other names 
 ## Raising Issues
 Before you start raising the issue, search over the issue list. If there is already someone raised the issue, you may give additional comments. <br>
 For faster resolution, please give your opinion, or give partial code, on resolution as you raise the issue. <br>
-If you have no idea why issue occurs, just state down the phenomena you see detailedly. Plus, state down how to retrigger the problem. <br>
-It is recommended to raise issues in following languages:
+If you have no idea why issue occurs, just state down the phenomena you see detailedly. Plus, state down how to retrigger the problem.
+
+## Language Selection
+Developers in all around the world speak different languages. Hence, language used in contributing is significant. From my perspective, I suggest developers to use such language that their intention will be described most accurately. <br>
+However, I am not able to speak all languages around the world. So, I should define following guidelines of language selection. <br>
+It is recommended to use following languages:
 - Simplified Chinese, PRC (简体汉语，中华人民共和国)
 - English, US
 
-It could also be fine if issue is stated in following languages:
+It could also be fine if it is stated in following languages:
 - Traditional Chinese, Taiwan Province (繁體中文，臺灣省)
 - Traditional Chinese, Hong Kong S.A.R (繁體中文，香港特別行政區)
 - English, UK
 
-Other written forms of Chinese (e.g Simplified Chinese, Singapore; 简体中文，新加坡) or English (e.g English, Canada), meaning not confusing, are fine as well.
+Other written forms of Chinese (e.g Simplified Chinese, Singapore; 简体中文，新加坡) or English (e.g English, Canada), meaning not confusing, are fine as well. <br>
+For example, if you can describe an issue more accurately in Chinese than English, use Chinese even if you can speak English, despite the widely use of English in GitHub.

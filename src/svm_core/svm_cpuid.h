@@ -14,10 +14,53 @@
 
 #include <nvdef.h>
 
-#define std_leaf_index	0	// CPUID Leaf of Standard	Functions
-#define hvm_leaf_index	1	// CPUID Leaf of Hypervisor	Functions
-#define ext_leaf_index	2	// CPUID Leaf of Extended	Functions
-#define res_leaf_index	3	// CPUID Leaf of Reserved	Functions
+// Index of Standard Leaves
+#define std_max_num_vstr		0x0
+#define std_proc_feature		0x1
+#define std_monitor_feat		0x5
+#define std_apic_timer_i		0x6
+#define std_struct_extid		0x7
+#define std_pestate_enum		0xD
+
+// Index of Extended Leaves
+#define ext_max_num_vstr		0x0
+#define ext_proc_feature		0x1
+#define ext_brand_str_p1		0x2
+#define ext_brand_str_p2		0x3
+#define ext_brand_str_p3		0x4
+#define ext_caching_tlbs		0x5
+#define ext_l23cache_tlb		0x6
+#define ext_powermgr_ras		0x7
+#define ext_pcap_prm_eid		0x8
+#define ext_svm_features		0xA
+#define ext_svm_tlbs_1gb		0x19
+#define ext_ins_optimize		0x1A
+#define ext_ins_sampling		0x1B
+#define ext_lw_profiling		0x1C
+#define ext_cache_topinf		0x1D
+#define ext_proc_topoinf		0x1E
+#define ext_mem_crypting		0x1F
+
+typedef struct _noir_svm_cpuid_default
+{
+	u32 eax;
+	u32 ebx;
+	u32 ecx;
+	u32 edx;
+}noir_svm_cpuid_default,*noir_svm_cpuid_default_p;
+
+typedef struct _noir_svm_cpuid_max_num_vstr
+{
+	char* vendor_string;
+	u32 maximum;
+}noir_svm_cpuid_max_num_vstr,*noir_svm_cpuid_max_num_vstr_p;
+
+typedef struct _noir_svm_cpuid_svm_feature_id
+{
+	u32 rev_number;
+	u32 avail_asid;
+	u32 feature_id;
+}noir_svm_cpuid_svm_feature_id,*noir_svm_cpuid_svm_feature_id_p;
 
 typedef void (fastcall *noir_svm_cpuid_exit_handler)
 (

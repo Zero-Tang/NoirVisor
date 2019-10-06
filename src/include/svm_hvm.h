@@ -48,6 +48,8 @@ typedef struct _noir_svm_cached_cpuid
 	void** hvm_leaf;	// 0x40000000-0x400000FF
 	void** ext_leaf;	// 0x80000000-0x800000FF
 	void** res_leaf;	// 0xC0000000-0xC00000FF
+	// Maximum Counts.
+	u32 max_leaf[4];
 }noir_svm_cached_cpuid,*noir_svm_cached_cpuid_p;
 
 typedef struct _noir_svm_nested_vcpu
@@ -78,6 +80,9 @@ typedef struct _noir_svm_initial_stack
 }noir_svm_initial_stack,*noir_svm_initial_stack_p;
 
 u8 nvc_svm_subvert_processor_a(noir_svm_initial_stack_p host_rsp);
+void fastcall nvc_svm_reserved_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+bool nvc_svm_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 res_count);
+void nvc_svm_teardown_cpuid_handler();
 bool nvc_svm_build_exit_handler();
 void nvc_svm_teardown_exit_handler();
 void nvc_svm_return(noir_gpr_state_p stack);
