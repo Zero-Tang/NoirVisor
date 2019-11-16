@@ -220,6 +220,14 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 	noir_svm_advance_rip(vcpu->vmcb.virt);
 }
 
+// Expected Intercept Code: 0x400
+void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	nv_dprintf("Nested Page Fault is intercepted!\n");
+	nv_dprintf("Current vCPU: 0x%p\n",vcpu);
+	noir_int3();
+}
+
 void nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)
 {
 	// Get Virtual CPU and the linear address of VMCB.
@@ -281,6 +289,7 @@ bool nvc_svm_build_exit_handler()
 		svm_exit_handlers[0][intercepted_msr]=nvc_svm_msr_handler;
 		svm_exit_handlers[0][intercepted_vmrun]=nvc_svm_vmrun_handler;
 		svm_exit_handlers[0][intercepted_vmmcall]=nvc_svm_vmmcall_handler;
+		svm_exit_handlers[1][nested_page_fault-0x400]=nvc_svm_nested_pf_handler;
 		return true;
 	}
 	return false;

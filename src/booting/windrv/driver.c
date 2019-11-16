@@ -51,7 +51,6 @@ void NoirDriverUnload(IN PDRIVER_OBJECT DriverObject)
 	UNICODE_STRING uniLinkName=RTL_CONSTANT_STRING(LINK_NAME);
 	NoirTeardownHookedPages();
 	NoirTeardownProtectedFile();
-	LDE_Finalize();
 	NoirFinalizeCodeIntegrity();
 	IoDeleteSymbolicLink(&uniLinkName);
 	IoDeleteDevice(DriverObject->DeviceObject);
@@ -156,7 +155,6 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	NoirInitializeCodeIntegrity(DriverObject->DriverStart);
 	system_cr3=__readcr3();
 	orig_system_call=__readmsr(0xC0000082);
-	LDE_Initialize();
 	NoirGetNtOpenProcessIndex();
 	NoirSaveImageInfo(DriverObject);
 	NoirBuildHookedPages();

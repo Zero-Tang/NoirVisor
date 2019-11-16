@@ -203,6 +203,10 @@ typedef union _nvc_svm_npt_control
 		u64 enable_npt:1;
 		u64 enable_sev:1;
 		u64 enable_sev_es:1;
+		u64 gmet:1;
+		u64 reserved1:1;
+		u64 virtual_transparent_encryption:1;
+		u64 reserved2:58;
 	};
 	u64 value;
 }nvc_svm_npt_control,*nvc_svm_npt_control_p;

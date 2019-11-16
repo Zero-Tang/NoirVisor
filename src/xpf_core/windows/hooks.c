@@ -144,6 +144,7 @@ void static NoirHookNtSetInformationFile(IN PVOID HookedAddress)
 		*(PULONG)((ULONG)HookCode+1)=(ULONG)fake_NtSetInformationFile-(ULONG)NtSetInformationFile-5;
 		*(PULONG)((ULONG)DetourCode+1)=(ULONG)NtSetInformationFile-(ULONG)Old_NtSetInformationFile-5;
 #endif
+		NoirDebugPrint("Patch Size of NtSetInformationFile: %d\t 0x%p\n",PatchSize,NtSetInformationFile);
 		RtlCopyMemory(Old_NtSetInformationFile,NtSetInformationFile,PatchSize);
 		RtlCopyMemory((PVOID)((ULONG_PTR)Old_NtSetInformationFile+PatchSize),DetourCode,DetourLength);
 		RtlCopyMemory(HookedAddress,HookCode,HookLength);

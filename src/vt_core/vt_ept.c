@@ -112,6 +112,7 @@ void nvc_ept_cleanup(noir_ept_manager_p eptm)
 				cur=next;
 			}
 		}
+		noir_free_nonpg_memory(eptm);
 	}
 }
 

@@ -35,6 +35,8 @@ typedef struct _noir_svm_hvm
 {
 	memory_descriptor msrpm;
 	memory_descriptor iopm;
+	void* primary_nptm;
+	void* secondary_nptm;
 	u32 std_leaftotal;
 	u32 ext_leaftotal;
 }noir_svm_hvm,*noir_svm_hvm_p;

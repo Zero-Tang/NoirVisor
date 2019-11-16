@@ -21,6 +21,7 @@
 #include <amd64.h>
 #include "svm_vmcb.h"
 #include "svm_def.h"
+#include "svm_npt.h"
 
 bool nvc_is_svm_supported()
 {
@@ -161,7 +162,18 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 		vcpu->enabled_feature|=noir_svm_virtual_gif;
 	if(d & amd64_cpuid_vmlsvirt_bit)
 		vcpu->enabled_feature|=noir_svm_virtualized_vmls;
-	// Enable in VMCB.
+	// Setup Memory Virtualization
+	if(vcpu->enabled_feature & noir_svm_nested_paging)
+	{
+		// Enable NPT
+		noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->relative_hvm->primary_nptm;
+		nvc_svm_npt_control npt_ctrl;
+		npt_ctrl.value=0;
+		npt_ctrl.enable_npt=1;
+		noir_svm_vmwrite64(vcpu->vmcb.virt,npt_control,npt_ctrl.value);
+		// Write NPT CR3
+		noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
+	}
 	// Write to VMCB.
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction1,list1.value);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction2,list2.value);
@@ -309,6 +321,10 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 		noir_free_contd_memory(hvm_p->relative_hvm->msrpm.virt);
 	if(hvm_p->relative_hvm->iopm.virt)
 		noir_free_contd_memory(hvm_p->relative_hvm->iopm.virt);
+	if(hvm_p->relative_hvm->primary_nptm)
+		nvc_npt_cleanup(hvm_p->relative_hvm->primary_nptm);
+	if(hvm_p->relative_hvm->secondary_nptm)
+		nvc_npt_cleanup(hvm_p->relative_hvm->secondary_nptm);
 }
 
 bool static nvc_svm_alloc_cpuid_cache(noir_hypervisor_p hvm_p)
@@ -321,7 +337,7 @@ bool static nvc_svm_alloc_cpuid_cache(noir_hypervisor_p hvm_p)
 	hvm_p->relative_hvm->std_leaftotal=++stda;
 	noir_cpuid(0x80000000,0,&exta,&extb,&extc,&extd);
 	hvm_p->relative_hvm->ext_leaftotal=++exta-0x80000000;
-	if(nvc_svm_build_cpuid_handler(stda,0,exta,0)==false)return false;
+	if(nvc_svm_build_cpuid_handler(stda,0,exta-0x80000000,0)==false)return false;
 	for(;i<hvm_p->cpu_count;cache=&hvm_p->virtual_cpu[++i].cpuid_cache)
 	{
 		cache->std_leaf=noir_alloc_nonpg_memory(hvm_p->relative_hvm->std_leaftotal*sizeof(void**));
@@ -374,6 +390,8 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 		hvm_p->relative_hvm->iopm.phys=noir_get_physical_address(hvm_p->relative_hvm->iopm.virt);
 	else
 		goto alloc_failure;
+	hvm_p->relative_hvm->primary_nptm=(void*)nvc_npt_build_identity_map();
+	if(hvm_p->relative_hvm->primary_nptm==null)goto alloc_failure;
 	if(hvm_p->virtual_cpu==null)goto alloc_failure;
 	if(nvc_svm_alloc_cpuid_cache(hvm_p)==false)goto alloc_failure;
 	nvc_svm_setup_msr_hook(hvm_p);
@@ -382,6 +400,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	return noir_success;
 alloc_failure:
 	nv_dprintf("Allocation failure!\n");
+	noir_int3();
 	nvc_svm_cleanup(hvm_p);
 	return noir_insufficient_resources;
 }

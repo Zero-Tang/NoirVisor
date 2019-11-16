@@ -52,7 +52,8 @@ Now NoirVisor has five future development plans: <br>
 - Software-Level Code Integrity Enforcement.
 
 # License
-This repository is under MIT license.
+This repository is under MIT license. <br>
+This repository invoked BeatriX's LDE. It was licensed under LGPL v3. For more information regarding LDE's license and LGPL v3, go to: http://beatrix2004.free.fr/BeaEngine/licence1.php
 
 # Code of Conduct
 The Code of Conduct is added to NoirVisor Project since May.5th, 2019. Please follow rule when contributing.

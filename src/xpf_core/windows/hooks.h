@@ -66,9 +66,9 @@ typedef struct _NOIR_PROTECTED_FILE_NAME
 	WCHAR FileName[1];
 }NOIR_PROTECTED_FILE_NAME,*PNOIR_PROTECTED_FILE_NAME;
 
+void __cdecl NoirDebugPrint(const char* Format,...);
 PVOID NoirAllocateContiguousMemory(IN ULONG Length);
 ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress);
-ULONG SizeOfCode(IN PVOID Code,IN ULONG Architecture);
 ULONG GetPatchSize(IN PVOID Code,IN ULONG Length);
 
 NTSETINFORMATIONFILE	NtSetInformationFile=NULL,Old_NtSetInformationFile=NULL;
