@@ -66,6 +66,8 @@ typedef struct _NOIR_PROTECTED_FILE_NAME
 	WCHAR FileName[1];
 }NOIR_PROTECTED_FILE_NAME,*PNOIR_PROTECTED_FILE_NAME;
 
+PVOID NoirLocateImageBaseByName(IN PWSTR ImageName);
+PVOID NoirLocateExportedProcedureByName(IN PVOID ImageBase,IN PSTR ProcedureName);
 void __cdecl NoirDebugPrint(const char* Format,...);
 PVOID NoirAllocateContiguousMemory(IN ULONG Length);
 ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress);

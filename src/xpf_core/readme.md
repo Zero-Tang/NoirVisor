@@ -9,14 +9,14 @@ There should be multiple folders in this directory. Each folder indicates the pl
 In XPF-Core, one folder should have following features for its specific platform: <br>
 Allocate and free memory, with types of: NonPaged, Paged and Contiguous. Allocated memory should be initialized with zeros. <br>
 Print formatted debug message to debugger. <br>
-Save processor state, including: <br>
-Segment Registers. <br>
-Control Registers. <br>
-Debug Registers. <br>
-Model Specific Registers. <br>
-Perform generic call to all processors. <br>
-Query processor count. <br>
-Partial virtualization engine code that necessarily written in assembly.
+Save processor state, including:
+- Segment Registers.
+- Control Registers.
+- Debug Registers.
+- Model Specific Registers.
+- Perform generic call to all processors.
+- Query processor count.
+- Partial virtualization engine code that necessarily written in assembly.
 
 # CI (Code Integrity)
 Code Integrity is a component that ensures codes in NoirVisor is not tampered by malicious software. <br>

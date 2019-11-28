@@ -25,6 +25,27 @@ Set the bit in bitmap to intercept LSTAR or SYSENTER_EIP MSR-read. <br>
 On interception, edit the eax and edx register to represent the original value. <br>
 Don't forget to set the bit in interception list in VMCB.
 
+# Stealth Inline Hook Algorithm
+This feature utilizes the Nested Paging feature of processor. <br>
+The difference between Intel and AMD is that AMD lacks the "execution-only page" feature. In this regard, algorithm that applied on Intel EPT cannot be applied to AMD NPT.
+
+## Algorithm Detail
+Setup two page tables. They are called Primary Page Table and Secondary Page Table. <br>
+The Primary Page Table grants all accesses to all pages except that the hooked page is revoked execution access. At this moment, PTE points to original page. <br>
+The Secondary Page Table grants R/W accesses, without execution access, to all pages except that the hooked page is given execution access in addition. At this moment, PTE points to hooked page. <br>
+Load Primary Page Table into VMCB in the first time. On execution, VM-Exit due to #NPF occurs. So swap the nCR3 to the Secondary Page Table and issue VM-Entry. When instruction pointer goes outside, #NPF occurs and then swap the nCR3 to Primary Page Table and issue VM-Entry.
+
+## Algorithm Issue
+When instruction pointer is inside the hooked page, code may recognize the patch since the read access is granted. This is special case. <br>
+There is performance problem as well. There will be no performance cost for reading the hooked page. But performance penalty on executing the hooked page may be significant due to:
+
+1. When hooked function is called, #NPF occurs and swapped to the Secondary.
+2. The jump instruction is executed, #NPF occurs and swapped to the Primary.
+3. The proxy function may detour to function remainder, #NPF occurs and swapped to the Secondary.
+4. Hooked function execution completed, #NPF occurs and swapped to the Primary.
+
+In summary, four #NPF will occur in a single execution of hooked function. In comparison, Intel EPT offers flexibility that intensive access can still have least performance penalty.
+
 # CPUID Cache
 This feature could enhance the performance of CPUID-induced VM-Exit on Nested-VMM scenario. (e.g NoirVisor running in a Virtual Machine.) It might slightly lower down the performance on Non-Nested scenario, but generally should have a good performance no matter the scenario. <br>
 The remastered design is to handle different leaf functions with multiple functions. In this case, the structure of storing the cpuid cache will be leaf-specific.

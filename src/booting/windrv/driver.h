@@ -42,6 +42,7 @@ ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();
 ULONG NoirVisorVersion();
 ULONG NoirQueryVirtualizationSupportability();
+void NoirLocatePsLoadedModule(IN PDRIVER_OBJECT DriverObject);
 BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase);
 void NoirFinalizeCodeIntegrity();
 void NoirGetVendorString(OUT PSTR VendorString);

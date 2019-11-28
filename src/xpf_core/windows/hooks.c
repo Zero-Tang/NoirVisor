@@ -156,19 +156,23 @@ void NoirBuildHookedPages()
 	HookPages=ExAllocatePool(NonPagedPool,sizeof(NOIR_HOOK_PAGE));
 	if(HookPages)
 	{
-		UNICODE_STRING uniFuncName=RTL_CONSTANT_STRING(L"NtSetInformationFile");
-		NtSetInformationFile=MmGetSystemRoutineAddress(&uniFuncName);
-		HookPages->OriginalPage.VirtualAddress=NoirGetPageBase(NtSetInformationFile);
-		HookPages->OriginalPage.PhysicalAddress=NoirGetPhysicalAddress(HookPages->OriginalPage.VirtualAddress);
-		HookPages->HookedPage.VirtualAddress=NoirAllocateContiguousMemory(PAGE_SIZE);
-		if(HookPages->HookedPage.VirtualAddress)
+		PVOID NtKernelBase=NoirLocateImageBaseByName(L"ntoskrnl.exe");
+		if(NtKernelBase)
 		{
-			USHORT PageOffset=(USHORT)((ULONG_PTR)NtSetInformationFile&0xFFF);
-			HookPages->HookedPage.PhysicalAddress=NoirGetPhysicalAddress(HookPages->HookedPage.VirtualAddress);
-			RtlCopyMemory(HookPages->HookedPage.VirtualAddress,HookPages->OriginalPage.VirtualAddress,PAGE_SIZE);
-			NoirHookNtSetInformationFile((PVOID)((ULONG_PTR)HookPages->HookedPage.VirtualAddress+PageOffset));
+			NtSetInformationFile=NoirLocateExportedProcedureByName(NtKernelBase,"NtSetInformationFile");
+			HookPages->OriginalPage.VirtualAddress=NoirGetPageBase(NtSetInformationFile);
+			HookPages->OriginalPage.PhysicalAddress=NoirGetPhysicalAddress(HookPages->OriginalPage.VirtualAddress);
+			HookPages->HookedPage.VirtualAddress=NoirAllocateContiguousMemory(PAGE_SIZE);
+			if(HookPages->HookedPage.VirtualAddress)
+			{
+				USHORT PageOffset=(USHORT)((ULONG_PTR)NtSetInformationFile&0xFFF);
+				HookPages->HookedPage.PhysicalAddress=NoirGetPhysicalAddress(HookPages->HookedPage.VirtualAddress);
+				RtlCopyMemory(HookPages->HookedPage.VirtualAddress,HookPages->OriginalPage.VirtualAddress,PAGE_SIZE);
+				NoirHookNtSetInformationFile((PVOID)((ULONG_PTR)HookPages->HookedPage.VirtualAddress+PageOffset));
+			}
+			HookPages->NextHook=NULL;
 		}
-		HookPages->NextHook=NULL;
+		NoirDebugPrint("NT Kernel Base: 0x%p\t NtSetInformationFile: 0x%p\n",NtKernelBase,NtSetInformationFile);
 	}
 }
 

@@ -153,6 +153,7 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Context OPTIONAL,IN ULONG Count)
 {
 	NoirInitializeCodeIntegrity(DriverObject->DriverStart);
+	NoirLocatePsLoadedModule(DriverObject);
 	system_cr3=__readcr3();
 	orig_system_call=__readmsr(0xC0000082);
 	NoirGetNtOpenProcessIndex();
