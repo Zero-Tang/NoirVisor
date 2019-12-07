@@ -20,8 +20,9 @@
 #endif
 
 // Known Processor Manufacturer Encoding
-#define intel_processor			0
-#define amd_processor			1
+#define intel_processor			0	// Intel VT-x
+#define amd_processor			1	// AMD-V
+#define via_processor			2	// VIA VT
 #define unknown_processor		0xff
 
 // Processor State of Virtualization

@@ -34,9 +34,6 @@ echo Compiling Core Engine of AMD-V...
 
 %ddkpath%\amd64\cl.exe .\src\svm_core\svm_npt.c /I".\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_svm_exit" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\svm_npt.cod" /Fo"%objpath%\svm_npt.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
 
-echo Compiling Disassembler Engine (LDE)...
-%ddkpath%\amd64\ml64.exe /W3 /WX /Zf /Zd /Fo"%objpath%\LDE64.obj" /c /nologo .\src\disasm\LDE64.asm
-
 echo Compiling Core of Cross-Platform Framework (XPF)...
 %ddkpath%\amd64\cl.exe .\src\xpf_core\windows\debug.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\debug.cod" /Fo"%objpath%\debug.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
 
@@ -67,7 +64,7 @@ echo Compiling Core of Cross-Platform Framework (XPF)...
 %ddkpath%\amd64\ml64.exe /W3 /WX /Zf /Zd /Fo"%objpath%\crc32_x64.obj" /c /nologo .\src\xpf_core\windows\crc32_x64.asm
 
 echo ============Start Linking============
-%ddkpath%\amd64\link.exe "%objpath%\driver.obj" "%objpath%\vt_main.obj" "%objpath%\vt_exit.obj" "%objpath%\vt_ept.obj" "%objpath%\vt_nvcpu.obj" "%objpath%\svm_main.obj" "%objpath%\svm_exit.obj" "%objpath%\svm_cpuid.obj" "%objpath%\svm_npt.obj" "%objpath%\LDE64.obj" "%objpath%\memory.obj" "%objpath%\debug.obj" "%objpath%\processor.obj" "%objpath%\thread.obj" "%objpath%\hooks.obj" "%objpath%\detour.obj" "%objpath%\winhvm.obj" "%objpath%\noirhvm.obj" "%objpath%\ci.obj" "%objpath%\svm_hv64.obj" "%objpath%\vt_hv64.obj" "%objpath%\msrhook64.obj" "%objpath%\kpcr64.obj" "%objpath%\crc32_x64.obj" /LIBPATH:"%libpath%\win7\amd64" /NODEFAULTLIB "ntoskrnl.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
+%ddkpath%\amd64\link.exe "%objpath%\driver.obj" "%objpath%\vt_main.obj" "%objpath%\vt_exit.obj" "%objpath%\vt_ept.obj" "%objpath%\vt_nvcpu.obj" "%objpath%\svm_main.obj" "%objpath%\svm_exit.obj" "%objpath%\svm_cpuid.obj" "%objpath%\svm_npt.obj" "%objpath%\memory.obj" "%objpath%\debug.obj" "%objpath%\processor.obj" "%objpath%\thread.obj" "%objpath%\hooks.obj" "%objpath%\detour.obj" "%objpath%\winhvm.obj" "%objpath%\noirhvm.obj" "%objpath%\ci.obj" "%objpath%\svm_hv64.obj" "%objpath%\vt_hv64.obj" "%objpath%\msrhook64.obj" "%objpath%\kpcr64.obj" "%objpath%\crc32_x64.obj" /LIBPATH:"%libpath%\win7\amd64" /NODEFAULTLIB "ntoskrnl.lib" ".\src\disasm\LDE64.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
 
 echo ============Start Signing============
 %ddkpath%\signtool.exe sign /v /f .\ztnxtest.pfx /t http://timestamp.globalsign.com/scripts/timestamp.dll %binpath%\NoirVisor.sys

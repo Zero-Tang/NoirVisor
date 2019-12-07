@@ -15,6 +15,8 @@
 #include <ntddk.h>
 #include <windef.h>
 
+void NoirBuildHookedPages();
+void NoirTeardownHookedPages();
 void __cdecl NoirDebugPrint(const char* Format,...);
 ULONG nvc_build_hypervisor();
 void nvc_teardown_hypervisor();
@@ -25,5 +27,7 @@ ULONG noir_get_virtualization_supportability();
 BOOLEAN noir_initialize_ci(PVOID section,ULONG size);
 void noir_finalize_ci();
 
+BOOLEAN NoirHypervisorStarted=FALSE;
+PVOID NoirPowerCallbackObject=NULL;
 PVOID NvImageBase=NULL;
 ULONG NvImageSize=0;

@@ -33,9 +33,11 @@ PVOID NoirLocateImageBaseByName(IN PWSTR ImageName)
 	PVOID ImageBase=NULL;
 	if(PsLoadedModuleResource && PsLoadedModuleList)
 	{
+		// We traverse the Kernel LDR Double-Linked List.
 		PKLDR_DATA_TABLE_ENTRY pLdr=(PKLDR_DATA_TABLE_ENTRY)PsLoadedModuleList->InLoadOrderLinks.Flink;
 		UNICODE_STRING uniModName;
 		RtlInitUnicodeString(&uniModName,ImageName);
+		// Acquire Shared Lock.
 		KeEnterCriticalRegion();
 		if(ExAcquireResourceSharedLite(PsLoadedModuleResource,TRUE))
 		{
@@ -48,6 +50,7 @@ PVOID NoirLocateImageBaseByName(IN PWSTR ImageName)
 				}
 				pLdr=(PKLDR_DATA_TABLE_ENTRY)pLdr->InLoadOrderLinks.Flink;
 			}while(pLdr!=PsLoadedModuleList);
+			// Release Lock.
 			ExReleaseResourceLite(PsLoadedModuleResource);
 		}
 		KeLeaveCriticalRegion();
@@ -57,23 +60,28 @@ PVOID NoirLocateImageBaseByName(IN PWSTR ImageName)
 
 PVOID NoirLocateExportedProcedureByName(IN PVOID ImageBase,IN PSTR ProcedureName)
 {
+	// Check DOS Header Magic Number
 	PIMAGE_DOS_HEADER DosHead=(PIMAGE_DOS_HEADER)ImageBase;
 	if(DosHead->e_magic==IMAGE_DOS_SIGNATURE)
 	{
+		// Check NT Header Signature
 		PIMAGE_NT_HEADERS NtHead=(PIMAGE_NT_HEADERS)((ULONG_PTR)ImageBase+DosHead->e_lfanew);
 		if(NtHead->Signature==IMAGE_NT_SIGNATURE)
 		{
 			if(NtHead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress)
 			{
+				// Locate Export Directory
 				PIMAGE_EXPORT_DIRECTORY ExpDir=(PIMAGE_EXPORT_DIRECTORY)((ULONG_PTR)ImageBase+NtHead->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
 				PULONG FuncRva=(PULONG)((ULONG_PTR)ImageBase+ExpDir->AddressOfFunctions);
 				PULONG NameRva=(PULONG)((ULONG_PTR)ImageBase+ExpDir->AddressOfNames);
 				PUSHORT OrdRva=(PUSHORT)((ULONG_PTR)ImageBase+ExpDir->AddressOfNameOrdinals);
 				ULONG Low=0,High=ExpDir->NumberOfNames;
+				// Use Binary-Search to reduce running-time complexity
 				while(High>=Low)
 				{
 					ULONG Mid=(Low+High)>>1;
 					PSTR CurrentName=(PSTR)((ULONG_PTR)ImageBase+NameRva[Mid]);
+					// strcmp can compare strings greater or lower.
 					LONG CompareResult=strcmp(ProcedureName,CurrentName);
 					if(CompareResult<0)
 						High=Mid-1;
@@ -100,10 +108,13 @@ void static NoirLocatePsLoadedModuleResource()
 	{
 		ULONG_PTR p2=p1;
 		ULONG Len=0;
+		// Search Instruction
 		for(;p2<p1+0x200;p2+=Len)
 		{
 			Len=LDE((PVOID)p2,sizeof(void*)*16-64);
 #if defined(_WIN64)
+			// Compare if current instruction is "lea rcx,xxxx"
+			// 48 8D 0D XX XX XX XX		lea rcx,PsLoadedModuleResource
 			if(Len==7 && *(PUSHORT)p2==0x8D48 && *(PBYTE)(p2+2)==0xD)
 			{
 				PsLoadedModuleResource=(PERESOURCE)(*(PLONG)(p2+3)+p2+7);

@@ -52,6 +52,7 @@ void NoirDriverUnload(IN PDRIVER_OBJECT DriverObject)
 	NoirTeardownHookedPages();
 	NoirTeardownProtectedFile();
 	NoirFinalizeCodeIntegrity();
+	NoirFinalizePowerStateCallback();
 	IoDeleteSymbolicLink(&uniLinkName);
 	IoDeleteDevice(DriverObject->DeviceObject);
 }
@@ -160,6 +161,7 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	NoirSaveImageInfo(DriverObject);
 	NoirBuildHookedPages();
 	NoirBuildProtectedFile();
+	NoirInitializePowerStateCallback();
 }
 
 NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING RegistryPath)

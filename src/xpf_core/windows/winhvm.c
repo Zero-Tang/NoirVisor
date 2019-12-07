@@ -36,39 +36,63 @@ NTSTATUS static NoirQueryRegistryRoutine(IN PWSTR ValueName,IN ULONG ValueType,I
 NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength)
 {
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
-	PWSTR ProductName=ExAllocatePool(NonPagedPool,128);
-	PWSTR CsdVersion=ExAllocatePool(NonPagedPool,128);
-	if(ProductName && CsdVersion)
+	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=ExAllocatePool(PagedPool,PAGE_SIZE);
+	if(KvPartInf)
 	{
-		PWSTR Cxt[3];
-		WCHAR BuildNumber[16];
-		RTL_QUERY_REGISTRY_TABLE RegQueryTable;
-		RtlZeroMemory(&RegQueryTable,sizeof(RegQueryTable));
-		RtlZeroMemory(ProductName,128);
-		RtlZeroMemory(CsdVersion,128);
-		RtlZeroMemory(BuildNumber,32);
-		RegQueryTable.QueryRoutine=NoirQueryRegistryRoutine;
-		RegQueryTable.Flags=RTL_QUERY_REGISTRY_REQUIRED;
-		RegQueryTable.DefaultType=REG_SZ;
-		Cxt[0]=ProductName;
-		Cxt[1]=CsdVersion;
-		Cxt[2]=BuildNumber;
-		st=RtlQueryRegistryValues(RTL_REGISTRY_WINDOWS_NT,NULL,&RegQueryTable,Cxt,NULL);
-		st=RtlStringCbPrintfW(VersionString,VersionLength,L"%ws %ws Build %ws",ProductName,CsdVersion,BuildNumber);
+		HANDLE hKey=NULL;
+		UNICODE_STRING uniKeyName=RTL_CONSTANT_STRING(L"\\Registry\\Machine\\Software\\Microsoft\\Windows NT\\CurrentVersion");
+		OBJECT_ATTRIBUTES oa;
+		InitializeObjectAttributes(&oa,&uniKeyName,OBJ_CASE_INSENSITIVE|OBJ_KERNEL_HANDLE,NULL,NULL);
+		st=ZwOpenKey(&hKey,GENERIC_READ,&oa);
+		if(NT_SUCCESS(st))
+		{
+			UNICODE_STRING uniKvName;
+			ULONG RetLen=0;
+			WCHAR ProductName[128],CSDVersion[128],BuildNumber[8];
+			RtlZeroMemory(VersionString,VersionLength);
+			// Get Windows Product Name
+			RtlZeroMemory(KvPartInf,PAGE_SIZE);
+			RtlInitUnicodeString(&uniKvName,L"ProductName");
+			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+			if(NT_SUCCESS(st))RtlStringCchCopyNW(ProductName,128,(PWSTR)KvPartInf->Data,KvPartInf->DataLength);
+			// Get Windows CSD Version
+			RtlZeroMemory(KvPartInf,PAGE_SIZE);
+			RtlInitUnicodeString(&uniKvName,L"CSDVersion");
+			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+			if(NT_SUCCESS(st))RtlStringCchCopyNW(CSDVersion,128,(PWSTR)KvPartInf->Data,KvPartInf->DataLength);
+			// Get Windows Build Number
+			RtlZeroMemory(KvPartInf,PAGE_SIZE);
+			RtlInitUnicodeString(&uniKvName,L"CurrentBuildNumber");
+			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+			if(NT_SUCCESS(st))RtlStringCchCopyNW(BuildNumber,8,(PWSTR)KvPartInf->Data,KvPartInf->DataLength);
+			// Build the String
+			st=RtlStringCbPrintfW(VersionString,VersionLength,L"%ws %ws Build %ws",ProductName,CSDVersion,BuildNumber);
+			NoirDebugPrint("System Version: %ws\n",VersionString);
+			ZwClose(hKey);
+		}
+		ExFreePool(KvPartInf);
 	}
-	if(ProductName)ExFreePool(ProductName);
-	if(CsdVersion)ExFreePool(CsdVersion);
 	return st;
 }
 
 ULONG NoirBuildHypervisor()
 {
-	return nvc_build_hypervisor();
+	if(NoirHypervisorStarted==FALSE)
+	{
+		ULONG r=nvc_build_hypervisor();
+		if(r==0)NoirHypervisorStarted=TRUE;
+		return r;
+	}
+	return 0;
 }
 
 void NoirTeardownHypervisor()
 {
-	nvc_teardown_hypervisor();
+	if(NoirHypervisorStarted)
+	{
+		nvc_teardown_hypervisor();
+		NoirHypervisorStarted=FALSE;
+	}
 }
 
 ULONG NoirVisorVersion()
@@ -124,7 +148,7 @@ BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase)
 					PVOID CodeBase=(PVOID)((ULONG_PTR)ImageBase+SectionHeaders[i].VirtualAddress);
 					ULONG CodeSize=SectionHeaders[i].SizeOfRawData;
 					NoirDebugPrint("Code Base: 0x%p\t Size: 0x%X\n",CodeBase,CodeSize);
-					noir_initialize_ci(CodeBase,CodeSize);
+					return noir_initialize_ci(CodeBase,CodeSize);
 				}
 			}
 		}
@@ -135,4 +159,54 @@ BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase)
 void NoirFinalizeCodeIntegrity()
 {
 	noir_finalize_ci();
+}
+
+void static NoirPowerStateCallback(IN PVOID CallbackContext,IN PVOID Argument1,IN PVOID Argument2)
+{
+	if(Argument1==(PVOID)PO_CB_SYSTEM_STATE_LOCK)
+	{
+		NoirDebugPrint("At Power State Callback, IRQL=%d\n",KeGetCurrentIrql());
+		if(Argument2)
+		{
+			// System is resuming from sleeping or hibernating.
+			// Restart the hypervisor.
+			NoirBuildHookedPages();
+			if(NoirHypervisorStarted)nvc_build_hypervisor();
+		}
+		else
+		{
+			// System is shutting down, sleeping or hibernating.
+			// This will trigger VM-Exit of Processor Power.
+			// Things will be complex before hypervisor is stopped.
+			// So we stop hypervisor before system power state changes.
+			if(NoirHypervisorStarted)nvc_teardown_hypervisor();
+			NoirTeardownHookedPages();
+		}
+	}
+}
+
+void NoirFinalizePowerStateCallback()
+{
+	if(NoirPowerCallbackObject)
+	{
+		ExUnregisterCallback(NoirPowerCallbackObject);
+		NoirPowerCallbackObject=NULL;
+	}
+}
+
+NTSTATUS NoirInitializePowerStateCallback()
+{
+	NTSTATUS st=STATUS_UNSUCCESSFUL;
+	PCALLBACK_OBJECT pCallback=NULL;
+	UNICODE_STRING uniObjectName=RTL_CONSTANT_STRING(L"\\Callback\\PowerState");
+	OBJECT_ATTRIBUTES oa;
+	InitializeObjectAttributes(&oa,&uniObjectName,OBJ_CASE_INSENSITIVE,NULL,NULL);
+	st=ExCreateCallback(&pCallback,&oa,FALSE,FALSE);
+	if(NT_SUCCESS(st))
+	{
+		NoirPowerCallbackObject=ExRegisterCallback(pCallback,NoirPowerStateCallback,NULL);
+		if(NoirPowerCallbackObject==NULL)st=STATUS_UNSUCCESSFUL;
+		ObDereferenceObject(pCallback);
+	}
+	return st;
 }

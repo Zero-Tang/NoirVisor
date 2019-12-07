@@ -27,7 +27,8 @@ Don't forget to set the bit in interception list in VMCB.
 
 # Stealth Inline Hook Algorithm
 This feature utilizes the Nested Paging feature of processor. <br>
-The difference between Intel and AMD is that AMD lacks the "execution-only page" feature. In this regard, algorithm that applied on Intel EPT cannot be applied to AMD NPT.
+The difference between Intel and AMD is that AMD lacks the "execution-only page" feature. In this regard, algorithm that applied on Intel EPT cannot be applied to AMD NPT. <br>
+The idea originally comes from tandasat's repository SimpleSvmHook (https://github.com/tandasat/SimpleSvmHook), but with my additional optimizations regarding it.
 
 ## Algorithm Detail
 Setup two page tables. They are called Primary Page Table and Secondary Page Table. <br>

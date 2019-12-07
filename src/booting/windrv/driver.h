@@ -45,6 +45,8 @@ ULONG NoirQueryVirtualizationSupportability();
 void NoirLocatePsLoadedModule(IN PDRIVER_OBJECT DriverObject);
 BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase);
 void NoirFinalizeCodeIntegrity();
+NTSTATUS NoirInitializePowerStateCallback();
+void NoirFinalizePowerStateCallback();
 void NoirGetVendorString(OUT PSTR VendorString);
 void NoirGetProcessorName(OUT PSTR ProcessorName);
 void NoirGetNtOpenProcessIndex();

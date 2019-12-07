@@ -35,8 +35,7 @@ Currently, NoirVisor supports the Windows Operating System newer than or same as
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has finished developping the basic hypervisor on Intel VT-x. <br>
-Now NoirVisor has five future development plans: <br>
+Project NoirVisor has five future development plans: <br>
 - Remaster CPUID-caching architecture with a flexible design. <br>
 - Develop Nested Paging with Stealth Hook on SVM-Engine for NoirVisor. <br>
 - Develop Nested Virtualization. <br>
@@ -53,7 +52,6 @@ Now NoirVisor has five future development plans: <br>
 
 # License
 This repository is under MIT license. <br>
-This repository invoked BeatriX's LDE. It was licensed under LGPL v3. For more information regarding LDE's license and LGPL v3, go to: http://beatrix2004.free.fr/BeaEngine/licence1.php
 
 # Code of Conduct
 The Code of Conduct is added to NoirVisor Project since May.5th, 2019. Please follow rule when contributing.

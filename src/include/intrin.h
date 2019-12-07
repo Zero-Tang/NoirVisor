@@ -15,13 +15,13 @@
 #include <nvdef.h>
 
 #if defined(_msvc)
-//bit-test instructions
+// bit-test instructions
 #define noir_bt		_bittest
 #define noir_btc	_bittestandcomplement
 #define noir_btr	_bittestandreset
 #define noir_bts	_bittestandset
 
-//64-bit bit-test instructions
+// 64-bit bit-test instructions
 #if defined(_amd64)
 #define noir_bt64	_bittest64
 #define noir_btc64	_bittestandcomplement64
@@ -29,24 +29,24 @@
 #define noir_bts64	_bittestandset64
 #endif
 
-//Read Control Register instructions
+// Read Control Register instructions
 #define noir_readcr0	__readcr0
 #define noir_readcr2	__readcr2
 #define noir_readcr3	__readcr3
 #define noir_readcr4	__readcr4
 
-//Write Control Register instructions
+// Write Control Register instructions
 #define noir_writecr0	__writecr0
 #define noir_writecr3	__writecr3
 #define noir_writecr4	__writecr4
 
-//Read/Write CR8 Register instructions(64-bit only)
+// Read/Write CR8 Register instructions(64-bit only)
 #if defined(_amd64)
 #define noir_readcr8	__readcr8
 #define noir_writecr8	__readcr8
 #endif
 
-//Read Debug Register instructions
+// Read Debug Register instructions
 #define noir_readdr0	__readdr(0)
 #define noir_readdr1	__readdr(1)
 #define noir_readdr2	__readdr(2)
@@ -54,7 +54,7 @@
 #define noir_readdr6	__readdr(6)
 #define noir_readdr7	__readdr(7)
 
-//Write Debug Register instructions
+// Write Debug Register instructions
 #define noir_writedr0	__writedr(0)
 #define noir_writedr1	__writedr(1)
 #define noir_writedr2	__writedr(2)
@@ -62,11 +62,11 @@
 #define noir_writedr6	__writedr(6)
 #define noir_writedr7	__writedr(7)
 
-//Read/Write Model Specific Registers
+// Read/Write Model Specific Registers
 #define noir_rdmsr		__readmsr
 #define noir_wrmsr		__writemsr
 
-//Store-String instructions.
+// Store-String instructions.
 #define noir_stosb		__stosb
 #define noir_stosw		__stosw
 #define noir_stosd		__stosd
@@ -77,7 +77,7 @@
 #define noir_stosp		__stosd
 #endif
 
-//Move-String instructions.
+// Move-String instructions.
 #define noir_movsb		__movsb
 #define noir_movsw		__movsw
 #define noir_movsd		__movsd
@@ -88,17 +88,18 @@
 #define noir_movsp		__movsd
 #endif
 
-//Clear/Set RFlags.IF
+// Clear/Set RFlags.IF
 #define noir_cli	_disable
 #define noir_sti	_enable
 
-//Debug-Break
-#define noir_int3	__debugbreak
+// Debug-Break & Assertion
+#define noir_int3		__debugbreak
+#define noir_assert(s)	if(!s)__int2c();
 
-//Invalidate Processor Cache
+// Invalidate Processor Cache
 #define noir_wbinvd		__wbinvd
 
-//Atomic Operations
+// Atomic Operations
 #define noir_locked_add			_InterlockedAdd
 #define noir_locked_inc			_InterlockedIncrement
 #define noir_locked_dec			_InterlockedDecrement
@@ -109,9 +110,9 @@
 #define noir_locked_cmpxchg		_InterlockedCompareExchange
 #endif
 
-//The rest are done by inline functions.
+// The rest are done by inline functions.
 
-//Simplify the cpuid instruction invoking.
+// Simplify the cpuid instruction invoking.
 void inline noir_cpuid(u32 ia,u32 ic,u32* a,u32* b,u32* c,u32* d)
 {
 	u32 info[4];
@@ -128,7 +129,7 @@ u8 inline noir_set_bitmap(void* bitmap,u32 bit_position)
 {
 	u32* bmp=(u32*)bitmap;
 	u32 i=bit_position>>5,j=bit_position&0x1F;
-	//bmp[i]|=(1<<j);
+	// bmp[i]|=(1<<j);
 	return noir_bts(&bmp[i],j);
 }
 
@@ -136,7 +137,7 @@ u8 inline noir_reset_bitmap(void* bitmap,u32 bit_position)
 {
 	u32* bmp=(u32*)bitmap;
 	u32 i=bit_position>>5,j=bit_position&0x1F;
-	//bmp[i]&=~(1<<j);
+	// bmp[i]&=~(1<<j);
 	return noir_btr(&bmp[i],j);
 }
 
