@@ -10,6 +10,7 @@ echo Project: NoirVisor
 echo Platform: 64-Bit Windows
 echo Preset: Debug/Checked Build
 echo Powered by zero.tangptr@gmail.com
+echo Copyright (c) 2018-2020, zero.tangptr@gmail.com. All Rights Reserved.
 pause
 
 echo ============Start Compiling============
@@ -32,7 +33,7 @@ echo Compiling Core Engine of AMD-V...
 
 %ddkpath%\amd64\cl.exe .\src\svm_core\svm_cpuid.c /I".\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_svm_exit" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\svm_cpuid.cod" /Fo"%objpath%\svm_cpuid.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
 
-%ddkpath%\amd64\cl.exe .\src\svm_core\svm_npt.c /I".\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_svm_exit" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\svm_npt.cod" /Fo"%objpath%\svm_npt.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
+%ddkpath%\amd64\cl.exe .\src\svm_core\svm_npt.c /I".\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_svm_npt" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\svm_npt.cod" /Fo"%objpath%\svm_npt.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue
 
 echo Compiling Core of Cross-Platform Framework (XPF)...
 %ddkpath%\amd64\cl.exe .\src\xpf_core\windows\debug.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /Od /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\debug.cod" /Fo"%objpath%\debug.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gr /TC /c /errorReport:queue

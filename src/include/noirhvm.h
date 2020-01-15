@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2019, Zero Tang. All rights reserved.
+  Copyright 2018-2020, Zero Tang. All rights reserved.
 
   This file is the central HyperVisor of NoirVisor.
 
@@ -15,7 +15,7 @@
 #include "nvdef.h"
 #if defined(_vt_drv) || defined(_vt_exit) || defined(_vt_ept) || defined(_vt_nvcpu)
 #include "vt_hvm.h"
-#elif defined(_svm_drv) || defined(_svm_exit)
+#elif defined(_svm_drv) || defined(_svm_exit) || defined(_svm_npt)
 #include "svm_hvm.h"
 #endif
 

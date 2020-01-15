@@ -1,7 +1,7 @@
 /*
   NoirVisor - A cross-platform designed HyperVisor
 
-  Copyright 2018-2019, Zero Tang. All rights reserved.
+  Copyright 2018-2020, Zero Tang. All rights reserved.
 
   This file defines constants and basic structures for Intel VT-x.
 
