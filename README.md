@@ -7,7 +7,13 @@ NoirVisor is a hardware-accelerated hypervisor (a.k.a VMM, Virtual Machine Monit
 # Processor Requirement
 Intel Processors based on Intel 64 and IA-32 Architecture, with support to Intel VT-x. Intel EPT is prefered, but not required. <br>
 AMD Processors based on AMD64 Architecture, with support to AMD-V. Nested Paging is prefered, but not required. <br>
-Other processors based on x86 architecture may be supported in future.
+Other processors based on x86 architecture may be supported in future. <br>
+Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hygon supports Hardware-Accelerated Virtualization Technology. In summary, certain facts are observed that:
+- Processors that produced by Intel Corporation may support Intel VT-x.
+- Processors that produced by Advanced Micro Devices Inc. may support AMD-V.
+- Processors that produced by VIA Technologies Inc. may support Intel VT-x.
+- Processors that produced by Shanghai Zhaoxin Semiconductor Co, Ltd. may support Intel VT-x.
+- Processors that produced by Chengdu Hygon Integrated Circuit Design Co, Ltd. may support AMD-V.
 
 # Nested Virtualization
 NoirVisor is developed in highest focus on nested virtualization. It is not currently supported, but will be developed in future. <br>
@@ -19,10 +25,11 @@ Contributing Guidelines are available in repository. For details, see the markdo
 DO NOT PROVIDE CODES WITH C++ WHICH INVOLVES THE NoirVisor Core IN YOUR PULL-REQUEST!
 
 # Build
-To build a kernel-mode driver on Windows, you should install Windows Driver Kit 7.1.0 to default path on C disk. Then run the provided batch file to build it.
+To build a kernel-mode driver on Windows, you should install Windows Driver Kit 7.1.0 to default path on C disk. Then run the provided batch file to build it. <br>
 Also note that, you have to create certain directories required by the batch complilation. <br>
 You may download the WDK 7.1.0 from Microsoft: https://www.microsoft.com/en-us/download/details.aspx?id=11800 <br>
-Note that you should execute the build_prep.bat to make directories for first-time compilation.
+Note that you should execute the build_prep.bat to make directories for first-time compilation. <br>
+Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
 # Test
 There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://github.com/Zero-Tang/NoirVisorLoader <br>

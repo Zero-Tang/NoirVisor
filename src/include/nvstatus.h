@@ -80,6 +80,17 @@ typedef unsigned int noir_status;
 #define noir_not_implemented			0xC0000002
 
 /*
+  Status Indicator: noir_unknown_processor
+  If NoirVisor's core functionality detects
+  an unknown processor, then
+  this value is supposed to be returned.
+
+  Value: 0xC0000003
+*/
+
+#define noir_unknown_processor			0xC0000003
+
+/*
   Status Indicator: noir_not_intel
   If a procedure is specific for Intel Processor,
   and the processor is not manufactured by Intel,
