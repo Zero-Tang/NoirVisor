@@ -149,6 +149,16 @@ typedef union _amd64_npt_pte
 	u64 value;
 }amd64_npt_pte,*amd64_npt_pte_p;
 
+// Notice that NPT PTE Descriptor is describing
+// 512 4KB-Pages in a 2MB Page.
+typedef struct _noir_npt_pte_descriptor
+{
+	struct _noir_npt_pte_descriptor* next;
+	amd64_npt_pte_p virt;
+	u64 phys;
+	u64 gpa_start;
+}noir_npt_pte_descriptor,*noir_npt_pte_descriptor_p;
+
 typedef struct _noir_npt_manager
 {
 	struct
@@ -166,7 +176,29 @@ typedef struct _noir_npt_manager
 		amd64_npt_large_pde_p virt;
 		u64 phys;
 	}pde;
+	struct
+	{
+		noir_npt_pte_descriptor_p head;
+		noir_npt_pte_descriptor_p tail;
+	}pte;
 }noir_npt_manager,*noir_npt_manager_p;
+
+typedef union _amd64_npt_fault_code
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 rsv_b:1;		// Bit	3
+		u64 execute:1;		// Bit	4
+		u64 reserved1:27;	// Bits	5-31
+		u64 npf_addr:1;		// Bit	32
+		u64 npf_table:1;	// Bit	33
+		u64 reserved2:30;	// Bits	34-63
+	};
+	u64 value;
+}amd64_npt_fault_code,*amd64_npt_fault_code_p;
 
 noir_npt_manager_p nvc_npt_build_identity_map();
 void nvc_npt_cleanup(noir_npt_manager_p nptm);

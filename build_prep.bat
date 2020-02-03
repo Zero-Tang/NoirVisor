@@ -28,5 +28,5 @@ echo Making Directories for NoirVisor Free Build, 32-Bit Windows
 mkdir .\bin\compfre_win7x86
 mkdir .\bin\compfre_win7x86\Intermediate
 
-echo Prepartion Completed!
+echo Preparation Completed!
 pause.

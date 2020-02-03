@@ -9,11 +9,11 @@ Intel Processors based on Intel 64 and IA-32 Architecture, with support to Intel
 AMD Processors based on AMD64 Architecture, with support to AMD-V. Nested Paging is prefered, but not required. <br>
 Other processors based on x86 architecture may be supported in future. <br>
 Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hygon supports Hardware-Accelerated Virtualization Technology. In summary, certain facts are observed that:
-- Processors that produced by Intel Corporation may support Intel VT-x.
-- Processors that produced by Advanced Micro Devices Inc. may support AMD-V.
-- Processors that produced by VIA Technologies Inc. may support Intel VT-x.
-- Processors that produced by Shanghai Zhaoxin Semiconductor Co, Ltd. may support Intel VT-x.
-- Processors that produced by Chengdu Hygon Integrated Circuit Design Co, Ltd. may support AMD-V.
+- Processors produced by Intel Corporation may support Intel VT-x.
+- Processors produced by Advanced Micro Devices Inc. may support AMD-V.
+- Processors produced by VIA Technologies Inc. may support Intel VT-x.
+- Processors produced by Shanghai Zhaoxin Semiconductor Co, Ltd. may support Intel VT-x.
+- Processors produced by Chengdu Hygon Integrated Circuit Design Co, Ltd. may support AMD-V.
 
 # Nested Virtualization
 NoirVisor is developed in highest focus on nested virtualization. It is not currently supported, but will be developed in future. <br>

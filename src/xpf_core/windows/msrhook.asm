@@ -2,19 +2,26 @@
 ; 
 ; Copyright 2018-2020, Zero Tang. All rights reserved.
 ;
-; This file defines codes for MSR-Hook (LSTAR-Hook) on Win64.
+; This file defines codes for MSR-Hook.
 ;
 ; This program is distributed in the hope that it will be successful, but
 ; without any warranty (no matter implied warranty of merchantability or
 ; fitness for a particular purpose, etc.).
 ;
-; File location: ./xpf_core/windows/msrhook64.asm
+; File location: ./xpf_core/windows/msrhook.asm
+
+ifdef _ia32
+.686p
+.model flat,stdcall
+endif
+
+.code
+
+ifdef _amd64
 
 extern orig_system_call:dq
 extern IndexOf_NtOpenProcess:dword
 extern ProtPID:dword
-
-.code
 
 noir_system_call proc
 
@@ -45,5 +52,11 @@ Final:
 	jmp orig_system_call		; Continue to KiSystemCall64
 
 AsmHook_NtOpenProcess endp
+
+else
+
+
+
+endif
 
 end

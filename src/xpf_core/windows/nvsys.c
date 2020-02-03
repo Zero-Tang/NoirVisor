@@ -19,6 +19,7 @@
 
 #include <ntifs.h>
 #include <windef.h>
+#include <stdlib.h>
 #include <stdarg.h>
 #include "nvsys.h"
 
@@ -315,4 +316,10 @@ void noir_release_reslock(IN PERESOURCE Resource)
 {
 	ExReleaseResourceLite(Resource);
 	KeLeaveCriticalRegion();
+}
+
+// Standard I/O
+void noir_qsort(IN PVOID base,IN ULONG num,IN ULONG width,IN noir_sorting_comparator comparator)
+{
+	qsort(base,num,width,comparator);
 }

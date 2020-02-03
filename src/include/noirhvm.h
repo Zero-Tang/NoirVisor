@@ -71,7 +71,7 @@ typedef struct _noir_hypervisor
 	u64 reserved[0x10];	// Reserve 128 bytes for Relative HVM.
 }noir_hypervisor,*noir_hypervisor_p;
 
-#if !defined(_central_hvm)
+#if !defined(_central_hvm) && !defined(_code_integrity)
 typedef struct _noir_hook_page
 {
 	memory_descriptor orig;

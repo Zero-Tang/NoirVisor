@@ -18,7 +18,14 @@
 #define ci_enforcement_delay 50000
 #endif
 
-typedef u32 (fastcall *noir_crc32_page_func)(ulong_ptr page);
+typedef u32 (fastcall *noir_crc32_page_func)(void* page);
+
+typedef struct _noir_ci_page
+{
+	void* virt;
+	u32 crc;
+	u64 phys;
+}noir_ci_page,*noir_ci_page_p;
 
 typedef struct _noir_ci_context
 {
@@ -27,12 +34,14 @@ typedef struct _noir_ci_context
 	u32 pages;
 	ulong_ptr base;
 	u32 selected;
-	u32 page_crc[1];
+	noir_ci_page page_ci[1];
 }noir_ci_context,*noir_ci_context_p;
 
-u32 fastcall noir_crc32_page_sse(ulong_ptr page);
+u8 nvc_confirm_cpu_manufacturer(char* vendor_string);
+u32 fastcall noir_crc32_page_sse(void* page);
 bool fastcall noir_check_sse42();
 
+#if defined(_code_integrity)
 noir_ci_context_p noir_ci=null;
 noir_crc32_page_func noir_crc32_page=null;
 
@@ -103,3 +112,6 @@ const u32 crc32c_table[256]=
     0x79b737ba, 0x8bdcb4b9, 0x988c474d, 0x6ae7c44e,
     0xbe2da0a5, 0x4c4623a6, 0x5f16d052, 0xad7d5351
 };
+#else
+extern noir_ci_context_p noir_ci;
+#endif

@@ -8,12 +8,19 @@
 ; without any warranty (no matter implied warranty of merchantability or
 ; fitness for a particular purpose, etc.).
 ;
-; File location: ./xpf_core/windows/vt_hv64.asm
+; File location: ./xpf_core/windows/vt_hv.asm
+
+ifdef _ia32
+.686p
+.model flat,stdcall
+endif
 
 .code
 
 extern nvc_vt_subvert_processor_i:proc
 extern nvc_vt_exit_handler:proc
+
+ifdef _amd64
 
 ; Macro for pushing all GPRs to stack.
 pushaq macro
@@ -141,5 +148,11 @@ vt_launched:
 	ret
 
 nvc_vt_subvert_processor_a endp
+
+else
+
+
+
+endif
 
 end

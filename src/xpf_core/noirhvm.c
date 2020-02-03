@@ -53,7 +53,6 @@ u8 nvc_confirm_cpu_manufacturer(char* vendor_string)
 			max=mid-1;
 		else
 			return cpu_manuf_list[mid];
-		nv_dprintf("Comparing %s and %s. Not Match!\n",vendor_string,vsn);
 	}
 	return unknown_processor;
 }

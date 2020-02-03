@@ -18,7 +18,9 @@
 #include <svm_intrin.h>
 #include <intrin.h>
 #include <amd64.h>
+#include <ci.h>
 #include "svm_vmcb.h"
+#include "svm_npt.h"
 #include "svm_exit.h"
 #include "svm_def.h"
 
@@ -223,8 +225,14 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 // Expected Intercept Code: 0x400
 void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	nv_dprintf("Nested Page Fault is intercepted!\n");
-	nv_dprintf("Current vCPU: 0x%p\n",vcpu);
+	// Necessary Information for #NPF VM-Exit.
+	u64 gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
+	amd64_npt_fault_code fault;
+	fault.value=noir_svm_vmread64(vcpu->vmcb.virt,exit_info1);
+	nv_dprintf("Nested Page Fault is intercepted! GPA=0x%llX\n",gpa);
+	// Inspection I: Code Integrity Enforcement.
+
+	// Inspection II: Stealth Inline Hook.
 	noir_int3();
 }
 

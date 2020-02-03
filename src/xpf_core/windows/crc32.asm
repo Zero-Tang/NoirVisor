@@ -8,9 +8,16 @@
 ; without any warranty (no matter implied warranty of merchantability or
 ; fitness for a particular purpose, etc.).
 ;
-; File location: ./xpf_core/windows/crc32_x64.asm
+; File location: ./xpf_core/windows/crc32.asm
+
+ifdef _ia32
+.686p
+.model flat,stdcall
+endif
 
 .code
+
+ifdef _amd64
 
 noir_check_sse42 proc
 
@@ -46,5 +53,42 @@ loop_crc:
 	ret
 
 noir_crc32_page_sse endp
+
+else
+
+noir_check_sse42 proc
+
+	xor eax,eax
+	inc eax
+	push ebx		; ebx is volatile
+	cpuid
+	bt ecx,20		; check flags
+	pop ebx			; restore ebx
+	setc al
+	movzx eax,al
+	ret
+
+noir_check_sse42 endp
+
+; Code Integrity is a performance-critical component.
+; Thus SSE4.2 version of CRC32C is written in assembly.
+noir_crc32_page_sse proc uses esi page:dword
+
+	; Load relevant parameters.
+	mov esi,dword ptr [page]
+	xor edx,edx		; Initialize CRC checksum.
+	mov ecx,1024	; There are 1024 4-byte blocks in a page.
+	cld				; Ensure correct direction.
+	; Use lods-loop combination for best performance.
+loop_crc:
+	lodsd
+	crc32 edx,eax
+	loop loop_crc
+	mov eax,edx
+	ret
+
+noir_crc32_page_sse endp
+
+endif
 
 end
