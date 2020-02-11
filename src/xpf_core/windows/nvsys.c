@@ -115,6 +115,12 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 	}
 }
 
+ULONG32 noir_get_instruction_length(IN PVOID code,IN BOOLEAN LongMode)
+{
+	ULONG arch=LongMode?64:0;
+	return LDE(code,arch);
+}
+
 void* noir_alloc_contd_memory(size_t length)
 {
 	PHYSICAL_ADDRESS M={0xFFFFFFFFFFFFFFFF};

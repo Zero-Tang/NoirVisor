@@ -51,11 +51,15 @@ In summary, four #NPF will occur in a single execution of hooked function. In co
 This feature could enhance the performance of CPUID-induced VM-Exit on Nested-VMM scenario. (e.g NoirVisor running in a Virtual Machine.) It might slightly lower down the performance on Non-Nested scenario, but generally should have a good performance no matter the scenario. <br>
 The remastered design is to handle different leaf functions with multiple functions. In this case, the structure of storing the cpuid cache will be leaf-specific.
 
+# Critical Hypervisor Protection
+This feature is an essential security feature. I found this feature missing in most open-source light-weight hypervisor project. The key is that VMCB and other essential pages are not protected through Nested Paging even if they enabled AMD NPT. It should be pointed out that a malware is aware of the format of VMCB. In this regard, malware may corrupt the VMCB through memory access instruction.
+
+# Real-Time Code Integrity
+Real-Time CI is now implemented by AMD Nested Paging.
+
 # Future Feature (Roadmap)
 In future, NoirVisor has following plans:
 
 - Remaster CPUID-caching architecture with flexible design
 - Implement SVM-Nesting (This will be a long term project.)
-- Implement NPT-based Code Integrity Enforcement
-- Implement NPT-based Critical Hypervisor Protection
 - Implement NPT-based Stealth Inline Hook

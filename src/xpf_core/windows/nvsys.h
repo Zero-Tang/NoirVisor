@@ -19,3 +19,4 @@ typedef void(*noir_broadcast_worker)(void* context,ULONG ProcessorNumber);
 typedef LONG(*noir_sorting_comparator)(const void* a,const void*b);
 
 NTSYSAPI NTSTATUS NTAPI ZwAlertThread(IN HANDLE ThreadHandle);
+ULONG LDE(IN PVOID Code,IN ULONG Architecture);

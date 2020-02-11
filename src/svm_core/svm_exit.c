@@ -225,15 +225,37 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 // Expected Intercept Code: 0x400
 void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
+	bool advance=true;
 	// Necessary Information for #NPF VM-Exit.
 	u64 gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
 	amd64_npt_fault_code fault;
 	fault.value=noir_svm_vmread64(vcpu->vmcb.virt,exit_info1);
 	nv_dprintf("Nested Page Fault is intercepted! GPA=0x%llX\n",gpa);
-	// Inspection I: Code Integrity Enforcement.
-
-	// Inspection II: Stealth Inline Hook.
-	noir_int3();
+	/*
+	  There are three inspections in #NPF handler of NoirVisor.
+	  Inspection I:		Stealth Inline Hook Concealment
+	  Inspection II:	Real-Time Code Integrity Enforcement
+	  Inspection III:	Critical Hypervisor Protection
+	  
+	  We simply have to make inspection I.
+	  Inspection II & III does not matter as we initialized
+	  the "advance" variable to true.
+	*/
+	// Fix ME: Complete the Inspection I - Stealth Inline Hook.
+	// Inspection I completed...
+	if(advance)
+	{
+		// Note that SVM won't save the next rip in #NPF.
+		// Hence we should advance rip by software analysis.
+		void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
+		// Determine Long-Mode through CS.L bit.
+		u16* cs_attrib=(u16*)((ulong_ptr)vcpu->vmcb.virt+guest_cs_attrib);
+		u32 increment=noir_get_instruction_length(instruction,noir_bt(cs_attrib,9));
+		ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
+		noir_int3();
+		gip+=increment;
+		noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
+	}
 }
 
 void nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)

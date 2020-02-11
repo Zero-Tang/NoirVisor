@@ -120,6 +120,7 @@ void noir_save_processor_state(noir_processor_state_p);
 void noir_generic_call(noir_broadcast_worker worker,void* context);
 u32 noir_get_processor_count();
 u32 noir_get_current_processor();
+u32 noir_get_instruction_length(void* code,bool long_mode);
 
 // Memory Facility
 void* noir_alloc_contd_memory(size_t length);
@@ -160,5 +161,5 @@ void noir_acquire_reslock_shared_ex(noir_reslock lock);
 void noir_acquire_reslock_exclusive(noir_reslock lock);
 void noir_release_reslock(noir_reslock lock);
 
-// Standard I/O
+// Miscellaneous
 void noir_qsort(void* base,u32 num,u32 width,noir_sorting_comparator comparator);

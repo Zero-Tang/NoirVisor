@@ -50,12 +50,13 @@ Project NoirVisor has five future development plans: <br>
 - Port NoirVisor to 32-bit Windows platform.
 
 # Completed Features
-- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel and AMD Processor.
-- Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel Processor.
+- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V.
+- Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel VT-x.
 - Tagged Translation Lookaside Buffer by ASID/VPID feature.
 - CPUID caching architecture. (First Design, not quite efficient.)
-- Critical Hypervisor Protection on Intel VT-x by Intel EPT.
+- Critical Hypervisor Protection.
 - Software-Level Code Integrity Enforcement.
+- Hardware-Level Code Integrity Enforcement based on AMD-V NPT.
 
 # License
 This repository is under MIT license. <br>

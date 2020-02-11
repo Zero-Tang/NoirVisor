@@ -200,5 +200,6 @@ typedef union _amd64_npt_fault_code
 	u64 value;
 }amd64_npt_fault_code,*amd64_npt_fault_code_p;
 
+bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm);
 noir_npt_manager_p nvc_npt_build_identity_map();
 void nvc_npt_cleanup(noir_npt_manager_p nptm);

@@ -395,8 +395,10 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	if(hvm_p->virtual_cpu==null)goto alloc_failure;
 	if(nvc_svm_alloc_cpuid_cache(hvm_p)==false)goto alloc_failure;
 	nvc_svm_setup_msr_hook(hvm_p);
+	if(nvc_npt_protect_critical_hypervisor(hvm_p)==false)goto alloc_failure;
 	nv_dprintf("All allocations are done, start subversion!\n");
 	noir_generic_call(nvc_svm_subvert_processor_thunk,hvm_p->virtual_cpu);
+	nv_dprintf("Subversion completed!\n");
 	return noir_success;
 alloc_failure:
 	nv_dprintf("Allocation failure!\n");
