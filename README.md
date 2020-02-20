@@ -56,7 +56,7 @@ Project NoirVisor has five future development plans: <br>
 - CPUID caching architecture. (First Design, not quite efficient.)
 - Critical Hypervisor Protection.
 - Software-Level Code Integrity Enforcement.
-- Hardware-Level Code Integrity Enforcement based on AMD-V NPT.
+- Hardware-Level Code Integrity Enforcement, both Intel EPT and AMD NPT.
 
 # License
 This repository is under MIT license. <br>

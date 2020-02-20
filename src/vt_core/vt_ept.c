@@ -19,22 +19,23 @@
 #include <noirhvm.h>
 #include <intrin.h>
 #include <ia32.h>
+#include <ci.h>
 #include "vt_vmcs.h"
 #include "vt_ept.h"
 #include "vt_def.h"
 
 bool nvc_ept_insert_pte(noir_ept_manager_p eptm,noir_hook_page_p nhp)
 {
-	noir_hook_page_p cur_h=nhp;
-	while(cur_h)
+	u32 h=0;
+	for(;h<noir_hook_pages_count;h++)
 	{
 		noir_ept_pte_descriptor_p cur_d=eptm->pte.head;
 		ia32_addr_translator addr;
-		addr.value=nhp->orig.phys;
+		addr.value=nhp[h].orig.phys;
 		while(cur_d)
 		{
-			// Find if the desired page has already been described.
-			if(nhp->orig.phys>=cur_d->gpa_start && nhp->orig.phys<cur_d->gpa_start+page_2mb_size)
+			// Find if the desired 2MiB page has already been described.
+			if(nhp[h].orig.phys>=cur_d->gpa_start && nhp[h].orig.phys<cur_d->gpa_start+page_2mb_size)
 				break;
 			cur_d=cur_d->next;
 		}
@@ -79,14 +80,12 @@ bool nvc_ept_insert_pte(noir_ept_manager_p eptm,noir_hook_page_p nhp)
 			pde_p->pte_offset=cur_d->phys>>12;
 		}
 		// At this moment, we assume the desired page is described.
-		cur_h->pte_descriptor=(void*)&cur_d->virt[addr.pte_offset];
+		nhp[h].pte_descriptor=(void*)&cur_d->virt[addr.pte_offset];
 		// Reset the page translation.
-		cur_d->virt[addr.pte_offset].page_offset=nhp->hook.phys>>12;
+		cur_d->virt[addr.pte_offset].page_offset=nhp[h].hook.phys>>12;
 		// Clear R/W but Reserve X.
 		cur_d->virt[addr.pte_offset].read=0;
 		cur_d->virt[addr.pte_offset].write=0;
-		// Go to Setup the Next Hook.
-		cur_h=cur_h->next;
 	}
 	return true;
 }
@@ -172,6 +171,7 @@ bool nvc_ept_update_pte(noir_ept_manager_p eptm,u64 hpa,u64 gpa,bool r,bool w,bo
 				pte_p->virt[i].memory_type=ia32_write_back;
 				pte_p->virt[i].page_offset=pte_p->gpa_start+i;
 			}
+			pte_p->gpa_start<<=12;
 			// Page Attributes
 			pte_p->virt[hat.pte_offset].read=r;
 			pte_p->virt[hat.pte_offset].write=w;
@@ -189,6 +189,19 @@ bool nvc_ept_update_pte(noir_ept_manager_p eptm,u64 hpa,u64 gpa,bool r,bool w,bo
 		noir_free_nonpg_memory(pte_p);
 	}
 	return false;
+}
+
+bool nvc_ept_initialize_ci(noir_ept_manager_p eptm)
+{
+	bool r=true;
+	u32 i=0;
+	for(;i<noir_ci->pages;i++)
+	{
+		u64 phys=noir_ci->page_ci[i].phys;
+		r&=nvc_ept_update_pte(eptm,phys,phys,true,false,true);
+		if(!r)break;
+	}
+	return r;
 }
 
 /*
@@ -302,6 +315,8 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 			eptm->pdpt.virt[i].execute=1;
 		}
 		if(nvc_ept_insert_pte(eptm,noir_hook_pages)==false)
+			goto alloc_failure;
+		if(nvc_ept_initialize_ci(eptm)==false)
 			goto alloc_failure;
 		// Build Page Map Level-4 Entry (PML4E)
 		eptm->pdpt.phys=noir_get_physical_address(eptm->pdpt.virt);

@@ -14,6 +14,7 @@
 
 #include <ntddk.h>
 #include <windef.h>
+#include <stdlib.h>
 #include <ntstrsafe.h>
 #include "hooks.h"
 
@@ -105,13 +106,46 @@ NTSTATUS static fake_NtSetInformationFile(IN HANDLE FileHandle,OUT PIO_STATUS_BL
 	return Old_NtSetInformationFile(FileHandle,IoStatusBlock,FileInformation,Length,FileInformationClass);
 }
 
-void static NoirHookNtSetInformationFile(IN PVOID HookedAddress)
+NTSTATUS NoirConstructHook(IN PVOID Address,IN PVOID Proxy,OUT PVOID* Detour)
 {
-	//Note that Length-Disassembler is required.
-	ULONG PatchSize=GetPatchSize(NtSetInformationFile,HookLength);
-	Old_NtSetInformationFile=ExAllocatePool(NonPagedPool,PatchSize+DetourLength);
-	if(Old_NtSetInformationFile)
+	BOOLEAN NewPage=TRUE;
+	PNOIR_HOOK_PAGE HookPage=NULL;
+	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
+	ULONG64 FPA=NoirGetPhysicalAddress(Address);
+	ULONG i=0;
+	ULONG PatchSize=GetPatchSize(Address,HookLength);
+	*Detour=ExAllocatePool(NonPagedPool,PatchSize+DetourLength);
+	if(*Detour==NULL)return st;
+	// Search if there is a hooked page containing the function.
+	for(;i<HookPageCount;i++)
 	{
+		if(FPA>=HookPages[i].OriginalPage.PhysicalAddress && FPA<HookPages[i].OriginalPage.PhysicalAddress+PAGE_SIZE)
+		{
+			HookPage=&HookPages[i];
+			NewPage=FALSE;
+			break;
+		}
+	}
+	// If there is no such page, then allocate a new page for it.
+	if(HookPage==NULL)
+	{
+		if(HookPageCount>=HookPageLimit)
+		{
+			NoirDebugPrint("Hooked Page Limit exceeded! Increment the limit to proceed!\n");
+			return st;
+		}
+		HookPage=&HookPages[HookPageCount++];
+		HookPage->HookedPage.VirtualAddress=NoirAllocateContiguousMemory(PAGE_SIZE);
+		if(HookPage->HookedPage.VirtualAddress==NULL)return st;
+		HookPage->OriginalPage.VirtualAddress=NoirGetPageBase(Address);
+		HookPage->OriginalPage.PhysicalAddress=NoirGetPhysicalAddress(HookPage->OriginalPage.VirtualAddress);
+		HookPage->HookedPage.PhysicalAddress=NoirGetPhysicalAddress(HookPage->HookedPage.VirtualAddress);
+		RtlCopyMemory(HookPage->HookedPage.VirtualAddress,HookPage->OriginalPage.VirtualAddress,PAGE_SIZE);
+	}
+	if(HookPage->HookedPage.VirtualAddress)
+	{
+		PVOID HookedAddress=NULL;
+		USHORT PageOffset=(USHORT)((ULONG_PTR)Address & 0xFFF);
 		/*
 		  I have checked the methods by tandasat, who wrote the DdiMon and SimpleSvmHook.
 		  His way of rip redirecting somewhat lacks robustness.
@@ -131,66 +165,76 @@ void static NoirHookNtSetInformationFile(IN PVOID HookedAddress)
 		  16 bytes in total. This shellcode is provided By AyalaRs.
 		  This could be perfect ShellCode in my opinion.
 		  Note that all functions in Windows Kernel are 16-bytes aligned.
-		  Thus, this shellcode would not break next function.
+		  Thus, this shellcode would not break next function or overflow to next page.
 		*/
 		BYTE HookCode[16]={0x50,0x48,0xB8,0,0,0,0,0,0,0,0,0x48,0x87,0x04,0x24,0xC3};
 		BYTE DetourCode[14]={0xFF,0x25,0x0,0x0,0x0,0x0,0,0,0,0,0,0,0,0};
-		*(PULONG64)((ULONG64)HookCode+3)=(ULONG64)fake_NtSetInformationFile;
-		*(PULONG64)((ULONG64)DetourCode+6)=(ULONG64)NtSetInformationFile+PatchSize;
+		*(PULONG64)((ULONG64)HookCode+3)=(ULONG64)Proxy;
+		*(PULONG64)((ULONG64)DetourCode+6)=(ULONG64)Address+PatchSize;
 #else
 		//In Win32, this is a common trick of eip redirecting.
 		BYTE HookCode[5]={0xE9,0,0,0,0};
 		BYTE DetourCode[5]={0xE9,0,0,0,0};
-		*(PULONG)((ULONG)HookCode+1)=(ULONG)fake_NtSetInformationFile-(ULONG)NtSetInformationFile-5;
-		*(PULONG)((ULONG)DetourCode+1)=(ULONG)NtSetInformationFile-(ULONG)Old_NtSetInformationFile-5;
+		*(PULONG)((ULONG)HookCode+1)=(ULONG)Proxy-(ULONG)Address-5;
+		*(PULONG)((ULONG)DetourCode+1)=(ULONG)Address-(ULONG)Detour-5;
 #endif
-		NoirDebugPrint("Patch Size of NtSetInformationFile: %d\t 0x%p\n",PatchSize,NtSetInformationFile);
-		RtlCopyMemory(Old_NtSetInformationFile,NtSetInformationFile,PatchSize);
-		RtlCopyMemory((PVOID)((ULONG_PTR)Old_NtSetInformationFile+PatchSize),DetourCode,DetourLength);
+		HookedAddress=(PVOID)((ULONG_PTR)HookPage->HookedPage.VirtualAddress+PageOffset);
+		NoirDebugPrint("Patch Size: %d\t 0x%p\n",PatchSize,Address);
+		RtlCopyMemory(*Detour,Address,PatchSize);
+		RtlCopyMemory((PVOID)((ULONG_PTR)*Detour+PatchSize),DetourCode,DetourLength);
 		RtlCopyMemory(HookedAddress,HookCode,HookLength);
+		st=STATUS_SUCCESS;
 	}
+	return st;
 }
 
-void NoirBuildHookedPages()
+int static NoirHookPageComparator(const void* a,const void*b)
 {
-	HookPages=ExAllocatePool(NonPagedPool,sizeof(NOIR_HOOK_PAGE));
+	PNOIR_HOOK_PAGE ahp=(PNOIR_HOOK_PAGE)a;
+	PNOIR_HOOK_PAGE bhp=(PNOIR_HOOK_PAGE)b;
+	if(ahp->OriginalPage.PhysicalAddress>bhp->OriginalPage.PhysicalAddress)
+		return 1;
+	else if(ahp->OriginalPage.PhysicalAddress<bhp->OriginalPage.PhysicalAddress)
+		return -1;
+	return 0;
+}
+
+NTSTATUS NoirBuildHookedPages()
+{
+	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
+	HookPages=ExAllocatePool(NonPagedPool,sizeof(NOIR_HOOK_PAGE)*HookPageLimit);
 	if(HookPages)
 	{
 		PVOID NtKernelBase=NoirLocateImageBaseByName(L"ntoskrnl.exe");
 		if(NtKernelBase)
 		{
 			NtSetInformationFile=NoirLocateExportedProcedureByName(NtKernelBase,"NtSetInformationFile");
-			HookPages->OriginalPage.VirtualAddress=NoirGetPageBase(NtSetInformationFile);
-			HookPages->OriginalPage.PhysicalAddress=NoirGetPhysicalAddress(HookPages->OriginalPage.VirtualAddress);
-			HookPages->HookedPage.VirtualAddress=NoirAllocateContiguousMemory(PAGE_SIZE);
-			if(HookPages->HookedPage.VirtualAddress)
-			{
-				USHORT PageOffset=(USHORT)((ULONG_PTR)NtSetInformationFile&0xFFF);
-				HookPages->HookedPage.PhysicalAddress=NoirGetPhysicalAddress(HookPages->HookedPage.VirtualAddress);
-				RtlCopyMemory(HookPages->HookedPage.VirtualAddress,HookPages->OriginalPage.VirtualAddress,PAGE_SIZE);
-				NoirHookNtSetInformationFile((PVOID)((ULONG_PTR)HookPages->HookedPage.VirtualAddress+PageOffset));
-			}
-			HookPages->NextHook=NULL;
+			st=NoirConstructHook(NtSetInformationFile,&fake_NtSetInformationFile,(PVOID*)&Old_NtSetInformationFile);
+			if(NT_ERROR(st))return st;
+			// Add your code here if you want to hook functions from
+			// ntoskrnl.exe. You may simply follow the style above.
+
 		}
-		NoirDebugPrint("NT Kernel Base: 0x%p\t NtSetInformationFile: 0x%p\n",NtKernelBase,NtSetInformationFile);
+		// Add your code here if you want to hook functions from
+		// modules other than ntoskrnl (e.g win32k, ntfs, etc.)
+
+		// Now, construction is completed. Sort them to reduce running time complexity.
+		qsort(HookPages,HookPageCount,sizeof(NOIR_HOOK_PAGE),NoirHookPageComparator);
 	}
+	return st;
 }
 
 void NoirTeardownHookedPages()
 {
+	// Free all hook pages.
 	if(HookPages)
 	{
-		PNOIR_HOOK_PAGE CurHp=HookPages;
-		while(CurHp)
-		{
-			PNOIR_HOOK_PAGE NextHp=CurHp->NextHook;
-			if(CurHp->HookedPage.VirtualAddress)
-				MmFreeContiguousMemory(CurHp->HookedPage.VirtualAddress);
-			ExFreePool(CurHp);
-			CurHp=NextHp;
-		}
-		HookPages=NULL;
+		ULONG i=0;
+		for(;i<HookPageCount;i++)
+			MmFreeContiguousMemory(HookPages[i].HookedPage.VirtualAddress);
+		ExFreePool(HookPages);
 	}
+	// Free all detour functions allocated previously.
 	if(Old_NtSetInformationFile)
 	{
 		ExFreePool(Old_NtSetInformationFile);

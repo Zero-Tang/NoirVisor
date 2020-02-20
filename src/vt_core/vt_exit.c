@@ -654,16 +654,26 @@ void static fastcall nvc_vt_invalid_msr_loading(noir_gpr_state_p gpr_state,u32 e
 
 // Expected Exit Reason: 48
 // This is VM-Exit of obligation on EPT.
-// Specifically, this handler is invoked on EPT-based stealth hook.
+// Specifically, this handler is invoked on EPT-based stealth hook feature.
+// Critical Hypervisor Protection and Real-Time Code Integrity features
+// may invoke this handler. Simply advance the rip for these circumstances.
 void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
-	noir_hook_page_p nhp=noir_hook_pages;
+	u32 lo=0,hi=noir_hook_pages_count;
 	u64 gpa;
 	bool advance=true;
 	noir_vt_vmread(guest_physical_address,&gpa);
-	for(;nhp;nhp=nhp->next)
+	// We previously sorted the list.
+	// Use binary search to reduce time complexity.
+	while(hi>=lo)
 	{
-		if(gpa>=nhp->orig.phys && gpa<nhp->orig.phys+page_size)
+		u32 mid=(lo+hi)>>1;
+		noir_hook_page_p nhp=&noir_hook_pages[mid];
+		if(gpa>=nhp->orig.phys+page_size)
+			lo=mid+1;
+		else if(gpa<nhp->orig.phys)
+			hi=mid-1;
+		else
 		{
 			ia32_ept_violation_qualification info;
 			invept_descriptor ied;

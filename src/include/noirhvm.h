@@ -77,9 +77,9 @@ typedef struct _noir_hook_page
 	memory_descriptor orig;
 	memory_descriptor hook;
 	void* pte_descriptor;
-	struct _noir_hook_page* next;
 }noir_hook_page,*noir_hook_page_p;
 extern noir_hook_page_p noir_hook_pages;
+extern u32 noir_hook_pages_count;
 #endif
 
 #if defined(_central_hvm)
