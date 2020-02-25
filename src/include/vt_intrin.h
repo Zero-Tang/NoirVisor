@@ -49,12 +49,16 @@ typedef struct _invvpid_descriptor
 #define noir_vt_vmwrite		__vmx_vmwrite
 #define noir_vt_vmlaunch	__vmx_vmlaunch
 #define noir_vt_vmresume	__vmx_vmresume
+#define noir_vt_vmread64	__vmx_vmread
+#define noir_vt_vmwrite64	__vmx_vmwrite
 #else
 u8 noir_vt_vmxon(u64* vmxon_pa);
 u8 noir_vt_vmptrld(u64* vmcs_pa);
 u8 noir_vt_vmclear(u64* vmcs_pa);
 u8 noir_vt_vmread(u32 field,u32* value);
 u8 noir_vt_vmwrite(u32 field,u32 value);
+u8 noir_vt_vmread64(u32 field,u64* value);
+u8 noir_vt_vmwrite64(u32 field,u64 value);
 u8 noir_vt_vmlaunch();
 u8 noir_vt_vmresume();
 #endif

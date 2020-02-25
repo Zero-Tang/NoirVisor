@@ -83,11 +83,11 @@ typedef struct _noir_vt_vcpu
 	u8 status;
 }noir_vt_vcpu,*noir_vt_vcpu_p;
 
-u8 nvc_vt_subvert_processor_a(noir_vt_vcpu_p vcpu);
+u8 fastcall nvc_vt_subvert_processor_a(noir_vt_vcpu_p vcpu);
 noir_status nvc_vt_build_exit_handlers();
 void nvc_vt_teardown_exit_handlers();
 void nvc_vt_resume_without_entry(noir_gpr_state_p state);
-extern void nvc_vt_exit_handler_a();
+void nvc_vt_exit_handler_a();
 void noir_vt_vmsuccess();
 void noir_vt_vmfail_invalid();
 void noir_vt_vmfail_valid();

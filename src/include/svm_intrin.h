@@ -34,4 +34,4 @@ u32 inline svm_msrpm_bit(u8 bitmap,u32 index,u8 operation)
 #define noir_svm_invlpga	__svm_invlpga
 #endif
 
-void stdcall noir_svm_vmmcall(u32 index,ulong_ptr context);
+void fastcall noir_svm_vmmcall(u32 index,ulong_ptr context);

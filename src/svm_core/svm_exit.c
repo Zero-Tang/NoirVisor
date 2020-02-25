@@ -223,14 +223,45 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 }
 
 // Expected Intercept Code: 0x400
+// Do not output to debugger since this may seriously degrade performance.
 void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	bool advance=true;
+	i32 lo=0,hi=noir_hook_pages_count;
 	// Necessary Information for #NPF VM-Exit.
 	u64 gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
 	amd64_npt_fault_code fault;
 	fault.value=noir_svm_vmread64(vcpu->vmcb.virt,exit_info1);
-	nv_dprintf("Nested Page Fault is intercepted! GPA=0x%llX\n",gpa);
+	if(fault.execute)
+	{
+		// Check if we should switch to secondary.
+		while(hi>=lo)
+		{
+			i32 mid=(lo+hi)>>1;
+			noir_hook_page_p nhp=&noir_hook_pages[mid];
+			if(gpa>=nhp->orig.phys+page_size)
+				lo=mid+1;
+			else if(gpa<nhp->orig.phys)
+				hi=mid-1;
+			else
+			{
+				noir_npt_manager_p nptm=(noir_npt_manager_p)hvm_p->relative_hvm->secondary_nptm;
+				noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
+				advance=false;
+				break;
+			}
+		}
+		if(advance)
+		{
+			// Execution is outside hooked page.
+			// We should switch to primary.
+			noir_npt_manager_p nptm=(noir_npt_manager_p)hvm_p->relative_hvm->primary_nptm;
+			noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
+			advance=false;
+		}
+		// We switched NPT. Thus we should clean VMCB cache state.
+		noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_npt);
+	}
 	/*
 	  There are three inspections in #NPF handler of NoirVisor.
 	  Inspection I:		Stealth Inline Hook Concealment
@@ -252,13 +283,12 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 		u16* cs_attrib=(u16*)((ulong_ptr)vcpu->vmcb.virt+guest_cs_attrib);
 		u32 increment=noir_get_instruction_length(instruction,noir_bt(cs_attrib,9));
 		ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
-		noir_int3();
 		gip+=increment;
 		noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
 	}
 }
 
-void nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)
+void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)
 {
 	// Get Virtual CPU and the linear address of VMCB.
 	noir_svm_vcpu_p vcpu=&hvm_p->virtual_cpu[processor_id];

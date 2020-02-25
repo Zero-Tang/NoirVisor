@@ -72,10 +72,10 @@ noir_check_sse42 endp
 
 ; Code Integrity is a performance-critical component.
 ; Thus SSE4.2 version of CRC32C is written in assembly.
-noir_crc32_page_sse proc uses esi page:dword
+noir_crc32_page_sse proc uses esi p:dword
 
 	; Load relevant parameters.
-	mov esi,dword ptr [page]
+	mov esi,dword ptr [p]
 	xor edx,edx		; Initialize CRC checksum.
 	mov ecx,1024	; There are 1024 4-byte blocks in a page.
 	cld				; Ensure correct direction.

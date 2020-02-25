@@ -130,10 +130,10 @@ void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
 	u64 entry_load=vcpu->relative_hvm->msr_auto_list.phys;
 	u64 exit_load=vcpu->relative_hvm->msr_auto_list.phys+0x400;
 	u64 exit_store=vcpu->relative_hvm->msr_auto_list.phys+0x800;
-	noir_vt_vmwrite(vmentry_msr_load_address,entry_load);
-	noir_vt_vmwrite(vmexit_msr_load_address,exit_load);
-	noir_vt_vmwrite(vmexit_msr_store_address,exit_store);
-	noir_vt_vmwrite(address_of_msr_bitmap,vcpu->relative_hvm->msr_bitmap.phys);
+	noir_vt_vmwrite64(vmentry_msr_load_address,entry_load);
+	noir_vt_vmwrite64(vmexit_msr_load_address,exit_load);
+	noir_vt_vmwrite64(vmexit_msr_store_address,exit_store);
+	noir_vt_vmwrite64(address_of_msr_bitmap,vcpu->relative_hvm->msr_bitmap.phys);
 #if defined(_amd64)
 	noir_vt_vmwrite(vmentry_msr_load_count,1);
 	noir_vt_vmwrite(vmexit_msr_load_count,1);
@@ -228,45 +228,45 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	noir_vt_vmwrite(guest_cs_selector,state_p->cs.selector);
 	noir_vt_vmwrite(guest_cs_limit,state_p->cs.limit);
 	noir_vt_vmwrite(guest_cs_access_rights,vt_attrib(state_p->cs.selector,state_p->cs.attrib));
-	noir_vt_vmwrite(guest_cs_base,state_p->cs.base);
+	noir_vt_vmwrite(guest_cs_base,(ulong_ptr)state_p->cs.base);
 	// Guest State Area - DS Segment
 	noir_vt_vmwrite(guest_ds_selector,state_p->ds.selector);
 	noir_vt_vmwrite(guest_ds_limit,state_p->ds.limit);
 	noir_vt_vmwrite(guest_ds_access_rights,vt_attrib(state_p->ds.selector,state_p->ds.attrib));
-	noir_vt_vmwrite(guest_ds_base,state_p->ds.base);
+	noir_vt_vmwrite(guest_ds_base,(ulong_ptr)state_p->ds.base);
 	// Guest State Area - ES Segment
 	noir_vt_vmwrite(guest_es_selector,state_p->es.selector);
 	noir_vt_vmwrite(guest_es_limit,state_p->es.limit);
 	noir_vt_vmwrite(guest_es_access_rights,vt_attrib(state_p->es.selector,state_p->es.attrib));
-	noir_vt_vmwrite(guest_es_base,state_p->es.base);
+	noir_vt_vmwrite(guest_es_base,(ulong_ptr)state_p->es.base);
 	// Guest State Area - FS Segment
 	noir_vt_vmwrite(guest_fs_selector,state_p->fs.selector);
 	noir_vt_vmwrite(guest_fs_limit,state_p->fs.limit);
 	noir_vt_vmwrite(guest_fs_access_rights,vt_attrib(state_p->fs.selector,state_p->fs.attrib));
-	noir_vt_vmwrite(guest_fs_base,state_p->fs.base);
+	noir_vt_vmwrite(guest_fs_base,(ulong_ptr)state_p->fs.base);
 	// Guest State Area - GS Segment
 	noir_vt_vmwrite(guest_gs_selector,state_p->gs.selector);
 	noir_vt_vmwrite(guest_gs_limit,state_p->gs.limit);
 	noir_vt_vmwrite(guest_gs_access_rights,vt_attrib(state_p->gs.selector,state_p->gs.attrib));
-	noir_vt_vmwrite(guest_gs_base,state_p->gs.base);
+	noir_vt_vmwrite(guest_gs_base,(ulong_ptr)state_p->gs.base);
 	// Guest State Area - SS Segment
 	noir_vt_vmwrite(guest_ss_selector,state_p->ss.selector);
 	noir_vt_vmwrite(guest_ss_limit,state_p->ss.limit);
 	noir_vt_vmwrite(guest_ss_access_rights,vt_attrib(state_p->ss.selector,state_p->ss.attrib));
-	noir_vt_vmwrite(guest_ss_base,state_p->ss.base);
+	noir_vt_vmwrite(guest_ss_base,(ulong_ptr)state_p->ss.base);
 	// Guest State Area - Task Register
 	noir_vt_vmwrite(guest_tr_selector,state_p->tr.selector);
 	noir_vt_vmwrite(guest_tr_limit,state_p->tr.limit);
 	noir_vt_vmwrite(guest_tr_access_rights,vt_attrib(state_p->tr.selector,state_p->tr.attrib));
-	noir_vt_vmwrite(guest_tr_base,state_p->tr.base);
+	noir_vt_vmwrite(guest_tr_base,(ulong_ptr)state_p->tr.base);
 	// Guest State Area - Local Descriptor Table Register
 	noir_vt_vmwrite(guest_ldtr_selector,state_p->ldtr.selector);
 	noir_vt_vmwrite(guest_ldtr_limit,state_p->ldtr.limit);
 	noir_vt_vmwrite(guest_ldtr_access_rights,vt_attrib(state_p->ldtr.selector,state_p->ldtr.attrib));
-	noir_vt_vmwrite(guest_ldtr_base,state_p->ldtr.base);
+	noir_vt_vmwrite(guest_ldtr_base,(ulong_ptr)state_p->ldtr.base);
 	// Guest State Area - IDTR and GDTR
-	noir_vt_vmwrite(guest_gdtr_base,state_p->gdtr.base);
-	noir_vt_vmwrite(guest_idtr_base,state_p->idtr.base);
+	noir_vt_vmwrite(guest_gdtr_base,(ulong_ptr)state_p->gdtr.base);
+	noir_vt_vmwrite(guest_idtr_base,(ulong_ptr)state_p->idtr.base);
 	noir_vt_vmwrite(guest_gdtr_limit,state_p->gdtr.limit);
 	noir_vt_vmwrite(guest_idtr_limit,state_p->idtr.limit);
 	// Guest State Area - Control Registers
@@ -274,10 +274,10 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	noir_vt_vmwrite(guest_cr3,state_p->cr3);
 	noir_vt_vmwrite(guest_cr4,state_p->cr4);
 	noir_vt_vmwrite(cr0_read_shadow,state_p->cr0);
-	noir_vt_vmwrite(cr4_read_shadow,state_p->cr4 & ~ia32_cr4_vmxe_bit);
+	noir_vt_vmwrite64(cr4_read_shadow,state_p->cr4 & ~ia32_cr4_vmxe_bit);
 	// Guest State Area - Debug Controls
 	noir_vt_vmwrite(guest_dr7,state_p->dr7);
-	noir_vt_vmwrite(guest_msr_ia32_debug_ctrl,state_p->debug_ctrl);
+	noir_vt_vmwrite64(guest_msr_ia32_debug_ctrl,state_p->debug_ctrl);
 	// VMCS Link Pointer - Essential for Accelerated VMX Nesting
 	noir_vt_vmwrite(vmcs_link_pointer,0xffffffffffffffff);
 	// Guest State Area - Flags, Stack Pointer, Instruction Pointer
@@ -297,12 +297,12 @@ void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_stat
 	noir_vt_vmwrite(host_ss_selector,state_p->ss.selector & selector_rplti_mask);
 	noir_vt_vmwrite(host_tr_selector,state_p->tr.selector & selector_rplti_mask);
 	// Host State Area - Segment Bases
-	noir_vt_vmwrite(host_fs_base,state_p->fs.base);
-	noir_vt_vmwrite(host_gs_base,state_p->gs.base);
-	noir_vt_vmwrite(host_tr_base,state_p->tr.base);
+	noir_vt_vmwrite(host_fs_base,(ulong_ptr)state_p->fs.base);
+	noir_vt_vmwrite(host_gs_base,(ulong_ptr)state_p->gs.base);
+	noir_vt_vmwrite(host_tr_base,(ulong_ptr)state_p->tr.base);
 	// Host State Area - Descriptor Tables
-	noir_vt_vmwrite(host_gdtr_base,state_p->gdtr.base);
-	noir_vt_vmwrite(host_idtr_base,state_p->idtr.base);
+	noir_vt_vmwrite(host_gdtr_base,(ulong_ptr)state_p->gdtr.base);
+	noir_vt_vmwrite(host_idtr_base,(ulong_ptr)state_p->idtr.base);
 	// Host State Area - Control Registers
 	noir_vt_vmwrite(host_cr0,state_p->cr0);
 	noir_vt_vmwrite(host_cr3,system_cr3);	// We should use the system page table.
@@ -441,7 +441,7 @@ void static nvc_vt_setup_memory_virtualization(noir_vt_vcpu_p vcpu)
 			// All required EPT features are supported, continue virtualization.
 			// Note that different vCPUs use different EPTP.
 			noir_ept_manager_p eptm=(noir_ept_manager_p)vcpu->ept_manager;
-			noir_vt_vmwrite(ept_pointer,eptm->eptp.phys.value);
+			noir_vt_vmwrite64(ept_pointer,eptm->eptp.phys.value);
 		}
 	}
 	// Note that VPID is used for unnecessary TLB flushing,

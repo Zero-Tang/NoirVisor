@@ -107,7 +107,7 @@ extern noir_hypervisor_p hvm_p;
 extern ulong_ptr system_cr3;
 extern ulong_ptr orig_system_call;
 #endif
-extern void noir_system_call();
+void noir_system_call();
 
 #if defined(_central_hvm)
 #define known_vendor_strings	16

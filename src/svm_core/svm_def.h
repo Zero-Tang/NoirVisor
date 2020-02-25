@@ -228,7 +228,7 @@ typedef struct _nvc_svm_fetched_instruction
 	u8 instruction_bytes[15];
 }nvc_svm_fetched_instruction,*nvc_svm_fetched_instruction_p;
 
-typedef struct _nvc_svm_avic_physical_table
+typedef union _nvc_svm_avic_physical_table
 {
 	struct
 	{
@@ -239,3 +239,17 @@ typedef struct _nvc_svm_avic_physical_table
 	};
 	u64 value;
 }nvc_svm_avic_physical_table,*nvc_svm_avic_physical_table_p;
+
+// VMCB Clean Bits
+#define noir_svm_clean_interception		0
+#define noir_svm_clean_iomsrpm			1
+#define noir_svm_clean_asid				2
+#define noir_svm_clean_tpr				3
+#define noir_svm_clean_npt				4
+#define noir_svm_clean_control_reg		5
+#define noir_svm_clean_debug_reg		6
+#define noir_svm_clean_idt_gdt			7
+#define noir_svm_clean_segment_reg		8
+#define noir_svm_clean_cr2				9
+#define noir_svm_clean_lbr				10
+#define noir_svm_clean_avic				11

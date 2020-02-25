@@ -188,7 +188,7 @@ NTSTATUS NoirConstructHook(IN PVOID Address,IN PVOID Proxy,OUT PVOID* Detour)
 	return st;
 }
 
-int static NoirHookPageComparator(const void* a,const void*b)
+int static __cdecl NoirHookPageComparator(const void* a,const void*b)
 {
 	PNOIR_HOOK_PAGE ahp=(PNOIR_HOOK_PAGE)a;
 	PNOIR_HOOK_PAGE bhp=(PNOIR_HOOK_PAGE)b;

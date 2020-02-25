@@ -25,44 +25,44 @@ ifdef _amd64
 ; Macro for pushing all GPRs to stack.
 pushaq macro
 	
-	push r15
-	push r14
-	push r13
-	push r12
-	push r11
-	push r10
-	push r9
-	push r8
-	push rdi
-	push rsi
-	push rbp
-	sub rsp,8
-	push rbx
-	push rdx
-	push rcx
-	push rax
+	sub rsp,80h
+	mov qword ptr [rsp+00h],rax
+	mov qword ptr [rsp+08h],rcx
+	mov qword ptr [rsp+10h],rdx
+	mov qword ptr [rsp+18h],rbx
+	mov qword ptr [rsp+28h],rbp
+	mov qword ptr [rsp+30h],rsi
+	mov qword ptr [rsp+38h],rdi
+	mov qword ptr [rsp+40h],r8
+	mov qword ptr [rsp+48h],r9
+	mov qword ptr [rsp+50h],r10
+	mov qword ptr [rsp+58h],r11
+	mov qword ptr [rsp+60h],r12
+	mov qword ptr [rsp+68h],r13
+	mov qword ptr [rsp+70h],r14
+	mov qword ptr [rsp+78h],r15
 	
 endm
 
 ; Macro for poping all GPRs from stack.
 popaq macro
 
-	pop rax
-	pop rcx
-	pop rdx
-	pop rbx
-	add rsp,8
-	pop rbp
-	pop rsi
-	pop rdi
-	pop r8
-	pop r9
-	pop r10
-	pop r11
-	pop r12
-	pop r13
-	pop r14
-	pop r15
+	mov rax,qword ptr [rsp]
+	mov rcx,qword ptr [rsp+8]
+	mov rdx,qword ptr [rsp+10h]
+	mov rbx,qword ptr [rsp+18h]
+	mov rbp,qword ptr [rsp+28h]
+	mov rsi,qword ptr [rsp+30h]
+	mov rdi,qword ptr [rsp+38h]
+	mov r8, qword ptr [rsp+40h]
+	mov r9, qword ptr [rsp+48h]
+	mov r10,qword ptr [rsp+50h]
+	mov r11,qword ptr [rsp+58h]
+	mov r12,qword ptr [rsp+60h]
+	mov r13,qword ptr [rsp+68h]
+	mov r14,qword ptr [rsp+70h]
+	mov r15,qword ptr [rsp+78h]
+	add rsp,80h
 
 endm
 
@@ -151,7 +151,103 @@ nvc_vt_subvert_processor_a endp
 
 else
 
+noir_vt_vmxon proc vmxon_region:dword
 
+	vmxon qword ptr[vmxon_region]
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmxon endp
+
+noir_vt_vmptrld proc vmcs_pa:dword
+
+	vmptrld qword ptr[vmcs_pa]
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmptrld endp
+
+noir_vt_vmclear proc vmcs_pa:dword
+
+	vmclear qword ptr[vmcs_pa]
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmclear endp
+
+noir_vt_vmread proc field:dword,value:dword
+
+	mov ecx,dword ptr[field]
+	vmread dword ptr[value],ecx
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmread endp
+
+noir_vt_vmwrite proc field:dword,value:dword
+
+	mov ecx,dword ptr[field]
+	vmwrite ecx,dword ptr[value]
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmwrite endp
+
+noir_vt_vmread64 proc field:dword,value:dword
+
+	mov ecx,dword ptr[field]
+	vmread dword ptr[value],ecx
+	inc ecx
+	vmread dword ptr[value+4],edx
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmread64 endp
+
+noir_vt_vmwrite64 proc field:dword,value:dword
+
+	mov ecx,dword ptr[field]
+	vmwrite ecx,dword ptr[value]
+	inc ecx
+	vmwrite ecx,dword ptr[value+4]
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmwrite64 endp
+
+noir_vt_vmlaunch proc
+
+	vmlaunch
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmlaunch endp
+
+noir_vt_vmresume proc
+
+	vmresume
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmresume endp
 
 endif
 

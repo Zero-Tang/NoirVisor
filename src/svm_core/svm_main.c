@@ -251,11 +251,15 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	// Save Model Specific Registers.
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_pat,state.pat);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_efer,state.efer);
+#if defined(_amd64)
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_star,state.star);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,(u64)noir_system_call);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_cstar,state.cstar);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_sfmask,state.sfmask);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_kernel_gs_base,state.gsswap);
+#else
+	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_sysenter_eip,(u32)noir_system_call);
+#endif
 	// Setup Control Area
 	nvc_svm_setup_control_area(vcpu);
 	// Setup IOPM and MSRPM.
@@ -392,9 +396,13 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 		goto alloc_failure;
 	hvm_p->relative_hvm->primary_nptm=(void*)nvc_npt_build_identity_map();
 	if(hvm_p->relative_hvm->primary_nptm==null)goto alloc_failure;
+	if(nvc_npt_initialize_ci(hvm_p->relative_hvm->primary_nptm)==false)goto alloc_failure;
+	hvm_p->relative_hvm->secondary_nptm=(void*)nvc_npt_build_identity_map();
+	if(hvm_p->relative_hvm->secondary_nptm==null)goto alloc_failure;
 	if(hvm_p->virtual_cpu==null)goto alloc_failure;
 	if(nvc_svm_alloc_cpuid_cache(hvm_p)==false)goto alloc_failure;
 	nvc_svm_setup_msr_hook(hvm_p);
+	//nvc_npt_build_hook_mapping(hvm_p);
 	if(nvc_npt_protect_critical_hypervisor(hvm_p)==false)goto alloc_failure;
 	nv_dprintf("All allocations are done, start subversion!\n");
 	noir_generic_call(nvc_svm_subvert_processor_thunk,hvm_p->virtual_cpu);

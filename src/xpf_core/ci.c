@@ -21,7 +21,7 @@
 #include <ci.h>
 
 // Use CRC32 Castagnoli Algorithm.
-u32 static noir_crc32_page_std(void* page)
+u32 static stdcall noir_crc32_page_std(void* page)
 {
 	u8* buf=(u8*)page;
 	u32 crc=0xffffffff;
@@ -110,7 +110,7 @@ u32 static stdcall noir_ci_enforcement_worker(void* context)
 	return 0;
 }
 
-i32 static noir_ci_sorting_comparator(const void* a,const void*b)
+i32 static cdecl noir_ci_sorting_comparator(const void* a,const void*b)
 {
 	noir_ci_page_p ap=(noir_ci_page_p)a;
 	noir_ci_page_p bp=(noir_ci_page_p)b;

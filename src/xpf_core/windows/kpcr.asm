@@ -246,10 +246,12 @@ noir_save_processor_state endp
 
 else
 
+assume fs:nothing
+
 noir_get_segment_attributes proc gdt_base:dword,selector:word
 
 	mov ecx,dword ptr[gdt_base]
-	movzx dx,word ptr[selector]
+	mov dx,word ptr[selector]
 	and dx,0fff8h
 	add ecx,edx
 	and ax,0f0ffh
@@ -376,62 +378,62 @@ noir_save_processor_state proc uses edi state:dword
 	; Save SysEnter_CS
 	mov ecx,174h
 	rdmsr
-	mov dword ptr[rbx+0c8h],eax
-	mov dword ptr[rbx+0cch],edx
+	mov dword ptr[ebx+0c8h],eax
+	mov dword ptr[ebx+0cch],edx
 
 	; Save SysEnter_ESP
 	inc ecx
 	rdmsr
-	mov dword ptr[rbx+0d0h],eax
-	mov dword ptr[rbx+0d4h],edx
+	mov dword ptr[ebx+0d0h],eax
+	mov dword ptr[ebx+0d4h],edx
 
 	; Save SysEnter_EIP
 	inc ecx
 	rdmsr
-	mov dword ptr[rbx+0d8h],eax
-	mov dword ptr[rbx+0dch],edx
+	mov dword ptr[ebx+0d8h],eax
+	mov dword ptr[ebx+0dch],edx
 
 	; Save Debug Control MSR
 	mov ecx,1d9h
 	rdmsr
-	mov dword ptr[rbx+0e0h],eax
-	mov dword ptr[rbx+0e4h],edx
+	mov dword ptr[ebx+0e0h],eax
+	mov dword ptr[ebx+0e4h],edx
 
 	; Save PAT
 	mov ecx,277h
 	rdmsr
-	mov dword ptr[rbx+0e8h],eax
-	mov dword ptr[rbx+0ech],edx
+	mov dword ptr[ebx+0e8h],eax
+	mov dword ptr[ebx+0ech],edx
 
 	; Save EFER
 	mov ecx,0c0000080h
 	rdmsr
-	mov dword ptr[rbx+0f0h],eax
-	mov dword ptr[rbx+0f4h],edx
+	mov dword ptr[ebx+0f0h],eax
+	mov dword ptr[ebx+0f4h],edx
 
 	; Save STAR
 	inc ecx
 	rdmsr
-	mov dword ptr[rbx+0f8h],eax
-	mov dword ptr[rbx+0fch],edx
+	mov dword ptr[ebx+0f8h],eax
+	mov dword ptr[ebx+0fch],edx
 
 	; Save LSTAR
 	inc ecx
 	rdmsr
-	mov dword ptr[rbx+100h],eax
-	mov dword ptr[rbx+104h],edx
+	mov dword ptr[ebx+100h],eax
+	mov dword ptr[ebx+104h],edx
 
 	; Save CSTAR
 	inc ecx
 	rdmsr
-	mov dword ptr[rbx+108h],eax
-	mov dword ptr[rbx+10ch],edx
+	mov dword ptr[ebx+108h],eax
+	mov dword ptr[ebx+10ch],edx
 
 	; Save SFMASK
 	inc ecx
 	rdmsr
-	mov dword ptr[rbx+110h],eax
-	mov dword ptr[rbx+114h],edx
+	mov dword ptr[ebx+110h],eax
+	mov dword ptr[ebx+114h],edx
 
 	; Save FS Base
 	mov ecx,0c0000100h
@@ -440,7 +442,7 @@ noir_save_processor_state proc uses edi state:dword
 	mov dword ptr[edi+118h],eax
 	mov dword ptr[edi+11ch],edx
 	; Save to Segment State
-	mov dword ptr[rbx+38h],eax
+	mov dword ptr[ebx+38h],eax
 	mov dword ptr[edi+3ch],edx
 
 	; Save GS Base
@@ -450,14 +452,14 @@ noir_save_processor_state proc uses edi state:dword
 	mov dword ptr[edi+120h],eax
 	mov dword ptr[edi+124h],edx
 	; Save to Segment State
-	mov dword ptr[rbx+48h],eax
+	mov dword ptr[ebx+48h],eax
 	mov dword ptr[edi+4ch],edx
 
 	; Save GS Swap
 	inc ecx
 	rdmsr
-	mov dword ptr[rbx+128h],eax
-	mov dword ptr[rbx+12ch],edx
+	mov dword ptr[ebx+128h],eax
+	mov dword ptr[ebx+12ch],edx
 
 	; MSR Saving is Over
 	ret

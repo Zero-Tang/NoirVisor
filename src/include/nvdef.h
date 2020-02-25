@@ -32,6 +32,7 @@ typedef i64 long_ptr;
 #else
 typedef u32 ulong_ptr;
 typedef i32 long_ptr;
+typedef i32 size_t;
 #endif
 
 typedef volatile u8		u8v;

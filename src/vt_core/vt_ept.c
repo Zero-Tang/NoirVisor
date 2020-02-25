@@ -234,6 +234,7 @@ bool nvc_ept_protect_hypervisor(noir_hypervisor_p hvm,noir_ept_manager_p eptm)
 		{
 			noir_vt_vcpu_p vcpu=&hvm->virtual_cpu[i];
 			noir_ept_manager_p eptmt=(noir_ept_manager_p)vcpu->ept_manager;
+			noir_ept_pte_descriptor_p cur=null;
 			// Protect VMXON region and VMCS.
 			result&=nvc_ept_update_pte(eptm,vcpu->vmxon.phys,eptm->blank_page.phys,true,true,true);
 			result&=nvc_ept_update_pte(eptm,vcpu->vmcs.phys,eptm->blank_page.phys,true,true,true);
@@ -242,9 +243,9 @@ bool nvc_ept_protect_hypervisor(noir_hypervisor_p hvm,noir_ept_manager_p eptm)
 			result&=nvc_ept_update_pte(eptm,eptmt->pdpt.phys,eptm->blank_page.phys,true,true,true);
 			// Allow Guest read the original PDE so that EPT-violation VM-Exits can be reduced.
 			result&=nvc_ept_update_pde(eptm,eptmt->pde.phys,true,false,false);
-			// It is unnecessary to protect the PTEs here.
-			// Even if the malware changes the PTE, it wouldn't work
-			// as long as we don't invalidate the relevant EPT TLB.
+			// Update PTEs of paging structure.
+			for(cur=eptm->pte.head;cur;cur=cur->next)
+				result&=nvc_ept_update_pte(eptm,cur->phys,eptm->blank_page.phys,true,true,true);
 		}
 		return result;
 	}

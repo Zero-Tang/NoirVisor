@@ -170,7 +170,7 @@ bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm)
 		result&=nvc_npt_update_pde(pri_nptm,pri_nptm->pde.phys,true,false,true);
 		// Update PTEs...
 		for(cur=pri_nptm->pte.head;cur;cur=cur->next)
-			result&=nvc_npt_update_pte(pri_nptm,pri_nptm->pte.head->phys,hvm->relative_hvm->blank_page.phys,true,true,true);
+			result&=nvc_npt_update_pte(pri_nptm,cur->phys,hvm->relative_hvm->blank_page.phys,true,true,true);
 		return result;
 	}
 	return false;
@@ -187,6 +187,53 @@ bool nvc_npt_initialize_ci(noir_npt_manager_p nptm)
 		if(!r)break;
 	}
 	return r;
+}
+
+void nvc_npt_build_hook_mapping(noir_hypervisor_p hvm)
+{
+	u32 i=0;
+	noir_npt_pte_descriptor_p pte_p=null;
+	noir_hook_page_p nhp=null;
+	noir_npt_manager_p pri_nptm=(noir_npt_manager_p)hvm->relative_hvm->primary_nptm;
+	noir_npt_manager_p sec_nptm=(noir_npt_manager_p)hvm->relative_hvm->secondary_nptm;
+	// In this function, we build mappings necessary to make stealth inline hook.
+	for(nhp=noir_hook_pages;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
+		nvc_npt_update_pte(pri_nptm,nhp->orig.phys,nhp->orig.phys,true,true,false);
+	i=0;
+	for(nhp=noir_hook_pages;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
+		nvc_npt_update_pte(sec_nptm,nhp->hook.phys,nhp->orig.phys,true,true,true);
+	// Set all necessary PDEs to NX.
+	for(i=0;i<512;i++)
+	{
+		u32 j=0;
+		for(;j<512;j++)
+		{
+			u32 k=(i<<9)+j;
+			if(sec_nptm->pde.virt[k].large_pde)
+				sec_nptm->pde.virt[k].no_execute=true;
+		}
+	}
+	// Set all PTEs to NX
+	for(pte_p=sec_nptm->pte.head;pte_p;pte_p=pte_p->next)
+		for(i=0;i<512;i++)
+			pte_p->virt[i].no_execute=true;
+	// Select PTEs that should be X.
+	i=0;
+	for(nhp=noir_hook_pages;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
+	{
+		amd64_addr_translator trans;
+		trans.value=nhp->orig.phys;
+		// Select PTE
+		for(pte_p=sec_nptm->pte.head;pte_p;pte_p=pte_p->next)
+		{
+			if(nhp->orig.phys>=pte_p->gpa_start && nhp->orig.phys<pte_p->gpa_start+page_2mb_size)
+			{
+				pte_p->virt[trans.pte_offset].no_execute=false;
+				nhp->pte_descriptor=(void*)&pte_p->virt[trans.pte_offset];
+				break;
+			}
+		}
+	}
 }
 
 /*
@@ -253,8 +300,6 @@ noir_npt_manager_p nvc_npt_build_identity_map()
 			nptm->pdpt.virt[i].user=1;
 			nptm->pdpt.virt[i].pde_base=(nptm->pde.phys>>12)+i;
 		}
-		if(nvc_npt_initialize_ci(nptm)==false)
-			goto alloc_failure;
 		// Build Page Map Level 4 Entries (PML4E)
 		nptm->ncr3.virt->value=0;
 		nptm->ncr3.virt->present=1;
@@ -264,7 +309,6 @@ noir_npt_manager_p nvc_npt_build_identity_map()
 	}
 	else
 	{
-alloc_failure:
 		nvc_npt_cleanup(nptm);
 		nv_dprintf("Allocation Failure! Failed to build NPT paging structure!\n");
 		nptm=null;

@@ -12,7 +12,7 @@
 
 ifdef _ia32
 .686p
-.model flat,stdcall
+.model flat
 endif
 
 .code
@@ -27,44 +27,44 @@ extern system_cr3:qword
 ; Macro for pushing all GPRs to stack.
 pushaq macro
 	
-	push r15
-	push r14
-	push r13
-	push r12
-	push r11
-	push r10
-	push r9
-	push r8
-	push rdi
-	push rsi
-	push rbp
-	sub rsp,8
-	push rbx
-	push rdx
-	push rcx
-	push rax
+	sub rsp,80h
+	mov qword ptr [rsp+00h],rax
+	mov qword ptr [rsp+08h],rcx
+	mov qword ptr [rsp+10h],rdx
+	mov qword ptr [rsp+18h],rbx
+	mov qword ptr [rsp+28h],rbp
+	mov qword ptr [rsp+30h],rsi
+	mov qword ptr [rsp+38h],rdi
+	mov qword ptr [rsp+40h],r8
+	mov qword ptr [rsp+48h],r9
+	mov qword ptr [rsp+50h],r10
+	mov qword ptr [rsp+58h],r11
+	mov qword ptr [rsp+60h],r12
+	mov qword ptr [rsp+68h],r13
+	mov qword ptr [rsp+70h],r14
+	mov qword ptr [rsp+78h],r15
 	
 endm
 
 ; Macro for poping all GPRs from stack.
 popaq macro
 
-	pop rax
-	pop rcx
-	pop rdx
-	pop rbx
-	add rsp,8
-	pop rbp
-	pop rsi
-	pop rdi
-	pop r8
-	pop r9
-	pop r10
-	pop r11
-	pop r12
-	pop r13
-	pop r14
-	pop r15
+	mov rax,qword ptr [rsp]
+	mov rcx,qword ptr [rsp+8]
+	mov rdx,qword ptr [rsp+10h]
+	mov rbx,qword ptr [rsp+18h]
+	mov rbp,qword ptr [rsp+28h]
+	mov rsi,qword ptr [rsp+30h]
+	mov rdi,qword ptr [rsp+38h]
+	mov r8, qword ptr [rsp+40h]
+	mov r9, qword ptr [rsp+48h]
+	mov r10,qword ptr [rsp+50h]
+	mov r11,qword ptr [rsp+58h]
+	mov r12,qword ptr [rsp+60h]
+	mov r13,qword ptr [rsp+68h]
+	mov r14,qword ptr [rsp+70h]
+	mov r15,qword ptr [rsp+78h]
+	add rsp,80h
 
 endm
 
@@ -164,7 +164,92 @@ nvc_svm_subvert_processor_a endp
 
 else
 
+assume fs:nothing
 
+extern system_cr3:dword
+
+; A simple implementation for vmmcall instruction.
+noir_svm_vmmcall proc
+
+	vmmcall
+	ret
+
+noir_svm_vmmcall endp
+
+nvc_svm_return proc
+
+	; Switch the stack where state is saved.
+	mov esp,ecx
+	popad
+	; In the restored GPR layout, we have:
+	; eax=eip
+	; ecx=eflags
+	; edx=esp
+	push ecx
+	popfd			; Restore flags register
+	mov esp,edx		; Restore stack pointer
+	jmp eax			; Restore instruction pointer
+
+nvc_svm_return endp
+
+nvc_svm_exit_handler_a proc
+
+	; At this moment, VM-Exit occured.
+	; Save processor hidden state.
+	vmsave eax
+	; Save GPR state.
+	pushad
+	mov ecx,esp
+	movzx edx,byte ptr fs:[51h]
+	; Invoke VM-Exit Handler
+	call nvc_svm_exit_handler
+	; Restore Exit Handler
+	popad
+	; After popad, eax contains VMCB.
+	; Load processor hidden state.
+	vmload eax
+	; Resume guest.
+	vmrun eax
+	; VM-Exit occurs again, jump back.
+	jmp nvc_svm_exit_handler_a
+
+nvc_svm_exit_handler_a endp
+
+nvc_svm_subvert_processor_a proc
+
+	pushfd
+	pushad
+	mov edx,esp
+	push ecx
+	; Invoke nvc_svm_subvert_processor_i
+	push svm_launched
+	push edx
+	push dword ptr[ecx+4]
+	call nvc_svm_subvert_processor_i
+	; Switch Page Table to System Page Table
+	mov ecx,dword ptr[system_cr3]
+	mov cr3,eax
+	; Now, eax stores the physical address of VMCB.
+	; Switch stack pointer to host stack.
+	pop ecx
+	mov esp,ecx
+	; Stack is switch, launch the guest.
+	vmrun eax
+	; Now, VM-Exit occurs. Jump to handlers.
+	jmp nvc_svm_exit_handler_a
+svm_launched:
+	; At this moment, Guest is successfully launched.
+	; Host esp is saved and Guest esp is switched
+	; automatically by vmrun instruction
+	; Now, restore all registers.
+	popad
+	; Return that we are successful (noir_virt_on)
+	xor eax,eax
+	inc eax
+	popfd
+	ret
+
+nvc_svm_subvert_processor_a endp
 
 endif
 

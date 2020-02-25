@@ -114,7 +114,7 @@ typedef struct _noir_gpr_state
 }noir_gpr_state,*noir_gpr_state_p;
 
 typedef void (*noir_broadcast_worker)(void* context,u32 processor_id);
-typedef i32(*noir_sorting_comparator)(const void* a,const void*b);
+typedef i32(cdecl *noir_sorting_comparator)(const void* a,const void*b);
 
 void noir_save_processor_state(noir_processor_state_p);
 void noir_generic_call(noir_broadcast_worker worker,void* context);

@@ -18,7 +18,7 @@
 #define ci_enforcement_delay 50000
 #endif
 
-typedef u32 (fastcall *noir_crc32_page_func)(void* page);
+typedef u32 (stdcall *noir_crc32_page_func)(void* page);
 
 typedef struct _noir_ci_page
 {
@@ -38,7 +38,7 @@ typedef struct _noir_ci_context
 }noir_ci_context,*noir_ci_context_p;
 
 u8 nvc_confirm_cpu_manufacturer(char* vendor_string);
-u32 fastcall noir_crc32_page_sse(void* page);
+u32 stdcall noir_crc32_page_sse(void* page);
 bool fastcall noir_check_sse42();
 
 #if defined(_code_integrity)

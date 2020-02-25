@@ -156,7 +156,7 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	NoirInitializeCodeIntegrity(DriverObject->DriverStart);
 	NoirLocatePsLoadedModule(DriverObject);
 	system_cr3=__readcr3();
-	orig_system_call=__readmsr(0xC0000082);
+	orig_system_call=(ULONG_PTR)__readmsr(0xC0000082);
 	NoirGetNtOpenProcessIndex();
 	NoirSaveImageInfo(DriverObject);
 	NoirBuildHookedPages();
