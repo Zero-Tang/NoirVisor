@@ -261,6 +261,8 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 		}
 		// We switched NPT. Thus we should clean VMCB cache state.
 		noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_npt);
+		// It is necessary to flush TLB.
+		noir_svm_vmwrite32(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
 	}
 	/*
 	  There are three inspections in #NPF handler of NoirVisor.
@@ -303,6 +305,8 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)
 	// Set VMCB Cache State as all to be cached.
 	if(vcpu->enabled_feature & noir_svm_vmcb_caching)
 		noir_svm_vmwrite32(vmcb_va,vmcb_clean_bits,0xffffffff);
+	// Set TLB Control to Do-not-Flush
+	noir_svm_vmwrite32(vmcb_va,tlb_control,nvc_svm_tlb_control_do_nothing);
 	// Check if the interception is due to invalid guest state.
 	// Invoke the handler accordingly.
 	if(intercept_code==-1)
