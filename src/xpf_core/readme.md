@@ -1,10 +1,9 @@
-
 # NoirVisor XPF-Core
 This directory is not a virtualization engine for NoirVisor. Instead, this file implement basic utilities for NoirVisor virtualization engines. <br>
 Codes in this directory should be platform-specific designed. However, function names should have the same style to virtualization engines. <br>
 
 # Folders
-There should be multiple folders in this directory. Each folder indicates the platform it supports. Currently, NoirVisor supports the Windows platform. Thus there is a "windows" folder in XPF-Core directory.
+There should be multiple folders in this directory. Each folder indicates the platform it supports. Currently, NoirVisor supports the Windows platform, and the support to UEFI platform is in progress. Thus there are a "windows" folder and a "uefi" folder in XPF-Core directory.
 
 # Features
 In XPF-Core, one folder should have following features for its specific platform: <br>

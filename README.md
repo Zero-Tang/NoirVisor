@@ -34,7 +34,7 @@ Also note that, you have to create certain directories required by the batch com
 You may download the WDK 7.1.0 from Microsoft: https://www.microsoft.com/en-us/download/details.aspx?id=11800 <br>
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
-# EFI Application
+## EFI Application
 To build a EFI Application, you should install LLVM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path "C:\UefiDKII". <br>
 You may download LLVM from GitHub: https://github.com/llvm/llvm-project/releases <br>
 You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases <br>
@@ -50,6 +50,9 @@ If you use the digital signature provided in NoirVisor's repository, then you sh
 Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a partition and format it info FAT32 file system. After you build the image, you should copy it to \EFI\BOOT\bootx64.efi. <br>
 As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system.
 
+# Detection of NoirVisor
+As specified in AMD64 Architecture Programming Manual, CPUID.EAX=1.ECX[bit 31] indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors defines leaf 0x40000000 is used to identify hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is "VMwareVMware". In NoirVisor, hypervisor vendor string is defined as "NoirVisor ZT".
+
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. <br>
 Currently, NoirVisor supports the Windows Operating System newer than or same as Windows XP, running as a kernel-mode driver. <br>
@@ -57,7 +60,7 @@ If there is already a hypervisor running in the system, make sure it supports na
 
 # Development Status
 Project NoirVisor has six future development plans: <br>
-- Remaster CPUID-caching architecture with a flexible design. <br>
+- Remaster CPUID-caching architecture with a flexible design for Intel VT-x. <br>
 - Develop Nested Paging with Stealth Hook on SVM-Engine for NoirVisor. <br>
 - Develop Nested Virtualization. <br>
 - Develop Hypervisor-Platform compatible hypervisor for Windows 10 Redstone. <br>
@@ -68,7 +71,7 @@ Project NoirVisor has six future development plans: <br>
 - Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V.
 - Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel VT-x.
 - Tagged Translation Lookaside Buffer by ASID/VPID feature.
-- CPUID caching architecture. (First Design, not quite efficient.)
+- Efficient CPUID caching architecture on AMD-V.
 - Critical Hypervisor Protection.
 - Software-Level Code Integrity Enforcement.
 - Hardware-Level Code Integrity Enforcement, both Intel EPT and AMD NPT.

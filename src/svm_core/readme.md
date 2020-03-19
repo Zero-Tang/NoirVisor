@@ -60,7 +60,6 @@ Real-Time CI is now implemented by AMD Nested Paging.
 # Future Feature (Roadmap)
 In future, NoirVisor has following plans:
 
-- Remaster CPUID-caching architecture with flexible design
 - Implement SVM-Nesting (This will be a long term project.)
 - Implement NPT-based Stealth Inline Hook
 

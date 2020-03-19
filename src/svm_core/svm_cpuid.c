@@ -32,6 +32,69 @@
   Class 3: Reserved Leaf Function		Range: 0xC0000000-0xFFFFFFFF
 */
 
+/*
+  Build cache for CPUID instruction per virtual processor.
+
+  Generic Rules:
+  1. Use cpuid instruction with ecx=0 to initialize generic data.
+  2. If we have special treatings, make specific initializations.
+*/
+void nvc_svm_build_cpuid_cache_per_vcpu(noir_svm_vcpu_p vcpu)
+{
+	noir_svm_cpuid_default_p info;
+	u32 i;
+	// Generic Initialization
+	for(i=0;i<vcpu->cpuid_cache.max_leaf[std_leaf_index];i++)
+	{
+		info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[i];
+		noir_cpuid(i,0,&info->eax,&info->ebx,&info->ecx,&info->edx);
+	}
+	for(i=0;i<vcpu->cpuid_cache.max_leaf[ext_leaf_index];i++)
+	{
+		info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.ext_leaf[i];
+		noir_cpuid(i+0x80000000,0,&info->eax,&info->ebx,&info->ecx,&info->edx);
+	}
+	// Specific Initialization
+	// Function Leaf 0x1 - Processor and Processor Feature Identifiers
+	// We indicate hypervisor presense here.
+	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[std_proc_feature];
+	noir_bts(&info->ecx,amd64_cpuid_hv_presence);
+	// Function leaf 0xD - Processor Extended State Enumeration
+	// There are multiple subfunctions in this leaf.
+	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[std_pestate_enum];
+	noir_cpuid(std_pestate_enum,1,&info[1].eax,&info[1].ebx,&info[1].ecx,&info[1].edx);		// Sub-leaf 1
+	noir_cpuid(std_pestate_enum,2,&info[2].eax,&info[2].ebx,&info[2].ecx,&info[2].edx);		// Sub-leaf 2
+	noir_cpuid(std_pestate_enum,62,&info[3].eax,&info[3].ebx,&info[3].ecx,&info[3].edx);	// Sub-leaf 62
+	// Function leaf 0x40000000 - Maximum Hypervisor Function Number and Vendor String
+	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.hvm_leaf[hvm_max_num_vstr];
+	info->eax=0;		// We have this leaf only.
+	// Vendor String="NoirVisor ZT"
+	info->ebx='rioN';
+	info->ecx='osiV';
+	info->edx='TZ r';
+	// Function leaf 0x80000001 - Extended Processor and Processor Feature Identifiers
+	// By now, we might have to indicate no support to nested virtualization.
+	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.ext_leaf[ext_proc_feature];
+	noir_btr(&info->ecx,amd64_cpuid_svm);
+	// Function leaf 0x8000000A - SVM Features
+	// Erase some features that we don't support.
+	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.ext_leaf[ext_svm_features];
+	info->ebx--;		// Decrement available ASID by 1.
+	noir_btr(&info->edx,amd64_cpuid_npt);	// NoirVisor does not have an algorithm to it.
+	// Function leaf 0x8000001D - Cache Topology Information
+	// This is variable count of subfunctions.
+	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.ext_leaf[ext_cache_topinf];
+	for(i=1;(info[i-1].eax & 0x1f)!=0;i++)
+	{
+		if(i==8)
+		{
+			nv_panicf("Overflow in Cache Topology CPUID Leaf!\n");
+			break;
+		}
+		noir_cpuid(ext_cache_topinf+0x80000000,i,&info[i].eax,&info[i].ebx,&info[i].ecx,&info[i].edx);
+	}
+}
+
 // Reserved Function Leaf.
 // This would clear the CPUID data to zero.
 void fastcall nvc_svm_reserved_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
@@ -105,6 +168,18 @@ void static fastcall nvc_svm_cpuid_std_vendor_string(noir_gpr_state_p gpr_state,
   by now, is not in conformation.
 */
 
+// Function Leaf: 0x40000000 - Maxinum Number of Leaves and Vendor String
+void static fastcall nvc_svm_cpuid_hvm_vendor_string(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	noir_svm_cpuid_max_num_vstr_p cache=(noir_svm_cpuid_max_num_vstr_p)vcpu->cpuid_cache.hvm_leaf[hvm_max_num_vstr];
+	// EAX - Maximum Number of CPUID
+	*(u32*)&gpr_state->rax=cache->maximum;
+	// EBX-ECX-EDX -> "NoirVisor ZT" by default
+	*(u32*)&gpr_state->rbx=*(u32*)&cache->vendor_string[0];
+	*(u32*)&gpr_state->rcx=*(u32*)&cache->vendor_string[4];
+	*(u32*)&gpr_state->rdx=*(u32*)&cache->vendor_string[8];
+}
+
 /*
   Extended Leaf Functions:
 
@@ -129,10 +204,10 @@ void static fastcall nvc_svm_cpuid_ext_brand_string_p1(noir_gpr_state_p gpr_stat
 {
 	char* brand=(char*)vcpu->cpuid_cache.ext_leaf[ext_brand_str_p1];
 	// Sorted by EAX-EBX-ECX-EDX
-	*(u32*)&gpr_state->rax=*(u32*)brand[0x0];
-	*(u32*)&gpr_state->rbx=*(u32*)brand[0x4];
-	*(u32*)&gpr_state->rcx=*(u32*)brand[0x8];
-	*(u32*)&gpr_state->rdx=*(u32*)brand[0xC];
+	*(u32*)&gpr_state->rax=*(u32*)&brand[0x0];
+	*(u32*)&gpr_state->rbx=*(u32*)&brand[0x4];
+	*(u32*)&gpr_state->rcx=*(u32*)&brand[0x8];
+	*(u32*)&gpr_state->rdx=*(u32*)&brand[0xC];
 }
 
 // Function Leaf: 0x80000003 - Processor Name String (Part II)
@@ -140,10 +215,10 @@ void static fastcall nvc_svm_cpuid_ext_brand_string_p2(noir_gpr_state_p gpr_stat
 {
 	char* brand=(char*)vcpu->cpuid_cache.ext_leaf[ext_brand_str_p2];
 	// Sorted by EAX-EBX-ECX-EDX
-	*(u32*)&gpr_state->rax=*(u32*)brand[0x0];
-	*(u32*)&gpr_state->rbx=*(u32*)brand[0x4];
-	*(u32*)&gpr_state->rcx=*(u32*)brand[0x8];
-	*(u32*)&gpr_state->rdx=*(u32*)brand[0xC];
+	*(u32*)&gpr_state->rax=*(u32*)&brand[0x0];
+	*(u32*)&gpr_state->rbx=*(u32*)&brand[0x4];
+	*(u32*)&gpr_state->rcx=*(u32*)&brand[0x8];
+	*(u32*)&gpr_state->rdx=*(u32*)&brand[0xC];
 }
 
 // Function Leaf: 0x80000004 - Processor Name String (Part III)
@@ -151,10 +226,10 @@ void static fastcall nvc_svm_cpuid_ext_brand_string_p3(noir_gpr_state_p gpr_stat
 {
 	char* brand=(char*)vcpu->cpuid_cache.ext_leaf[ext_brand_str_p3];
 	// Sorted by EAX-EBX-ECX-EDX
-	*(u32*)&gpr_state->rax=*(u32*)brand[0x0];
-	*(u32*)&gpr_state->rbx=*(u32*)brand[0x4];
-	*(u32*)&gpr_state->rcx=*(u32*)brand[0x8];
-	*(u32*)&gpr_state->rdx=*(u32*)brand[0xC];
+	*(u32*)&gpr_state->rax=*(u32*)&brand[0x0];
+	*(u32*)&gpr_state->rbx=*(u32*)&brand[0x4];
+	*(u32*)&gpr_state->rcx=*(u32*)&brand[0x8];
+	*(u32*)&gpr_state->rdx=*(u32*)&brand[0xC];
 }
 
 // Function Leaf: 0x8000000A - SVM Revision and Feature Id
@@ -178,15 +253,18 @@ bool nvc_svm_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 r
 	if(svm_cpuid_handlers)
 	{
 		svm_cpuid_handlers[std_leaf_index]=noir_alloc_nonpg_memory(sizeof(void*)*std_count);
+		svm_cpuid_handlers[hvm_leaf_index]=noir_alloc_nonpg_memory(sizeof(void*)*hvm_count);
 		svm_cpuid_handlers[ext_leaf_index]=noir_alloc_nonpg_memory(sizeof(void*)*ext_count);
 		if(svm_cpuid_handlers[std_leaf_index] && svm_cpuid_handlers[ext_leaf_index])
 		{
 			// Initialize CPUID handlers with default handlers.
 			// Using stos instruction could accelerate the initialization.
 			noir_stosp(svm_cpuid_handlers[std_leaf_index],(ulong_ptr)nvc_svm_default_cpuid_handler,std_count);
+			noir_stosp(svm_cpuid_handlers[hvm_leaf_index],(ulong_ptr)nvc_svm_default_cpuid_handler,hvm_count);
 			noir_stosp(svm_cpuid_handlers[ext_leaf_index],(ulong_ptr)nvc_svm_default_cpuid_handler,ext_count);
 			// Default Handlers are set. Setup the customized handlers here.
 			svm_cpuid_handlers[ext_leaf_index][ext_svm_features]=nvc_svm_cpuid_ext_svm_feature_id;
+			svm_cpuid_handlers[hvm_leaf_index][hvm_max_num_vstr]=nvc_svm_cpuid_hvm_vendor_string;
 			return true;
 		}
 	}

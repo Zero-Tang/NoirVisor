@@ -133,11 +133,6 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 #endif
 }
 
-void static nvc_svm_setup_cpuid_cache(noir_svm_vcpu_p vcpu)
-{
-	;
-}
-
 void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 {
 	nvc_svm_instruction_intercept1 list1;
@@ -146,6 +141,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
 	// Basic features...
 	list1.value=0;
+	list1.intercept_cpuid=1;
 	list1.intercept_msr=1;
 	list2.value=0;
 	list2.intercept_vmrun=1;	// The vmrun should always be intercepted as required by AMD.
@@ -184,7 +180,6 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	// Save Processor State
 	noir_processor_state state;
 	nvc_svm_enable();
-	nvc_svm_setup_cpuid_cache(vcpu);
 	noir_save_processor_state(&state);
 	// Setup State-Save Area
 	// Save Segment State - CS
@@ -248,6 +243,9 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rflags,2);	//Fixed bit should be set.
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rsp,gsp);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
+	// Save Processor Hidden State
+	noir_svm_vmsave((ulong_ptr)vcpu->vmcb.phys);
+	noir_svm_vmsave((ulong_ptr)vcpu->hvmcb.phys);
 	// Save Model Specific Registers.
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_pat,state.pat);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_efer,state.efer);
@@ -282,9 +280,11 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 	{
 		noir_svm_initial_stack_p stack=(noir_svm_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack));
 		stack->guest_vmcb_pa=vcpu->vmcb.phys;
+		stack->host_vmcb_pa=vcpu->hvmcb.phys;
 		stack->proc_id=vcpu->proc_id;
 		stack->vcpu=vcpu;
 		noir_wrmsr(amd64_hsave_pa,vcpu->hsave.phys);
+		nvc_svm_build_cpuid_cache_per_vcpu(vcpu);
 		vcpu->status=nvc_svm_subvert_processor_a(stack);
 	}
 }
@@ -308,6 +308,8 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 				noir_free_contd_memory(vcpu->vmcb.virt);
 			if(vcpu->hsave.virt)
 				noir_free_contd_memory(vcpu->hsave.virt);
+			if(vcpu->hvmcb.virt)
+				noir_free_contd_memory(vcpu->hvmcb.virt);
 			if(vcpu->hv_stack)
 				noir_free_nonpg_memory(vcpu->hv_stack);
 			if(vcpu->cpuid_cache.std_leaf)
@@ -318,6 +320,8 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 				noir_free_nonpg_memory(vcpu->cpuid_cache.hvm_leaf);
 			if(vcpu->cpuid_cache.res_leaf)
 				noir_free_nonpg_memory(vcpu->cpuid_cache.res_leaf);
+			if(vcpu->cpuid_cache.cache_base)
+				noir_free_nonpg_memory(vcpu->cpuid_cache.cache_base);
 		}
 		noir_free_nonpg_memory(hvm_p->virtual_cpu);
 	}
@@ -344,12 +348,51 @@ bool static nvc_svm_alloc_cpuid_cache(noir_hypervisor_p hvm_p)
 	if(nvc_svm_build_cpuid_handler(stda,0,exta-0x80000000,0)==false)return false;
 	for(;i<hvm_p->cpu_count;cache=&hvm_p->virtual_cpu[++i].cpuid_cache)
 	{
+		u32 j;
+		ulong_ptr base;
 		cache->std_leaf=noir_alloc_nonpg_memory(hvm_p->relative_hvm->std_leaftotal*sizeof(void**));
 		if(cache->std_leaf==null)return false;
+		cache->hvm_leaf=noir_alloc_nonpg_memory(1*sizeof(void**));
+		if(cache->hvm_leaf==null)return false;
 		cache->ext_leaf=noir_alloc_nonpg_memory(hvm_p->relative_hvm->ext_leaftotal*sizeof(void**));
 		if(cache->ext_leaf==null)return false;
+		cache->cache_base=noir_alloc_nonpg_memory(page_size);
+		if(cache->cache_base==null)return false;
+		// One Page should be sufficient. In case it becomes deficient, we will increase allocation.
+		base=(ulong_ptr)cache->cache_base;
 		cache->max_leaf[std_leaf_index]=hvm_p->relative_hvm->std_leaftotal;
+		cache->max_leaf[hvm_leaf_index]=1;
 		cache->max_leaf[ext_leaf_index]=hvm_p->relative_hvm->ext_leaftotal;
+		// Standard CPUID Leaf
+		for(j=0;j<cache->max_leaf[std_leaf_index];j++)
+		{
+			cache->std_leaf[j]=(void*)base;
+			if((1<<j) & noir_svm_cpuid_std_submask)
+				base+=128;		// Allocate 128 bytes for leaf with subfunctions
+			else
+				base+=16;		// Allocate 16 bytes for leaf without subfunction
+		}
+		// Hypervisor CPUID Leaf
+		for(j=0;j<cache->max_leaf[hvm_leaf_index];j++)
+		{
+			cache->hvm_leaf[j]=(void*)base;
+			base+=j<<4;
+		}
+		// Extended CPUID Leaf
+		for(j=0;j<cache->max_leaf[ext_leaf_index];j++)
+		{
+			cache->ext_leaf[j]=(void*)base;
+			if((1<<j) & noir_svm_cpuid_ext_submask)
+				base+=128;		// Allocate 128 bytes for leaf with subfunctions
+			else
+				base+=16;		// Allocate 16 bytes for leaf without subfunction
+		}
+		if(base-(ulong_ptr)cache->cache_base>=page_size)
+		{
+			// In this case, one page is insufficient!
+			nv_dprintf("Allocation failed! One Page is insufficient for caching!\n");
+			return false;
+		}
 	}
 	return true;
 }
@@ -376,6 +419,11 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			vcpu->hsave.virt=noir_alloc_contd_memory(page_size);
 			if(vcpu->hsave.virt)
 				vcpu->hsave.phys=noir_get_physical_address(vcpu->hsave.virt);
+			else
+				goto alloc_failure;
+			vcpu->hvmcb.virt=noir_alloc_contd_memory(page_size);
+			if(vcpu->hvmcb.virt)
+				vcpu->hvmcb.phys=noir_get_physical_address(vcpu->hvmcb.virt);
 			else
 				goto alloc_failure;
 			vcpu->hv_stack=noir_alloc_nonpg_memory(nvc_stack_size);

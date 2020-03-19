@@ -97,11 +97,14 @@ nvc_svm_exit_handler_a proc
 	; At this moment, VM-Exit occured.
 	; Save processor's hidden state for VM.
 	vmsave rax
+	; Load processor's hidden state for Host.
+	mov rax,qword ptr[rsp+8]
+	vmload rax
+	mov rax,qword ptr[rsp]
 	; Save all GPRs, and pass to Exit Handler
 	pushaq
 	mov rcx,rsp
-	; Pass processor index to Exit Handler
-	movzx rdx,byte ptr gs:[184h]
+	mov rdx,qword ptr[rsp+90h]
 	sub rsp,20h
 	; Call Exit Handler
 	call nvc_svm_exit_handler
@@ -126,7 +129,7 @@ nvc_svm_subvert_processor_a proc
 	mov rdx,rsp
 	mov r8,svm_launched
 	push rcx
-	mov rcx,qword ptr[rcx+8]
+	mov rcx,qword ptr[rcx+10h]
 	sub rsp,20h
 	; First parameter is in rcx - vcpu
 	; Second parameter is in rdx - guest rsp

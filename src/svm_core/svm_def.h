@@ -88,38 +88,38 @@ typedef union _nvc_svm_instruction_intercept1
 {
 	struct
 	{
-		u32 intercept_intr:1;
-		u32 intercept_nmi:1;
-		u32 intercept_smi:1;
-		u32 intercept_init:1;
-		u32 intercept_vint:1;
-		u32 intercept_cr0_tsmp:1;
-		u32 intercept_sidt:1;
-		u32 intercept_sgdt:1;
-		u32 intercept_sldt:1;
-		u32 intercept_str:1;
-		u32 intercept_lidt:1;
-		u32 intercept_lgdt:1;
-		u32 intercept_lldt:1;
-		u32 intercept_ltr:1;
-		u32 intercept_rdtsc:1;
-		u32 intercept_rdpmc:1;
-		u32 intercept_pushf:1;
-		u32 intercept_popf:1;
-		u32 intercept_cpuid:1;
-		u32 intercept_rsm:1;
-		u32 intercept_iret:1;
-		u32 intercept_int:1;
-		u32 intercept_invd:1;
-		u32 intercept_pause:1;
-		u32 intercept_hlt:1;
-		u32 intercept_invlpg:1;
-		u32 intercept_invlpga:1;
-		u32 intercept_io:1;
-		u32 intercept_msr:1;
-		u32 intercept_task_switch:1;
-		u32 intercept_ferr_freeze:1;
-		u32 intercept_shutdown:1;
+		u32 intercept_intr:1;			// Bit	0
+		u32 intercept_nmi:1;			// Bit	1
+		u32 intercept_smi:1;			// Bit	2
+		u32 intercept_init:1;			// Bit	3
+		u32 intercept_vint:1;			// Bit	4
+		u32 intercept_cr0_tsmp:1;		// Bit	5
+		u32 intercept_sidt:1;			// Bit	6
+		u32 intercept_sgdt:1;			// Bit	7
+		u32 intercept_sldt:1;			// Bit	8
+		u32 intercept_str:1;			// Bit	9
+		u32 intercept_lidt:1;			// Bit	10
+		u32 intercept_lgdt:1;			// Bit	11
+		u32 intercept_lldt:1;			// Bit	12
+		u32 intercept_ltr:1;			// Bit	13
+		u32 intercept_rdtsc:1;			// Bit	14
+		u32 intercept_rdpmc:1;			// Bit	15
+		u32 intercept_pushf:1;			// Bit	16
+		u32 intercept_popf:1;			// Bit	17
+		u32 intercept_cpuid:1;			// Bit	18
+		u32 intercept_rsm:1;			// Bit	19
+		u32 intercept_iret:1;			// Bit	20
+		u32 intercept_int:1;			// Bit	21
+		u32 intercept_invd:1;			// Bit	22
+		u32 intercept_pause:1;			// Bit	23
+		u32 intercept_hlt:1;			// Bit	24
+		u32 intercept_invlpg:1;			// Bit	25
+		u32 intercept_invlpga:1;		// Bit	26
+		u32 intercept_io:1;				// Bit	27
+		u32 intercept_msr:1;			// Bit	28
+		u32 intercept_task_switch:1;	// Bit	29
+		u32 intercept_ferr_freeze:1;	// Bit	30
+		u32 intercept_shutdown:1;		// Bit	31
 	};
 	u32 value;
 }nvc_svm_instruction_intercept1,*nvc_svm_instruction_intercept1_p;
@@ -128,22 +128,22 @@ typedef union _nvc_svm_instruction_intercept2
 {
 	struct
 	{
-		u16 intercept_vmrun:1;
-		u16 intercept_vmmcall:1;
-		u16 intercept_vmload:1;
-		u16 intercept_vmsave:1;
-		u16 intercept_stgi:1;
-		u16 intercept_clgi:1;
-		u16 intercept_skinit:1;
-		u16 intercept_rdtscp:1;
-		u16 intercept_icebp:1;
-		u16 intercept_wbinvd:1;
-		u16 intercept_monitor:1;
-		u16 intercept_mwait:1;
-		u16 intercept_mwait_c:1;
-		u16 intercept_xsetbv:1;
-		u16 reserved1:1;
-		u16 intercept_post_efer_write:1;
+		u16 intercept_vmrun:1;				// Bit	0
+		u16 intercept_vmmcall:1;			// Bit	1
+		u16 intercept_vmload:1;				// Bit	2
+		u16 intercept_vmsave:1;				// Bit	3
+		u16 intercept_stgi:1;				// Bit	4
+		u16 intercept_clgi:1;				// Bit	5
+		u16 intercept_skinit:1;				// Bit	6
+		u16 intercept_rdtscp:1;				// Bit	7
+		u16 intercept_icebp:1;				// Bit	8
+		u16 intercept_wbinvd:1;				// Bit	9
+		u16 intercept_monitor:1;			// Bit	10
+		u16 intercept_mwait:1;				// Bit	11
+		u16 intercept_mwait_c:1;			// Bit	12
+		u16 intercept_xsetbv:1;				// Bit	13
+		u16 reserved1:1;					// Bit	14
+		u16 intercept_post_efer_write:1;	// Bit	15
 	};
 	u16 value;
 }nvc_svm_instruction_intercept2,*nvc_svm_instruction_intercept2_p;

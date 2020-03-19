@@ -14,6 +14,9 @@
 
 #include <nvdef.h>
 
+#define noir_svm_cpuid_std_submask	0x2080
+#define noir_svm_cpuid_ext_submask	0x20000000
+
 // Definition of vmmcall Codes
 #define noir_svm_callexit			1
 
@@ -51,6 +54,7 @@ typedef struct _noir_svm_cached_cpuid
 	void** hvm_leaf;	// 0x40000000-0x400000FF
 	void** ext_leaf;	// 0x80000000-0x800000FF
 	void** res_leaf;	// 0xC0000000-0xC00000FF
+	void* cache_base;
 	// Maximum Counts.
 	u32 max_leaf[4];
 }noir_svm_cached_cpuid,*noir_svm_cached_cpuid_p;
@@ -65,6 +69,7 @@ typedef struct _noir_svm_vcpu
 {
 	memory_descriptor vmcb;
 	memory_descriptor hsave;
+	memory_descriptor hvmcb;
 	void* hv_stack;
 	noir_svm_hvm_p relative_hvm;
 	u32 proc_id;
@@ -78,6 +83,7 @@ typedef struct _noir_svm_vcpu
 typedef struct _noir_svm_initial_stack
 {
 	u64 guest_vmcb_pa;
+	u64 host_vmcb_pa;
 	noir_svm_vcpu_p vcpu;
 	u32 proc_id;
 }noir_svm_initial_stack,*noir_svm_initial_stack_p;
@@ -89,3 +95,4 @@ bool nvc_svm_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 r
 void nvc_svm_teardown_cpuid_handler();
 bool nvc_svm_build_exit_handler();
 void nvc_svm_teardown_exit_handler();
+void nvc_svm_build_cpuid_cache_per_vcpu(noir_svm_vcpu_p vcpu);

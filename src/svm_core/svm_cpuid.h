@@ -14,6 +14,10 @@
 
 #include <nvdef.h>
 
+// This is AMD Specific
+#define noir_svm_std_cpuid_submask		0x00002080
+#define noir_svm_ext_cpuid_submask		0x20000000
+
 // Index of Standard Leaves
 #define std_max_num_vstr		0x0
 #define std_proc_feature		0x1
@@ -41,6 +45,9 @@
 #define ext_proc_topoinf		0x1E
 #define ext_mem_crypting		0x1F
 
+// Index of Hypervisor Leaves
+#define hvm_max_num_vstr		0x0
+
 typedef struct _noir_svm_cpuid_default
 {
 	u32 eax;
@@ -51,14 +58,15 @@ typedef struct _noir_svm_cpuid_default
 
 typedef struct _noir_svm_cpuid_max_num_vstr
 {
-	char* vendor_string;
 	u32 maximum;
+	char vendor_string[12];
 }noir_svm_cpuid_max_num_vstr,*noir_svm_cpuid_max_num_vstr_p;
 
 typedef struct _noir_svm_cpuid_svm_feature_id
 {
 	u32 rev_number;
 	u32 avail_asid;
+	u32 reserved;
 	u32 feature_id;
 }noir_svm_cpuid_svm_feature_id,*noir_svm_cpuid_svm_feature_id_p;
 

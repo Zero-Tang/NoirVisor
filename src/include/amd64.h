@@ -87,6 +87,8 @@
 // This is used for defining AMD64 architectural cpuid flags.
 #define amd64_cpuid_svm					2
 #define amd64_cpuid_svm_bit				0x4
+#define amd64_cpuid_hv_presence			31
+#define amd64_cpuid_hv_presence_bit		0x80000000
 
 // CPUID flags for SVM Features
 #define amd64_cpuid_npt					0

@@ -81,6 +81,7 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	// First, classify the leaf function.
 	u32 leaf_class=noir_cpuid_class(ia);
 	u32 leaf_func=noir_cpuid_index(ia);
+	nv_dprintf("CPUID instruction is intercepted! EAX=0x%X\t ECX=0x%X\n",ia,ic);
 	// Second, filter invalid leaves, and invoke these valid.
 	if(vcpu->cpuid_cache.max_leaf[leaf_class]>=leaf_func)
 		svm_cpuid_handlers[leaf_class][leaf_func](gpr_state,vcpu);	// Invoke if valid.
@@ -157,9 +158,6 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 			}
 #endif
 		}
-	}
-	if(!op_write)
-	{
 		*(u32*)&gpr_state->rax=val.low;
 		*(u32*)&gpr_state->rdx=val.high;
 	}
@@ -290,10 +288,9 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 	}
 }
 
-void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,u32 processor_id)
+void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	// Get Virtual CPU and the linear address of VMCB.
-	noir_svm_vcpu_p vcpu=&hvm_p->virtual_cpu[processor_id];
+	// Get the linear address of VMCB.
 	void* vmcb_va=vcpu->vmcb.virt;
 	// Read the Intercept Code.
 	i32 intercept_code=noir_svm_vmread32(vmcb_va,exit_code);
