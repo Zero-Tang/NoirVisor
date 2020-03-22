@@ -284,6 +284,7 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 		stack->proc_id=vcpu->proc_id;
 		stack->vcpu=vcpu;
 		noir_wrmsr(amd64_hsave_pa,vcpu->hsave.phys);
+		vcpu->enabled_feature|=noir_svm_cpuid_caching;
 		nvc_svm_build_cpuid_cache_per_vcpu(vcpu);
 		vcpu->status=nvc_svm_subvert_processor_a(stack);
 	}
@@ -345,14 +346,15 @@ bool static nvc_svm_alloc_cpuid_cache(noir_hypervisor_p hvm_p)
 	hvm_p->relative_hvm->std_leaftotal=++stda;
 	noir_cpuid(0x80000000,0,&exta,&extb,&extc,&extd);
 	hvm_p->relative_hvm->ext_leaftotal=++exta-0x80000000;
-	if(nvc_svm_build_cpuid_handler(stda,0,exta-0x80000000,0)==false)return false;
+	hvm_p->relative_hvm->hvm_leaftotal=2;
+	if(nvc_svm_build_cpuid_handler(hvm_p->relative_hvm->std_leaftotal,hvm_p->relative_hvm->hvm_leaftotal,hvm_p->relative_hvm->ext_leaftotal,0)==false)return false;
 	for(;i<hvm_p->cpu_count;cache=&hvm_p->virtual_cpu[++i].cpuid_cache)
 	{
 		u32 j;
 		ulong_ptr base;
 		cache->std_leaf=noir_alloc_nonpg_memory(hvm_p->relative_hvm->std_leaftotal*sizeof(void**));
 		if(cache->std_leaf==null)return false;
-		cache->hvm_leaf=noir_alloc_nonpg_memory(1*sizeof(void**));
+		cache->hvm_leaf=noir_alloc_nonpg_memory(hvm_p->relative_hvm->hvm_leaftotal*sizeof(void**));
 		if(cache->hvm_leaf==null)return false;
 		cache->ext_leaf=noir_alloc_nonpg_memory(hvm_p->relative_hvm->ext_leaftotal*sizeof(void**));
 		if(cache->ext_leaf==null)return false;
@@ -361,7 +363,7 @@ bool static nvc_svm_alloc_cpuid_cache(noir_hypervisor_p hvm_p)
 		// One Page should be sufficient. In case it becomes deficient, we will increase allocation.
 		base=(ulong_ptr)cache->cache_base;
 		cache->max_leaf[std_leaf_index]=hvm_p->relative_hvm->std_leaftotal;
-		cache->max_leaf[hvm_leaf_index]=1;
+		cache->max_leaf[hvm_leaf_index]=hvm_p->relative_hvm->hvm_leaftotal;
 		cache->max_leaf[ext_leaf_index]=hvm_p->relative_hvm->ext_leaftotal;
 		// Standard CPUID Leaf
 		for(j=0;j<cache->max_leaf[std_leaf_index];j++)
@@ -376,7 +378,7 @@ bool static nvc_svm_alloc_cpuid_cache(noir_hypervisor_p hvm_p)
 		for(j=0;j<cache->max_leaf[hvm_leaf_index];j++)
 		{
 			cache->hvm_leaf[j]=(void*)base;
-			base+=j<<4;
+			base+=16;
 		}
 		// Extended CPUID Leaf
 		for(j=0;j<cache->max_leaf[ext_leaf_index];j++)
@@ -393,6 +395,7 @@ bool static nvc_svm_alloc_cpuid_cache(noir_hypervisor_p hvm_p)
 			nv_dprintf("Allocation failed! One Page is insufficient for caching!\n");
 			return false;
 		}
+		nv_dprintf("CPUID cache starts at 0x%p\t ends at 0x%p\n",cache->cache_base,base);
 	}
 	return true;
 }

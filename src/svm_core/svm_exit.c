@@ -19,6 +19,7 @@
 #include <intrin.h>
 #include <amd64.h>
 #include <ci.h>
+#include "svm_cpuid.h"
 #include "svm_vmcb.h"
 #include "svm_npt.h"
 #include "svm_exit.h"
@@ -77,16 +78,57 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 {
 	u32 ia=(u32)gpr_state->rax;
 	u32 ic=(u32)gpr_state->rcx;
-	// Here, we implement the cpuid cache to improve performance on nested VM scenario.
 	// First, classify the leaf function.
 	u32 leaf_class=noir_cpuid_class(ia);
 	u32 leaf_func=noir_cpuid_index(ia);
 	nv_dprintf("CPUID instruction is intercepted! EAX=0x%X\t ECX=0x%X\n",ia,ic);
-	// Second, filter invalid leaves, and invoke these valid.
-	if(vcpu->cpuid_cache.max_leaf[leaf_class]>=leaf_func)
-		svm_cpuid_handlers[leaf_class][leaf_func](gpr_state,vcpu);	// Invoke if valid.
+	if(vcpu->enabled_feature & noir_svm_cpuid_caching)
+	{
+		// Here, we implement the cpuid cache to improve performance on nested VM scenario.
+		// Second, filter invalid leaves, and invoke these valid.
+		if(vcpu->cpuid_cache.max_leaf[leaf_class]>=leaf_func)
+			svm_cpuid_handlers[leaf_class][leaf_func](gpr_state,vcpu);	// Invoke if valid.
+		else
+			nvc_svm_reserved_cpuid_handler(gpr_state,vcpu);
+	}
 	else
-		nvc_svm_reserved_cpuid_handler(gpr_state,vcpu);
+	{
+		// We disabled caching, so use cpuid instruction.
+		noir_cpuid(ia,ic,(u32*)&gpr_state->rax,(u32*)&gpr_state->rbx,(u32*)&gpr_state->rcx,(u32*)&gpr_state->rdx);
+		switch(leaf_class)
+		{
+			case std_leaf_index:
+			{
+				if(leaf_func==std_proc_feature)
+					noir_bts(&(u32*)gpr_state->rcx,amd64_cpuid_hv_presence);
+				break;
+			}
+			case hvm_leaf_index:
+			{
+				if(leaf_func==hvm_max_num_vstr)
+				{
+					*(u32*)&gpr_state->rax=0x40000001;
+					*(u32*)&gpr_state->rbx='rioN';
+					*(u32*)&gpr_state->rcx='osiV';
+					*(u32*)&gpr_state->rdx='TZ r';
+				}
+				else if(leaf_func==hvm_interface_id)
+				{
+					*(u32*)&gpr_state->rax='0#vH';
+					*(u32*)&gpr_state->rbx=0;
+					*(u32*)&gpr_state->rcx=0;
+					*(u32*)&gpr_state->rdx=0;
+				}
+				break;
+			}
+			case ext_leaf_index:
+			{
+				if(leaf_func==ext_proc_feature)
+					noir_btr((u32*)&gpr_state->rcx,amd64_cpuid_svm);
+				break;
+			}
+		}
+	}
 	// Finally, advance the instruction pointer.
 	noir_svm_advance_rip(vcpu->vmcb.virt);
 }

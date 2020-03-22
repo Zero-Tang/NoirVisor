@@ -26,6 +26,7 @@
 #define noir_svm_flush_by_asid		4		// Bit 2
 #define noir_svm_virtual_gif		8		// Bit 3
 #define noir_svm_virtualized_vmls	16		// Bit 4
+#define noir_svm_cpuid_caching		32		// Bit 5
 
 typedef struct _memory_descriptor
 {
@@ -42,6 +43,7 @@ typedef struct _noir_svm_hvm
 	void* primary_nptm;
 	void* secondary_nptm;
 	u32 std_leaftotal;
+	u32 hvm_leaftotal;
 	u32 ext_leaftotal;
 }noir_svm_hvm,*noir_svm_hvm_p;
 

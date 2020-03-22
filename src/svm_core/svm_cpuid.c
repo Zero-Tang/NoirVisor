@@ -19,6 +19,7 @@
 #include <intrin.h>
 #include <amd64.h>
 #include "svm_vmcb.h"
+#include "svm_exit.h"
 #include "svm_cpuid.h"
 
 /*
@@ -59,6 +60,9 @@ void nvc_svm_build_cpuid_cache_per_vcpu(noir_svm_vcpu_p vcpu)
 	// We indicate hypervisor presense here.
 	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[std_proc_feature];
 	noir_bts(&info->ecx,amd64_cpuid_hv_presence);
+	// Function leaf 0x7 - Structured Extended Feature Identifiers
+	// There is only one subleaf in this function leaf.
+
 	// Function leaf 0xD - Processor Extended State Enumeration
 	// There are multiple subfunctions in this leaf.
 	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[std_pestate_enum];
@@ -67,22 +71,26 @@ void nvc_svm_build_cpuid_cache_per_vcpu(noir_svm_vcpu_p vcpu)
 	noir_cpuid(std_pestate_enum,62,&info[3].eax,&info[3].ebx,&info[3].ecx,&info[3].edx);	// Sub-leaf 62
 	// Function leaf 0x40000000 - Maximum Hypervisor Function Number and Vendor String
 	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.hvm_leaf[hvm_max_num_vstr];
-	info->eax=0;		// We have this leaf only.
+	info->eax=0x40000001;		// Indicate the highest function leaf.
 	// Vendor String="NoirVisor ZT"
 	info->ebx='rioN';
 	info->ecx='osiV';
 	info->edx='TZ r';
+	// Function leaf 0x40000001 - Hypervisor Vendor-Neutral Interface Identification
+	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.hvm_leaf[hvm_interface_id];
+	info->eax='0#vH';	// Hypervisor Interface Signature - Indicate Non-Conformance to Microsoft TLFS
+	info->ebx=info->ecx=info->edx=0;		// They are reserved values
 	// Function leaf 0x80000001 - Extended Processor and Processor Feature Identifiers
 	// By now, we might have to indicate no support to nested virtualization.
 	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.ext_leaf[ext_proc_feature];
 	noir_btr(&info->ecx,amd64_cpuid_svm);
 	// Function leaf 0x8000000A - SVM Features
-	// Erase some features that we don't support.
+	// Erase some features that we don't have algorithms to support.
 	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.ext_leaf[ext_svm_features];
 	info->ebx--;		// Decrement available ASID by 1.
 	noir_btr(&info->edx,amd64_cpuid_npt);	// NoirVisor does not have an algorithm to it.
 	// Function leaf 0x8000001D - Cache Topology Information
-	// This is variable count of subfunctions.
+	// This leaf includes variable count of subfunctions.
 	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.ext_leaf[ext_cache_topinf];
 	for(i=1;(info[i-1].eax & 0x1f)!=0;i++)
 	{
@@ -122,6 +130,11 @@ void static fastcall nvc_svm_default_cpuid_handler(noir_gpr_state_p gpr_state,no
 			cache=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[leaf_index];
 			break;
 		}
+		case hvm_leaf_index:
+		{
+			cache=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.hvm_leaf[leaf_index];
+			break;
+		}
 		case ext_leaf_index:
 		{
 			cache=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.ext_leaf[leaf_index];
@@ -129,7 +142,9 @@ void static fastcall nvc_svm_default_cpuid_handler(noir_gpr_state_p gpr_state,no
 		}
 		default:
 		{
+			// In principle, this branch is impossible to reach.
 			cache=null;
+			noir_int3();
 			break;
 		}
 	}
@@ -159,6 +174,37 @@ void static fastcall nvc_svm_cpuid_std_vendor_string(noir_gpr_state_p gpr_state,
 	*(u32*)&gpr_state->rdx=*(u32*)&cache->vendor_string[4];
 }
 
+// Function Leaf: 0x00000007 - Structured Extended Feature Identifiers
+// This leaf has multiple subleaves, so we have to make special treatments during caching.
+void static fastcall nvc_svm_cpuid_std_struct_extid(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	noir_svm_cpuid_default_p cache=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[std_struct_extid];
+	*(u32*)&gpr_state->rax=cache->eax;
+	*(u32*)&gpr_state->rbx=cache->ebx;
+	*(u32*)&gpr_state->rcx=cache->ecx;
+	*(u32*)&gpr_state->rdx=cache->edx;
+}
+
+// Function Leaf: 0x0000000D - Processor Extended State Enumeration
+// This leaf has multiple subleaves, so we have to make special treatments during caching.
+void static fastcall nvc_svm_cpuid_std_pestate_enum(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	noir_svm_cpuid_default_p cache=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[std_pestate_enum];
+	u32 subleaf=(u32)gpr_state->rcx;
+	// We need to adjust index for compacted cache array.
+	if(subleaf>2)
+	{
+		if(subleaf==62)
+			subleaf=3;		// SubLeaf=62 is cached to index=3
+		else
+			subleaf=4;		// index=4 has zeroed data.
+	}
+	*(u32*)&gpr_state->rax=cache[subleaf].eax;
+	*(u32*)&gpr_state->rbx=cache[subleaf].ebx;
+	*(u32*)&gpr_state->rcx=cache[subleaf].ecx;
+	*(u32*)&gpr_state->rdx=cache[subleaf].edx;
+}
+
 /*
   Hypervisor Leaf Functions:
 
@@ -167,18 +213,6 @@ void static fastcall nvc_svm_cpuid_std_vendor_string(noir_gpr_state_p gpr_state,
   to conform the Microsoft Hypervisor TLFS. However, NoirVisor,
   by now, is not in conformation.
 */
-
-// Function Leaf: 0x40000000 - Maxinum Number of Leaves and Vendor String
-void static fastcall nvc_svm_cpuid_hvm_vendor_string(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
-{
-	noir_svm_cpuid_max_num_vstr_p cache=(noir_svm_cpuid_max_num_vstr_p)vcpu->cpuid_cache.hvm_leaf[hvm_max_num_vstr];
-	// EAX - Maximum Number of CPUID
-	*(u32*)&gpr_state->rax=cache->maximum;
-	// EBX-ECX-EDX -> "NoirVisor ZT" by default
-	*(u32*)&gpr_state->rbx=*(u32*)&cache->vendor_string[0];
-	*(u32*)&gpr_state->rcx=*(u32*)&cache->vendor_string[4];
-	*(u32*)&gpr_state->rdx=*(u32*)&cache->vendor_string[8];
-}
 
 /*
   Extended Leaf Functions:
@@ -247,6 +281,30 @@ void static fastcall nvc_svm_cpuid_ext_svm_feature_id(noir_gpr_state_p gpr_state
 	*(u32*)&gpr_state->rdx=cache->feature_id;
 }
 
+// Function Leaf: 0x8000001D - Cache Topology Information
+// This leaf has multiple subleaves, so we have to make special treatments during caching.
+void static fastcall nvc_svm_cpuid_ext_cache_topinf(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	noir_svm_cpuid_default_p cache=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.ext_leaf[ext_cache_topinf];
+	u32 subleaf=(u32)gpr_state->rcx;
+	if(subleaf>0 && subleaf<8)
+	{
+		if(cache[subleaf-1].eax & 0x1f)
+		{
+			// This subleaf is valid.
+			*(u32*)&gpr_state->rax=cache[subleaf].eax;
+			*(u32*)&gpr_state->rbx=cache[subleaf].ebx;
+			*(u32*)&gpr_state->rcx=cache[subleaf].ecx;
+			*(u32*)&gpr_state->rdx=cache[subleaf].edx;
+		}
+		else
+		{
+			// This subleaf is invalid. As defined by AMD64, raise #UD.
+			noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
+		}
+	}
+}
+
 bool nvc_svm_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 res_count)
 {
 	svm_cpuid_handlers=noir_alloc_nonpg_memory(sizeof(void*)*4);
@@ -263,8 +321,10 @@ bool nvc_svm_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 r
 			noir_stosp(svm_cpuid_handlers[hvm_leaf_index],(ulong_ptr)nvc_svm_default_cpuid_handler,hvm_count);
 			noir_stosp(svm_cpuid_handlers[ext_leaf_index],(ulong_ptr)nvc_svm_default_cpuid_handler,ext_count);
 			// Default Handlers are set. Setup the customized handlers here.
+			svm_cpuid_handlers[std_leaf_index][std_struct_extid]=nvc_svm_cpuid_std_struct_extid;
+			svm_cpuid_handlers[std_leaf_index][std_pestate_enum]=nvc_svm_cpuid_std_pestate_enum;
 			svm_cpuid_handlers[ext_leaf_index][ext_svm_features]=nvc_svm_cpuid_ext_svm_feature_id;
-			svm_cpuid_handlers[hvm_leaf_index][hvm_max_num_vstr]=nvc_svm_cpuid_hvm_vendor_string;
+			svm_cpuid_handlers[ext_leaf_index][ext_cache_topinf]=nvc_svm_cpuid_ext_cache_topinf;
 			return true;
 		}
 	}

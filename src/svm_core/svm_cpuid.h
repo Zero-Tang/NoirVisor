@@ -47,6 +47,7 @@
 
 // Index of Hypervisor Leaves
 #define hvm_max_num_vstr		0x0
+#define hvm_interface_id		0x1
 
 typedef struct _noir_svm_cpuid_default
 {
@@ -76,4 +77,6 @@ typedef void (fastcall *noir_svm_cpuid_exit_handler)
  noir_svm_vcpu_p vcpu
 );
 
+#if defined(_svm_cpuid)
 noir_svm_cpuid_exit_handler** svm_cpuid_handlers=null;
+#endif

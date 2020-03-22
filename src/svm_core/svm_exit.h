@@ -77,6 +77,11 @@
 #define noir_svm_maximum_code1		0x100
 #define noir_svm_maximum_code2		0x4
 
+#define amd64_external_virtual_interrupt	0
+#define amd64_non_maskable_interrupt		2
+#define amd64_fault_trap_exception			3
+#define amd64_software_interrupt			4
+
 typedef void (fastcall *noir_svm_exit_handler_routine)
 (
  noir_gpr_state_p gpr_state,
@@ -89,11 +94,39 @@ typedef void (fastcall *noir_svm_cpuid_exit_handler)
  noir_svm_vcpu_p vcpu
 );
 
+typedef union _amd64_event_injection
+{
+	struct
+	{
+		u64 vector:8;		// Bits	0-7
+		u64 type:3;			// Bits	8-10
+		u64 error_valid:1;	// Bit	11
+		u64 reserved:19;	// Bits	12-30
+		u64 valid:1;		// Bit	31
+		u64 error_code:32;	// Bits	32-63
+	};
+	u64 value;
+}amd64_event_injection,*amd64_event_injection_p;
+
+#if defined(_svm_exit)
 noir_svm_exit_handler_routine** svm_exit_handlers=null;
 extern noir_svm_cpuid_exit_handler** svm_cpuid_handlers;
+#endif
 
 void inline noir_svm_advance_rip(void* vmcb)
 {
 	ulong_ptr nrip=noir_svm_vmread(vmcb,next_rip);
 	if(nrip)noir_svm_vmwrite(vmcb,guest_rip,nrip);
+}
+
+void inline noir_svm_inject_event(void* vmcb,u8 vector,u8 type,u8 ev,u8 v,u32 ec)
+{
+	amd64_event_injection event_field;
+	event_field.vector=vector;
+	event_field.type=type;
+	event_field.error_valid=ev;
+	event_field.reserved=0;
+	event_field.valid=v;
+	event_field.error_code=ec;
+	noir_svm_vmwrite64(vmcb,event_injection,event_field.value);
 }

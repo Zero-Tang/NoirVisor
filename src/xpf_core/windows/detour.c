@@ -89,7 +89,6 @@ PVOID NoirLocateExportedProcedureByName(IN PVOID ImageBase,IN PSTR ProcedureName
 						Low=Mid+1;
 					else
 						return (PVOID)((ULONG_PTR)ImageBase+FuncRva[OrdRva[Mid]]);
-					NoirDebugPrint("Compared %s, Not Match!\n",CurrentName);
 				}
 			}
 		}
