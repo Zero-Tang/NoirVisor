@@ -27,8 +27,8 @@
 #define via_processor			2		// VIA Processor (Intel VT-x)
 #define zhaoxin_processor		3		// Zhaoxin Processor (Intel VT-x)
 #define hygon_processor			4		// Hygon Processor (AMD-V)
-#define cyrix_processor			5		// Cyrix Processor (N/A)
-#define centaur_processor		6		// Centaur Processor (N/A)
+#define centaur_processor		5		// Centaur Processor (Intel VT-x)
+#define cyrix_processor			6		// Cyrix Processor (N/A)
 #define trmeta_processor		7		// Transmeta Processor (N/A)
 #define nexgen_processor		8		// NexGen Processor (N/A)
 #define sis_processor			9		// SiS Processor (N/A)
@@ -117,7 +117,7 @@ char* vendor_string_list[known_vendor_strings]=
 	" Shanghai ",		// Zhaoxin
 	"AMDisbetter!",		// Early ES of AMD-K5
 	"AuthenticAMD",		// AMD
-	"CentaurHauls",		// Centaur (Some VIA)
+	"CentaurHauls",		// Centaur (includes Early VIA and Zhaoxin)
 	"CyrixInstead",		// Cyrix
 	"GenuineIntel",		// Intel
 	"GenuineTMx86",		// Transmeta

@@ -42,11 +42,13 @@ However, due to complexity of sub-leaf for cpuid instruction, caching architectu
 # Critical Hypervisor Protection
 This feature is an essential security feature. I found this feature missing in most open-source light-weight hypervisor project. The key is that VMCS and other essential pages are not protected through Intel EPT even if they enabled Intel EPT. It should be pointed out that a malware can be aware of the format of VMCS of a specific processor. In this regard, malware may corrupt the VMCS through memory access instruction.
 
+# Real-Time Code Integrity
+Real-Time CI is now implemented by Intel EPT.
+
 # Future Feature (Roadmap)
 In future, NoirVisor has following plans:
 
 - Implement VMX-Nesting.
-- Implement EPT-based Code Integrity Enforcement.
 
 # VMX-Nesting Algorithm (Incomplete Version)
 To nest another working hypervisor is the highest focus of Project NoirVisor. However, starting from the repository creation, this goal has not been satisfied yet. Here, I will state down the algorithm and it will be updated in future as problems arises. <br>

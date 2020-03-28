@@ -31,9 +31,9 @@ echo Compiling Core Engine of AMD-V...
 
 %ddkpath%\amd64\cl.exe .\src\svm_core\svm_exit.c /I".\src\include" /Zi /nologo /W3 /WX /Oi /O2 /favor:AMD64 /D"_msvc" /D"_amd64" /D"_svm_core" /D"_svm_exit" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\svm_exit.cod" /Fo"%objpath%\svm_exit.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gy /Gr /TC /c /errorReport:queue
 
-%ddkpath%\amd64\cl.exe .\src\svm_core\svm_cpuid.c /I".\src\include" /Zi /nologo /W3 /WX /Oi /O2 /favor:AMD64 /D"_msvc" /D"_amd64" /D"_svm_core" /D"_svm_exit" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\svm_cpuid.cod" /Fo"%objpath%\svm_cpuid.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gy /Gr /TC /c /errorReport:queue
+%ddkpath%\amd64\cl.exe .\src\svm_core\svm_cpuid.c /I".\src\include" /Zi /nologo /W3 /WX /Oi /O2 /favor:AMD64 /D"_msvc" /D"_amd64" /D"_svm_core" /D"_svm_cpuid" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\svm_cpuid.cod" /Fo"%objpath%\svm_cpuid.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gy /Gr /TC /c /errorReport:queue
 
-%ddkpath%\amd64\cl.exe .\src\svm_core\svm_npt.c /I".\src\include" /Zi /nologo /W3 /WX /Oi /O2 /favor:AMD64 /D"_msvc" /D"_amd64" /D"_svm_core" /D"_svm_exit" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\svm_npt.cod" /Fo"%objpath%\svm_npt.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gy /Gr /TC /c /errorReport:queue
+%ddkpath%\amd64\cl.exe .\src\svm_core\svm_npt.c /I".\src\include" /Zi /nologo /W3 /WX /Oi /O2 /favor:AMD64 /D"_msvc" /D"_amd64" /D"_svm_core" /D"_svm_npt" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\svm_npt.cod" /Fo"%objpath%\svm_npt.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gy /Gr /TC /c /errorReport:queue
 
 echo Compiling Core of Cross-Platform Framework (XPF)...
 %ddkpath%\amd64\cl.exe .\src\xpf_core\windows\nvsys.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /O2 /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /Zc:forScope /FAcs /Fa"%objpath%\nvsys.cod" /Fo"%objpath%\nvsys.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gy /Gr /TC /c /errorReport:queue

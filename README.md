@@ -15,9 +15,11 @@ Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hyg
 - Processors produced by Shanghai Zhaoxin Semiconductor Co, Ltd. may support Intel VT-x.
 - Processors produced by Chengdu Hygon Integrated Circuit Design Co, Ltd. may support AMD-V.
 
+Note that early Zhaoxin and VIA use Centaur as vendor.
+
 # Nested Virtualization
 NoirVisor is developed in highest focus on nested virtualization. It is not currently supported, but will be developed in future. <br>
-Algorithm regarding the Nested Virtualization was stated down in the readme files in VT-Core directory.
+Algorithm regarding the Nested Virtualization was stated down in the readme files in both VT-Core and SVM-Core directories.
 
 # Announcement to all contributors
 NoirVisor is coded in the C programming language and the assembly since it is procedure-oriented designed. <br>
@@ -59,11 +61,10 @@ Currently, NoirVisor supports the Windows Operating System newer than or same as
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has six future development plans: <br>
+Project NoirVisor has five future development plans: <br>
 - Remaster CPUID-caching architecture with a flexible design for Intel VT-x. <br>
 - Develop Nested Paging with Stealth Hook on SVM-Engine for NoirVisor. <br>
 - Develop Nested Virtualization. <br>
-- Develop Hypervisor-Platform compatible hypervisor for Windows 10 Redstone. <br>
 - Port NoirVisor to 32-bit Windows platform. <br>
 - Port NoirVisor to UEFI and corresponding layered hypervisor.
 

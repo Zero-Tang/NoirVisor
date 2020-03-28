@@ -115,6 +115,8 @@ noir_status nvc_build_hypervisor()
 				goto vmx_subversion;
 			case hygon_processor:
 				goto svm_subversion;
+			case centaur_processor:
+				goto vmx_subversion;
 			default:
 			{
 				if(hvm_p->cpu_manuf==unknown_processor)
@@ -166,6 +168,8 @@ void nvc_teardown_hypervisor()
 				goto vmx_restoration;
 			case hygon_processor:
 				goto svm_restoration;
+			case centaur_processor:
+				goto vmx_restoration;
 			default:
 			{
 				nv_dprintf("Unknown Processor!\n");

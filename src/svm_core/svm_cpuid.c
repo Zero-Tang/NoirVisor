@@ -97,6 +97,8 @@ void nvc_svm_build_cpuid_cache_per_vcpu(noir_svm_vcpu_p vcpu)
 		if(i==8)
 		{
 			nv_panicf("Overflow in Cache Topology CPUID Leaf!\n");
+			// If this breakpoint is triggered, we should increase length of allocation for this subleaf.
+			noir_int3();
 			break;
 		}
 		noir_cpuid(ext_cache_topinf+0x80000000,i,&info[i].eax,&info[i].ebx,&info[i].ecx,&info[i].edx);
@@ -301,6 +303,18 @@ void static fastcall nvc_svm_cpuid_ext_cache_topinf(noir_gpr_state_p gpr_state,n
 		{
 			// This subleaf is invalid. As defined by AMD64, raise #UD.
 			noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
+		}
+	}
+	else
+	{
+		if(subleaf>8)
+			noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
+		else
+		{
+			*(u32*)&gpr_state->rax=cache->eax;
+			*(u32*)&gpr_state->rbx=cache->ebx;
+			*(u32*)&gpr_state->rcx=cache->ecx;
+			*(u32*)&gpr_state->rdx=cache->edx;
 		}
 	}
 }

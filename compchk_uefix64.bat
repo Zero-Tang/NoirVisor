@@ -25,7 +25,7 @@ clang-cl .\src\xpf_core\uefi\format.c /I"%edkpath%\MdePkg\Include" /I"%edkpath%\
 clang-cl .\src\xpf_core\uefi\string.c /I"%edkpath%\MdePkg\Include" /I"%edkpath%\MdePkg\Include\X64" /I"%edkpath%\MdePkg\Include\Protocol" /I".\src\include" /Zi /nologo /W3 /WX /Od /Oy- /D"_efi_boot" /Fa"%objpath%\string.cod" /Fo"%objpath%\string.obj" /Fd"%objpath%\vc140.pdb" /GS- /Gr /TC /c /errorReport:queue -Wno-incompatible-pointer-types
 
 echo ============Start Linking============
-lld-link "%objpath%\efimain.obj" "%objpath%\format.obj" "%objpath%\string.obj" /NODEFAULTLIB /NOLOGO /OUT:"%binpath%\bootx64.efi" /SUBSYSTEM:EFI_APPLICATION /ENTRY:"NoirEfiEntry" /Machine:X64 /ERRORREPORT:QUEUE
+lld-link "%objpath%\efimain.obj" "%objpath%\format.obj" "%objpath%\string.obj" /NODEFAULTLIB /NOLOGO /OUT:"%binpath%\bootx64.efi" /SUBSYSTEM:EFI_RUNTIME_DRIVER /ENTRY:"NoirEfiEntry" /Machine:X64 /ERRORREPORT:QUEUE
 
 echo Completed!
 pause.
