@@ -16,7 +16,7 @@
 #include <nvbdk.h>
 #include <nvstatus.h>
 #include <noirhvm.h>
-#include <intrin.h>
+#include <nv_intrin.h>
 
 u32 noir_visor_version()
 {

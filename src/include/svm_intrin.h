@@ -25,7 +25,7 @@ u32 inline svm_msrpm_bit(u8 bitmap,u32 index,u8 operation)
 	return 0;
 }
 
-#if defined(_msvc)
+#if defined(_msvc) || defined(_llvm)
 #define noir_svm_vmrun		__svm_vmrun
 #define noir_svm_vmload		__svm_vmload
 #define noir_svm_vmsave		__svm_vmsave

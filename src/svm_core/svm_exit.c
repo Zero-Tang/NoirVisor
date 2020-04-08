@@ -16,7 +16,7 @@
 #include <nvbdk.h>
 #include <noirhvm.h>
 #include <svm_intrin.h>
-#include <intrin.h>
+#include <nv_intrin.h>
 #include <amd64.h>
 #include <ci.h>
 #include "svm_cpuid.h"
@@ -100,7 +100,7 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 			case std_leaf_index:
 			{
 				if(leaf_func==std_proc_feature)
-					noir_bts(&(u32*)gpr_state->rcx,amd64_cpuid_hv_presence);
+					noir_bts((u32*)&gpr_state->rcx,amd64_cpuid_hv_presence);
 				break;
 			}
 			case hvm_leaf_index:
@@ -222,6 +222,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 	ulong_ptr gsp=noir_svm_vmread(vcpu->vmcb.virt,guest_rsp);
 	ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
 	ulong_ptr gcr3=noir_svm_vmread(vcpu->vmcb.virt,guest_cr3);
+	unref_var(context);
 	switch(vmmcall_func)
 	{
 		case noir_svm_callexit:

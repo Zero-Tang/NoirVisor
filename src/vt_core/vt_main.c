@@ -17,7 +17,7 @@
 #include <nvbdk.h>
 #include <vt_intrin.h>
 #include <noirhvm.h>
-#include <intrin.h>
+#include <nv_intrin.h>
 #include <ia32.h>
 #include "vt_vmcs.h"
 #include "vt_def.h"
@@ -157,6 +157,7 @@ void static nvc_vt_setup_msr_auto_list(noir_hypervisor_p hvm)
 	ia32_vmx_msr_auto_p entry_load=(ia32_vmx_msr_auto_p)((ulong_ptr)hvm->relative_hvm->msr_auto_list.virt+0);
 	ia32_vmx_msr_auto_p exit_load=(ia32_vmx_msr_auto_p)((ulong_ptr)hvm->relative_hvm->msr_auto_list.virt+0x400);
 	ia32_vmx_msr_auto_p exit_store=(ia32_vmx_msr_auto_p)((ulong_ptr)hvm->relative_hvm->msr_auto_list.virt+0x800);
+	unref_var(exit_store);
 	// Setup custom MSR-Auto list.
 #if defined(_amd64)
 	entry_load[0].index=ia32_lstar;
@@ -172,6 +173,8 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 	void* read_bitmap_high=(void*)((ulong_ptr)hvm->relative_hvm->msr_bitmap.virt+0x400);
 	void* write_bitmap_low=(void*)((ulong_ptr)hvm->relative_hvm->msr_bitmap.virt+0x800);
 	void* write_bitmap_high=(void*)((ulong_ptr)hvm->relative_hvm->msr_bitmap.virt+0xC00);
+	unref_var(write_bitmap_low);
+	unref_var(write_bitmap_high);
 	// Setup custom MSR-Interception.
 #if defined(_amd64)
 	noir_set_bitmap(read_bitmap_high,ia32_lstar-0xC0000000);	// Hide MSR Hook

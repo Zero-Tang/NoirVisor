@@ -15,7 +15,7 @@
 #include <nvdef.h>
 #include <nvbdk.h>
 #include <noirhvm.h>
-#include <intrin.h>
+#include <nv_intrin.h>
 #include <ia32.h>
 #include <amd64.h>
 #include <ci.h>

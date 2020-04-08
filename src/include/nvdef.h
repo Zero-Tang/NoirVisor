@@ -12,7 +12,7 @@
   File Location: /include/nvdef.h
 */
 
-#if defined(_msvc)
+#if defined(_msvc) || defined(_llvm)
 #pragma once
 
 typedef unsigned __int8		u8;
@@ -48,7 +48,7 @@ typedef volatile i64	i64v;
 typedef volatile ulong_ptr	vulong_ptr;
 typedef volatile long_ptr	vlong_ptr;
 
-#if defined(_msvc)
+#if defined(_msvc) || defined(_llvm)
 typedef enum
 {
 	false=0,

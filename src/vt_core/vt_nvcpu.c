@@ -17,7 +17,7 @@
 #include <nvbdk.h>
 #include <vt_intrin.h>
 #include <noirhvm.h>
-#include <intrin.h>
+#include <nv_intrin.h>
 #include <ia32.h>
 #include "vt_vmcs.h"
 #include "vt_def.h"
@@ -260,6 +260,7 @@ void noir_vt_vmfail(noir_vt_nested_vcpu_p nested_vcpu,u32 message)
 	if(nested_vcpu->vmcs_c.phys!=0xffffffffffffffff)
 	{
 		noir_vt_nested_vmcs_header_p header=(noir_vt_nested_vmcs_header_p)nested_vcpu->vmcs_c.virt;
+		unref_var(header);
 		noir_vt_nested_vmwrite(nested_vcpu->vmcs_c.virt,vm_instruction_error,message);
 		noir_vt_vmfail_valid();
 		return;

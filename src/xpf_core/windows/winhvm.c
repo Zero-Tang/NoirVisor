@@ -18,21 +18,6 @@
 #include <ntstrsafe.h>
 #include "winhvm.h"
 
-NTSTATUS static NoirQueryRegistryRoutine(IN PWSTR ValueName,IN ULONG ValueType,IN PVOID ValueData,IN ULONG ValueLength,IN PVOID Context,IN PVOID EntryContext)
-{
-	if(ValueType==REG_SZ)
-	{
-		PWSTR* Names=(PWSTR*)Context;
-		if(wcscmp(ValueName,L"ProductName")==0)
-			RtlCopyMemory(Names[0],ValueData,ValueLength);
-		else if(wcscmp(ValueName,L"CSDVersion")==0)
-			RtlCopyMemory(Names[1],ValueData,ValueLength);
-		else if(wcscmp(ValueName,L"CurrentBuild")==0)
-			RtlCopyMemory(Names[2],ValueData,ValueLength);
-	}
-	return STATUS_SUCCESS;
-}
-
 NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength)
 {
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;

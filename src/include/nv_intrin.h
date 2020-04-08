@@ -9,12 +9,16 @@
   without any warranty (no matter implied warranty or merchantability
   or fitness for a particular purpose, etc.).
 
-  File Location: /include/intrin.h
+  File Location: /include/nv_intrin.h
 */
 
 #include <nvdef.h>
 
-#if defined(_msvc)
+#ifdef _llvm
+#include <intrin.h>
+#endif
+
+#if defined(_msvc) || defined(_llvm)
 // bit-test instructions
 #define noir_bt		_bittest
 #define noir_btc	_bittestandcomplement
@@ -110,14 +114,18 @@
 #define noir_locked_cmpxchg		_InterlockedCompareExchange
 #endif
 
+// Unreference Parameters/Variables
+#define unref_var(x)	x=x
+#define unref_param(x)	x=x
+
 // The rest are done by inline functions.
 
 // Simplify the cpuid instruction invoking.
 void inline noir_cpuid(u32 ia,u32 ic,u32* a,u32* b,u32* c,u32* d)
 {
 	u32 info[4];
-#if defined(_msvc)
-	__cpuidex(info,ia,ic);
+#if defined(_msvc) || defined(_llvm)
+	__cpuidex((int*)info,ia,ic);
 #endif
 	if(a)*a=info[0];
 	if(b)*b=info[1];

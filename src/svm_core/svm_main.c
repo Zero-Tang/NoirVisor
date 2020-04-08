@@ -17,7 +17,7 @@
 #include <noirhvm.h>
 #include <nvstatus.h>
 #include <svm_intrin.h>
-#include <intrin.h>
+#include <nv_intrin.h>
 #include <amd64.h>
 #include "svm_vmcb.h"
 #include "svm_def.h"
@@ -26,25 +26,18 @@
 bool nvc_is_svm_supported()
 {
 	u32 a,b,c,d;
-	char vs[13];
-	noir_cpuid(0x80000000,0,&a,(u32*)&vs[0],(u32*)&vs[8],(u32*)&vs[4]);vs[12]=0;
-	// Make sure that processor is produced by AMD and
-	// maximum supported cpuid leaf is higher than 0x8000000A
-	if(strcmp(vs,"AuthenticAMD")==0 && a>=0x8000000A)
+	noir_cpuid(0x80000001,0,null,null,&c,null);
+	if(noir_bt(&c,amd64_cpuid_svm))
 	{
-		noir_cpuid(0x80000001,0,null,null,&c,null);
-		if(noir_bt(&c,amd64_cpuid_svm))
-		{
-			bool basic_supported=true;
-			noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
-			// At least one ASID should be available.
-			basic_supported&=(b>0);
-			// Decode Assists is the required feature.
-			basic_supported&=noir_bt(&d,amd64_cpuid_decoder);
-			// Next RIP Saving is the required feature.
-			basic_supported&=noir_bt(&d,amd64_cpuid_nrips);
-			return basic_supported;
-		}
+		bool basic_supported=true;
+		noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
+		// At least one ASID should be available.
+		basic_supported&=(b>0);
+		// Decode Assists is the required feature.
+		basic_supported&=noir_bt(&d,amd64_cpuid_decoder);
+		// Next RIP Saving is the required feature.
+		basic_supported&=noir_bt(&d,amd64_cpuid_nrips);
+		return basic_supported;
 	}
 	return false;
 }
@@ -119,6 +112,7 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	void* bitmap1=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0);
 	void* bitmap2=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0x800);
 	void* bitmap3=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0x1000);
+	unref_var(bitmap1);
 	// Setup basic MSR-Intercepts that may interfere with SVM normal operations.
 	// This is also for nested virtualization.
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,0));
@@ -488,7 +482,6 @@ void nvc_svm_restore_system(noir_hypervisor_p hvm_p)
 {
 	if(hvm_p->virtual_cpu)
 	{
-		u32 i=0;
 		noir_generic_call(nvc_svm_restore_processor_thunk,hvm_p->virtual_cpu);
 		nvc_svm_cleanup(hvm_p);
 		nvc_svm_teardown_cpuid_handler();

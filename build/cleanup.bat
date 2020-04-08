@@ -9,7 +9,7 @@ echo Warning: All compiled binaries, including intermediate files, will be delet
 pause.
 
 echo Performing cleanup...
-del .\bin /q /s
+del ..\bin /q /s
 
 echo Cleanup Completed!
 pause.

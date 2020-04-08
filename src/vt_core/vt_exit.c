@@ -17,7 +17,7 @@
 #include <nvbdk.h>
 #include <vt_intrin.h>
 #include <noirhvm.h>
-#include <intrin.h>
+#include <nv_intrin.h>
 #include <ia32.h>
 #include "vt_vmcs.h"
 #include "vt_exit.h"
@@ -283,7 +283,7 @@ ulong_ptr static nvc_vt_parse_vmx_pointer(noir_gpr_state_p gpr_state)
 	// Load Instruction Information.
 	noir_vt_vmread(vmexit_instruction_information,(u32*)&info);
 	// Get Displacement
-	noir_vt_vmread(vmexit_qualification,&displacement);
+	noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&displacement);
 	// Load Base Register.
 	pointer=gpr[info.f5.base];
 	// Load Index Register.

@@ -128,7 +128,7 @@ AMD64 architecture manual specifies Nested Virtualization Acceleration. To impro
 Here, I re-emphasize framework of how nested virtualization works:
 
 - VM-Entry is moving L1 to L2. More specifically, it is moving from L1 to L0, then to L2.
-- VM-Exit is moving L2 to L1. More specifically, it is moving from L2 to L1, then to L1.
+- VM-Exit is moving L2 to L1. More specifically, it is moving from L2 to L0, then to L1.
 
 However, VMCB constructed by Guest cannot be directly passed to vmrun instruction. Hence, we define two types of VMCB: L2C-VMCB and L2T-VMCB:
 

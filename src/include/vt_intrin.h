@@ -39,7 +39,7 @@ typedef struct _invvpid_descriptor
 	u64 linear_address;
 }invvpid_descriptor,*invvpid_descriptor_p;
 
-#if defined(_msvc)
+#if defined(_msvc) || defined(_llvm)
 //Following intrinsics are defined inside MSVC compiler for x64.
 #if defined(_amd64)
 #define noir_vt_vmxon		__vmx_on

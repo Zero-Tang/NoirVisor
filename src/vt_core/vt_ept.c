@@ -17,7 +17,7 @@
 #include <nvbdk.h>
 #include <vt_intrin.h>
 #include <noirhvm.h>
-#include <intrin.h>
+#include <nv_intrin.h>
 #include <ia32.h>
 #include <ci.h>
 #include "vt_vmcs.h"

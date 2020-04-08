@@ -17,7 +17,7 @@
 #include <noirhvm.h>
 #include <nvstatus.h>
 #include <svm_intrin.h>
-#include <intrin.h>
+#include <nv_intrin.h>
 #include <amd64.h>
 #include <ci.h>
 #include "svm_vmcb.h"
