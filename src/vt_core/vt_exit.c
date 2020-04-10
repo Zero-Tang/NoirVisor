@@ -21,6 +21,7 @@
 #include <ia32.h>
 #include "vt_vmcs.h"
 #include "vt_exit.h"
+#include "vt_cpuid.h"
 #include "vt_def.h"
 #include "vt_ept.h"
 
@@ -117,60 +118,50 @@ void static fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state,u32 exit_re
 	noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[cur_proc];
 	u32 leaf=(u32)gpr_state->rax;
 	u32 subleaf=(u32)gpr_state->rcx;
-	if(noir_bt(&leaf,31))
+	u32 leaf_class=noir_cpuid_class(leaf);
+	u32 leaf_index=noir_cpuid_index(leaf);
+	if(vcpu->enabled_feature & noir_vt_cpuid_caching)
 	{
-		// At this moment, Extended CPUID leaf is invoked.
-		if(leaf>vcpu->relative_hvm->ext_leaftotal+0x80000000)
-		{
-			// Leaf is invalid. No need to check the cache.
-			*(u32*)&gpr_state->rax=0;
-			*(u32*)&gpr_state->rbx=0;
-			*(u32*)&gpr_state->rcx=0;
-			*(u32*)&gpr_state->rdx=0;
-		}
+		// Here, we implement the cpuid cache to improve performance on nested VM scenario.
+		// If leaf exceeded limit, call reserved handler for it.
+		if(vcpu->cpuid_cache.max_leaf[leaf_class]>=leaf_index)
+			vt_cpuid_handlers[leaf_class][leaf_index](gpr_state,vcpu);
 		else
-		{
-			// On Intel Processors, no subleaf exists on extended leaf.
-			*(u32*)&gpr_state->rax=vcpu->cpuid_cache.ext_leaf[leaf-0x80000000].eax;
-			*(u32*)&gpr_state->rbx=vcpu->cpuid_cache.ext_leaf[leaf-0x80000000].ebx;
-			*(u32*)&gpr_state->rcx=vcpu->cpuid_cache.ext_leaf[leaf-0x80000000].ecx;
-			*(u32*)&gpr_state->rdx=vcpu->cpuid_cache.ext_leaf[leaf-0x80000000].edx;
-		}
+			nvc_vt_reserved_cpuid_handler(gpr_state,vcpu);
 	}
 	else
 	{
-		// At this moment, Standard CPUID leaf is invoked.
-		if(leaf>vcpu->relative_hvm->std_leaftotal)
+		// We disabled caching, so use cpuid instruction.
+		noir_cpuid(leaf,subleaf,(u32*)&gpr_state->rax,(u32*)&gpr_state->rbx,(u32*)&gpr_state->rcx,(u32*)&gpr_state->rdx);
+		// Filter something...
+		switch(leaf_class)
 		{
-			// Leaf is invalid. No need to check the cache.
-			*(u32*)&gpr_state->rax=0;
-			*(u32*)&gpr_state->rbx=0;
-			*(u32*)&gpr_state->rcx=0;
-			*(u32*)&gpr_state->rdx=0;
-		}
-		else
-		{
-			// We need to check if subleaf hits the cache.
-			bool cache_hit=false;
-			if(leaf<32)
+			case std_leaf_index:
 			{
-				if(noir_bt(&vcpu->relative_hvm->cpuid_submask,leaf))
-					cache_hit=(subleaf==0);
-				else
-					cache_hit=true;
+				if(leaf_index==std_proc_feature)
+				{
+					noir_btr((u32*)&gpr_state->rcx,ia32_cpuid_vmx);
+					noir_bts((u32*)&gpr_state->rcx,ia32_cpuid_hv_presence);
+				}
+				break;
 			}
-			if(cache_hit)
+			case hvm_leaf_index:
 			{
-				// If cache is hit, use cached info.
-				*(u32*)&gpr_state->rax=vcpu->cpuid_cache.std_leaf[leaf].eax;
-				*(u32*)&gpr_state->rbx=vcpu->cpuid_cache.std_leaf[leaf].ebx;
-				*(u32*)&gpr_state->rcx=vcpu->cpuid_cache.std_leaf[leaf].ecx;
-				*(u32*)&gpr_state->rdx=vcpu->cpuid_cache.std_leaf[leaf].edx;
-			}
-			else
-			{
-				// Otherwise, invoke cpuid.
-				noir_cpuid(leaf,subleaf,(u32*)&gpr_state->rax,(u32*)&gpr_state->rbx,(u32*)&gpr_state->rcx,(u32*)&gpr_state->rdx);
+				if(leaf_index==hvm_max_num_vstr)
+				{
+					*(u32*)&gpr_state->rax=0x40000001;
+					*(u32*)&gpr_state->rbx='rioN';
+					*(u32*)&gpr_state->rcx='osiV';
+					*(u32*)&gpr_state->rdx='TZ r';
+				}
+				else if(leaf_index==hvm_interface_id)
+				{
+					*(u32*)&gpr_state->rax='0#vH';
+					*(u32*)&gpr_state->rbx=0;
+					*(u32*)&gpr_state->rcx=0;
+					*(u32*)&gpr_state->rdx=0;
+				}
+				break;
 			}
 		}
 	}

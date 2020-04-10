@@ -19,8 +19,6 @@
 
 #include <nvdef.h>
 
-#define vmx_cpuid_support_bit		5
-
 #define vt_attrib(s,a)				(u32)(a|(s==0?0x10000:0))
 
 typedef union _ia32_vmx_basic_msr

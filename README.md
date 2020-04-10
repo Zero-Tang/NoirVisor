@@ -36,8 +36,8 @@ Also note that, you have to create certain directories required by the batch com
 You may download the WDK 7.1.0 from Microsoft: https://www.microsoft.com/en-us/download/details.aspx?id=11800 <br>
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
-## EFI Application
-To build a EFI Application, you should install LLVM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path "C:\UefiDKII". <br>
+## EFI Runtime Driver
+To build a EFI Runtime Driver, you should install LLVM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path "C:\UefiDKII". <br>
 You may download LLVM from GitHub: https://github.com/llvm/llvm-project/releases <br>
 You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases <br>
 
@@ -48,7 +48,7 @@ There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://
 If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher. <br>
 If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine.
 
-## EFI Application
+## EFI Runtime Driver
 Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a partition and format it info FAT32 file system. After you build the image, you should copy it to \EFI\BOOT\bootx64.efi. <br>
 As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system.
 

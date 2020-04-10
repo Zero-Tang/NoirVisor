@@ -22,7 +22,7 @@
 #define std_max_num_vstr		0x0
 #define std_proc_feature		0x1
 #define std_monitor_feat		0x5
-#define std_apic_timer_i		0x6
+#define std_thermal_feat		0x6
 #define std_struct_extid		0x7
 #define std_pestate_enum		0xD
 

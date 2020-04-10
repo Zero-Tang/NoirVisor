@@ -238,6 +238,13 @@ typedef void (fastcall *noir_vt_exit_handler_routine)
  u32 exit_reason
 );
 
+typedef void (fastcall *noir_vt_cpuid_exit_handler)
+(
+ noir_gpr_state_p gpr_state,
+ noir_vt_vcpu_p vcpu
+);
+
+#if defined(_vt_exit)
 const char* vmx_exit_msg[vmx_maximum_exit_reason]=
 {
 	"Exception or NMI is intercepted!",						// Reason=0
@@ -312,6 +319,8 @@ const char* vmx_exit_msg[vmx_maximum_exit_reason]=
 };
 
 noir_vt_exit_handler_routine* vt_exit_handlers=null;
+extern noir_vt_cpuid_exit_handler** vt_cpuid_handlers;
+#endif
 
 void inline noir_vt_advance_rip()
 {

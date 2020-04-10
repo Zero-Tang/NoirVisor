@@ -75,8 +75,10 @@
 #define ia32_virtualization_exception	20
 
 //This is used for defining IA-32 architectural cpuid flags.
-#define ia32_cpuid_vmx			5
-#define ia32_cpuid_vmx_bit		0x20
+#define ia32_cpuid_vmx				5
+#define ia32_cpuid_vmx_bit			0x20
+#define ia32_cpuid_hv_presence		31
+#define ia32_cpuid_hv_presence_bit	0x80000000
 
 //This is used for defining IA-32 architectural cache types.
 #define ia32_uncacheable		0

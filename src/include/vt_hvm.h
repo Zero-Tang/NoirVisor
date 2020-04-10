@@ -14,13 +14,17 @@
 
 #include <nvdef.h>
 
-// This is Intel specific.
-#define noir_vt_cpuid_submask	0x195a890
-
 #define noir_vt_callexit		1
 
 #define noir_nvt_vmxe			0
 #define noir_nvt_vmxon			1
+
+// Definition of Enabled Features
+#define noir_vt_extended_paging		1		// Bit	0
+#define noir_vt_vpid_tagged_tlb		2		// Bit	1
+#define noir_vt_vmcs_shadowing		4		// Bit	2
+#define noir_vt_cpuid_caching		8		// Bit	3
+#define noir_vt_ept_with_hooks		16		// Bit	4
 
 typedef struct _memory_descriptor
 {
@@ -35,8 +39,8 @@ typedef struct _noir_vt_hvm
 	memory_descriptor io_bitmap_b;
 	memory_descriptor msr_auto_list;
 	u32 std_leaftotal;
+	u32 hvm_leaftotal;
 	u32 ext_leaftotal;
-	u32 cpuid_submask;
 }noir_vt_hvm,*noir_vt_hvm_p;
 
 typedef struct _noir_vt_msr_entry
@@ -56,8 +60,12 @@ typedef struct _noir_vt_cpuid_info
 
 typedef struct _noir_vt_cached_cpuid
 {
-	noir_vt_cpuid_info* std_leaf;		//0x00000000 - 0x0FFFFFFF
-	noir_vt_cpuid_info* ext_leaf;		//0x80000000 - 0x8FFFFFFF
+	void** std_leaf;		// 0x00000000 - 0x0FFFFFFF
+	void** hvm_leaf;		// 0x40000000 - 0x4FFFFFFF
+	void** ext_leaf;		// 0x80000000 - 0x8FFFFFFF
+	void** res_leaf;		// 0xC0000000 - 0xC0000000
+	void* cache_base;
+	u32 max_leaf[4];
 }noir_vt_cached_cpuid,*noir_vt_cached_cpuid_p;
 
 typedef struct _noir_vt_nested_vcpu
@@ -81,11 +89,16 @@ typedef struct _noir_vt_vcpu
 	noir_vt_cached_cpuid cpuid_cache;
 	noir_vt_nested_vcpu nested_vcpu;
 	u8 status;
+	u8 enabled_feature;
 }noir_vt_vcpu,*noir_vt_vcpu_p;
 
 u8 fastcall nvc_vt_subvert_processor_a(noir_vt_vcpu_p vcpu);
 noir_status nvc_vt_build_exit_handlers();
+void nvc_vt_build_cpuid_cache_per_vcpu(noir_vt_vcpu_p vcpu);
 void nvc_vt_teardown_exit_handlers();
+bool nvc_vt_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 res_count);
+void nvc_vt_teardown_cpuid_handler();
+void fastcall nvc_vt_reserved_cpuid_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void nvc_vt_resume_without_entry(noir_gpr_state_p state);
 void nvc_vt_exit_handler_a();
 void noir_vt_vmsuccess();

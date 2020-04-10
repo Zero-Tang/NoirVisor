@@ -61,8 +61,9 @@ void nvc_svm_build_cpuid_cache_per_vcpu(noir_svm_vcpu_p vcpu)
 	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[std_proc_feature];
 	noir_bts(&info->ecx,amd64_cpuid_hv_presence);
 	// Function leaf 0x7 - Structured Extended Feature Identifiers
-	// There is only one subleaf in this function leaf.
-
+	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[std_struct_extid];
+	for(i=1;i<=info->eax;i++)
+		noir_cpuid(std_struct_extid,i,&info[i].eax,&info[i].ebx,&info[i].ecx,&info[i].edx);
 	// Function leaf 0xD - Processor Extended State Enumeration
 	// There are multiple subfunctions in this leaf.
 	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[std_pestate_enum];
@@ -169,10 +170,11 @@ void static fastcall nvc_svm_default_cpuid_handler(noir_gpr_state_p gpr_state,no
 void static fastcall nvc_svm_cpuid_std_struct_extid(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	noir_svm_cpuid_default_p cache=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[std_struct_extid];
-	*(u32*)&gpr_state->rax=cache->eax;
-	*(u32*)&gpr_state->rbx=cache->ebx;
-	*(u32*)&gpr_state->rcx=cache->ecx;
-	*(u32*)&gpr_state->rdx=cache->edx;
+	u32 subleaf=(u32)gpr_state->rcx;
+	*(u32*)&gpr_state->rax=cache[subleaf].eax;
+	*(u32*)&gpr_state->rbx=cache[subleaf].ebx;
+	*(u32*)&gpr_state->rcx=cache[subleaf].ecx;
+	*(u32*)&gpr_state->rdx=cache[subleaf].edx;
 }
 
 // Function Leaf: 0x0000000D - Processor Extended State Enumeration
@@ -270,7 +272,7 @@ bool nvc_svm_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 r
 		svm_cpuid_handlers[std_leaf_index]=noir_alloc_nonpg_memory(sizeof(void*)*std_count);
 		svm_cpuid_handlers[hvm_leaf_index]=noir_alloc_nonpg_memory(sizeof(void*)*hvm_count);
 		svm_cpuid_handlers[ext_leaf_index]=noir_alloc_nonpg_memory(sizeof(void*)*ext_count);
-		if(svm_cpuid_handlers[std_leaf_index] && svm_cpuid_handlers[ext_leaf_index])
+		if(svm_cpuid_handlers[std_leaf_index] && svm_cpuid_handlers[hvm_leaf_index] && svm_cpuid_handlers[ext_leaf_index])
 		{
 			// Initialize CPUID handlers with default handlers.
 			// Using stos instruction could accelerate the initialization.

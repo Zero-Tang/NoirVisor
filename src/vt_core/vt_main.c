@@ -19,6 +19,7 @@
 #include <noirhvm.h>
 #include <nv_intrin.h>
 #include <ia32.h>
+#include "vt_cpuid.h"
 #include "vt_vmcs.h"
 #include "vt_def.h"
 #include "vt_ept.h"
@@ -32,7 +33,7 @@ bool nvc_is_vt_supported()
 		bool basic_supported=true;
 		ia32_vmx_basic_msr vt_basic;
 		vt_basic.value=noir_rdmsr(ia32_vmx_basic);
-		if(vt_basic.memory_type==6)		// Make sure CPU supports Write-Back VMCS.
+		if(vt_basic.memory_type==ia32_write_back)		// Make sure CPU supports Write-Back VMCS.
 		{
 			ia32_vmx_priproc_ctrl_msr prictrl_msr;
 			if(vt_basic.use_true_msr)
@@ -421,13 +422,28 @@ void static nvc_vt_setup_vmentry_controls(bool true_msr)
 
 void static nvc_vt_setup_memory_virtualization(noir_vt_vcpu_p vcpu)
 {
+	if(vcpu->enabled_feature & noir_vt_vpid_tagged_tlb)
+		noir_vt_vmwrite(virtual_processor_identifier,1);
+	if(vcpu->enabled_feature & noir_vt_extended_paging)
+	{
+		noir_ept_manager_p eptm=(noir_ept_manager_p)vcpu->ept_manager;
+		noir_vt_vmwrite64(ept_pointer,eptm->eptp.phys.value);
+	}
+}
+
+void static nvc_vt_setup_available_features(noir_vt_vcpu_p vcpu)
+{
+	ia32_vmx_2ndproc_ctrl_msr proc2_cap;
 	ia32_vmx_ept_vpid_cap_msr ev_cap;
+	proc2_cap.value=noir_rdmsr(ia32_vmx_2ndproc_ctrl);
 	ev_cap.value=noir_rdmsr(ia32_vmx_ept_vpid_cap);
-	if(ev_cap.support_wb_ept)			// We are only capable of using Write-Back cached memory.
+	// Check if Intel EPT can be enabled.
+	if(proc2_cap.allowed1_settings.enable_ept)
 	{
 		/*
 			We require following supportability of Intel EPT:
 			Execute-Only Translation - This is used for stealth inline hook.
+			Write-Back EPT Paging Structure.
 			2MB-paging - This is used for reducing memory consumption.
 			(It can be better that processor supports 1GB-paging. However,
 			 VMware does not support emulating 1GB-paging for Intel EPT.)
@@ -435,22 +451,31 @@ void static nvc_vt_setup_memory_virtualization(noir_vt_vcpu_p vcpu)
 		*/
 		bool ept_support_req=true;
 		ept_support_req&=ev_cap.support_exec_only_translation;
+		ept_support_req&=ev_cap.support_wb_ept;
 		ept_support_req&=ev_cap.support_2mb_paging;
 		ept_support_req&=ev_cap.support_invept;
 		ept_support_req&=ev_cap.support_single_context_invept;
 		ept_support_req&=ev_cap.support_all_context_invept;
 		if(ept_support_req)
 		{
-			// All required EPT features are supported, continue virtualization.
-			// Note that different vCPUs use different EPTP.
-			noir_ept_manager_p eptm=(noir_ept_manager_p)vcpu->ept_manager;
-			noir_vt_vmwrite64(ept_pointer,eptm->eptp.phys.value);
+			vcpu->enabled_feature|=noir_vt_extended_paging;
+			if(ev_cap.support_exec_only_translation)vcpu->enabled_feature|=noir_vt_ept_with_hooks;
 		}
 	}
-	// Note that VPID is used for unnecessary TLB flushing,
-	// which might bring significant performance penalty.
-	if(ev_cap.support_sc_invvpid && ev_cap.support_ac_invvpid)
-		noir_vt_vmwrite(virtual_processor_identifier,1);
+	// Check if Virtual Processor Identifier can be enabled.
+	if(proc2_cap.allowed1_settings.enable_vpid)
+	{
+		bool vpid_support_req=true;
+		vpid_support_req&=ev_cap.support_invvpid;
+		vpid_support_req&=ev_cap.support_sc_invvpid;
+		vpid_support_req&=ev_cap.support_ac_invvpid;
+		if(vpid_support_req)vcpu->enabled_feature|=noir_vt_vpid_tagged_tlb;
+	}
+	// Check if VMCS Shadowing can be enabled.
+	if(proc2_cap.allowed1_settings.vmcs_shadowing)
+		vcpu->enabled_feature|=noir_vt_vmcs_shadowing;
+	// FIXME: Complete the CPUID Caching Architecture.
+	// vcpu->enabled_feature|=noir_vt_cpuid_caching;
 }
 
 void static nvc_vt_setup_control_area(bool true_msr)
@@ -463,16 +488,6 @@ void static nvc_vt_setup_control_area(bool true_msr)
 	noir_vt_vmwrite(cr4_guest_host_mask,0x2000);			// Monitor VMXE flags
 }
 
-void static nvc_vt_setup_cpuid_cache(noir_vt_vcpu_p vcpu)
-{
-	noir_vt_cached_cpuid_p cache=&vcpu->cpuid_cache;
-	u32 i;
-	for(i=1;i<=vcpu->relative_hvm->std_leaftotal;i++)
-		noir_cpuid(i,0,&cache->std_leaf[i].eax,&cache->std_leaf[i].ebx,&cache->std_leaf[i].ecx,&cache->std_leaf[i].edx);
-	for(i=0x80000001;i<=vcpu->relative_hvm->ext_leaftotal+0x80000000;i++)
-		noir_cpuid(i,0,&cache->ext_leaf[i-0x80000000].eax,&cache->ext_leaf[i-0x80000000].ebx,&cache->ext_leaf[i-0x80000000].ecx,&cache->ext_leaf[i-0x80000000].edx);
-}
-
 u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,ulong_ptr gip)
 {
 	ia32_vmx_basic_msr vt_basic;
@@ -481,12 +496,13 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	noir_save_processor_state(&state);
 	// Issue a sequence of vmwrite instructions to setup VMCS.
 	vt_basic.value=noir_rdmsr(ia32_vmx_basic);
+	nvc_vt_setup_available_features(vcpu);
 	nvc_vt_setup_control_area(vt_basic.use_true_msr);
 	nvc_vt_setup_guest_state_area(&state,gsp,gip);
 	nvc_vt_setup_host_state_area(vcpu,&state);
 	nvc_vt_setup_memory_virtualization(vcpu);
 	nvc_vt_setup_msr_hook_p(vcpu);
-	nvc_vt_setup_cpuid_cache(vcpu);
+	nvc_vt_build_cpuid_cache_per_vcpu(vcpu);
 	vcpu->status=noir_virt_on;
 	// Everything are done, perform subversion.
 	vst=noir_vt_vmlaunch();
@@ -542,24 +558,45 @@ bool static nvc_vt_build_cpuid_cache(noir_hypervisor_p hvm)
 	noir_vt_cpuid_info vistd,viext;
 	noir_vt_cached_cpuid_p cache=&hvm_p->virtual_cpu->cpuid_cache;
 	u32 i=0;
+	hvm->relative_hvm->hvm_leaftotal=2;
 	noir_cpuid(0,0,&vistd.eax,&vistd.ebx,&vistd.ecx,&vistd.edx);
-	hvm->relative_hvm->std_leaftotal=vistd.eax;
+	hvm->relative_hvm->std_leaftotal=vistd.eax+1;
 	noir_cpuid(0x80000000,0,&viext.eax,&viext.ebx,&viext.ecx,&viext.edx);
-	hvm->relative_hvm->ext_leaftotal=viext.eax-0x80000000;
+	hvm->relative_hvm->ext_leaftotal=viext.eax-0x80000000+1;
 	for(;i<hvm->cpu_count;cache=&hvm->virtual_cpu[++i].cpuid_cache)
 	{
-		cache->std_leaf=noir_alloc_nonpg_memory((hvm->relative_hvm->std_leaftotal+1)*sizeof(noir_vt_cpuid_info));
-		if(cache->std_leaf)
-			*cache->std_leaf=vistd;
-		else
+		u32 j;
+		ulong_ptr base;
+		cache->std_leaf=noir_alloc_nonpg_memory(hvm->relative_hvm->std_leaftotal*sizeof(void*));
+		if(cache->std_leaf==null)return false;
+		cache->hvm_leaf=noir_alloc_nonpg_memory(hvm->relative_hvm->hvm_leaftotal*sizeof(void*));
+		if(cache->hvm_leaf==null)return false;
+		cache->ext_leaf=noir_alloc_nonpg_memory(hvm->relative_hvm->ext_leaftotal*sizeof(void*));
+		if(cache->ext_leaf==null)return false;
+		cache->cache_base=noir_alloc_nonpg_memory(page_size);
+		if(cache->cache_base==null)return false;
+		// One page should be enough. Once it becomes deficient, we will increase allocation.
+		base=(ulong_ptr)cache->cache_base;
+		cache->max_leaf[std_leaf_index]=hvm->relative_hvm->std_leaftotal;
+		cache->max_leaf[hvm_leaf_index]=hvm->relative_hvm->hvm_leaftotal;
+		cache->max_leaf[ext_leaf_index]=hvm->relative_hvm->ext_leaftotal;
+		// Standard CPUID Leaf.
+		for(j=0;j<cache->max_leaf[std_leaf_index];j++)
+		{
+			cache->std_leaf[j]=(noir_vt_cached_cpuid_p)base;
+			if((1<<j) & noir_vt_std_cpuid_submask)
+				base+=128;	// Allocate 128 bytes for leaf with subfunctions.
+			else
+				base+=16;	// Allocate 16 bytes for leaf without subfunctions.
+		}
+		if(base-(ulong_ptr)cache->cache_base>=page_size)
+		{
+			// In this case, one page is insufficient for caching!
+			nv_dprintf("Allocation Failure! One Page is insufficient for CPUID caching!\n");
 			return false;
-		cache->ext_leaf=noir_alloc_nonpg_memory((hvm->relative_hvm->ext_leaftotal+1)*sizeof(noir_vt_cpuid_info));
-		if(cache->ext_leaf)
-			*cache->ext_leaf=viext;
-		else
-			return false;
+		}
+		nv_dprintf("CPUID cache starts at 0x%p\t ends at 0x%p\n",cache->cache_base,base);
 	}
-	hvm->relative_hvm->cpuid_submask=noir_vt_cpuid_submask;
 	return true;
 }
 
