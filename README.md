@@ -36,8 +36,9 @@ Also note that, you have to create certain directories required by the batch com
 You may download the WDK 7.1.0 from Microsoft: https://www.microsoft.com/en-us/download/details.aspx?id=11800 <br>
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
-## EFI Runtime Driver
-To build a EFI Runtime Driver, you should install LLVM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path "C:\UefiDKII". <br>
+## EFI Application and Runtime Driver
+Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. <br>
+To build a EFI Runtime Driver and Application, you should install LLVM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path "C:\UefiDKII". <br>
 You may download LLVM from GitHub: https://github.com/llvm/llvm-project/releases <br>
 You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases <br>
 
@@ -48,9 +49,12 @@ There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://
 If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher. <br>
 If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine.
 
-## EFI Runtime Driver
-Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a partition and format it info FAT32 file system. After you build the image, you should copy it to \EFI\BOOT\bootx64.efi. <br>
-As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system.
+## EFI Application and Runtime Driver
+Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a partition and format it info FAT32 file system. After you build the image, you should see two images: bootx64.efi and NoirVisor.efi <br> 
+Those two files are EFI Application and Runtime Driver respectively. <br>
+Copy EFI Application to \EFI\BOOT\bootx64.efi <br>
+Copy EFI Runtime Driver to \NoirVisor.efi <br>
+As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system. Disable Secure Boot feature unless you can sign the executable.
 
 # Detection of NoirVisor
 As specified in AMD64 Architecture Programming Manual, CPUID.EAX=1.ECX[bit 31] indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors defines leaf 0x40000000 is used to identify hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is "VMwareVMware". In NoirVisor, hypervisor vendor string is defined as "NoirVisor ZT".

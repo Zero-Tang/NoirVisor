@@ -49,6 +49,16 @@ int vswnprintf(CHAR16* output,UINTN limit,CHAR16* format,va_list args)
 				{
 					break;
 				}
+				case L'p':
+				{
+					int n=va_arg(args,int);
+					CHAR16 s[16];
+					NoirIntegerToHEXW64(n,s);
+					inc=NoirStringLengthW(s);
+					NoirStringCopyNW(&buf[j],s,limit-j);
+					i++;
+					break;
+				}
 				case L's':
 				{
 					CHAR8* s=va_arg(args,CHAR8*);

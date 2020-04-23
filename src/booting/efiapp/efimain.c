@@ -12,32 +12,184 @@
   File Location: /booting/efiapp/efimain.c
 */
 
-#include <Uefi.h>
-#include <UnicodeCollation.h>
 #include "efimain.h"
+#include <Protocol/DevicePath.h>
+#include <Guid/FileInfo.h>
+#include <intrin.h>
 
-EFI_STATUS EFIAPI NoirEfiInitialize(IN EFI_SYSTEM_TABLE *SystemTable)
+void NoirBlockUntilKeyStroke(IN CHAR16 Unicode)
 {
-	// Initialize Basic UEFI Utility Services.
-	EfiBoot=SystemTable->BootServices;
-	EfiRT=SystemTable->RuntimeServices;
-	StdIn=SystemTable->ConIn;
-	StdOut=SystemTable->ConOut;
-	StdErr=SystemTable->StdErr;
-	// Initialize Some Protocols
-	EFI_GUID UniColGuid=EFI_UNICODE_COLLATION_PROTOCOL2_GUID;
-	EFI_STATUS st=EfiBoot->LocateProtocol(&UniColGuid,NULL,&UnicodeCollation);
+	EFI_INPUT_KEY InKey;
+	do
+	{
+		UINTN fi=0;
+		EfiBoot->WaitForEvent(1,&StdIn->WaitForKey,&fi);
+		StdIn->ReadKeyStroke(StdIn,&InKey);
+	}while(InKey.UnicodeChar!=Unicode);
+}
+
+void NoirSetConsoleModeToMaximumRows()
+{
+	UINTN MaxHgt=0,OptIndex;
+	for(UINTN i=0;i<StdOut->Mode->MaxMode;i++)
+	{
+		UINTN Col,Row;
+		EFI_STATUS st=StdOut->QueryMode(StdOut,i,&Col,&Row);
+		if(st==EFI_SUCCESS)
+		{
+			if(Row>MaxHgt)
+			{
+				OptIndex=i;
+				MaxHgt=Row;
+			}
+		}
+	}
+	StdOut->SetMode(StdOut,OptIndex);
 	StdOut->ClearScreen(StdOut);
+}
+
+void NoirPrintProcessorInformation()
+{
+	int Info[4];
+	CHAR8 VendorString[13];
+	__cpuid(Info,0);
+	*(int*)&VendorString[0]=Info[1];
+	*(int*)&VendorString[4]=Info[3];
+	*(int*)&VendorString[8]=Info[2];
+	VendorString[12]='\0';
+	NoirConsolePrintfW(L"Processor Vendor: %s\r\n",VendorString);
+	CHAR8 BrandString[0x31];
+	__cpuid(Info,0x80000002);
+	*(int*)&BrandString[0x00]=Info[0];
+	*(int*)&BrandString[0x04]=Info[1];
+	*(int*)&BrandString[0x08]=Info[2];
+	*(int*)&BrandString[0x0C]=Info[3];
+	__cpuid(Info,0x80000003);
+	*(int*)&BrandString[0x10]=Info[0];
+	*(int*)&BrandString[0x14]=Info[1];
+	*(int*)&BrandString[0x18]=Info[2];
+	*(int*)&BrandString[0x1C]=Info[3];
+	__cpuid(Info,0x80000004);
+	*(int*)&BrandString[0x20]=Info[0];
+	*(int*)&BrandString[0x24]=Info[1];
+	*(int*)&BrandString[0x28]=Info[2];
+	*(int*)&BrandString[0x2C]=Info[3];
+	BrandString[0x30]='\0';
+	NoirConsolePrintfW(L"Processor Brand Name: %s\r\n",BrandString);
+}
+
+EFI_STATUS NoirLoadHypervisorDriver(IN EFI_HANDLE ParentImageHandle,OUT EFI_HANDLE *HvImageHandle)
+{
+	// Initialize Device Path for Loading Image
+	EFI_GUID LoadedImageGuid=EFI_LOADED_IMAGE_PROTOCOL_GUID;
+	EFI_LOADED_IMAGE_PROTOCOL* ImageInfo;
+	EFI_STATUS st=EfiBoot->HandleProtocol(ParentImageHandle,&LoadedImageGuid,&ImageInfo);
+	if(st==EFI_SUCCESS)
+	{
+		FILEPATH_DEVICE_PATH* FilePath=NULL;
+		st=EfiBoot->AllocatePool(EfiLoaderData,4+NoirVisorPathLength+4,&FilePath);
+		if(st==EFI_SUCCESS)
+		{
+			// Construct Media Device Path with Ending Node
+			EFI_DEVICE_PATH_PROTOCOL* EndingPath=(EFI_DEVICE_PATH_PROTOCOL*)((UINTN)FilePath+4+NoirVisorPathLength);
+			FilePath->Header.Type=MEDIA_DEVICE_PATH;
+			FilePath->Header.SubType=MEDIA_FILEPATH_DP;
+			*(UINT16*)FilePath->Header.Length=4+NoirVisorPathLength;
+			EfiBoot->CopyMem(&FilePath->PathName,NoirVisorPath,NoirVisorPathLength);
+			EndingPath->Type=END_DEVICE_PATH_TYPE;
+			EndingPath->SubType=END_ENTIRE_DEVICE_PATH_SUBTYPE;
+			*(UINT16*)EndingPath->Length=4;
+			// Get Device Path and Append.
+			EFI_GUID DevPathGuid=EFI_DEVICE_PATH_PROTOCOL_GUID;
+			EFI_DEVICE_PATH_PROTOCOL* DevPath=NULL;
+			st=EfiBoot->HandleProtocol(ImageInfo->DeviceHandle,&DevPathGuid,&DevPath);
+			if(st==EFI_SUCCESS)
+			{
+				EFI_DEVICE_PATH_PROTOCOL* HvDevPath=DevPathUtil->AppendDevicePath(DevPath,&FilePath->Header);
+				if(HvDevPath)
+				{
+					st=EfiBoot->LoadImage(FALSE,ParentImageHandle,HvDevPath,NULL,0,HvImageHandle);
+					EfiBoot->FreePool(HvDevPath);
+				}
+			}
+			EfiBoot->FreePool(FilePath);
+		}
+	}
 	return st;
 }
 
-EFI_STATUS EFIAPI NoirEfiUnload(IN EFI_HANDLE ImageHandle)
+// Make sure each banner line is at most 80 characters.
+// Minimal UEFI console supports only 80 columns.
+/*
+  The Banner ASCII looks like this:
+					_____   __       _____         ___    _______                        
+					___  | / /______ ___(_)__________ |  / /___(_)______________ ________
+					__   |/ / _  __ \__  / __  ___/__ | / / __  / __  ___/_  __ \__  ___/
+					_  /|  /  / /_/ /_  /  _  /    __ |/ /  _  /  _(__  ) / /_/ /_  /    
+					/_/ |_/   \____/ /_/   /_/     _____/   /_/   /____/  \____/ /_/     
+				  __  __         _       _           ____              _____               
+				 |  \/  |__ _ __| |___  | |__ _  _  |_  /___ _ _ ___  |_   _|_ _ _ _  __ _ 
+				 | |\/| / _` / _` / -_) | '_ | || |  / // -_| '_/ _ \   | |/ _` | ' \/ _` |
+				 |_|  |_\__,_\__,_\___| |_.__/\_, | /___\___|_| \___/   |_|\__,_|_||_\__, |
+											  |__/                                   |___/ 
+
+  Credits: "Speed" ASCII Art Font, "Small" ASCII Art Font.
+*/
+EFI_STATUS NoirPrintBanner(IN CHAR16* Path)
 {
-	return EFI_SUCCESS;
+	UINTN Col,Row;
+	EFI_STATUS st=StdOut->QueryMode(StdOut,StdOut->Mode->Mode,&Col,&Row);
+	if(st==EFI_SUCCESS)
+	{
+		UINTN Mid=(Col-70)>>1;		// There are 70 characters in this part of banner
+		StdOut->ClearScreen(StdOut);
+		StdOut->SetCursorPosition(StdOut,Mid,0);
+		StdOut->OutputString(StdOut,L"_____   __       _____         ___    _______                        ");
+		StdOut->SetCursorPosition(StdOut,Mid,1);
+		StdOut->OutputString(StdOut,L"___  | / /______ ___(_)__________ |  / /___(_)______________ ________");
+		StdOut->SetCursorPosition(StdOut,Mid,2);
+		StdOut->OutputString(StdOut,L"__   |/ / _  __ \\__  / __  ___/__ | / / __  / __  ___/_  __ \\__  ___/");
+		StdOut->SetCursorPosition(StdOut,Mid,3);
+		StdOut->OutputString(StdOut,L"_  /|  /  / /_/ /_  /  _  /    __ |/ /  _  /  _(__  ) / /_/ /_  /    ");
+		StdOut->SetCursorPosition(StdOut,Mid,4);
+		StdOut->OutputString(StdOut,L"/_/ |_/   \\____/ /_/   /_/     _____/   /_/   /____/  \\____/ /_/     ");
+		Mid=(Col-76)>>1;			// There are 76 characters in this part of banner
+		StdOut->SetCursorPosition(StdOut,Mid,5);
+		StdOut->OutputString(StdOut,L"  __  __         _       _           ____              _____               ");
+		StdOut->SetCursorPosition(StdOut,Mid,6);
+		StdOut->OutputString(StdOut,L" |  \\/  |__ _ __| |___  | |__ _  _  |_  /___ _ _ ___  |_   _|_ _ _ _  __ _ ");
+		StdOut->SetCursorPosition(StdOut,Mid,7);
+		StdOut->OutputString(StdOut,L" | |\\/| / _` / _` / -_) | '_ | || |  / // -_| '_/ _ \\   | |/ _` | ' \\/ _` |");
+		StdOut->SetCursorPosition(StdOut,Mid,8);
+		StdOut->OutputString(StdOut,L" |_|  |_\\__,_\\__,_\\___| |_.__/\\_, | /___\\___|_| \\___/   |_|\\__,_|_||_\\__, |");
+		StdOut->SetCursorPosition(StdOut,Mid,9);
+		StdOut->OutputString(StdOut,L"                              |__/                                   |___/ \r\n");
+	}
+	return st;
 }
 
 EFI_STATUS EFIAPI NoirEfiEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable)
 {
-	NoirConsolePrintfW(L"Welcome to NoirVisor!\r\n");
+	UINT16 RevHi=(UINT16)(SystemTable->Hdr.Revision>>16);
+	UINT16 RevLo=(UINT16)(SystemTable->Hdr.Revision&0xffff);
+	UINT16 RevP1=RevLo/10,RevP2=RevLo%10;
+	EFI_HANDLE HvImage;
+	EFI_STATUS st=NoirEfiInitialize(SystemTable);
+	NoirSetConsoleModeToMaximumRows();
+	NoirPrintBanner(L"banner.txt");
+	NoirConsolePrintfW(L"Welcome to NoirVisor Loader!\r\n");
+	NoirConsolePrintfW(L"Firmware Vendor: %ws Revision: %d\r\n",SystemTable->FirmwareVendor,SystemTable->FirmwareRevision);
+	NoirConsolePrintfW(L"Firmware UEFI Specification: %d.%d.%d\r\n",RevHi,RevP1,RevP2);
+	NoirConsolePrintfW(L"Initialization Status: 0x%X\r\n",st);
+	NoirPrintProcessorInformation();
+	st=NoirLoadHypervisorDriver(ImageHandle,&HvImage);
+	NoirConsolePrintfW(L"Load Image Status: 0x%X\r\n",st);
+	if(st==EFI_SUCCESS)
+	{
+		st=EfiBoot->StartImage(HvImage,NULL,NULL);
+		NoirConsolePrintfW(L"Start Image Status: 0x%X\r\n",st);
+	}
+	NoirConsolePrintfW(L"Press enter key to continue...\r\n");
+	NoirBlockUntilKeyStroke(L'\r');
 	return EFI_SUCCESS;
 }

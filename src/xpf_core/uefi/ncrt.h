@@ -13,7 +13,7 @@
 */
 
 #include <Uefi.h>
-#include <UnicodeCollation.h>
+#include <Protocol/UnicodeCollation.h>
 
 void NoirConsoleOutput(IN CHAR16* String);
 

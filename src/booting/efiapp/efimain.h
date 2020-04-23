@@ -13,12 +13,27 @@
 */
 
 #include <Uefi.h>
+#include <Protocol/UnicodeCollation.h>
+#include <Protocol/LoadedImage.h>
+#include <Pi/PiDxeCis.h>
+#include <Protocol/MpService.h>
+#include <Protocol/DevicePathToText.h>
+#include <Protocol/DevicePathFromText.h>
+#include <Protocol/DevicePathUtilities.h>
+#include <Protocol/SimpleFileSystem.h>
+
+#define NoirVisorPath			L"\\NoirVisor.efi"
+#define NoirVisorPathLength		30
 
 void __cdecl NoirConsolePrintfW(CHAR16* format,...);
+EFI_STATUS EFIAPI NoirEfiInitialize(IN EFI_SYSTEM_TABLE *SystemTable);
 
-EFI_BOOT_SERVICES* EfiBoot=NULL;
-EFI_RUNTIME_SERVICES* EfiRT=NULL;
-EFI_SIMPLE_TEXT_INPUT_PROTOCOL* StdIn=NULL;
-EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* StdOut=NULL;
-EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* StdErr=NULL;
-EFI_UNICODE_COLLATION_PROTOCOL* UnicodeCollation=NULL;
+extern EFI_BOOT_SERVICES* EfiBoot;
+extern EFI_RUNTIME_SERVICES* EfiRT;
+extern EFI_SIMPLE_TEXT_INPUT_PROTOCOL* StdIn;
+extern EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* StdOut;
+extern EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* StdErr;
+extern EFI_UNICODE_COLLATION_PROTOCOL* UnicodeCollation;
+extern EFI_MP_SERVICES_PROTOCOL* MpServices;
+extern EFI_DEVICE_PATH_UTILITIES_PROTOCOL* DevPathUtil;
+extern EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* SimpleFileSystem;

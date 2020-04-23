@@ -13,7 +13,7 @@
 */
 
 #include <Uefi.h>
-#include <UnicodeCollation.h>
+#include <Protocol/UnicodeCollation.h>
 #include "ncrt.h"
 
 // Simple Console Output
