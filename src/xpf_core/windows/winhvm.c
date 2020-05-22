@@ -133,7 +133,7 @@ BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase)
 					PVOID CodeBase=(PVOID)((ULONG_PTR)ImageBase+SectionHeaders[i].VirtualAddress);
 					ULONG CodeSize=SectionHeaders[i].SizeOfRawData;
 					NoirDebugPrint("Code Base: 0x%p\t Size: 0x%X\n",CodeBase,CodeSize);
-					return noir_initialize_ci(CodeBase,CodeSize);
+					return noir_initialize_ci(CodeBase,CodeSize,TRUE,TRUE);
 				}
 			}
 		}

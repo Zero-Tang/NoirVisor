@@ -102,11 +102,11 @@ typedef union _ia32_vmentry_interruption_information_field
 {
 	struct
 	{
-		u32 vector:8;
-		u32 type:3;
-		u32 deliver:1;
-		u32 reserved:19;
-		u32 valid:1;
+		u32 vector:8;		// Bits	0-7
+		u32 type:3;			// Bits	8-10
+		u32 deliver:1;		// Bit	11
+		u32 reserved:19;	// Bits	12-30
+		u32 valid:1;		// Bit	31
 	};
 	u32 value;
 }ia32_vmentry_interruption_information_field,*ia32_vmentry_interruption_information_field_p;

@@ -142,11 +142,22 @@ typedef union _nvc_svm_instruction_intercept2
 		u16 intercept_mwait:1;				// Bit	11
 		u16 intercept_mwait_c:1;			// Bit	12
 		u16 intercept_xsetbv:1;				// Bit	13
-		u16 reserved1:1;					// Bit	14
+		u16 intercept_rdpru:1;				// Bit	14
 		u16 intercept_post_efer_write:1;	// Bit	15
 	};
 	u16 value;
 }nvc_svm_instruction_intercept2,*nvc_svm_instruction_intercept2_p;
+
+typedef union _nvc_svm_instruction_interception3
+{
+	struct
+	{
+		u32 reserved1:3;					// Bits	0-2
+		u32 intercept_mcommit:1;			// Bit	3
+		u32 reserved2:28;					// Bits	4-31
+	};
+	u32 value;
+}nvc_svm_instruction_interception3,*nvc_svm_instruction_intercept3_p;
 
 #define nvc_svm_tlb_control_do_nothing			0
 #define nvc_svm_tlb_control_flush_entire		1

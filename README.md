@@ -62,6 +62,7 @@ As specified in AMD64 Architecture Programming Manual, CPUID.EAX=1.ECX[bit 31] i
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. <br>
 Currently, NoirVisor supports the Windows Operating System newer than or same as Windows XP, running as a kernel-mode driver. <br>
+Porting to Unified Extensible Firmware Interface (UEFI) is in progress. <br>
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status

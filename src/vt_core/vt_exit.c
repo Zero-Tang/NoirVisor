@@ -712,7 +712,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32
 // You may want to debug your code if this handler is invoked.
 void static fastcall nvc_vt_ept_misconfig_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
-	nv_dprintf("EPT Misconfiguration Occured!\n");
+	nv_panicf("EPT Misconfiguration Occured!\n");
 	noir_int3();
 }
 
@@ -720,8 +720,48 @@ void static fastcall nvc_vt_ept_misconfig_handler(noir_gpr_state_p gpr_state,u32
 // This is VM-Exit of obligation.
 void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
-	// Simply call xsetbv again.
-	noir_vt_advance_rip();
+	u64 value=0;
+	u32 index=(u32)gpr_state->rcx;
+	bool gp_exception=false;
+	switch(index)
+	{
+		case 0:
+		{
+			ia32_xcr0 xcr0;
+			u32 a,d;
+			xcr0.lo=(u32)gpr_state->rax;
+			xcr0.hi=(u32)gpr_state->rdx;
+			// IA-32 architecture bans x87 being disabled.
+			if(xcr0.x87==0)gp_exception=true;
+			// AVX is sufficient condition of SSE.
+			if(xcr0.sse==0 && xcr0.avx==0)gp_exception=true;
+			// Fix me: inspect unsupported bits. (via cpuid cache)
+			noir_cpuid(std_pestate_enum,0,&a,null,null,&d);
+			if((xcr0.lo&a)!=a)gp_exception=true;
+			if((xcr0.hi&d)!=d)gp_exception=true;
+			value=xcr0.value;
+			break;
+		}
+		default:
+		{
+			// Unknown XCR index goes to #GP exception.
+			gp_exception=true;
+			break;
+		}
+	}
+	if(gp_exception)
+	{
+		u32 len;
+		noir_vt_vmread(vmexit_instruction_length,&len);
+		// Exception induced by xsetbv has error code zero pushed onto stack.
+		noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,len,0);
+	}
+	else
+	{
+		// Everything is fine.
+		noir_xsetbv(index,value);
+		noir_vt_advance_rip();
+	}
 }
 
 // It is important that this function uses fastcall convention.

@@ -179,7 +179,9 @@ typedef union _ia32_vmx_exit_controls
 		u32 clear_ia32_bound_cfg:1;				// bit	23
 		u32 conceal_vmexit_from_pt:1;			// bit	24
 		u32 clear_ia23_rtit_ctrl:1;				// bit	25
-		u32 reserved5:6;						// bits	26-31
+		u32 reserved5:2;						// bits	26-27
+		u32 load_cet_state:1;					// bit	28
+		u32 reserved6:3;						// bits	29-31
 	};
 	u32 value;
 }ia32_vmx_exit_controls,*ia32_vmx_exit_controls_p;
@@ -211,7 +213,9 @@ typedef union _ia32_vmx_entry_controls
 		u32 load_ia32_bound_cfg:1;			// bit	16
 		u32 conceal_vmentry_from_pt:1;		// bit	17
 		u32 load_ia32_rtit_ctrl:1;			// bit	18
-		u32 reserved3:13;					// bit	19-31
+		u32 reserved3:1;					// bit	19
+		u32 load_cet_state:1;				// bit	20
+		u32 reserved4:11;					// bits	21-31
 	};
 	u32 value;
 }ia32_vmx_entry_controls,*ia32_vmx_entry_controls_p;

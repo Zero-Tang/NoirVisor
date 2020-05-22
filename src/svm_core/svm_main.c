@@ -166,7 +166,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	}
 	// Write to VMCB.
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction1,list1.value);
-	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction2,list2.value);
+	noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
 }
 
 ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_ptr gip)

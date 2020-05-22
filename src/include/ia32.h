@@ -18,7 +18,7 @@
 #define ia32_cr4_vmxe			13
 #define ia32_cr4_vmxe_bit		0x2000
 
-//This is used for defining MSRs.
+// This is used for defining MSRs.
 #define ia32_feature_control			0x3A
 #define ia32_sysenter_cs				0x174
 #define ia32_sysenter_esp				0x175
@@ -52,7 +52,7 @@
 #define ia32_gs_base					0xC0000101
 #define ia32_kernel_gs_base				0xC0000102
 
-//This is used for defining IA-32 architectural interrupt vectors.
+// This is used for defining IA-32 architectural interrupt vectors.
 #define ia32_divide_error				0
 #define ia32_debug_exception			1
 #define ia32_nmi_interrupt				2
@@ -73,13 +73,39 @@
 #define ia32_machine_check				18
 #define ia32_simd_exception				19
 #define ia32_virtualization_exception	20
+#define ia32_control_protection			21
 
-//This is used for defining IA-32 architectural cpuid flags.
+// This is used for defining IA-32 architectural cpuid flags.
 #define ia32_cpuid_vmx				5
 #define ia32_cpuid_vmx_bit			0x20
 #define ia32_cpuid_hv_presence		31
 #define ia32_cpuid_hv_presence_bit	0x80000000
 
-//This is used for defining IA-32 architectural cache types.
+// This is used for defining IA-32 architectural cache types.
 #define ia32_uncacheable		0
 #define ia32_write_back			6
+
+// This is used for defining IA-32 Extended Control Registers (XCR)
+typedef union _ia32_xcr0
+{
+	struct
+	{
+		u64 x87:1;			// Bit	0
+		u64 sse:1;			// Bit	1
+		u64 avx:1;			// Bit	2
+		u64 bngreg:1;		// Bit	3
+		u64 bndcsr:1;		// Bit	4
+		u64 opmask:1;		// Bit	5
+		u64 zmm_hi256:1;	// Bit	6
+		u64 hi16_zmm:1;		// Bit	7
+		u64 reserved0:1;	// Bit	8
+		u64 pkru:1;			// Bit	9
+		u64 reserved1:54;	// Bits	10-63
+	};
+	struct
+	{
+		u32 lo;
+		u32 hi;
+	};
+	u64 value;
+}ia32_xcr0,*ia32_xcr0_p;

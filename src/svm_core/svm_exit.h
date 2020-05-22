@@ -65,6 +65,7 @@
 #define intercepted_mwait			0x8B
 #define intercepted_mwait_cond		0x8C
 #define intercepted_xsetbv			0x8D
+#define intercepted_rdpru			0x8E
 #define intercepted_efer_w_trap		0x8F
 #define intercepted_cr_w_trap(x)	0x90+x
 #define nested_page_fault			0x400
@@ -73,6 +74,7 @@
 #define intercepted_vmgexit			0x403
 
 #define invalid_guest_state			-1
+#define intercepted_vmsa_busy		-2
 
 #define noir_svm_maximum_code1		0x100
 #define noir_svm_maximum_code2		0x4

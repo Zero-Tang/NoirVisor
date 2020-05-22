@@ -39,7 +39,7 @@ typedef struct _invvpid_descriptor
 	u64 linear_address;
 }invvpid_descriptor,*invvpid_descriptor_p;
 
-#if defined(_msvc) || defined(_llvm)
+#if defined(_msvc)
 //Following intrinsics are defined inside MSVC compiler for x64.
 #if defined(_amd64)
 #define noir_vt_vmxon		__vmx_on
@@ -64,6 +64,18 @@ u8 noir_vt_vmresume();
 #endif
 #define noir_vt_vmxoff		__vmx_off
 #define noir_vt_vmptrst		__vmx_vmptrst
+#elif defined(_llvm)
+u8 noir_vt_vmxon(u64* vmxon_pa);
+u8 noir_vt_vmxoff();
+u8 noir_vt_vmptrld(u64* vmcs_pa);
+u8 noir_vt_vmptrst(u64* vmcs_pa);
+u8 noir_vt_vmclear(u64* vmcs_pa);
+u8 noir_vt_vmread(u32 field,ulong_ptr* value);
+u8 noir_vt_vmwrite(u32 field,ulong_ptr value);
+u8 noir_vt_vmread64(u32 field,u64* value);
+u8 noir_vt_vmwrite64(u32 field,u64 value);
+u8 noir_vt_vmlaunch();
+u8 noir_vt_vmresume();
 #endif
 
 u8 noir_vt_invept(size_t type,invept_descriptor_p descriptor);

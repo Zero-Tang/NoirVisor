@@ -283,7 +283,7 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	noir_vt_vmwrite(guest_dr7,state_p->dr7);
 	noir_vt_vmwrite64(guest_msr_ia32_debug_ctrl,state_p->debug_ctrl);
 	// VMCS Link Pointer - Essential for Accelerated VMX Nesting
-	noir_vt_vmwrite(vmcs_link_pointer,0xffffffffffffffff);
+	noir_vt_vmwrite64(vmcs_link_pointer,0xffffffffffffffff);
 	// Guest State Area - Flags, Stack Pointer, Instruction Pointer
 	noir_vt_vmwrite(guest_rsp,gsp);
 	noir_vt_vmwrite(guest_rip,gip);

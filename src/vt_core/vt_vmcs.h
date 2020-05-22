@@ -178,6 +178,9 @@ typedef enum _vmx_vmcs_encoding
 	guest_pending_debug_exceptions=0x6822,
 	guest_msr_ia32_sysenter_esp=0x6824,
 	guest_msr_ia32_sysenter_eip=0x6826,
+	guest_s_cet=0x6828,
+	guest_ssp=0x682A,
+	guest_msr_ia32_interrupt_ssp_table_addr=0x682C,
 	// Natural-Width Host-State Fields
 	host_cr0=0x6C00,
 	host_cr3=0x6C02,
@@ -190,7 +193,10 @@ typedef enum _vmx_vmcs_encoding
 	host_msr_ia32_sysenter_esp=0x6C10,
 	host_msr_ia32_sysenter_eip=0x6C12,
 	host_rsp=0x6C14,
-	host_rip=0x6C16
+	host_rip=0x6C16,
+	host_s_cet=0x6C18,
+	host_ssp=0x6C1A,
+	host_msr_ia32_interrupt_ssp_table_addr=0x6C1C
 }vmx_vmcs_encoding,*vmx_vmcs_encoding_p;
 
 /*

@@ -44,6 +44,8 @@
 #define noir_writecr3	__writecr3
 #define noir_writecr4	__writecr4
 
+void noir_xsetbv(u32 xcr_id,u64 val);
+
 // Read/Write CR8 Register instructions(64-bit only)
 #if defined(_amd64)
 #define noir_readcr8	__readcr8

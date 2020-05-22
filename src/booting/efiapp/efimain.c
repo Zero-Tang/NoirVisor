@@ -135,13 +135,13 @@ EFI_STATUS NoirLoadHypervisorDriver(IN EFI_HANDLE ParentImageHandle,OUT EFI_HAND
 
   Credits: "Speed" ASCII Art Font, "Small" ASCII Art Font.
 */
-EFI_STATUS NoirPrintBanner(IN CHAR16* Path)
+EFI_STATUS NoirPrintBanner()
 {
 	UINTN Col,Row;
 	EFI_STATUS st=StdOut->QueryMode(StdOut,StdOut->Mode->Mode,&Col,&Row);
 	if(st==EFI_SUCCESS)
 	{
-		UINTN Mid=(Col-70)>>1;		// There are 70 characters in this part of banner
+		UINTN Mid=(Col-70)>>1;		// There are 70 characters per line in this part of banner
 		StdOut->ClearScreen(StdOut);
 		StdOut->SetCursorPosition(StdOut,Mid,0);
 		StdOut->OutputString(StdOut,L"_____   __       _____         ___    _______                        ");
@@ -153,7 +153,7 @@ EFI_STATUS NoirPrintBanner(IN CHAR16* Path)
 		StdOut->OutputString(StdOut,L"_  /|  /  / /_/ /_  /  _  /    __ |/ /  _  /  _(__  ) / /_/ /_  /    ");
 		StdOut->SetCursorPosition(StdOut,Mid,4);
 		StdOut->OutputString(StdOut,L"/_/ |_/   \\____/ /_/   /_/     _____/   /_/   /____/  \\____/ /_/     ");
-		Mid=(Col-76)>>1;			// There are 76 characters in this part of banner
+		Mid=(Col-76)>>1;			// There are 76 characters per line in this part of banner
 		StdOut->SetCursorPosition(StdOut,Mid,5);
 		StdOut->OutputString(StdOut,L"  __  __         _       _           ____              _____               ");
 		StdOut->SetCursorPosition(StdOut,Mid,6);
@@ -176,7 +176,7 @@ EFI_STATUS EFIAPI NoirEfiEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *Sy
 	EFI_HANDLE HvImage;
 	EFI_STATUS st=NoirEfiInitialize(SystemTable);
 	NoirSetConsoleModeToMaximumRows();
-	NoirPrintBanner(L"banner.txt");
+	NoirPrintBanner();
 	NoirConsolePrintfW(L"Welcome to NoirVisor Loader!\r\n");
 	NoirConsolePrintfW(L"Firmware Vendor: %ws Revision: %d\r\n",SystemTable->FirmwareVendor,SystemTable->FirmwareRevision);
 	NoirConsolePrintfW(L"Firmware UEFI Specification: %d.%d.%d\r\n",RevHi,RevP1,RevP2);

@@ -121,42 +121,51 @@ i32 static cdecl noir_ci_sorting_comparator(const void* a,const void*b)
 	return 0;
 }
 
-bool noir_initialize_ci(void* section,u32 size)
+bool noir_initialize_ci(void* section,u32 size,bool soft_ci,bool hard_ci)
 {
-	// Get total count of pages.
-	u32 page_num=size>>12;
-	if(size & 0xfff)page_num++;
-	// Check supportability of SSE4.2.
-	if(noir_check_sse42())
-		noir_crc32_page=noir_crc32_page_sse;
-	else
-		noir_crc32_page=noir_crc32_page_std;
-	// Setup CI Enforcement Worker Thread.
-	noir_ci=noir_alloc_nonpg_memory(sizeof(noir_ci_context)+sizeof(noir_ci_page)*page_num);
-	if(noir_ci)
+	bool use_hard=hard_ci;
+	// Check Intel EPT/AMD NPT supportability.
+	use_hard&=noir_check_slat_paging();
+	// Either Hardware-Level or Software-Level CI-Enforcement should be enabled.
+	// If both are disabled, fail the Code Integrity initialization.
+	if(use_hard || soft_ci)
 	{
-		u32 i=0;
-		noir_ci->pages=page_num;
-		noir_ci->base=(ulong_ptr)section;
-		// Initialize Code Integrity of Code Pages.
-		for(;i<page_num;i++)
-		{
-			noir_ci->page_ci[i].virt=(void*)((ulong_ptr)noir_ci->base+(i<<12));
-			noir_ci->page_ci[i].crc=noir_crc32_page(noir_ci->page_ci[i].virt);
-			// Physical Address is intended for SLAT-based real-time enforcement.
-			// In other words, we don't have to write anything about EPT/NPT here.
-			noir_ci->page_ci[i].phys=noir_get_physical_address(noir_ci->page_ci[i].virt);
-		}
-		// Sort it to accelerate real-time CI.
-		noir_qsort(noir_ci->page_ci,page_num,sizeof(noir_ci_page),noir_ci_sorting_comparator);
-		for(i=0;i<page_num;i++)
-			nvci_tracef("Physical: 0x%llX\t CRC32C: 0x%08X\t Virtual: 0x%p\n",noir_ci->page_ci[i].phys,noir_ci->page_ci[i].crc,noir_ci->page_ci[i].virt);
-		// Create Worker Thread.
-		noir_ci->ci_thread=noir_create_thread(noir_ci_enforcement_worker,noir_ci);
-		if(noir_ci->ci_thread)
-			return true;
+		// Get total count of pages.
+		u32 page_num=size>>12;
+		if(size & 0xfff)page_num++;
+		// Check supportability of SSE4.2.
+		if(noir_check_sse42())
+			noir_crc32_page=noir_crc32_page_sse;
 		else
-			noir_free_nonpg_memory(noir_ci);
+			noir_crc32_page=noir_crc32_page_std;
+		// Setup CI Enforcement Worker Thread.
+		noir_ci=noir_alloc_nonpg_memory(sizeof(noir_ci_context)+sizeof(noir_ci_page)*page_num);
+		if(noir_ci)
+		{
+			u32 i=0;
+			noir_ci->pages=page_num;
+			noir_ci->base=(ulong_ptr)section;
+			// Initialize Code Integrity of Code Pages.
+			for(;i<page_num;i++)
+			{
+				noir_ci->page_ci[i].virt=(void*)((ulong_ptr)noir_ci->base+(i<<12));
+				noir_ci->page_ci[i].crc=noir_crc32_page(noir_ci->page_ci[i].virt);
+				// Physical Address is intended for SLAT-based real-time enforcement.
+				// In other words, we don't have to write anything about EPT/NPT here.
+				noir_ci->page_ci[i].phys=noir_get_physical_address(noir_ci->page_ci[i].virt);
+			}
+			// Sort it to accelerate real-time CI.
+			// Do the sort only if we enable Hardware-Level CI. Sorting is unnecessary elsewise.
+			if(use_hard)noir_qsort(noir_ci->page_ci,page_num,sizeof(noir_ci_page),noir_ci_sorting_comparator);
+			for(i=0;i<page_num;i++)
+				nvci_tracef("Physical: 0x%llX\t CRC32C: 0x%08X\t Virtual: 0x%p\n",noir_ci->page_ci[i].phys,noir_ci->page_ci[i].crc,noir_ci->page_ci[i].virt);
+			// Create Worker Thread.
+			if(soft_ci)noir_ci->ci_thread=noir_create_thread(noir_ci_enforcement_worker,noir_ci);
+			if(noir_ci->ci_thread || soft_ci==false)
+				return true;
+			else
+				noir_free_nonpg_memory(noir_ci);
+		}
 	}
 	return false;
 }

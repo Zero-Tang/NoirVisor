@@ -244,6 +244,15 @@ noir_save_processor_state proc
 
 noir_save_processor_state endp
 
+noir_xsetbv proc
+
+	mov eax,edx
+	shr rdx,32
+	xsetbv
+	ret
+
+noir_xsetbv endp
+
 else
 
 assume fs:nothing

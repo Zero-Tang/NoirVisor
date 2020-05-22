@@ -18,6 +18,7 @@
 #include <ntstrsafe.h>
 #include "hooks.h"
 
+// Initialize protected file information with shared lock primitive.
 NTSTATUS NoirBuildProtectedFile()
 {
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
@@ -36,6 +37,7 @@ NTSTATUS NoirBuildProtectedFile()
 	return st;
 }
 
+// Finalize protected file information.
 void NoirTeardownProtectedFile()
 {
 	if(NoirProtectedFile)
@@ -45,6 +47,7 @@ void NoirTeardownProtectedFile()
 	}
 }
 
+// Use exclusive locking primitive to revise protected file information.
 void NoirSetProtectedFile(IN PWSTR FileName)
 {
 	if(NoirProtectedFile)
@@ -61,6 +64,7 @@ void NoirSetProtectedFile(IN PWSTR FileName)
 	}
 }
 
+// Use shared locking primitive to read protected file information.
 BOOLEAN NoirIsProtectedFile(IN PWSTR FilePath)
 {
 	BOOLEAN Result=FALSE;
@@ -154,8 +158,8 @@ NTSTATUS NoirConstructHook(IN PVOID Address,IN PVOID Proxy,OUT PVOID* Detour)
 		  My implementation aims to reduce such performance consumption, where VM-Exit is avoided.
 		*/
 #if defined(_WIN64)
-		//This shellcode can breach the 4GB-limit in AMD64 architecture.
-		//No register would be destroyed.
+		// This shellcode can breach the 4GB-limit in AMD64 architecture.
+		// No register would be destroyed.
 		/*
 		  ShellCode Overview:
 		  push rax			-- 50
@@ -251,6 +255,6 @@ void NoirGetNtOpenProcessIndex()
 
 void NoirSetProtectedPID(IN ULONG NewPID)
 {
-	ProtPID=NewPID;
-	ProtPID&=0xFFFFFFFC;
+	// Use atomic operation for thread-safe consideration.
+	InterlockedAnd(&ProtPID,NewPID&0xFFFFFFFC);
 }
