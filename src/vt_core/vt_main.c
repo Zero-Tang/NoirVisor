@@ -179,10 +179,12 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 	// Setup custom MSR-Interception.
 #if defined(_amd64)
 	noir_set_bitmap(read_bitmap_high,ia32_lstar-0xC0000000);	// Hide MSR Hook
+	noir_set_bitmap(write_bitmap_high,ia32_lstar-0xC0000000);	// Mask MSR Hook
 #else
 	noir_set_bitmap(read_bitmap_low,ia32_sysenter_eip);			// Hide MSR Hook
+	noir_set_bitmap(write_bitmap_high,ia32_sysenter_eip);		// Mask MSR Hook
 #endif
-	// Setup Nested Virtualization MSR Hook.
+	// Setup Nested Virtualization MSR Read-Hook.
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_basic);
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_pinbased_ctrl);
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_priproc_ctrl);
@@ -201,6 +203,17 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_true_exit_ctrl);
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_true_entry_ctrl);
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_vmfunc);
+	// No need for MSR Write-Hook. Processor automatically fails them.
+}
+
+void static nvc_vt_setup_virtual_msr(noir_vt_vcpu_p vcpu)
+{
+	noir_vt_virtual_msr_p vmsr=&vcpu->virtual_msr;
+#if defined(_amd64)
+	vmsr->lstar=(u64)orig_system_call;
+#else
+	vmsr->sysenter_eip=(u64)orig_system_call;
+#endif
 }
 
 u8 static nvc_vt_enable(u64* vmxon_phys)
@@ -502,6 +515,7 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	nvc_vt_setup_host_state_area(vcpu,&state);
 	nvc_vt_setup_memory_virtualization(vcpu);
 	nvc_vt_setup_msr_hook_p(vcpu);
+	nvc_vt_setup_virtual_msr(vcpu);
 	nvc_vt_build_cpuid_cache_per_vcpu(vcpu);
 	vcpu->status=noir_virt_on;
 	// Everything are done, perform subversion.

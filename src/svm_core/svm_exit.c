@@ -165,6 +165,19 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 				vcpu->nested_hvm.hsave_gpa=val.value;
 				break;
 			}
+#if defined(_amd64)
+			case amd64_lstar:
+			{
+				vcpu->virtual_msr.lstar=val.value;
+				break;
+			}
+#else
+			case amd64_sysenter_eip:
+			{
+				vcpu->virtual_msr.sysenter_eip=val.value;
+				break;
+			}
+#endif
 		}
 	}
 	else
@@ -189,13 +202,13 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 #if defined(_amd64)
 			case amd64_lstar:
 			{
-				val.value=(u64)orig_system_call;
+				val.value=vcpu->virtual_msr.lstar;
 				break;
 			}
 #else
 			case amd64_sysenter_eip:
 			{
-				val.value=(u64)orig_system_call;
+				val.value=vcpu->virtual_msr.sysenter_eip;
 				break;
 			}
 #endif

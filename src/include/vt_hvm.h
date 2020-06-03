@@ -68,6 +68,13 @@ typedef struct _noir_vt_cached_cpuid
 	u32 max_leaf[4];
 }noir_vt_cached_cpuid,*noir_vt_cached_cpuid_p;
 
+typedef struct _noir_vt_virtual_msr
+{
+	u64 vmx_msr[0x12];
+	u64 sysenter_eip;
+	u64 lstar;
+}noir_vt_virtual_msr,*noir_vt_virtual_msr_p;
+
 typedef struct _noir_vt_nested_vcpu
 {
 	memory_descriptor vmxon;
@@ -75,7 +82,6 @@ typedef struct _noir_vt_nested_vcpu
 	memory_descriptor vmcs_c;
 	// Abstracted-to-CPU VMCS.
 	memory_descriptor vmcs_t;
-	u64 vmx_msr[0x12];
 	u32 status;
 }noir_vt_nested_vcpu,*noir_vt_nested_vcpu_p;
 
@@ -87,6 +93,7 @@ typedef struct _noir_vt_vcpu
 	noir_vt_hvm_p relative_hvm;
 	void* ept_manager;
 	noir_vt_cached_cpuid cpuid_cache;
+	noir_vt_virtual_msr virtual_msr;
 	noir_vt_nested_vcpu nested_vcpu;
 	u8 status;
 	u8 enabled_feature;

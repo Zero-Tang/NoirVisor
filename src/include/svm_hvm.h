@@ -61,6 +61,14 @@ typedef struct _noir_svm_cached_cpuid
 	u32 max_leaf[4];
 }noir_svm_cached_cpuid,*noir_svm_cached_cpuid_p;
 
+typedef struct _noir_svm_virtual_msr
+{
+	// Add virtualized SVM MSR here.
+	// System Call MSR
+	u64 lstar;
+	u64 sysenter_eip;
+}noir_svm_virtual_msr,*noir_svm_virtual_msr_p;
+
 typedef struct _noir_svm_nested_vcpu
 {
 	u64 hsave_gpa;
@@ -76,6 +84,7 @@ typedef struct _noir_svm_vcpu
 	noir_svm_hvm_p relative_hvm;
 	u32 proc_id;
 	noir_svm_cached_cpuid cpuid_cache;
+	noir_svm_virtual_msr virtual_msr;
 	noir_svm_nested_vcpu nested_hvm;
 	u8 status;
 	u8 enabled_feature;

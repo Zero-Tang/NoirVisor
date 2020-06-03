@@ -339,7 +339,7 @@ typedef enum _ia32_vmx_instruction_error
 	invept_invvpid_invalid_operand=28
 }ia32_vmx_instruction_error,*ia32_vmx_instruction_error_p;
 
-#if defined(_vt_drv)
+#if defined(_vt_main)
 char* vt_error_message[0x20]=
 {
 	"Invalid Error, Number=0!",										//Error=0

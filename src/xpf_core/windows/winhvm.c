@@ -33,25 +33,28 @@ NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength)
 		{
 			UNICODE_STRING uniKvName;
 			ULONG RetLen=0;
-			WCHAR ProductName[128],CSDVersion[128],BuildNumber[8];
+			WCHAR ProductName[128],BuildLabEx[128],BuildNumber[8];
 			RtlZeroMemory(VersionString,VersionLength);
 			// Get Windows Product Name
 			RtlZeroMemory(KvPartInf,PAGE_SIZE);
+			RtlZeroMemory(ProductName,sizeof(ProductName));
 			RtlInitUnicodeString(&uniKvName,L"ProductName");
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
-			if(NT_SUCCESS(st))RtlStringCchCopyNW(ProductName,128,(PWSTR)KvPartInf->Data,KvPartInf->DataLength);
+			if(NT_SUCCESS(st))RtlStringCbCopyNW(ProductName,sizeof(ProductName),(PWSTR)KvPartInf->Data,KvPartInf->DataLength);
 			// Get Windows CSD Version
 			RtlZeroMemory(KvPartInf,PAGE_SIZE);
-			RtlInitUnicodeString(&uniKvName,L"CSDVersion");
+			RtlZeroMemory(BuildLabEx,sizeof(BuildLabEx));
+			RtlInitUnicodeString(&uniKvName,L"BuildLabEx");
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
-			if(NT_SUCCESS(st))RtlStringCchCopyNW(CSDVersion,128,(PWSTR)KvPartInf->Data,KvPartInf->DataLength);
+			if(NT_SUCCESS(st))RtlStringCbCopyNW(BuildLabEx,sizeof(BuildLabEx),(PWSTR)KvPartInf->Data,KvPartInf->DataLength);
 			// Get Windows Build Number
 			RtlZeroMemory(KvPartInf,PAGE_SIZE);
+			RtlZeroMemory(BuildNumber,sizeof(BuildNumber));
 			RtlInitUnicodeString(&uniKvName,L"CurrentBuildNumber");
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
-			if(NT_SUCCESS(st))RtlStringCchCopyNW(BuildNumber,8,(PWSTR)KvPartInf->Data,KvPartInf->DataLength);
+			if(NT_SUCCESS(st))RtlStringCbCopyNW(BuildNumber,sizeof(BuildNumber),(PWSTR)KvPartInf->Data,KvPartInf->DataLength);
 			// Build the String
-			st=RtlStringCbPrintfW(VersionString,VersionLength,L"%ws %ws Build %ws",ProductName,CSDVersion,BuildNumber);
+			st=RtlStringCbPrintfW(VersionString,VersionLength,L"%ws Build %ws (%ws)",ProductName,BuildNumber,BuildLabEx);
 			NoirDebugPrint("System Version: %ws\n",VersionString);
 			ZwClose(hKey);
 		}

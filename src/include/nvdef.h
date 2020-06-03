@@ -26,6 +26,16 @@ typedef signed __int32		i32;
 typedef signed __int64		i64;
 #endif
 
+typedef u8*		u8p;
+typedef u16*	u16p;
+typedef u32*	u32p;
+typedef u64*	u64p;
+
+typedef i8*		i8p;
+typedef i16*	i16p;
+typedef i32*	i32p;
+typedef i64*	i64p;
+
 #if defined(_amd64)
 typedef u64 ulong_ptr;
 typedef i64 long_ptr;
@@ -34,6 +44,10 @@ typedef u32 ulong_ptr;
 typedef i32 long_ptr;
 typedef i32 size_t;
 #endif
+
+typedef ulong_ptr*	ulong_ptr_p;
+typedef long_ptr*	long_ptr_p;
+typedef size_t*		size_p;
 
 typedef volatile u8		u8v;
 typedef volatile u16	u16v;
@@ -47,6 +61,19 @@ typedef volatile i64	i64v;
 
 typedef volatile ulong_ptr	vulong_ptr;
 typedef volatile long_ptr	vlong_ptr;
+
+typedef u8v*	u8vp;
+typedef u16v*	u16vp;
+typedef u32v*	u32vp;
+typedef u64v*	u64vp;
+
+typedef i8v*	i8vp;
+typedef i16v*	i16vp;
+typedef i32v*	i32vp;
+typedef i64v*	i64vp;
+
+typedef vulong_ptr*	vulong_ptr_p;
+typedef vlong_ptr*	vlong_ptr_p;
 
 #if defined(_msvc) || defined(_llvm)
 typedef enum

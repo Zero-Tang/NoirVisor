@@ -22,8 +22,9 @@
 #include "vt_vmcs.h"
 #include "vt_def.h"
 
-void nvc_vt_build_nested_vmx_msr(noir_vt_nested_vcpu_p nested_vcpu)
+void nvc_vt_build_nested_vmx_msr(noir_vt_vcpu_p vcpu)
 {
+	noir_vt_virtual_msr_p vmsr=&vcpu->virtual_msr;
 	ia32_vmx_basic_msr basic_msr;
 	ia32_vmx_pinbased_ctrl_msr pinbased_msr,true_pinbased_msr;
 	ia32_vmx_priproc_ctrl_msr priproc_msr,true_priproc_msr;
@@ -35,45 +36,45 @@ void nvc_vt_build_nested_vmx_msr(noir_vt_nested_vcpu_p nested_vcpu)
 	// Process the VMX Basic MSR.
 	basic_msr.value=noir_rdmsr(ia32_vmx_basic);
 	basic_msr.dual_mon_treat=0;		// Cannot support Dual Monitor Treatment.
-	nested_vcpu->vmx_msr[ia32_vmx_basic-ia32_vmx_basic]=basic_msr.value;
+	vmsr->vmx_msr[ia32_vmx_basic-ia32_vmx_basic]=basic_msr.value;
 	// Process the Pin-Based VM-Execution Control MSR.
 	pinbased_msr.value=noir_rdmsr(ia32_vmx_pinbased_ctrl);
 	true_pinbased_msr.value=noir_rdmsr(ia32_vmx_true_pinbased_ctrl);
-	nested_vcpu->vmx_msr[ia32_vmx_pinbased_ctrl-ia32_vmx_basic]=pinbased_msr.value;
-	nested_vcpu->vmx_msr[ia32_vmx_true_pinbased_ctrl-ia32_vmx_basic]=true_pinbased_msr.value;
+	vmsr->vmx_msr[ia32_vmx_pinbased_ctrl-ia32_vmx_basic]=pinbased_msr.value;
+	vmsr->vmx_msr[ia32_vmx_true_pinbased_ctrl-ia32_vmx_basic]=true_pinbased_msr.value;
 	// Process the Primary Processor-Based VM-Execution Control MSR.
 	priproc_msr.value=noir_rdmsr(ia32_vmx_priproc_ctrl);
 	true_priproc_msr.value=noir_rdmsr(ia32_vmx_true_priproc_ctrl);
-	nested_vcpu->vmx_msr[ia32_vmx_priproc_ctrl-ia32_vmx_basic]=priproc_msr.value;
-	nested_vcpu->vmx_msr[ia32_vmx_true_priproc_ctrl-ia32_vmx_basic]=true_priproc_msr.value;
+	vmsr->vmx_msr[ia32_vmx_priproc_ctrl-ia32_vmx_basic]=priproc_msr.value;
+	vmsr->vmx_msr[ia32_vmx_true_priproc_ctrl-ia32_vmx_basic]=true_priproc_msr.value;
 	// Process the Secondary Processor-Based VM-Execution Control MSR.
 	secproc_msr.value=noir_rdmsr(ia32_vmx_2ndproc_ctrl);
 	secproc_msr.allowed1_settings.enable_ept=0;	// We cannot emulate Intel EPT.
-	nested_vcpu->vmx_msr[ia32_vmx_2ndproc_ctrl-ia32_vmx_basic]=secproc_msr.value;
+	vmsr->vmx_msr[ia32_vmx_2ndproc_ctrl-ia32_vmx_basic]=secproc_msr.value;
 	// Process the VM-Exit Control MSR
 	exit_msr.value=noir_rdmsr(ia32_vmx_exit_ctrl);
 	true_exit_msr.value=noir_rdmsr(ia32_vmx_true_exit_ctrl);
-	nested_vcpu->vmx_msr[ia32_vmx_exit_ctrl-ia32_vmx_basic]=exit_msr.value;
-	nested_vcpu->vmx_msr[ia32_vmx_true_exit_ctrl-ia32_vmx_basic]=true_exit_msr.value;
+	vmsr->vmx_msr[ia32_vmx_exit_ctrl-ia32_vmx_basic]=exit_msr.value;
+	vmsr->vmx_msr[ia32_vmx_true_exit_ctrl-ia32_vmx_basic]=true_exit_msr.value;
 	// Process the VM-Entry Control MSR
 	entry_msr.value=noir_rdmsr(ia32_vmx_entry_ctrl);
 	true_entry_msr.value=noir_rdmsr(ia32_vmx_true_entry_ctrl);
-	nested_vcpu->vmx_msr[ia32_vmx_entry_ctrl-ia32_vmx_basic]=entry_msr.value;
-	nested_vcpu->vmx_msr[ia32_vmx_true_entry_ctrl-ia32_vmx_basic]=true_entry_msr.value;
+	vmsr->vmx_msr[ia32_vmx_entry_ctrl-ia32_vmx_basic]=entry_msr.value;
+	vmsr->vmx_msr[ia32_vmx_true_entry_ctrl-ia32_vmx_basic]=true_entry_msr.value;
 	// Fixed CR0/CR4
-	nested_vcpu->vmx_msr[ia32_vmx_cr0_fixed0-ia32_vmx_basic]=noir_rdmsr(ia32_vmx_cr0_fixed0);
-	nested_vcpu->vmx_msr[ia32_vmx_cr0_fixed1-ia32_vmx_basic]=noir_rdmsr(ia32_vmx_cr0_fixed1);
-	nested_vcpu->vmx_msr[ia32_vmx_cr4_fixed0-ia32_vmx_basic]=noir_rdmsr(ia32_vmx_cr4_fixed0);
-	nested_vcpu->vmx_msr[ia32_vmx_cr4_fixed1-ia32_vmx_basic]=noir_rdmsr(ia32_vmx_cr4_fixed1);
+	vmsr->vmx_msr[ia32_vmx_cr0_fixed0-ia32_vmx_basic]=noir_rdmsr(ia32_vmx_cr0_fixed0);
+	vmsr->vmx_msr[ia32_vmx_cr0_fixed1-ia32_vmx_basic]=noir_rdmsr(ia32_vmx_cr0_fixed1);
+	vmsr->vmx_msr[ia32_vmx_cr4_fixed0-ia32_vmx_basic]=noir_rdmsr(ia32_vmx_cr4_fixed0);
+	vmsr->vmx_msr[ia32_vmx_cr4_fixed1-ia32_vmx_basic]=noir_rdmsr(ia32_vmx_cr4_fixed1);
 	// Process EPT/VPID Capability
-	nested_vcpu->vmx_msr[ia32_vmx_ept_vpid_cap-ia32_vmx_basic]=0;	// No EPT support by now.
+	vmsr->vmx_msr[ia32_vmx_ept_vpid_cap-ia32_vmx_basic]=0;	// No EPT support by now.
 	// Process vmfunc Supportability
-	nested_vcpu->vmx_msr[ia32_vmx_vmfunc-ia32_vmx_basic]=0;
+	vmsr->vmx_msr[ia32_vmx_vmfunc-ia32_vmx_basic]=0;
 	// Process VMCS Enumeration
-	nested_vcpu->vmx_msr[ia32_vmx_vmcs_enum-ia32_vmx_basic]=0x34;
+	vmsr->vmx_msr[ia32_vmx_vmcs_enum-ia32_vmx_basic]=0x34;
 	// Process Miscellaneous VMX Info
 	misc_msr.value=noir_rdmsr(ia32_vmx_misc);
-	nested_vcpu->vmx_msr[ia32_vmx_misc-ia32_vmx_basic]=misc_msr.value;
+	vmsr->vmx_msr[ia32_vmx_misc-ia32_vmx_basic]=misc_msr.value;
 	// Process EPT/VPID Capability - indicate no EPT support, but reserve VPID support.
 	ept_vpid_msr.value=noir_rdmsr(ia32_vmx_ept_vpid_cap);
 	ept_vpid_msr.support_exec_only_translation=0;
@@ -87,12 +88,13 @@ void nvc_vt_build_nested_vmx_msr(noir_vt_nested_vcpu_p nested_vcpu)
 	ept_vpid_msr.report_advanced_epf_exit_info=0;
 	ept_vpid_msr.support_single_context_invept=0;
 	ept_vpid_msr.support_all_context_invept=0;
-	nested_vcpu->vmx_msr[ia32_vmx_ept_vpid_cap-ia32_vmx_basic]=ept_vpid_msr.value;
+	vmsr->vmx_msr[ia32_vmx_ept_vpid_cap-ia32_vmx_basic]=ept_vpid_msr.value;
 }
 
-bool noir_vt_build_nested_vcpu(noir_vt_nested_vcpu_p nested_vcpu)
+bool noir_vt_build_nested_vcpu(noir_vt_vcpu_p vcpu)
 {
-	nvc_vt_build_nested_vmx_msr(nested_vcpu);
+	noir_vt_nested_vcpu_p nested_vcpu=&vcpu->nested_vcpu;
+	nvc_vt_build_nested_vmx_msr(vcpu);
 	if(noir_vt_vmclear(&nested_vcpu->vmcs_t.phys)==0)
 	{
 		if(noir_vt_vmptrld(&nested_vcpu->vmcs_t.phys)==0)

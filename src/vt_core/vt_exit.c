@@ -331,7 +331,8 @@ void static fastcall nvc_vt_vmclear_handler(noir_gpr_state_p gpr_state,u32 exit_
 void static fastcall nvc_vt_vmptrld_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
 	u32 proc_id=noir_get_current_processor();
-	noir_vt_nested_vcpu_p nested_vcpu=&hvm_p->virtual_cpu[proc_id].nested_vcpu;
+	noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[proc_id];
+	noir_vt_nested_vcpu_p nested_vcpu=&vcpu->nested_vcpu;
 	// Check if Guest is under VMX Operation.
 	if(noir_bt(&nested_vcpu->status,noir_nvt_vmxon))
 	{
@@ -346,7 +347,7 @@ void static fastcall nvc_vt_vmptrld_handler(noir_gpr_state_p gpr_state,u32 exit_
 			else
 			{
 				noir_vt_nested_vmcs_header_p header=noir_find_virt_by_phys(vmcs_pa);
-				u32 true_revision_id=(u32)nested_vcpu->vmx_msr[0];
+				u32 true_revision_id=(u32)vcpu->virtual_msr.vmx_msr[0];
 				if(header->revision_id!=true_revision_id)
 					noir_vt_vmfail(nested_vcpu,vmptrld_with_incorrect_revid);
 				else
@@ -425,7 +426,7 @@ void static fastcall nvc_vt_vmxon_handler(noir_gpr_state_p gpr_state,u32 exit_re
 				{
 					// Get VMX Revision ID.
 					u32* revision_id=(u32*)vcpu->nested_vcpu.vmxon.virt;
-					u32 true_revision_id=(u32)vcpu->nested_vcpu.vmx_msr[0];
+					u32 true_revision_id=(u32)vcpu->virtual_msr.vmx_msr[0];
 					// Check if Revision ID is correct.
 					if(noir_bt(revision_id,31) || *revision_id!=true_revision_id)
 						noir_vt_vmfail_invalid();
@@ -588,14 +589,21 @@ void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,u32 exi
 // This is the key feature of MSR-Hook Hiding.
 void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
+	bool advance=true;
 	u32 index=(u32)gpr_state->rcx;
 	large_integer val;
 	// Expected Case: Query VMX MSR.
 	if(index>=ia32_vmx_basic && index<=ia32_vmx_vmfunc)
 	{
-		u32 cur_proc=noir_get_current_processor();
-		noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[cur_proc];
-		val.value=vcpu->nested_vcpu.vmx_msr[index-ia32_vmx_basic];
+		/*
+		  u32 cur_proc=noir_get_current_processor();
+		  noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[cur_proc];
+		  val.value=vcpu->nested_vcpu.vmx_msr[index-ia32_vmx_basic];
+		*/
+		// NoirVisor doesn't support Nested Intel VT-x right now.
+		// Reading VMX Capability MSRs would cause #GP exception.
+		noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
+		advance=false;	// For exception, rip does not advance.
 	}
 	// Expected Case: Check MSR Hook.
 #if defined(_amd64)
@@ -611,17 +619,27 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 	// Put into GPRs.
 	*(u32*)&gpr_state->rax=val.low;
 	*(u32*)&gpr_state->rdx=val.high;
-	noir_vt_advance_rip();
+	if(advance)noir_vt_advance_rip();
 }
 
 // Expected Exit Reason: 32
 void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
 	u32 index=(u32)gpr_state->rcx;
+	u32 proc_num=noir_get_current_processor();
+	noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[proc_num];
 	large_integer val;
 	val.low=(u32)gpr_state->rax;
 	val.high=(u32)gpr_state->rdx;
-	nv_dprintf("Unexpected wrmsr is intercepted! Index=0x%X\t Value=0x%08X`%08X\n",index,val.low,val.high);
+#if defined(_amd64)
+	if(index==ia32_lstar)
+		vcpu->virtual_msr.lstar=val.value;
+#else
+	if(index==ia32_sysenter_eip)
+		vcpu->virtual_msr.sysenter_eip=val.value;
+#endif
+	else
+		nv_dprintf("Unexpected wrmsr is intercepted! Index=0x%X\t Value=0x%08X`%08X\n",index,val.low,val.high);
 	noir_wrmsr(index,val.value);
 	noir_vt_advance_rip();
 }

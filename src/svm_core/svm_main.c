@@ -112,7 +112,6 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	void* bitmap1=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0);
 	void* bitmap2=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0x800);
 	void* bitmap3=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0x1000);
-	unref_var(bitmap1);
 	// Setup basic MSR-Intercepts that may interfere with SVM normal operations.
 	// This is also for nested virtualization.
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,0));
@@ -121,9 +120,22 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,1));
 	// Setup custom MSR-Interception.
 #if defined(_amd64)
+	unref_var(bitmap1);
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,0));			// Hide MSR Hook
+	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,1));			// Mask MSR Hook
 #else
 	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,0));		// Hide MSR Hook
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,1));		// Mask MSR Hook
+#endif
+}
+
+void static nvc_svm_setup_virtual_msr(noir_svm_vcpu_p vcpu)
+{
+	noir_svm_virtual_msr_p vmsr=&vcpu->virtual_msr;
+#if defined(_amd64)
+	vmsr->lstar=(u64)orig_system_call;
+#else
+	vmsr->sysenter_eip=(u64)orig_system_call;
 #endif
 }
 
@@ -280,6 +292,7 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 		noir_wrmsr(amd64_hsave_pa,vcpu->hsave.phys);
 		vcpu->enabled_feature|=noir_svm_cpuid_caching;
 		nvc_svm_build_cpuid_cache_per_vcpu(vcpu);
+		nvc_svm_setup_virtual_msr(vcpu);
 		vcpu->status=nvc_svm_subvert_processor_a(stack);
 	}
 }
