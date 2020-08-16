@@ -18,6 +18,14 @@
 #include <ntstrsafe.h>
 #include "winhvm.h"
 
+void NoirPrintCompilerVersion()
+{
+	ULONG Build=_MSC_FULL_VER%100000;
+	ULONG Minor=_MSC_VER%100;
+	ULONG Major=_MSC_VER/100;
+	NoirDebugPrint("Compiler Version: MSVC %02d.%02d.%05d\n",Major,Minor,Build);
+}
+
 NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength)
 {
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;

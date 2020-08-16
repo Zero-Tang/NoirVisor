@@ -205,3 +205,4 @@ bool nvc_npt_initialize_ci(noir_npt_manager_p nptm);
 noir_npt_manager_p nvc_npt_build_identity_map();
 void nvc_npt_build_hook_mapping(noir_hypervisor_p hvm);
 void nvc_npt_cleanup(noir_npt_manager_p nptm);
+u32 nvc_npt_get_allocation_size();

@@ -57,7 +57,7 @@ Copy EFI Runtime Driver to \NoirVisor.efi <br>
 As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system. Disable Secure Boot feature unless you can sign the executable.
 
 # Detection of NoirVisor
-As specified in AMD64 Architecture Programming Manual, CPUID.EAX=1.ECX[bit 31] indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors defines leaf 0x40000000 is used to identify hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is "VMwareVMware". In NoirVisor, hypervisor vendor string is defined as "NoirVisor ZT".
+As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]` indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors defines leaf 0x40000000 is used to identify hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is `VMwareVMware`. In NoirVisor, hypervisor vendor string is defined as `NoirVisor ZT`.
 
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. <br>
@@ -66,9 +66,8 @@ Porting to Unified Extensible Firmware Interface (UEFI) is in progress. <br>
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has five future development plans: <br>
+Project NoirVisor has four future development plans: <br>
 - Remaster CPUID-caching architecture with a flexible design for Intel VT-x. <br>
-- Develop Nested Paging with Stealth Hook on SVM-Engine for NoirVisor. <br>
 - Develop Nested Virtualization. <br>
 - Port NoirVisor to 32-bit Windows platform. <br>
 - Port NoirVisor to UEFI and corresponding layered hypervisor.

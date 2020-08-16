@@ -21,7 +21,7 @@ ifdef _amd64
 
 noir_get_segment_attributes proc
 
-	and rdx,0fffffffffffffff8h
+	and rdx,0fff8h
 	add rcx,rdx
 	mov ax,word ptr[rcx+5]
 	and ax,0f0ffh
@@ -81,7 +81,7 @@ noir_save_processor_state proc
 	; Save Interrupt Descriptor Table Register
 	sidt fword ptr[rbx+86h]
 	shr dword ptr[rbx+84h],16
-
+	
 	; Save Segment Attributes - CS
 	mov rcx,qword ptr[rbx+78h]
 	mov dx,word ptr[rbx]
@@ -474,6 +474,16 @@ noir_save_processor_state proc uses edi state:dword
 	ret
 
 noir_save_processor_state endp
+
+noir_xsetbv proc xcr_id:dword,val_lo:dword,val_hi:dword
+
+	mov eax,dword ptr [val_lo]
+	mov edx,dword ptr [val_hi]
+	mov ecx,dword ptr [xcr_id]
+	xsetbv
+	ret
+
+noir_xsetbv endp
 
 endif
 

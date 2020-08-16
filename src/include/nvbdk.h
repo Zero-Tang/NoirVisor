@@ -20,6 +20,21 @@
 #define page_2mb_size			0x200000
 #define page_1gb_size			0x40000000
 
+#define page_offset(x)			(x&0xfff)
+#define page_4kb_offset(x)		(x&0xfff)
+#define page_2mb_offset(x)		(x&0x1fffff)
+#define page_1gb_offset(x)		(x&0x3fffffff)
+
+#define page_count(x)			(x>>12)
+#define page_4kb_count(x)		(x>>12)
+#define page_2mb_count(x)		(x>>21)
+#define page_1gb_count(x)		(x>>30)
+
+#define page_mult(x)			(x<<12)
+#define page_4kb_mult(x)		(x<<12)
+#define page_2mb_mult(x)		(x<<21)
+#define page_1gb_mult(x)		(x<<30)
+
 #define selector_rplti_mask		0xfff8
 
 // Classification of CPUID Leaf
@@ -112,6 +127,28 @@ typedef struct _noir_gpr_state
 	u64 r15;
 #endif
 }noir_gpr_state,*noir_gpr_state_p;
+
+typedef struct _noir_xmm_state
+{
+	r128 xmm0;
+	r128 xmm1;
+	r128 xmm2;
+	r128 xmm3;
+	r128 xmm4;
+	r128 xmm5;
+	r128 xmm6;
+	r128 xmm7;
+#if defined(_amd64)
+	r128 xmm8;
+	r128 xmm9;
+	r128 xmm10;
+	r128 xmm11;
+	r128 xmm12;
+	r128 xmm13;
+	r128 xmm14;
+	r128 xmm15;
+#endif
+}noir_xmm_state,*noir_xmm_state_p;
 
 typedef void (*noir_broadcast_worker)(void* context,u32 processor_id);
 typedef i32(cdecl *noir_sorting_comparator)(const void* a,const void*b);

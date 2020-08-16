@@ -37,6 +37,7 @@ void LDE_Finalize();
 NTSTATUS NoirBuildProtectedFile();
 void NoirTeardownProtectedFile();
 void NoirSetProtectedFile(IN PWSTR FileName);
+void NoirPrintCompilerVersion();
 NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength);
 ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();

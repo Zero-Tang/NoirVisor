@@ -62,6 +62,8 @@
 #define amd64_vmpage_flush				0xC001011E
 #define amd64_svm_ghcb_pa				0xC0010130
 #define amd64_sev_status				0xC0010131
+#define amd64_rmp_base					0xC0010132
+#define amd64_rmp_end					0xC0010133
 
 // This is used for defining AMD64 architectural interrupt vectors.
 #define amd64_divide_error				0

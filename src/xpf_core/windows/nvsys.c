@@ -123,8 +123,11 @@ ULONG32 noir_get_instruction_length(IN PVOID code,IN BOOLEAN LongMode)
 
 void* noir_alloc_contd_memory(size_t length)
 {
-	PHYSICAL_ADDRESS M={0xFFFFFFFFFFFFFFFF};
-	PVOID p=MmAllocateContiguousMemory(length,M);
+	// PHYSICAL_ADDRESS L={0};
+	PHYSICAL_ADDRESS H={0xFFFFFFFFFFFFFFFF};
+	// PHYSICAL_ADDRESS B={0};
+	// PVOID p=MmAllocateContiguousMemorySpecifyCacheNode(length,L,H,B,MmCached,MM_ANY_NODE_OK);
+	PVOID p=MmAllocateContiguousMemory(length,H);
 	if(p)RtlZeroMemory(p,length);
 	return p;
 }

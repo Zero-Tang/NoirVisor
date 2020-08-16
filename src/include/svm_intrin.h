@@ -41,4 +41,4 @@ u32 inline svm_msrpm_bit(u8 bitmap,u32 index,u8 operation)
 #define noir_svm_invlpga(a,i)	__asm__	__volatile__("invlpga %%rax,%%rcx" : : "a"(a),"c"(i))
 #endif
 
-void fastcall noir_svm_vmmcall(u32 index,ulong_ptr context);
+void stdcall noir_svm_vmmcall(u32 index,ulong_ptr context);

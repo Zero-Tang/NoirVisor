@@ -75,6 +75,12 @@ typedef i64v*	i64vp;
 typedef vulong_ptr*	vulong_ptr_p;
 typedef vlong_ptr*	vlong_ptr_p;
 
+typedef union r128
+{
+	float s[4];		// Single-Precision
+	double d[2];	// Double-Precision
+}*r128;
+
 #if defined(_msvc) || defined(_llvm)
 typedef enum
 {

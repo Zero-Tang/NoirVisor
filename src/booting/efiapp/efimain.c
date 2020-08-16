@@ -178,6 +178,7 @@ EFI_STATUS EFIAPI NoirEfiEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *Sy
 	NoirSetConsoleModeToMaximumRows();
 	NoirPrintBanner();
 	NoirConsolePrintfW(L"Welcome to NoirVisor Loader!\r\n");
+	NoirConsolePrintfW(L"NoirVisor's Compiler Version: LLVM Clang %s\r\n",__clang_version__);
 	NoirConsolePrintfW(L"Firmware Vendor: %ws Revision: %d\r\n",SystemTable->FirmwareVendor,SystemTable->FirmwareRevision);
 	NoirConsolePrintfW(L"Firmware UEFI Specification: %d.%d.%d\r\n",RevHi,RevP1,RevP2);
 	NoirConsolePrintfW(L"Initialization Status: 0x%X\r\n",st);

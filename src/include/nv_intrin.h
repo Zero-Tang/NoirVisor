@@ -117,8 +117,8 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 #endif
 
 // Unreference Parameters/Variables
-#define unref_var(x)	x=x
-#define unref_param(x)	x=x
+#define unref_var(x)	(x=x)
+#define unref_param(x)	(x=x)
 
 // The rest are done by inline functions.
 

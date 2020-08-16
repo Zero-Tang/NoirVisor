@@ -17,56 +17,14 @@ endif
 
 .code
 
+include noirhv.inc
+
 extern nvc_svm_subvert_processor_i:proc
 extern nvc_svm_exit_handler:proc
 
 ifdef _amd64
 
 extern system_cr3:qword
-
-; Macro for pushing all GPRs to stack.
-pushaq macro
-	
-	sub rsp,80h
-	mov qword ptr [rsp+00h],rax
-	mov qword ptr [rsp+08h],rcx
-	mov qword ptr [rsp+10h],rdx
-	mov qword ptr [rsp+18h],rbx
-	mov qword ptr [rsp+28h],rbp
-	mov qword ptr [rsp+30h],rsi
-	mov qword ptr [rsp+38h],rdi
-	mov qword ptr [rsp+40h],r8
-	mov qword ptr [rsp+48h],r9
-	mov qword ptr [rsp+50h],r10
-	mov qword ptr [rsp+58h],r11
-	mov qword ptr [rsp+60h],r12
-	mov qword ptr [rsp+68h],r13
-	mov qword ptr [rsp+70h],r14
-	mov qword ptr [rsp+78h],r15
-	
-endm
-
-; Macro for poping all GPRs from stack.
-popaq macro
-
-	mov rax,qword ptr [rsp]
-	mov rcx,qword ptr [rsp+8]
-	mov rdx,qword ptr [rsp+10h]
-	mov rbx,qword ptr [rsp+18h]
-	mov rbp,qword ptr [rsp+28h]
-	mov rsi,qword ptr [rsp+30h]
-	mov rdi,qword ptr [rsp+38h]
-	mov r8, qword ptr [rsp+40h]
-	mov r9, qword ptr [rsp+48h]
-	mov r10,qword ptr [rsp+50h]
-	mov r11,qword ptr [rsp+58h]
-	mov r12,qword ptr [rsp+60h]
-	mov r13,qword ptr [rsp+68h]
-	mov r14,qword ptr [rsp+70h]
-	mov r15,qword ptr [rsp+78h]
-	add rsp,80h
-
-endm
 
 ; A simple implementation for vmmcall instruction.
 noir_svm_vmmcall proc
@@ -102,6 +60,7 @@ nvc_svm_exit_handler_a proc
 	vmload rax
 	mov rax,qword ptr[rsp]
 	; Save all GPRs, and pass to Exit Handler
+	; pushax
 	pushaq
 	mov rcx,rsp
 	mov rdx,qword ptr[rsp+90h]
@@ -112,6 +71,7 @@ nvc_svm_exit_handler_a proc
 	; Restore all the GPRs.
 	; Certain context should be revised by VMM.
 	popaq
+	; popax
 	; After popaq, rax stores the physical
 	; address of VMCB again.
 	; Load processor's hidden state for VM.
@@ -172,15 +132,18 @@ assume fs:nothing
 extern system_cr3:dword
 
 ; A simple implementation for vmmcall instruction.
-noir_svm_vmmcall proc
+noir_svm_vmmcall proc index:dword,context:dword
 
+	mov ecx,dword ptr [index]
+	mov edx,dword ptr [context]
 	vmmcall
 	ret
 
 noir_svm_vmmcall endp
 
-nvc_svm_return proc
+nvc_svm_return proc stack:dword
 
+	mov ecx,dword ptr [stack]
 	; Switch the stack where state is saved.
 	mov esp,ecx
 	popad

@@ -12,7 +12,7 @@
 
 ifdef _ia32
 .686p
-.model flat
+.model flat,stdcall
 endif
 
 .code

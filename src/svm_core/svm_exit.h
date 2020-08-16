@@ -68,6 +68,7 @@
 #define intercepted_rdpru			0x8E
 #define intercepted_efer_w_trap		0x8F
 #define intercepted_cr_w_trap(x)	0x90+x
+#define intercepted_mcommit			0xA3
 #define nested_page_fault			0x400
 #define avic_incomplete_ipi			0x401
 #define avic_no_acceleration		0x402

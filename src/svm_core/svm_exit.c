@@ -189,7 +189,7 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 				// Read the EFER value from VMCB.
 				val.value=noir_svm_vmread64(vmcb,guest_efer);
 				// The SVME bit should be filtered.
-				val.value&=(vcpu->nested_hvm.svme<<amd64_efer_svme);
+				if(vcpu->nested_hvm.svme==0)val.value&=~amd64_efer_svme_bit;
 				break;
 			}
 			case amd64_hsave_pa:
@@ -213,10 +213,19 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 			}
 #endif
 		}
-		*(u32*)&gpr_state->rax=val.low;
-		*(u32*)&gpr_state->rdx=val.high;
+		// Higher 32 bits of rax and rdx will be cleared.
+		gpr_state->rax=(ulong_ptr)val.low;
+		gpr_state->rdx=(ulong_ptr)val.high;
 	}
 	noir_svm_advance_rip(vcpu->vmcb.virt);
+}
+
+// Expected Intercept Code: 0x7F
+// If this VM-Exit occurs, it may indicate a triple fault.
+void static fastcall nvc_svm_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	nv_dprintf("Shutdown is Intercepted!\n");
+	noir_int3();
 }
 
 // Expected Intercept Code: 0x80
@@ -404,6 +413,7 @@ bool nvc_svm_build_exit_handler()
 		// Setup Exit-Handlers
 		svm_exit_handlers[0][intercepted_cpuid]=nvc_svm_cpuid_handler;
 		svm_exit_handlers[0][intercepted_msr]=nvc_svm_msr_handler;
+		svm_exit_handlers[0][intercepted_shutdown]=nvc_svm_shutdown_handler;
 		svm_exit_handlers[0][intercepted_vmrun]=nvc_svm_vmrun_handler;
 		svm_exit_handlers[0][intercepted_vmmcall]=nvc_svm_vmmcall_handler;
 		svm_exit_handlers[1][nested_page_fault-0x400]=nvc_svm_nested_pf_handler;

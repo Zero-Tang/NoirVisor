@@ -616,9 +616,9 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 	// Maybe induced by Microsoft Top-Level Hypervisor Specification.
 	else
 		nv_dprintf("Unexpected rdmsr is intercepted! Index=0x%X\n",index);
-	// Put into GPRs.
-	*(u32*)&gpr_state->rax=val.low;
-	*(u32*)&gpr_state->rdx=val.high;
+	// Put into GPRs. Clear high 32-bits of each register.
+	gpr_state->rax=(ulong_ptr)val.low;
+	gpr_state->rdx=(ulong_ptr)val.high;
 	if(advance)noir_vt_advance_rip();
 }
 

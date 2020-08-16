@@ -256,5 +256,5 @@ void NoirGetNtOpenProcessIndex()
 void NoirSetProtectedPID(IN ULONG NewPID)
 {
 	// Use atomic operation for thread-safe consideration.
-	InterlockedAnd(&ProtPID,NewPID&0xFFFFFFFC);
+	InterlockedExchange(&ProtPID,NewPID&0xFFFFFFFC);
 }

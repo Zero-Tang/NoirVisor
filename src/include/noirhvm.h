@@ -46,6 +46,7 @@
 
 // Stack Size = 64KB
 #define nvc_stack_size			0x10000
+#define nvc_stack_pages			0x10
 
 typedef struct _noir_hypervisor
 {
@@ -59,6 +60,11 @@ typedef struct _noir_hypervisor
 	void* virtual_cpu;
 	void* relative_hvm;
 #endif
+	void* address_start;
+	ulong_ptr alloc_pos_lo;
+	ulong_ptr alloc_pos_hi;
+	u32 upper_remainder;
+	u32 lower_remainder;
 	struct
 	{
 		ulong_ptr base;
@@ -97,6 +103,7 @@ bool nvc_svm_subvert_system(noir_hypervisor_p hvm);
 void nvc_svm_restore_system(noir_hypervisor_p hvm);
 // Central Hypervisor Structure.
 void nvc_store_image_info(ulong_ptr* base,u32* size);
+void* nvc_hv_alloc_page(noir_hypervisor_p hvm_p,u32 pages);
 noir_hypervisor_p hvm_p=null;
 ulong_ptr system_cr3=0;
 ulong_ptr orig_system_call=0;
@@ -107,7 +114,7 @@ extern noir_hypervisor_p hvm_p;
 extern ulong_ptr system_cr3;
 extern ulong_ptr orig_system_call;
 #endif
-void noir_system_call();
+void noir_system_call(void);
 
 #if defined(_central_hvm)
 #define known_vendor_strings	16

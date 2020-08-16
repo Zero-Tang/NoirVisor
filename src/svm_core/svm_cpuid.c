@@ -171,10 +171,21 @@ void static fastcall nvc_svm_cpuid_std_struct_extid(noir_gpr_state_p gpr_state,n
 {
 	noir_svm_cpuid_default_p cache=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.std_leaf[std_struct_extid];
 	u32 subleaf=(u32)gpr_state->rcx;
-	*(u32*)&gpr_state->rax=cache[subleaf].eax;
-	*(u32*)&gpr_state->rbx=cache[subleaf].ebx;
-	*(u32*)&gpr_state->rcx=cache[subleaf].ecx;
-	*(u32*)&gpr_state->rdx=cache[subleaf].edx;
+	// Until now, only zeroth subleaf is supported.
+	if(subleaf==0)
+	{
+		*(u32*)&gpr_state->rax=cache->eax;
+		*(u32*)&gpr_state->rbx=cache->ebx;
+		*(u32*)&gpr_state->rcx=cache->ecx;
+		*(u32*)&gpr_state->rdx=cache->edx;
+	}
+	else
+	{
+		*(u32*)&gpr_state->rax=0;
+		*(u32*)&gpr_state->rbx=0;
+		*(u32*)&gpr_state->rcx=0;
+		*(u32*)&gpr_state->rdx=0;
+	}
 }
 
 // Function Leaf: 0x0000000D - Processor Extended State Enumeration

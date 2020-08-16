@@ -95,6 +95,30 @@ bool noir_is_under_hvm()
 	return noir_bt(&c,31);
 }
 
+// Naive greedy approach.
+// Use lower remaining pool as much as possible.
+void* nvc_hv_alloc_page(noir_hypervisor_p hvm_p,u32 pages)
+{
+	void* p=null;
+	u32 size=page_mult(pages);
+	if(size>hvm_p->lower_remainder)
+	{
+		// Lower remaining pool is insufficient.
+		if(hvm_p->upper_remainder<size)goto alloc_end;
+		hvm_p->upper_remainder-=size;
+		p=(void*)hvm_p->alloc_pos_hi;
+		hvm_p->alloc_pos_hi+=size;
+	}
+	else
+	{
+		hvm_p->lower_remainder+=size;
+		p=(void*)hvm_p->alloc_pos_lo;
+		hvm_p->alloc_pos_lo+=size;
+	}
+alloc_end:
+	return p;
+}
+
 noir_status nvc_build_hypervisor()
 {
 	hvm_p=noir_alloc_nonpg_memory(sizeof(noir_hypervisor));

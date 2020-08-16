@@ -14,7 +14,7 @@
 
 #include <nvdef.h>
 
-#define svm_attrib(a)		(u16)(a&0xFF)|((a&0xF000)>>4)
+#define svm_attrib(a)		(u16)(((a&0xFF)|((a&0xF000)>>4))&0xfff)
 
 typedef union _nvc_svm_cr_intercept
 {

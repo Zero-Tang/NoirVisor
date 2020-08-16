@@ -78,8 +78,8 @@ typedef struct _noir_svm_nested_vcpu
 typedef struct _noir_svm_vcpu
 {
 	memory_descriptor vmcb;
-	memory_descriptor hsave;
 	memory_descriptor hvmcb;
+	memory_descriptor hsave;
 	void* hv_stack;
 	noir_svm_hvm_p relative_hvm;
 	u32 proc_id;
@@ -88,6 +88,7 @@ typedef struct _noir_svm_vcpu
 	noir_svm_nested_vcpu nested_hvm;
 	u8 status;
 	u8 enabled_feature;
+	u8 reserved;
 }noir_svm_vcpu,*noir_svm_vcpu_p;
 
 // Layout of initial stack.
@@ -100,7 +101,7 @@ typedef struct _noir_svm_initial_stack
 }noir_svm_initial_stack,*noir_svm_initial_stack_p;
 
 u8 fastcall nvc_svm_subvert_processor_a(noir_svm_initial_stack_p host_rsp);
-void fastcall nvc_svm_return(noir_gpr_state_p stack);
+void nvc_svm_return(noir_gpr_state_p stack);
 void fastcall nvc_svm_reserved_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 bool nvc_svm_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 res_count);
 void nvc_svm_teardown_cpuid_handler();

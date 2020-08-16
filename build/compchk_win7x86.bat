@@ -36,6 +36,6 @@ echo ============Start Linking============
 %ddkpath%\x86\link.exe "%objpath%\driver.obj" "%objpath%\vt_main.obj" "%objpath%\vt_exit.obj" "%objpath%\vt_ept.obj" "%objpath%\vt_cpuid.obj" "%objpath%\vt_nvcpu.obj" "%objpath%\svm_main.obj" "%objpath%\svm_exit.obj" "%objpath%\svm_cpuid.obj" "%objpath%\svm_npt.obj" "%objpath%\nvsys.obj" "%objpath%\hooks.obj" "%objpath%\detour.obj" "%objpath%\winhvm.obj" "%objpath%\noirhvm.obj" "%objpath%\ci.obj" "%objpath%\svm_hv.obj" "%objpath%\vt_hv.obj" "%objpath%\msrhook.obj" "%objpath%\kpcr.obj" "%objpath%\crc32.obj" /LIBPATH:"%libpath%\win7\i386" /NODEFAULTLIB "ntoskrnl.lib" "..\src\disasm\LDE32.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X86 /ERRORREPORT:QUEUE
 
 echo ============Start Signing============
-%ddkpath%\signtool.exe sign /v /f ..\ztnxtest.pfx /t http://timestamp.globalsign.com/scripts/timestamp.dll %binpath%\NoirVisor.sys
+%ddkpath%\signtool.exe sign /v /f .\ztnxtest.pfx /t http://timestamp.globalsign.com/scripts/timestamp.dll %binpath%\NoirVisor.sys
 
 pause

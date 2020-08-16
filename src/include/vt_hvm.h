@@ -107,7 +107,7 @@ bool nvc_vt_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 re
 void nvc_vt_teardown_cpuid_handler();
 void fastcall nvc_vt_reserved_cpuid_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void nvc_vt_resume_without_entry(noir_gpr_state_p state);
-void nvc_vt_exit_handler_a();
+void nvc_vt_exit_handler_a(void);
 void noir_vt_vmsuccess();
 void noir_vt_vmfail_invalid();
 void noir_vt_vmfail_valid();
