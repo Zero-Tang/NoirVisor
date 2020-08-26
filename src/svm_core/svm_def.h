@@ -152,9 +152,12 @@ typedef union _nvc_svm_instruction_interception3
 {
 	struct
 	{
-		u32 reserved1:3;					// Bits	0-2
+		u32 intercept_invlpgb:1;			// Bit	0
+		u32 intercept_illegal_invlpgb:1;	// Bit	1
+		u32 intercept_pcid:1;				// Bit	2
 		u32 intercept_mcommit:1;			// Bit	3
-		u32 reserved2:28;					// Bits	4-31
+		u32 intercept_tlbsync:1;			// Bit	4
+		u32 reserved2:27;					// Bits	5-31
 	};
 	u32 value;
 }nvc_svm_instruction_interception3,*nvc_svm_instruction_intercept3_p;

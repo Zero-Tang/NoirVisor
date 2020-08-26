@@ -19,10 +19,10 @@
 #include <noirhvm.h>
 #include <nv_intrin.h>
 #include <ia32.h>
+#include "vt_def.h"
 #include "vt_vmcs.h"
 #include "vt_exit.h"
 #include "vt_cpuid.h"
-#include "vt_def.h"
 #include "vt_ept.h"
 
 void nvc_vt_dump_vmcs_guest_state()
@@ -697,7 +697,6 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32
 				// If the access is read or write, we grant
 				// read/write permission but revoke execute permission
 				// and substitute the page to be original page
-				nv_dprintf("Hook Page read/write attempt intercepted! GPA=0x%llX\t\n",gpa);
 				pte_p->read=1;
 				pte_p->write=1;
 				pte_p->execute=0;
@@ -708,7 +707,6 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32
 				// If the access is execute, we grant
 				// execute permission but revoke read/write permission
 				// and substitute the page to be hooked page
-				nv_dprintf("Hook Page execution attempt intercepted! GPA=0x%llX\t\n",gpa);
 				pte_p->read=0;
 				pte_p->write=0;
 				pte_p->execute=1;

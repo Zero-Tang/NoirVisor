@@ -68,7 +68,10 @@
 #define intercepted_rdpru			0x8E
 #define intercepted_efer_w_trap		0x8F
 #define intercepted_cr_w_trap(x)	0x90+x
+#define intercepted_invlpgb			0xA0
+#define illegal_invlpgb				0xA2
 #define intercepted_mcommit			0xA3
+#define intercepted_tlbsync			0xA4
 #define nested_page_fault			0x400
 #define avic_incomplete_ipi			0x401
 #define avic_no_acceleration		0x402
@@ -116,12 +119,6 @@ noir_svm_exit_handler_routine** svm_exit_handlers=null;
 extern noir_svm_cpuid_exit_handler** svm_cpuid_handlers;
 #endif
 
-void inline noir_svm_advance_rip(void* vmcb)
-{
-	ulong_ptr nrip=noir_svm_vmread(vmcb,next_rip);
-	if(nrip)noir_svm_vmwrite(vmcb,guest_rip,nrip);
-}
-
 void inline noir_svm_inject_event(void* vmcb,u8 vector,u8 type,u8 ev,u8 v,u32 ec)
 {
 	amd64_event_injection event_field;
@@ -132,4 +129,15 @@ void inline noir_svm_inject_event(void* vmcb,u8 vector,u8 type,u8 ev,u8 v,u32 ec
 	event_field.valid=v;
 	event_field.error_code=ec;
 	noir_svm_vmwrite64(vmcb,event_injection,event_field.value);
+}
+
+void inline noir_svm_advance_rip(void* vmcb)
+{
+	ulong_ptr nrip=noir_svm_vmread(vmcb,next_rip);
+	ulong_ptr gflags=noir_svm_vmread(vmcb,guest_rflags);
+	// In case the guest is single-step debugging, we should inject debug trace trap so that
+	// the next instruction won't be skipped in debugger, confusing the debugging personnel.
+	if(noir_bt((u32*)&gflags,amd64_rflags_tf))
+		noir_svm_inject_event(vmcb,amd64_debug_exception,amd64_fault_trap_exception,false,true,0);
+	if(nrip)noir_svm_vmwrite(vmcb,guest_rip,nrip);
 }

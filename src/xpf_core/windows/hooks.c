@@ -235,8 +235,10 @@ void NoirTeardownHookedPages()
 	{
 		ULONG i=0;
 		for(;i<HookPageCount;i++)
-			MmFreeContiguousMemory(HookPages[i].HookedPage.VirtualAddress);
+			if(HookPages[i].HookedPage.VirtualAddress)
+				MmFreeContiguousMemory(HookPages[i].HookedPage.VirtualAddress);
 		ExFreePool(HookPages);
+		HookPages=NULL;
 	}
 	// Free all detour functions allocated previously.
 	if(Old_NtSetInformationFile)

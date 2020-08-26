@@ -27,6 +27,7 @@
 #define noir_svm_virtual_gif		8		// Bit 3
 #define noir_svm_virtualized_vmls	16		// Bit 4
 #define noir_svm_cpuid_caching		32		// Bit 5
+#define noir_svm_syscall_hook		64		// Bit 6
 
 typedef struct _memory_descriptor
 {

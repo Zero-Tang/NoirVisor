@@ -271,8 +271,6 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	noir_svm_vmwrite64(vcpu->vmcb.virt,msrpm_physical_address,vcpu->relative_hvm->msrpm.phys);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_asid,1);		// ASID must be non-zero.
 	// We will assign a guest asid other than 1 as we are nesting a hypervisor.
-	// Enable Global Interrupt.
-	noir_svm_stgi();
 	// Load Partial Guest State by vmload and continue subversion.
 	noir_svm_vmload((ulong_ptr)vcpu->vmcb.phys);
 	// "Return" puts the value onto rax register.
@@ -290,7 +288,7 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 		stack->proc_id=vcpu->proc_id;
 		stack->vcpu=vcpu;
 		noir_wrmsr(amd64_hsave_pa,vcpu->hsave.phys);
-		vcpu->enabled_feature|=noir_svm_cpuid_caching;
+		// vcpu->enabled_feature|=noir_svm_cpuid_caching;
 		nvc_svm_build_cpuid_cache_per_vcpu(vcpu);
 		nvc_svm_setup_virtual_msr(vcpu);
 		vcpu->status=nvc_svm_subvert_processor_a(stack);
@@ -426,12 +424,12 @@ u32 nvc_svm_get_allocation_size(noir_hypervisor_p hvm_p)
 /*
   Memory Layout per vCPU: (Total: 64KiB)
   +0x0000:	Reserved for "Saved State" while restoring system.
-  +0x00X0:	CPUID Cache.
-  +0x2000:	Guest VMCB.
-  +0x3000:	Host VMCB.
-  +0x4000:	Host Save Page.
-  +0x5000:	Stack Bottom Address.
-  (Remaining space are for stack. Stack Size: 40KB)
+  +0x1000:	Guest VMCB.
+  +0x2000:	Host VMCB.
+  +0x3000:	Host Save Page.
+  +0x4000:	8 Nested L2T VMCBs.
+  +0xC000:	Stack Bottom Address.
+  (Remaining space are for stack. Stack Size: 16KiB)
   +0xFFE0:	Initial Stack Pointer for Hypervisor.
 
   Memory Layout for NPT Managers: (Base: 24KiB)

@@ -81,6 +81,26 @@
 #define ia32_cpuid_hv_presence		31
 #define ia32_cpuid_hv_presence_bit	0x80000000
 
+// This is used for defining IA-32 RFlags bits.
+#define ia32_rflags_cf			0
+#define ia32_rflags_pf			2
+#define ia32_rflags_af			4
+#define ia32_rflags_zf			6
+#define ia32_rflags_sf			7
+#define ia32_rflags_tf			8
+#define ia32_rflags_if			9
+#define ia32_rflags_df			10
+#define ia32_rflags_of			11
+#define ia32_rflags_nt			14
+#define ia32_rflags_rf			16
+#define ia32_rflags_vm			17
+#define ia32_rflags_ac			18
+#define ia32_rflags_vif			19
+#define ia32_rflags_vip			20
+#define ia32_rflags_id			21
+
+#define ia32_rflags_iopl(f)	((f&0x3000)>>12)
+
 // This is used for defining IA-32 architectural cache types.
 #define ia32_uncacheable		0
 #define ia32_write_back			6

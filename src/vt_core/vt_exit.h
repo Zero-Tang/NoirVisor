@@ -324,8 +324,29 @@ extern noir_vt_cpuid_exit_handler** vt_cpuid_handlers;
 
 void inline noir_vt_advance_rip()
 {
-	ulong_ptr gip;
+	ulong_ptr gip,gflags;
 	u32 len;
+	// Special treatings for Single-Step scenarios.
+	u8 vst=noir_vt_vmread(guest_rflags,&gflags);
+	if(vst==0)
+	{
+		// Don't inject an #DB exception since Intel has its own
+		// specific feature regarding pending debug exceptions.
+		ia32_vmx_pending_debug_exceptions pending_de;
+		ia32_vmx_interruptibility_state interruptibility;
+		// General Single-Step debug exceptions.
+		noir_vt_vmread(guest_pending_debug_exceptions,&pending_de.value);
+		pending_de.bs=true;
+		noir_vt_vmwrite(guest_pending_debug_exceptions,pending_de.value);
+		// Special Blockings onto Single-Step debug exceptions.
+		noir_vt_vmread(guest_interruptibility_state,&interruptibility.value);
+		interruptibility.blocking_by_sti=false;
+		interruptibility.blocking_by_mov_ss=false;
+		interruptibility.blocking_by_smi=false;
+		interruptibility.blocking_by_nmi=false;
+		noir_vt_vmwrite(guest_interruptibility_state,interruptibility.value);
+	}
+	// Regular stuff...
 	noir_vt_vmread(guest_rip,&gip);
 	noir_vt_vmread(vmexit_instruction_length,&len);
 	noir_vt_vmwrite(guest_rip,gip+len);

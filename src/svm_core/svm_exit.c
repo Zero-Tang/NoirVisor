@@ -81,7 +81,6 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	// First, classify the leaf function.
 	u32 leaf_class=noir_cpuid_class(ia);
 	u32 leaf_func=noir_cpuid_index(ia);
-	nv_dprintf("CPUID instruction is intercepted! EAX=0x%X\t ECX=0x%X\n",ia,ic);
 	if(vcpu->enabled_feature & noir_svm_cpuid_caching)
 	{
 		// Here, we implement the cpuid cache to improve performance on nested VM scenario.
@@ -234,6 +233,8 @@ void static fastcall nvc_svm_vmrun_handler(noir_gpr_state_p gpr_state,noir_svm_v
 {
 	nv_dprintf("VM-Exit occured by vmrun instruction!\n");
 	nv_dprintf("Nested Virtualization of SVM is not supported!\n");
+	// There is absolutely no SVM instructions since we don't support nested virtualization at this point.
+	noir_svm_advance_rip(vcpu->vmcb.virt);
 }
 
 // Expected Intercept Code: 0x81
@@ -271,6 +272,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				vcpu->status=noir_virt_trans;
 				// Return to the caller at Host Mode.
 				nvc_svm_return(saved_state);
+				// Never reaches here.
 			}
 			// If execution goes here, then the invoker is malicious.
 			nv_dprintf("Malicious call of exit!\n");
@@ -380,8 +382,6 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 	// The rax in GPR state should be the physical address of VMCB
 	// in order to execute the vmrun instruction properly.
 	gpr_state->rax=(ulong_ptr)vcpu->vmcb.phys;
-	// After VM-Exit, Global Interrupt is always disabled. So enable it before vmrun.
-	noir_svm_stgi();
 }
 
 bool nvc_svm_build_exit_handler()

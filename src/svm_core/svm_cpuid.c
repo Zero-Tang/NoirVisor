@@ -79,7 +79,9 @@ void nvc_svm_build_cpuid_cache_per_vcpu(noir_svm_vcpu_p vcpu)
 	info->edx='TZ r';
 	// Function leaf 0x40000001 - Hypervisor Vendor-Neutral Interface Identification
 	info=(noir_svm_cpuid_default_p)vcpu->cpuid_cache.hvm_leaf[hvm_interface_id];
-	info->eax='0#vH';	// Hypervisor Interface Signature - Indicate Non-Conformance to Microsoft TLFS
+	// Hypervisor Interface Signature - Indicate Non-Conformance to Microsoft TLFS
+	// NoirVisor will try to be compatible, though, in future.
+	info->eax='0#vH';
 	info->ebx=info->ecx=info->edx=0;		// They are reserved values
 	// Function leaf 0x80000001 - Extended Processor and Processor Feature Identifiers
 	// By now, we might have to indicate no support to nested virtualization.
@@ -215,6 +217,9 @@ void static fastcall nvc_svm_cpuid_std_pestate_enum(noir_gpr_state_p gpr_state,n
   hypervisor specific functions. At this time, we are supposed
   to conform the Microsoft Hypervisor TLFS. However, NoirVisor,
   by now, is not in conformation.
+
+  We don't have to specifically handle CPUID Hypervisor Leaves,
+  since information were already included in CPUID cache.
 */
 
 /*

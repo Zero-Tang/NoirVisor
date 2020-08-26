@@ -303,12 +303,48 @@ typedef union _vmx_segment_access_right
 	u32 value;
 }vmx_segment_access_right,*vmx_segment_access_right_p;
 
-typedef struct ia32_vmx_msr_auto
+typedef struct _ia32_vmx_msr_auto
 {
 	u32 index;
 	u32 reserved;
 	u64 data;
 }ia32_vmx_msr_auto,*ia32_vmx_msr_auto_p;
+
+typedef union _ia32_vmx_interruptibility_state
+{
+	struct
+	{
+		u32 blocking_by_sti:1;			// Bit	0
+		u32 blocking_by_mov_ss:1;		// Bit	1
+		u32 blocking_by_smi:1;			// Bit	2
+		u32 blocking_by_nmi:1;			// Bit	3
+		u32 enclave_interruption:1;		// Bit	4
+		u32 reserved:27;				// Bits	5-31
+	};
+	u32 value;
+}ia32_vmx_interruptibility_state,*ia32_vmx_interruptibility_state_p;
+
+typedef union _ia32_vmx_pending_debug_exceptions
+{
+	struct
+	{
+		ulong_ptr b0:1;				// Bit	0
+		ulong_ptr b1:1;				// Bit	1
+		ulong_ptr b2:1;				// Bit	2
+		ulong_ptr b3:1;				// Bit	3
+		ulong_ptr reserved1:8;		// Bits	4-11
+		ulong_ptr enabled_bp:1;		// Bit	12
+		ulong_ptr reserved2:1;		// Bit	13
+		ulong_ptr bs:1;				// Bit	14
+		ulong_ptr reserved3:1;		// Bit	15
+		ulong_ptr rtm:1;			// Bit	16
+		ulong_ptr reserved4:15;		// Bits	17-31
+#if defined(_amd64)
+		u64 reserved5:32;			// Bits 32-63
+#endif
+	};
+	ulong_ptr value;
+}ia32_vmx_pending_debug_exceptions,*ia32_vmx_pending_debug_exceptions_p;
 
 typedef enum _ia32_vmx_instruction_error
 {

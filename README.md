@@ -28,17 +28,17 @@ DO NOT PROVIDE CODES WITH C++ WHICH INVOLVES THE NoirVisor Core IN YOUR PULL-REQ
 
 # Build
 To build NoirVisor, using batch is essential. <br>
-Note that you should execute the build_prep.bat to make directories for first-time compilation. 
+Note that you should execute the `build_prep.bat` to make directories for first-time compilation. 
 
 ## Windows Driver
 To build a kernel-mode driver on Windows, you should install Windows Driver Kit 7.1.0 to default path on C disk. Then run the provided batch file to build it. <br>
-Also note that, you have to create certain directories required by the batch complilation. <br>
+Also note that, you have to create certain directories required by the batch complilation. This can be done by executing the preparation batch.<br>
 You may download the WDK 7.1.0 from Microsoft: https://www.microsoft.com/en-us/download/details.aspx?id=11800 <br>
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
 ## EFI Application and Runtime Driver
 Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. <br>
-To build a EFI Runtime Driver and Application, you should install LLVM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path "C:\UefiDKII". <br>
+To build a EFI Runtime Driver and Application, you should install LLVM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. <br>
 You may download LLVM from GitHub: https://github.com/llvm/llvm-project/releases <br>
 You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases <br>
 
@@ -50,10 +50,10 @@ If you are using operating systems older than Windows 8, you are supposed to man
 If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine.
 
 ## EFI Application and Runtime Driver
-Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a partition and format it info FAT32 file system. After you build the image, you should see two images: bootx64.efi and NoirVisor.efi <br> 
+Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a partition and format it info FAT32 file system. After you successfully build the image, you should see two images: `bootx64.efi` and `NoirVisor.efi` <br> 
 Those two files are EFI Application and Runtime Driver respectively. <br>
-Copy EFI Application to \EFI\BOOT\bootx64.efi <br>
-Copy EFI Runtime Driver to \NoirVisor.efi <br>
+Copy EFI Application to `\EFI\BOOT\bootx64.efi` <br>
+Copy EFI Runtime Driver to `\NoirVisor.efi` <br>
 As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system. Disable Secure Boot feature unless you can sign the executable.
 
 # Detection of NoirVisor

@@ -135,8 +135,8 @@ Exactly, what we should do is to redirect the VPID (increment by 1).
 To virtualize EPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the VMX-nesting feature in future NoirVisor may not support EPT unless I have one.
 
 ## Utilize VMCS-Shadowing
-This feature could be a hard-point for me because by lab does not own a processor that supports this feature. The newest Intel CPU I have is the Intel Core i7-7500U, where the VMCS-Shadowing feature is unsupported. <br>
-In addition, VMware WorkStation (by now, version 15.1.0) does not emulate VMCS shadowing, even if the host machine supports it. (Tested on Intel i5-6400 CPU, a machine that does not belong to my lab) <br>
+This feature could be a hard-point for me because my lab does not own a processor that supports this feature. The newest Intel CPU I have is the Intel Core i7-7500U, where the VMCS-Shadowing feature is unsupported. <br>
+In addition, VMware WorkStation (by now, version 15.5.6) does not emulate VMCS shadowing, even if the host machine supports it. (Tested on Intel i5-6400 CPU, a machine that does not belong to my lab) <br>
 With VMCS-Shadowing, we can reduce the VM-Exits induced by vmread and vmwrite instructions.
 
 ## L2 Virtual Machine Control Structure

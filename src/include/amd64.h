@@ -92,6 +92,26 @@
 #define amd64_cpuid_hv_presence			31
 #define amd64_cpuid_hv_presence_bit		0x80000000
 
+// This is used for defining AMD64 RFlags bits.
+#define amd64_rflags_cf			0
+#define amd64_rflags_pf			2
+#define amd64_rflags_af			4
+#define amd64_rflags_zf			6
+#define amd64_rflags_sf			7
+#define amd64_rflags_tf			8
+#define amd64_rflags_if			9
+#define amd64_rflags_df			10
+#define amd64_rflags_of			11
+#define amd64_rflags_nt			14
+#define amd64_rflags_rf			16
+#define amd64_rflags_vm			17
+#define amd64_rflags_ac			18
+#define amd64_rflags_vif		19
+#define amd64_rflags_vip		20
+#define amd64_rflags_id			21
+
+#define amd64_rflags_iopl(f)	((f&0x3000)>>12)
+
 // CPUID flags for SVM Features
 #define amd64_cpuid_npt					0
 #define amd64_cpuid_npt_bit				0x1
