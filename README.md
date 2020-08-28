@@ -13,7 +13,7 @@ Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hyg
 - Processors produced by Advanced Micro Devices Inc. may support AMD-V.
 - Processors produced by VIA Technologies Inc. may support Intel VT-x.
 - Processors produced by Shanghai Zhaoxin Semiconductor Co, Ltd. may support Intel VT-x.
-- Processors produced by Chengdu Hygon Integrated Circuit Design Co, Ltd. may support AMD-V.
+- Processors produced by Tianjin Haiguang Advanced Technology Investment Co, Ltd. may support AMD-V.
 
 Note that early Zhaoxin and VIA use Centaur as vendor.
 
@@ -41,6 +41,7 @@ Due to different EFI firmware implementation, most modern computer firmware does
 To build a EFI Runtime Driver and Application, you should install LLVM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. <br>
 You may download LLVM from GitHub: https://github.com/llvm/llvm-project/releases <br>
 You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases <br>
+NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) on GitHub in order to build them.
 
 # Test
 
@@ -66,8 +67,7 @@ Porting to Unified Extensible Firmware Interface (UEFI) is in progress. <br>
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has four future development plans: <br>
-- Remaster CPUID-caching architecture with a flexible design for Intel VT-x. <br>
+Project NoirVisor has three future development plans: <br>
 - Develop Nested Virtualization. <br>
 - Port NoirVisor to 32-bit Windows platform. <br>
 - Port NoirVisor to UEFI and corresponding layered hypervisor.
@@ -76,7 +76,6 @@ Project NoirVisor has four future development plans: <br>
 - Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V.
 - Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel VT-x.
 - Tagged Translation Lookaside Buffer by ASID/VPID feature.
-- Efficient CPUID caching architecture on AMD-V.
 - Critical Hypervisor Protection.
 - Software-Level Code Integrity Enforcement.
 - Hardware-Level Code Integrity Enforcement, both Intel EPT and AMD NPT.

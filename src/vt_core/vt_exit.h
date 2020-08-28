@@ -240,8 +240,9 @@ typedef void (fastcall *noir_vt_exit_handler_routine)
 
 typedef void (fastcall *noir_vt_cpuid_exit_handler)
 (
- noir_gpr_state_p gpr_state,
- noir_vt_vcpu_p vcpu
+ u32 leaf,
+ u32 subleaf,
+ u32* info
 );
 
 #if defined(_vt_exit)
@@ -328,7 +329,7 @@ void inline noir_vt_advance_rip()
 	u32 len;
 	// Special treatings for Single-Step scenarios.
 	u8 vst=noir_vt_vmread(guest_rflags,&gflags);
-	if(vst==0)
+	if(vst==0 && noir_bt(&gflags,ia32_rflags_tf))
 	{
 		// Don't inject an #DB exception since Intel has its own
 		// specific feature regarding pending debug exceptions.

@@ -124,6 +124,7 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 			noir_free_contd_memory(rhvm->msr_auto_list.virt);
 	}
 	nvc_vt_teardown_exit_handlers();
+	nvc_vt_teardown_cpuid_handler();
 }
 
 void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
@@ -516,7 +517,6 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	nvc_vt_setup_memory_virtualization(vcpu);
 	nvc_vt_setup_msr_hook_p(vcpu);
 	nvc_vt_setup_virtual_msr(vcpu);
-	nvc_vt_build_cpuid_cache_per_vcpu(vcpu);
 	vcpu->status=noir_virt_on;
 	// Everything are done, perform subversion.
 	vst=noir_vt_vmlaunch();
@@ -565,53 +565,6 @@ void static nvc_vt_subvert_processor_thunk(void* context,u32 processor_id)
 	*(u32*)vcpu[processor_id].nested_vcpu.vmcs_t.virt=(u32)vt_basic.revision_id;
 	nv_dprintf("Processor %d entered subversion routine!\n",processor_id);
 	nvc_vt_subvert_processor(&vcpu[processor_id]);
-}
-
-bool static nvc_vt_build_cpuid_cache(noir_hypervisor_p hvm)
-{
-	noir_vt_cpuid_info vistd,viext;
-	noir_vt_cached_cpuid_p cache=&hvm_p->virtual_cpu->cpuid_cache;
-	u32 i=0;
-	hvm->relative_hvm->hvm_leaftotal=2;
-	noir_cpuid(0,0,&vistd.eax,&vistd.ebx,&vistd.ecx,&vistd.edx);
-	hvm->relative_hvm->std_leaftotal=vistd.eax+1;
-	noir_cpuid(0x80000000,0,&viext.eax,&viext.ebx,&viext.ecx,&viext.edx);
-	hvm->relative_hvm->ext_leaftotal=viext.eax-0x80000000+1;
-	for(;i<hvm->cpu_count;cache=&hvm->virtual_cpu[++i].cpuid_cache)
-	{
-		u32 j;
-		ulong_ptr base;
-		cache->std_leaf=noir_alloc_nonpg_memory(hvm->relative_hvm->std_leaftotal*sizeof(void*));
-		if(cache->std_leaf==null)return false;
-		cache->hvm_leaf=noir_alloc_nonpg_memory(hvm->relative_hvm->hvm_leaftotal*sizeof(void*));
-		if(cache->hvm_leaf==null)return false;
-		cache->ext_leaf=noir_alloc_nonpg_memory(hvm->relative_hvm->ext_leaftotal*sizeof(void*));
-		if(cache->ext_leaf==null)return false;
-		cache->cache_base=noir_alloc_nonpg_memory(page_size);
-		if(cache->cache_base==null)return false;
-		// One page should be enough. Once it becomes deficient, we will increase allocation.
-		base=(ulong_ptr)cache->cache_base;
-		cache->max_leaf[std_leaf_index]=hvm->relative_hvm->std_leaftotal;
-		cache->max_leaf[hvm_leaf_index]=hvm->relative_hvm->hvm_leaftotal;
-		cache->max_leaf[ext_leaf_index]=hvm->relative_hvm->ext_leaftotal;
-		// Standard CPUID Leaf.
-		for(j=0;j<cache->max_leaf[std_leaf_index];j++)
-		{
-			cache->std_leaf[j]=(noir_vt_cached_cpuid_p)base;
-			if((1<<j) & noir_vt_std_cpuid_submask)
-				base+=128;	// Allocate 128 bytes for leaf with subfunctions.
-			else
-				base+=16;	// Allocate 16 bytes for leaf without subfunctions.
-		}
-		if(base-(ulong_ptr)cache->cache_base>=page_size)
-		{
-			// In this case, one page is insufficient for caching!
-			nv_dprintf("Allocation Failure! One Page is insufficient for CPUID caching!\n");
-			return false;
-		}
-		nv_dprintf("CPUID cache starts at 0x%p\t ends at 0x%p\n",cache->cache_base,base);
-	}
-	return true;
 }
 
 /*
@@ -675,8 +628,9 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 		hvm->relative_hvm->msr_auto_list.phys=noir_get_physical_address(hvm->relative_hvm->msr_auto_list.virt);
 	else
 		goto alloc_failure;
-	if(nvc_vt_build_cpuid_cache(hvm)==false)goto alloc_failure;
+
 	if(nvc_vt_build_exit_handlers()==noir_insufficient_resources)goto alloc_failure;
+	if(nvc_vt_build_cpuid_handler()==noir_insufficient_resources)goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;
 	nvc_vt_setup_msr_hook(hvm);
 	nvc_vt_setup_msr_auto_list(hvm);

@@ -81,53 +81,15 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	// First, classify the leaf function.
 	u32 leaf_class=noir_cpuid_class(ia);
 	u32 leaf_func=noir_cpuid_index(ia);
-	if(vcpu->enabled_feature & noir_svm_cpuid_caching)
-	{
-		// Here, we implement the cpuid cache to improve performance on nested VM scenario.
-		// Second, filter invalid leaves, and invoke these valid.
-		if(vcpu->cpuid_cache.max_leaf[leaf_class]>=leaf_func)
-			svm_cpuid_handlers[leaf_class][leaf_func](gpr_state,vcpu);	// Invoke if valid.
-		else
-			nvc_svm_reserved_cpuid_handler(gpr_state,vcpu);
-	}
+	u32 info[4];
+	if(leaf_func<vcpu->relative_hvm->cpuid_max_leaf[leaf_class])
+		svm_cpuid_handlers[leaf_class][leaf_func](ia,ic,info);		// Invoke if valid.
 	else
-	{
-		// We disabled caching, so use cpuid instruction.
-		noir_cpuid(ia,ic,(u32*)&gpr_state->rax,(u32*)&gpr_state->rbx,(u32*)&gpr_state->rcx,(u32*)&gpr_state->rdx);
-		switch(leaf_class)
-		{
-			case std_leaf_index:
-			{
-				if(leaf_func==std_proc_feature)
-					noir_bts((u32*)&gpr_state->rcx,amd64_cpuid_hv_presence);
-				break;
-			}
-			case hvm_leaf_index:
-			{
-				if(leaf_func==hvm_max_num_vstr)
-				{
-					*(u32*)&gpr_state->rax=0x40000001;
-					*(u32*)&gpr_state->rbx='rioN';
-					*(u32*)&gpr_state->rcx='osiV';
-					*(u32*)&gpr_state->rdx='TZ r';
-				}
-				else if(leaf_func==hvm_interface_id)
-				{
-					*(u32*)&gpr_state->rax='0#vH';
-					*(u32*)&gpr_state->rbx=0;
-					*(u32*)&gpr_state->rcx=0;
-					*(u32*)&gpr_state->rdx=0;
-				}
-				break;
-			}
-			case ext_leaf_index:
-			{
-				if(leaf_func==ext_proc_feature)
-					noir_btr((u32*)&gpr_state->rcx,amd64_cpuid_svm);
-				break;
-			}
-		}
-	}
+		noir_stosd(info,0,4);
+	*(u32*)&gpr_state->rax=info[0];
+	*(u32*)&gpr_state->rbx=info[1];
+	*(u32*)&gpr_state->rcx=info[2];
+	*(u32*)&gpr_state->rdx=info[3];
 	// Finally, advance the instruction pointer.
 	noir_svm_advance_rip(vcpu->vmcb.virt);
 }

@@ -23,8 +23,7 @@
 #define noir_vt_extended_paging		1		// Bit	0
 #define noir_vt_vpid_tagged_tlb		2		// Bit	1
 #define noir_vt_vmcs_shadowing		4		// Bit	2
-#define noir_vt_cpuid_caching		8		// Bit	3
-#define noir_vt_ept_with_hooks		16		// Bit	4
+#define noir_vt_ept_with_hooks		8		// Bit	3
 
 typedef struct _memory_descriptor
 {
@@ -38,9 +37,7 @@ typedef struct _noir_vt_hvm
 	memory_descriptor io_bitmap_a;
 	memory_descriptor io_bitmap_b;
 	memory_descriptor msr_auto_list;
-	u32 std_leaftotal;
-	u32 hvm_leaftotal;
-	u32 ext_leaftotal;
+	u32 cpuid_max_leaf[4];
 }noir_vt_hvm,*noir_vt_hvm_p;
 
 typedef struct _noir_vt_msr_entry
@@ -49,24 +46,6 @@ typedef struct _noir_vt_msr_entry
 	u32 reserved;
 	u64 value;
 }noir_vt_msr_entry,*noir_vt_msr_entry_p;
-
-typedef struct _noir_vt_cpuid_info
-{
-	u32 eax;
-	u32 ebx;
-	u32 ecx;
-	u32 edx;
-}noir_vt_cpuid_info,*noir_vt_cpuid_info_p;
-
-typedef struct _noir_vt_cached_cpuid
-{
-	void** std_leaf;		// 0x00000000 - 0x0FFFFFFF
-	void** hvm_leaf;		// 0x40000000 - 0x4FFFFFFF
-	void** ext_leaf;		// 0x80000000 - 0x8FFFFFFF
-	void** res_leaf;		// 0xC0000000 - 0xC0000000
-	void* cache_base;
-	u32 max_leaf[4];
-}noir_vt_cached_cpuid,*noir_vt_cached_cpuid_p;
 
 typedef struct _noir_vt_virtual_msr
 {
@@ -92,7 +71,6 @@ typedef struct _noir_vt_vcpu
 	void* hv_stack;
 	noir_vt_hvm_p relative_hvm;
 	void* ept_manager;
-	noir_vt_cached_cpuid cpuid_cache;
 	noir_vt_virtual_msr virtual_msr;
 	noir_vt_nested_vcpu nested_vcpu;
 	u8 status;
@@ -101,9 +79,8 @@ typedef struct _noir_vt_vcpu
 
 u8 fastcall nvc_vt_subvert_processor_a(noir_vt_vcpu_p vcpu);
 noir_status nvc_vt_build_exit_handlers();
-void nvc_vt_build_cpuid_cache_per_vcpu(noir_vt_vcpu_p vcpu);
 void nvc_vt_teardown_exit_handlers();
-bool nvc_vt_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 res_count);
+bool nvc_vt_build_cpuid_handler();
 void nvc_vt_teardown_cpuid_handler();
 void fastcall nvc_vt_reserved_cpuid_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void nvc_vt_resume_without_entry(noir_gpr_state_p state);

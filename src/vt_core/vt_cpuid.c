@@ -35,115 +35,60 @@
   Class 3: Reserved Leaf Function		Range: 0xC0000000-0xFFFFFFFF
 */
 
-/*
-  Build cache for CPUID instruction per virtual processor.
-
-  Generic Rules:
-  1. Use cpuid instruction with ecx=0 to initialize generic data.
-  2. If we have special treatings, make specific initializations.
-*/
-void nvc_vt_build_cpuid_cache_per_vcpu(noir_vt_vcpu_p vcpu)
-{
-	if(vcpu->enabled_feature & noir_vt_cpuid_caching)
-	{
-		noir_vt_cpuid_info_p info;
-		u32 i;
-		// Generic Initialization
-		for(i=0;i<vcpu->cpuid_cache.max_leaf[std_leaf_index];i++)
-		{
-			info=(noir_vt_cpuid_info_p)vcpu->cpuid_cache.std_leaf[i];
-			noir_cpuid(i,0,&info->eax,&info->ebx,&info->ecx,&info->edx);
-		}
-		for(i=0;i<vcpu->cpuid_cache.max_leaf[ext_leaf_index];i++)
-		{
-			info=(noir_vt_cpuid_info_p)vcpu->cpuid_cache.ext_leaf[i];
-			noir_cpuid(i+0x80000000,0,&info->eax,&info->ebx,&info->ecx,&info->edx);
-		}
-		// Function leaf 0x00000001 - Processor and Processor Feature Identifiers
-		// Indicate Hypervisor Presence and VMX Supportability here
-		info=(noir_vt_cpuid_info_p)vcpu->cpuid_cache.hvm_leaf[std_proc_feature];
-		noir_btr(&info->ecx,ia32_cpuid_hv_presence);
-		noir_bts(&info->ecx,ia32_cpuid_vmx);
-		// Function leaf 0x00000007 - Structured Extended Feature Flags Enumeration Leaf
-		info=(noir_vt_cpuid_info_p)vcpu->cpuid_cache.hvm_leaf[std_struct_extid];
-		for(i=1;i<=info->eax;i++)
-			noir_cpuid(std_struct_extid,i,&info[i].eax,&info[i].ebx,&info[i].ecx,&info[i].edx);
-		// Function leaf 0x40000000 - Maximum Hypervisor Function Number and Vendor String
-		info=(noir_vt_cpuid_info_p)vcpu->cpuid_cache.hvm_leaf[hvm_max_num_vstr];
-		info->eax=0x40000001;		// Indicate the highest function leaf.
-		// Vendor String="NoirVisor ZT"
-		info->ebx='rioN';
-		info->ecx='osiV';
-		info->edx='TZ r';
-		// Function leaf 0x40000001 - Hypervisor Vendor-Neutral Interface Identification
-		info=(noir_vt_cpuid_info_p)vcpu->cpuid_cache.hvm_leaf[hvm_interface_id];
-		info->eax='0#vH';	// Hypervisor Interface Signature - Indicate Non-Conformance to Microsoft TLFS
-	}
-}
-
 // Default Function Leaf
-// You should make sure that this leaf has no sub-leaves.
-void static fastcall nvc_vt_default_cpuid_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
+void static fastcall nvc_vt_default_cpuid_handler(u32 leaf,u32 subleaf,u32* info)
 {
-	// Classify the leaf.
-	u32 leaf=(u32)gpr_state->rax;
-	u32 subleaf=(u32)gpr_state->rcx;
-	u32 leaf_class=noir_cpuid_class(leaf);
-	u32 leaf_index=noir_cpuid_index(leaf);
-	// Locate the cache
-	noir_vt_cpuid_info_p cache=null;
-	switch(leaf_class)
-	{
-		case std_leaf_index:
-		{
-			cache=(noir_vt_cpuid_info_p)vcpu->cpuid_cache.std_leaf[leaf_index];
-			break;
-		}
-		case hvm_leaf_index:
-		{
-			cache=(noir_vt_cpuid_info_p)vcpu->cpuid_cache.hvm_leaf[leaf_index];
-			break;
-		}
-		case ext_leaf_index:
-		{
-			cache=(noir_vt_cpuid_info_p)vcpu->cpuid_cache.ext_leaf[leaf_index];
-			break;
-		}
-		default:
-		{
-			// In principle, this branch is impossible to reach.
-			cache=null;
-			noir_int3();
-			break;
-		}
-	}
-	// Copy from cache
-	if(subleaf)
-	{
-		;
-	}
-	else
-	{
-		*(u32*)gpr_state->rax=cache->eax;
-		*(u32*)gpr_state->rax=cache->eax;
-		*(u32*)gpr_state->rax=cache->eax;
-		*(u32*)gpr_state->rax=cache->eax;
-	}
+	noir_cpuid(leaf,subleaf,&info[0],&info[1],&info[2],&info[3]);
 }
 
-void fastcall nvc_vt_reserved_cpuid_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
+/*
+  Standard Leaf Functions:
+
+  In this section, handler functions should be regarding
+  the standard function leaves. The range starts from 0.
+*/
+void fastcall nvc_vt_cpuid_std_proc_feature_leaf(u32 leaf,u32 subleaf,u32* info)
 {
-	*(u32*)gpr_state->rax=0;
-	*(u32*)gpr_state->rbx=0;
-	*(u32*)gpr_state->rcx=0;
-	*(u32*)gpr_state->rdx=0;
+	noir_cpuid(leaf,subleaf,&info[0],&info[1],&info[2],&info[3]);
+	noir_bts(&info[2],ia32_cpuid_vmx);
+	noir_bts(&info[2],ia32_cpuid_hv_presence);
 }
 
-bool nvc_vt_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 res_count)
+/*
+  Hypervisor Leaf Functions:
+
+  In this section, handler functions should be regarding the
+  hypervisor specific functions. At this time, we are supposed
+  to conform the Microsoft Hypervisor TLFS. However, NoirVisor,
+  by now, is not in conformation.
+*/
+void fastcall nvc_vt_cpuid_hvm_max_num_vstr_leaf(u32 leaf,u32 subleaf,u32* info)
+{
+	info[0]=hvm_cpuid_base+hvm_interface_id;
+	noir_movsb((u8*)&info[1],"NoirVisor ZT",12);
+}
+
+void fastcall nvc_vt_cpuid_hvm_interface_id_leaf(u32 leaf,u32 subleaf,u32* info)
+{
+	info[0]='0#vH';
+	noir_stosd(&info[1],0,3);
+}
+
+bool nvc_vt_build_cpuid_handler()
 {
 	vt_cpuid_handlers=noir_alloc_nonpg_memory(sizeof(void*)*4);
 	if(vt_cpuid_handlers)
 	{
+		u32 std_count,ext_count;
+		u32 hvm_count=hvm_cpuid_base+hvm_interface_id;
+		noir_cpuid(std_cpuid_base,0,&std_count,null,null,null);
+		noir_cpuid(ext_cpuid_base,0,&ext_count,null,null,null);
+		std_count-=std_cpuid_base;
+		hvm_count-=hvm_cpuid_base;
+		ext_count-=ext_cpuid_base;
+		hvm_p->relative_hvm->cpuid_max_leaf[std_leaf_index]=++std_count;
+		hvm_p->relative_hvm->cpuid_max_leaf[hvm_leaf_index]=++hvm_count;
+		hvm_p->relative_hvm->cpuid_max_leaf[ext_leaf_index]=++ext_count;
 		vt_cpuid_handlers[std_leaf_index]=noir_alloc_nonpg_memory(sizeof(void*)*std_count);
 		vt_cpuid_handlers[hvm_leaf_index]=noir_alloc_nonpg_memory(sizeof(void*)*hvm_count);
 		vt_cpuid_handlers[ext_leaf_index]=noir_alloc_nonpg_memory(sizeof(void*)*ext_count);
@@ -154,6 +99,9 @@ bool nvc_vt_build_cpuid_handler(u32 std_count,u32 hvm_count,u32 ext_count,u32 re
 			noir_stosp(vt_cpuid_handlers[hvm_leaf_index],(ulong_ptr)nvc_vt_default_cpuid_handler,hvm_count);
 			noir_stosp(vt_cpuid_handlers[ext_leaf_index],(ulong_ptr)nvc_vt_default_cpuid_handler,ext_count);
 			// Default handlers are set. Setup the customized handlers here.
+			vt_cpuid_handlers[std_leaf_index][std_proc_feature]=nvc_vt_cpuid_std_proc_feature_leaf;
+			vt_cpuid_handlers[hvm_leaf_index][hvm_max_num_vstr]=nvc_vt_cpuid_hvm_max_num_vstr_leaf;
+			vt_cpuid_handlers[hvm_leaf_index][hvm_interface_id]=nvc_vt_cpuid_hvm_interface_id_leaf;
 			return true;
 		}
 	}

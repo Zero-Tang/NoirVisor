@@ -35,10 +35,6 @@ In this regard, NoirVisor requires that Intel EPT should supports execution-only
 Hooked page includes the hook code, whereas the original page includes the original code. <br>
 On VM-Exit, NoirVisor should locate the hook page by GPA (Guest Physical Address) then swap the PTE entry.
 
-# CPUID Cache
-This feature could enhance the performance of CPUID-induced VM-Exit on Nested-VMM scenario. (e.g NoirVisor running in a Virtual Machine.) It might slightly lower down the performance on Non-Nested scenario, but generally should have a good performance no matter the scenario. <br>
-However, due to complexity of sub-leaf for cpuid instruction, caching architecture in NoirVisor could only accelerate scenarios under ecx=0.
-
 # Critical Hypervisor Protection
 This feature is an essential security feature. I found this feature missing in most open-source light-weight hypervisor project. The key is that VMCS and other essential pages are not protected through Intel EPT even if they enabled Intel EPT. It should be pointed out that a malware can be aware of the format of VMCS of a specific processor. In this regard, malware may corrupt the VMCS through memory access instruction.
 

@@ -13,9 +13,10 @@
 */
 
 #include "efimain.h"
-#include <Protocol/DevicePath.h>
-#include <Guid/FileInfo.h>
 #include <intrin.h>
+#include <Library/BaseMemoryLib.h>
+#include <Library/DevicePathLib.h>
+#include <Library/MemoryAllocationLib.h>
 
 void NoirBlockUntilKeyStroke(IN CHAR16 Unicode)
 {
@@ -23,7 +24,7 @@ void NoirBlockUntilKeyStroke(IN CHAR16 Unicode)
 	do
 	{
 		UINTN fi=0;
-		EfiBoot->WaitForEvent(1,&StdIn->WaitForKey,&fi);
+		gBS->WaitForEvent(1,&StdIn->WaitForKey,&fi);
 		StdIn->ReadKeyStroke(StdIn,&InKey);
 	}while(InKey.UnicodeChar!=Unicode);
 }
@@ -57,7 +58,7 @@ void NoirPrintProcessorInformation()
 	*(int*)&VendorString[4]=Info[3];
 	*(int*)&VendorString[8]=Info[2];
 	VendorString[12]='\0';
-	NoirConsolePrintfW(L"Processor Vendor: %s\r\n",VendorString);
+	Print(L"Processor Vendor: %a\r\n",VendorString);
 	CHAR8 BrandString[0x31];
 	__cpuid(Info,0x80000002);
 	*(int*)&BrandString[0x00]=Info[0];
@@ -75,44 +76,42 @@ void NoirPrintProcessorInformation()
 	*(int*)&BrandString[0x28]=Info[2];
 	*(int*)&BrandString[0x2C]=Info[3];
 	BrandString[0x30]='\0';
-	NoirConsolePrintfW(L"Processor Brand Name: %s\r\n",BrandString);
+	Print(L"Processor Brand Name: %a\r\n",BrandString);
 }
 
 EFI_STATUS NoirLoadHypervisorDriver(IN EFI_HANDLE ParentImageHandle,OUT EFI_HANDLE *HvImageHandle)
 {
 	// Initialize Device Path for Loading Image
-	EFI_GUID LoadedImageGuid=EFI_LOADED_IMAGE_PROTOCOL_GUID;
 	EFI_LOADED_IMAGE_PROTOCOL* ImageInfo;
-	EFI_STATUS st=EfiBoot->HandleProtocol(ParentImageHandle,&LoadedImageGuid,&ImageInfo);
+	EFI_STATUS st=gBS->HandleProtocol(ParentImageHandle,&gEfiLoadedImageProtocolGuid,&ImageInfo);
 	if(st==EFI_SUCCESS)
 	{
-		FILEPATH_DEVICE_PATH* FilePath=NULL;
-		st=EfiBoot->AllocatePool(EfiLoaderData,4+NoirVisorPathLength+4,&FilePath);
-		if(st==EFI_SUCCESS)
+		FILEPATH_DEVICE_PATH* FilePath=AllocatePool(4+NoirVisorPathLength+4);
+		st=FilePath?EFI_SUCCESS:EFI_OUT_OF_RESOURCES;
+		if(FilePath)
 		{
 			// Construct Media Device Path with Ending Node
 			EFI_DEVICE_PATH_PROTOCOL* EndingPath=(EFI_DEVICE_PATH_PROTOCOL*)((UINTN)FilePath+4+NoirVisorPathLength);
 			FilePath->Header.Type=MEDIA_DEVICE_PATH;
 			FilePath->Header.SubType=MEDIA_FILEPATH_DP;
 			*(UINT16*)FilePath->Header.Length=4+NoirVisorPathLength;
-			EfiBoot->CopyMem(&FilePath->PathName,NoirVisorPath,NoirVisorPathLength);
+			CopyMem(&FilePath->PathName,NoirVisorPath,NoirVisorPathLength);
 			EndingPath->Type=END_DEVICE_PATH_TYPE;
 			EndingPath->SubType=END_ENTIRE_DEVICE_PATH_SUBTYPE;
 			*(UINT16*)EndingPath->Length=4;
 			// Get Device Path and Append.
-			EFI_GUID DevPathGuid=EFI_DEVICE_PATH_PROTOCOL_GUID;
 			EFI_DEVICE_PATH_PROTOCOL* DevPath=NULL;
-			st=EfiBoot->HandleProtocol(ImageInfo->DeviceHandle,&DevPathGuid,&DevPath);
+			st=gBS->HandleProtocol(ImageInfo->DeviceHandle,&gEfiDevicePathProtocolGuid,&DevPath);
 			if(st==EFI_SUCCESS)
 			{
-				EFI_DEVICE_PATH_PROTOCOL* HvDevPath=DevPathUtil->AppendDevicePath(DevPath,&FilePath->Header);
+				EFI_DEVICE_PATH_PROTOCOL* HvDevPath=AppendDevicePath(DevPath,&FilePath->Header);
 				if(HvDevPath)
 				{
-					st=EfiBoot->LoadImage(FALSE,ParentImageHandle,HvDevPath,NULL,0,HvImageHandle);
-					EfiBoot->FreePool(HvDevPath);
+					st=gBS->LoadImage(FALSE,ParentImageHandle,HvDevPath,NULL,0,HvImageHandle);
+					FreePool(HvDevPath);
 				}
 			}
-			EfiBoot->FreePool(FilePath);
+			FreePool(FilePath);
 		}
 	}
 	return st;
@@ -168,29 +167,40 @@ EFI_STATUS NoirPrintBanner()
 	return st;
 }
 
+EFI_STATUS EFIAPI NoirEfiInitialize(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable)
+{
+	UefiBootServicesTableLibConstructor(ImageHandle,SystemTable);
+	UefiRuntimeServicesTableLibConstructor(ImageHandle,SystemTable);
+	UefiLibConstructor(ImageHandle,SystemTable);
+	DevicePathLibConstructor(ImageHandle,SystemTable);
+	StdIn=SystemTable->ConIn;
+	StdOut=SystemTable->ConOut;
+	return EFI_SUCCESS;
+}
+
 EFI_STATUS EFIAPI NoirEfiEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable)
 {
 	UINT16 RevHi=(UINT16)(SystemTable->Hdr.Revision>>16);
 	UINT16 RevLo=(UINT16)(SystemTable->Hdr.Revision&0xffff);
 	UINT16 RevP1=RevLo/10,RevP2=RevLo%10;
 	EFI_HANDLE HvImage;
-	EFI_STATUS st=NoirEfiInitialize(SystemTable);
+	EFI_STATUS st=NoirEfiInitialize(ImageHandle,SystemTable);
 	NoirSetConsoleModeToMaximumRows();
 	NoirPrintBanner();
-	NoirConsolePrintfW(L"Welcome to NoirVisor Loader!\r\n");
-	NoirConsolePrintfW(L"NoirVisor's Compiler Version: LLVM Clang %s\r\n",__clang_version__);
-	NoirConsolePrintfW(L"Firmware Vendor: %ws Revision: %d\r\n",SystemTable->FirmwareVendor,SystemTable->FirmwareRevision);
-	NoirConsolePrintfW(L"Firmware UEFI Specification: %d.%d.%d\r\n",RevHi,RevP1,RevP2);
-	NoirConsolePrintfW(L"Initialization Status: 0x%X\r\n",st);
+	Print(L"Welcome to NoirVisor Loader!\r\n");
+	Print(L"NoirVisor's Compiler Version: LLVM Clang %a\r\n",__clang_version__);
+	Print(L"Firmware Vendor: %s Revision: %d\r\n",SystemTable->FirmwareVendor,SystemTable->FirmwareRevision);
+	Print(L"Firmware UEFI Specification: %d.%d.%d\r\n",RevHi,RevP1,RevP2);
+	Print(L"Initialization Status: 0x%X\r\n",st);
 	NoirPrintProcessorInformation();
 	st=NoirLoadHypervisorDriver(ImageHandle,&HvImage);
-	NoirConsolePrintfW(L"Load Image Status: 0x%X\r\n",st);
+	Print(L"Load Image Status: 0x%X\r\n",st);
 	if(st==EFI_SUCCESS)
 	{
-		st=EfiBoot->StartImage(HvImage,NULL,NULL);
-		NoirConsolePrintfW(L"Start Image Status: 0x%X\r\n",st);
+		st=gBS->StartImage(HvImage,NULL,NULL);
+		Print(L"Start Image Status: 0x%X\r\n",st);
 	}
-	NoirConsolePrintfW(L"Press enter key to continue...\r\n");
+	Print(L"Press enter key to continue...\r\n");
 	NoirBlockUntilKeyStroke(L'\r');
 	return EFI_SUCCESS;
 }

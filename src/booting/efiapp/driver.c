@@ -14,10 +14,14 @@
 
 #include "efimain.h"
 #include "driver.h"
+#include <intrin.h>
+#include <Library/BaseMemoryLib.h>
+#include <Library/DevicePathLib.h>
+#include <Library/MemoryAllocationLib.h>
 
 EFI_STATUS EFIAPI NoirDriverUnload(IN EFI_HANDLE ImageHandle)
 {
-	NoirConsolePrintfW(L"NoirVisor is unloaded!\r\n");
+	Print(L"NoirVisor is unloaded!\r\n");
 	return EFI_SUCCESS;
 }
 
@@ -26,15 +30,25 @@ void EFIAPI NoirNotifyExitBootServices(IN EFI_EVENT Event,IN VOID* Context)
 	;
 }
 
+EFI_STATUS EFIAPI NoirEfiInitialize(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable)
+{
+	UefiBootServicesTableLibConstructor(ImageHandle,SystemTable);
+	UefiRuntimeServicesTableLibConstructor(ImageHandle,SystemTable);
+	UefiLibConstructor(ImageHandle,SystemTable);
+	DevicePathLibConstructor(ImageHandle,SystemTable);
+	StdIn=SystemTable->ConIn;
+	StdOut=SystemTable->ConOut;
+	return EFI_SUCCESS;
+}
+
 EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable)
 {
-	NoirEfiInitialize(SystemTable);
-	NoirConsolePrintfW(L"Welcome to NoirVisor Runtime Driver!\r\n");
-	EfiBoot->CreateEvent(EVT_SIGNAL_EXIT_BOOT_SERVICES,TPL_NOTIFY,NoirNotifyExitBootServices,NULL,&NoirEfiExitBootServicesNotification);
-	EFI_GUID LoadedImageGuid=EFI_LOADED_IMAGE_PROTOCOL_GUID;
+	NoirEfiInitialize(ImageHandle,SystemTable);
+	Print(L"Welcome to NoirVisor Runtime Driver!\r\n");
+	gBS->CreateEvent(EVT_SIGNAL_EXIT_BOOT_SERVICES,TPL_NOTIFY,NoirNotifyExitBootServices,NULL,&NoirEfiExitBootServicesNotification);
 	EFI_LOADED_IMAGE_PROTOCOL* ImageInfo;
-	EFI_STATUS st=EfiBoot->HandleProtocol(ImageHandle,&LoadedImageGuid,&ImageInfo);
+	EFI_STATUS st=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocolGuid,&ImageInfo);
 	if(st==EFI_SUCCESS)ImageInfo->Unload=NoirDriverUnload;
-	NoirConsolePrintfW(L"NoirVisor Runtime Driver Initialization Status: 0x%X\r\n",st);
+	Print(L"NoirVisor Runtime Driver Initialization Status: 0x%X\r\n",st);
 	return EFI_SUCCESS;
 }

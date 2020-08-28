@@ -47,10 +47,6 @@ There is performance problem as well. There will be no performance cost for read
 
 In summary, four #NPF will occur in a single execution of hooked function. In comparison, Intel EPT offers flexibility that intensive access can still have least performance penalty.
 
-# CPUID Cache
-This feature could enhance the performance of CPUID-induced VM-Exit on Nested-VMM scenario. (e.g NoirVisor running in a Virtual Machine.) It might slightly lower down the performance on Non-Nested scenario, but generally should have a good performance no matter the scenario. <br>
-The remastered design is to handle different leaf functions with multiple functions. In this case, the structure of storing the cpuid cache will be leaf-specific.
-
 # Critical Hypervisor Protection
 This feature is an essential security feature. I found this feature missing in most open-source light-weight hypervisor project. The key is that VMCB and other essential pages are not protected through Nested Paging even if they enabled AMD NPT. It should be pointed out that a malware is aware of the format of VMCB. In this regard, malware may corrupt the VMCB through memory access instruction.
 

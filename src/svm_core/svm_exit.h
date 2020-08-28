@@ -9,7 +9,7 @@
   without any warranty (no matter implied warranty or merchantability
   or fitness for a particular purpose, etc.).
 
-  File Location: /svm_core/svm_main.h
+  File Location: /svm_core/svm_exit.h
 */
 
 #include <nvdef.h>
@@ -96,8 +96,9 @@ typedef void (fastcall *noir_svm_exit_handler_routine)
 
 typedef void (fastcall *noir_svm_cpuid_exit_handler)
 (
- noir_gpr_state_p gpr_state,
- noir_svm_vcpu_p vcpu
+ u32 leaf,
+ u32 subleaf,
+ u32 *info
 );
 
 typedef union _amd64_event_injection

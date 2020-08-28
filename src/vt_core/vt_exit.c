@@ -114,57 +114,21 @@ void static fastcall nvc_vt_task_switch_handler(noir_gpr_state_p gpr_state,u32 e
 // This is VM-Exit of obligation.
 void static fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
-	u32 cur_proc=noir_get_current_processor();
-	noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[cur_proc];
-	u32 leaf=(u32)gpr_state->rax;
-	u32 subleaf=(u32)gpr_state->rcx;
-	u32 leaf_class=noir_cpuid_class(leaf);
-	u32 leaf_index=noir_cpuid_index(leaf);
-	if(vcpu->enabled_feature & noir_vt_cpuid_caching)
-	{
-		// Here, we implement the cpuid cache to improve performance on nested VM scenario.
-		// If leaf exceeded limit, call reserved handler for it.
-		if(vcpu->cpuid_cache.max_leaf[leaf_class]>=leaf_index)
-			vt_cpuid_handlers[leaf_class][leaf_index](gpr_state,vcpu);
-		else
-			nvc_vt_reserved_cpuid_handler(gpr_state,vcpu);
-	}
+	u32 ia=(u32)gpr_state->rax;
+	u32 ic=(u32)gpr_state->rcx;
+	// First, classify the leaf function.
+	u32 leaf_class=noir_cpuid_class(ia);
+	u32 leaf_func=noir_cpuid_index(ia);
+	u32 info[4];
+	if(leaf_func<hvm_p->relative_hvm->cpuid_max_leaf[leaf_class])
+		vt_cpuid_handlers[leaf_class][leaf_func](ia,ic,info);		// Invoke if valid.
 	else
-	{
-		// We disabled caching, so use cpuid instruction.
-		noir_cpuid(leaf,subleaf,(u32*)&gpr_state->rax,(u32*)&gpr_state->rbx,(u32*)&gpr_state->rcx,(u32*)&gpr_state->rdx);
-		// Filter something...
-		switch(leaf_class)
-		{
-			case std_leaf_index:
-			{
-				if(leaf_index==std_proc_feature)
-				{
-					noir_btr((u32*)&gpr_state->rcx,ia32_cpuid_vmx);
-					noir_bts((u32*)&gpr_state->rcx,ia32_cpuid_hv_presence);
-				}
-				break;
-			}
-			case hvm_leaf_index:
-			{
-				if(leaf_index==hvm_max_num_vstr)
-				{
-					*(u32*)&gpr_state->rax=0x40000001;
-					*(u32*)&gpr_state->rbx='rioN';
-					*(u32*)&gpr_state->rcx='osiV';
-					*(u32*)&gpr_state->rdx='TZ r';
-				}
-				else if(leaf_index==hvm_interface_id)
-				{
-					*(u32*)&gpr_state->rax='0#vH';
-					*(u32*)&gpr_state->rbx=0;
-					*(u32*)&gpr_state->rcx=0;
-					*(u32*)&gpr_state->rdx=0;
-				}
-				break;
-			}
-		}
-	}
+		noir_stosd(info,0,4);
+	*(u32*)&gpr_state->rax=info[0];
+	*(u32*)&gpr_state->rbx=info[1];
+	*(u32*)&gpr_state->rcx=info[2];
+	*(u32*)&gpr_state->rdx=info[3];
+	// Finally, advance the instruction pointer.
 	noir_vt_advance_rip();
 }
 
@@ -751,7 +715,6 @@ void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,u32 exit_r
 			if(xcr0.x87==0)gp_exception=true;
 			// AVX is sufficient condition of SSE.
 			if(xcr0.sse==0 && xcr0.avx==0)gp_exception=true;
-			// Fix me: inspect unsupported bits. (via cpuid cache)
 			noir_cpuid(std_pestate_enum,0,&a,null,null,&d);
 			if((xcr0.lo&a)!=a)gp_exception=true;
 			if((xcr0.hi&d)!=d)gp_exception=true;

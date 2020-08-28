@@ -14,10 +14,6 @@
 
 #include <nvdef.h>
 
-// This is AMD Specific
-#define noir_svm_std_cpuid_submask		0x00002080
-#define noir_svm_ext_cpuid_submask		0x20000000
-
 // Index of Standard Leaves
 #define std_max_num_vstr		0x0
 #define std_proc_feature		0x1
@@ -73,8 +69,9 @@ typedef struct _noir_svm_cpuid_svm_feature_id
 
 typedef void (fastcall *noir_svm_cpuid_exit_handler)
 (
- noir_gpr_state_p gpr_state,
- noir_svm_vcpu_p vcpu
+ u32 leaf,
+ u32 subleaf,
+ u32 *info
 );
 
 #if defined(_svm_cpuid)

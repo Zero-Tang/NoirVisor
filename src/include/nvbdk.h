@@ -38,14 +38,19 @@
 #define selector_rplti_mask		0xfff8
 
 // Classification of CPUID Leaf
-#define noir_cpuid_class(x)		x>>30
-#define noir_cpuid_index(x)		x & 0x3FFFFFFF
+#define noir_cpuid_class(x)		(x>>30)
+#define noir_cpuid_index(x)		(x&0x3FFFFFFF)
 
 // Classes of Leaves
 #define std_leaf_index	0	// CPUID Leaf of Standard	Functions
 #define hvm_leaf_index	1	// CPUID Leaf of Hypervisor	Functions
 #define ext_leaf_index	2	// CPUID Leaf of Extended	Functions
 #define res_leaf_index	3	// CPUID Leaf of Reserved	Functions
+
+// Bases of Classes
+#define std_cpuid_base			0x00000000
+#define hvm_cpuid_base			0x40000000
+#define ext_cpuid_base			0x80000000
 
 typedef union _large_integer
 {

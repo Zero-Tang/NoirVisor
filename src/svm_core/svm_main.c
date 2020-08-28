@@ -288,8 +288,6 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 		stack->proc_id=vcpu->proc_id;
 		stack->vcpu=vcpu;
 		noir_wrmsr(amd64_hsave_pa,vcpu->hsave.phys);
-		// vcpu->enabled_feature|=noir_svm_cpuid_caching;
-		nvc_svm_build_cpuid_cache_per_vcpu(vcpu);
 		nvc_svm_setup_virtual_msr(vcpu);
 		vcpu->status=nvc_svm_subvert_processor_a(stack);
 	}
@@ -318,16 +316,6 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 				noir_free_contd_memory(vcpu->hvmcb.virt);
 			if(vcpu->hv_stack)
 				noir_free_nonpg_memory(vcpu->hv_stack);
-			if(vcpu->cpuid_cache.std_leaf)
-				noir_free_nonpg_memory(vcpu->cpuid_cache.std_leaf);
-			if(vcpu->cpuid_cache.ext_leaf)
-				noir_free_nonpg_memory(vcpu->cpuid_cache.ext_leaf);
-			if(vcpu->cpuid_cache.hvm_leaf)
-				noir_free_nonpg_memory(vcpu->cpuid_cache.hvm_leaf);
-			if(vcpu->cpuid_cache.res_leaf)
-				noir_free_nonpg_memory(vcpu->cpuid_cache.res_leaf);
-			if(vcpu->cpuid_cache.cache_base)
-				noir_free_nonpg_memory(vcpu->cpuid_cache.cache_base);
 		}
 		noir_free_nonpg_memory(hvm_p->virtual_cpu);
 	}
@@ -339,70 +327,6 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 		nvc_npt_cleanup(hvm_p->relative_hvm->primary_nptm);
 	if(hvm_p->relative_hvm->secondary_nptm)
 		nvc_npt_cleanup(hvm_p->relative_hvm->secondary_nptm);
-}
-
-bool static nvc_svm_alloc_cpuid_cache(noir_hypervisor_p hvm_p)
-{
-	noir_svm_cached_cpuid_p cache=&hvm_p->virtual_cpu->cpuid_cache;
-	u32 stda,stdb,stdc,stdd;
-	u32 exta,extb,extc,extd;
-	u32 i=0;
-	noir_cpuid(0,0,&stda,&stdb,&stdc,&stdd);
-	hvm_p->relative_hvm->std_leaftotal=++stda;
-	noir_cpuid(0x80000000,0,&exta,&extb,&extc,&extd);
-	hvm_p->relative_hvm->ext_leaftotal=++exta-0x80000000;
-	hvm_p->relative_hvm->hvm_leaftotal=2;
-	if(nvc_svm_build_cpuid_handler(hvm_p->relative_hvm->std_leaftotal,hvm_p->relative_hvm->hvm_leaftotal,hvm_p->relative_hvm->ext_leaftotal,0)==false)return false;
-	for(;i<hvm_p->cpu_count;cache=&hvm_p->virtual_cpu[++i].cpuid_cache)
-	{
-		u32 j;
-		ulong_ptr base;
-		cache->std_leaf=noir_alloc_nonpg_memory(hvm_p->relative_hvm->std_leaftotal*sizeof(void**));
-		if(cache->std_leaf==null)return false;
-		cache->hvm_leaf=noir_alloc_nonpg_memory(hvm_p->relative_hvm->hvm_leaftotal*sizeof(void**));
-		if(cache->hvm_leaf==null)return false;
-		cache->ext_leaf=noir_alloc_nonpg_memory(hvm_p->relative_hvm->ext_leaftotal*sizeof(void**));
-		if(cache->ext_leaf==null)return false;
-		cache->cache_base=noir_alloc_nonpg_memory(page_size);
-		if(cache->cache_base==null)return false;
-		// One Page should be sufficient. In case it becomes deficient, we will increase allocation.
-		base=(ulong_ptr)cache->cache_base;
-		cache->max_leaf[std_leaf_index]=hvm_p->relative_hvm->std_leaftotal;
-		cache->max_leaf[hvm_leaf_index]=hvm_p->relative_hvm->hvm_leaftotal;
-		cache->max_leaf[ext_leaf_index]=hvm_p->relative_hvm->ext_leaftotal;
-		// Standard CPUID Leaf
-		for(j=0;j<cache->max_leaf[std_leaf_index];j++)
-		{
-			cache->std_leaf[j]=(void*)base;
-			if((1<<j) & noir_svm_cpuid_std_submask)
-				base+=128;		// Allocate 128 bytes for leaf with subfunctions
-			else
-				base+=16;		// Allocate 16 bytes for leaf without subfunction
-		}
-		// Hypervisor CPUID Leaf
-		for(j=0;j<cache->max_leaf[hvm_leaf_index];j++)
-		{
-			cache->hvm_leaf[j]=(void*)base;
-			base+=16;
-		}
-		// Extended CPUID Leaf
-		for(j=0;j<cache->max_leaf[ext_leaf_index];j++)
-		{
-			cache->ext_leaf[j]=(void*)base;
-			if((1<<j) & noir_svm_cpuid_ext_submask)
-				base+=128;		// Allocate 128 bytes for leaf with subfunctions
-			else
-				base+=16;		// Allocate 16 bytes for leaf without subfunction
-		}
-		if(base-(ulong_ptr)cache->cache_base>=page_size)
-		{
-			// In this case, one page is insufficient!
-			nv_dprintf("Allocation failed! One Page is insufficient for caching!\n");
-			return false;
-		}
-		nv_dprintf("CPUID cache starts at 0x%p\t ends at 0x%p\n",cache->cache_base,base);
-	}
-	return true;
 }
 
 // Calculate N*2MiB-4KiB size of allocation.
@@ -511,7 +435,7 @@ alloc_failure:
 noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 {
 	hvm_p->cpu_count=noir_get_processor_count();
-	if(nvc_svm_build_exit_handler()==false)return noir_insufficient_resources;
+	if(nvc_svm_build_exit_handler()==false)goto alloc_failure;
 	hvm_p->virtual_cpu=noir_alloc_nonpg_memory(hvm_p->cpu_count*sizeof(noir_svm_vcpu));
 	// Implementation of Generic Call might differ.
 	// In subversion routine, it might not be allowed to allocate memory.
@@ -543,6 +467,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 		}
 	}
 	hvm_p->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
+	if(nvc_svm_build_cpuid_handler()==false)goto alloc_failure;
 	hvm_p->relative_hvm->msrpm.virt=noir_alloc_contd_memory(2*page_size);
 	if(hvm_p->relative_hvm->msrpm.virt)
 		hvm_p->relative_hvm->msrpm.phys=noir_get_physical_address(hvm_p->relative_hvm->msrpm.virt);
@@ -559,7 +484,6 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	hvm_p->relative_hvm->secondary_nptm=(void*)nvc_npt_build_identity_map();
 	if(hvm_p->relative_hvm->secondary_nptm==null)goto alloc_failure;
 	if(hvm_p->virtual_cpu==null)goto alloc_failure;
-	if(nvc_svm_alloc_cpuid_cache(hvm_p)==false)goto alloc_failure;
 	nvc_svm_setup_msr_hook(hvm_p);
 	// nvc_npt_build_hook_mapping(hvm_p);
 	if(nvc_npt_protect_critical_hypervisor(hvm_p)==false)goto alloc_failure;
