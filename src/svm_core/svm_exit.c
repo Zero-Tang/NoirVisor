@@ -19,7 +19,6 @@
 #include <nv_intrin.h>
 #include <amd64.h>
 #include <ci.h>
-#include "svm_cpuid.h"
 #include "svm_vmcb.h"
 #include "svm_npt.h"
 #include "svm_exit.h"
@@ -28,7 +27,7 @@
 // Unexpected VM-Exit occured. You may want to debug your code if this function is invoked.
 void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	void* vmcb=vcpu->vmcb.virt;
+	const void* vmcb=vcpu->vmcb.virt;
 	i32 code=noir_svm_vmread32(vmcb,exit_code);
 	/*
 	  Following conditions might cause the default handler to be invoked:
@@ -47,7 +46,7 @@ void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm
 // Expected Intercept Code: -1
 void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	void* vmcb=vcpu->vmcb.virt;
+	const void* vmcb=vcpu->vmcb.virt;
 	u64 efer;
 	ulong_ptr cr0,cr3,cr4;
 	ulong_ptr dr6,dr7;
@@ -81,66 +80,58 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	// First, classify the leaf function.
 	u32 leaf_class=noir_cpuid_class(ia);
 	u32 leaf_func=noir_cpuid_index(ia);
-	u32 info[4];
-	if(leaf_func<vcpu->relative_hvm->cpuid_max_leaf[leaf_class])
-		svm_cpuid_handlers[leaf_class][leaf_func](ia,ic,info);		// Invoke if valid.
+	noir_cpuid_general_info info;
+	if(leaf_class==hvm_leaf_index)
+	{
+		if(leaf_func<vcpu->relative_hvm->hvm_cpuid_leaf_max)
+			hvm_cpuid_handlers[leaf_func](&info);
+		else
+			noir_stosd((u32*)&info,0,4);
+	}
 	else
-		noir_stosd(info,0,4);
-	*(u32*)&gpr_state->rax=info[0];
-	*(u32*)&gpr_state->rbx=info[1];
-	*(u32*)&gpr_state->rcx=info[2];
-	*(u32*)&gpr_state->rdx=info[3];
+	{
+		noir_cpuid(ia,ic,&info.eax,&info.ebx,&info.ecx,&info.edx);
+		switch(ia)
+		{
+			case amd64_cpuid_std_proc_feature:
+			{
+				noir_bts(&info.ecx,amd64_cpuid_hv_presence);
+				break;
+			}
+			case amd64_cpuid_ext_proc_feature:
+			{
+				noir_btr(&info.ecx,amd64_cpuid_svm);
+				break;
+			}
+			case amd64_cpuid_ext_svm_features:
+			{
+				noir_stosd((u32*)&info,0,4);
+				break;
+			}
+			case amd64_cpuid_ext_mem_crypting:
+			{
+				noir_stosd((u32*)&info,0,4);
+				break;
+			}
+		}
+	}
+	*(u32*)&gpr_state->rax=info.eax;
+	*(u32*)&gpr_state->rbx=info.ebx;
+	*(u32*)&gpr_state->rcx=info.ecx;
+	*(u32*)&gpr_state->rdx=info.edx;
 	// Finally, advance the instruction pointer.
 	noir_svm_advance_rip(vcpu->vmcb.virt);
 }
 
-// Expected Intercept Code: 0x7C
-void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+// This is a branch of MSR-Exit. DO NOT ADVANCE RIP HERE!
+void static fastcall nvc_svm_rdmsr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	void* vmcb=vcpu->vmcb.virt;
+	const void* vmcb=vcpu->vmcb.virt;
 	// The index of MSR is saved in ecx register (32-bit).
 	u32 index=(u32)gpr_state->rcx;
-	// Determine the type of operation.
-	bool op_write=noir_svm_vmread8(vmcb,exit_info1);
 	large_integer val={0};
-	// 
-	if(op_write)
-	{
-		// Get the value to be written.
-		val.low=(u32)gpr_state->rax;
-		val.high=(u32)gpr_state->rdx;
-		switch(index)
-		{
-			case amd64_efer:
-			{
-				// This is for future feature of nested virtualization.
-				vcpu->nested_hvm.svme=noir_bt(&val.low,amd64_efer_svme);
-				val.value|=amd64_efer_svme_bit;
-				// Other bits can be ignored, but SVME should be always protected.
-				noir_svm_vmwrite64(vmcb,guest_efer,val.value);
-				break;
-			}
-			case amd64_hsave_pa:
-			{
-				// Store the physical address of Host-Save Area to nested HVM structure.
-				vcpu->nested_hvm.hsave_gpa=val.value;
-				break;
-			}
-#if defined(_amd64)
-			case amd64_lstar:
-			{
-				vcpu->virtual_msr.lstar=val.value;
-				break;
-			}
-#else
-			case amd64_sysenter_eip:
-			{
-				vcpu->virtual_msr.sysenter_eip=val.value;
-				break;
-			}
-#endif
-		}
-	}
+	if(noir_is_synthetic_msr(index))
+		val.value=nvc_mshv_rdmsr_handler(index);
 	else
 	{
 		switch(index)
@@ -174,10 +165,71 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 			}
 #endif
 		}
-		// Higher 32 bits of rax and rdx will be cleared.
-		gpr_state->rax=(ulong_ptr)val.low;
-		gpr_state->rdx=(ulong_ptr)val.high;
 	}
+	// Higher 32 bits of rax and rdx will be cleared.
+	gpr_state->rax=(ulong_ptr)val.low;
+	gpr_state->rdx=(ulong_ptr)val.high;
+}
+
+// This is a branch of MSR-Exit. DO NOT ADVANCE RIP HERE!
+void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	const void* vmcb=vcpu->vmcb.virt;
+	// The index of MSR is saved in ecx register (32-bit).
+	u32 index=(u32)gpr_state->rcx;
+	large_integer val;
+	// Get the value to be written.
+	val.low=(u32)gpr_state->rax;
+	val.high=(u32)gpr_state->rdx;
+	if(noir_is_synthetic_msr(index))
+		nvc_mshv_wrmsr_handler(index,val.value);
+	else
+	{
+		switch(index)
+		{
+			case amd64_efer:
+			{
+				// This is for future feature of nested virtualization.
+				vcpu->nested_hvm.svme=noir_bt(&val.low,amd64_efer_svme);
+				val.value|=amd64_efer_svme_bit;
+				// Other bits can be ignored, but SVME should be always protected.
+				noir_svm_vmwrite64(vmcb,guest_efer,val.value);
+				break;
+			}
+			case amd64_hsave_pa:
+			{
+				// Store the physical address of Host-Save Area to nested HVM structure.
+				vcpu->nested_hvm.hsave_gpa=val.value;
+				break;
+			}
+#if defined(_amd64)
+			case amd64_lstar:
+			{
+				vcpu->virtual_msr.lstar=val.value;
+				break;
+			}
+#else
+			case amd64_sysenter_eip:
+			{
+				vcpu->virtual_msr.sysenter_eip=val.value;
+				break;
+			}
+#endif
+		}
+	}
+}
+
+// Expected Intercept Code: 0x7C
+void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	const void* vmcb=vcpu->vmcb.virt;
+	// Determine the type of operation.
+	bool op_write=noir_svm_vmread8(vmcb,exit_info1);
+	// 
+	if(op_write)
+		nvc_svm_wrmsr_handler(gpr_state,vcpu);
+	else
+		nvc_svm_rdmsr_handler(gpr_state,vcpu);
 	noir_svm_advance_rip(vcpu->vmcb.virt);
 }
 
@@ -320,7 +372,7 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	// Get the linear address of VMCB.
-	void* vmcb_va=vcpu->vmcb.virt;
+	const void* vmcb_va=vcpu->vmcb.virt;
 	// Read the Intercept Code.
 	i32 intercept_code=noir_svm_vmread32(vmcb_va,exit_code);
 	// Determine the group and number of interception.

@@ -114,6 +114,18 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 #define noir_locked_xor			_InterlockedXor
 #define noir_locked_xchg		_InterlockedExchange
 #define noir_locked_cmpxchg		_InterlockedCompareExchange
+
+// 64-Bit Atomic Operations
+#if defined(_amd64)
+#define noir_locked_add64		_InterlockedAdd64
+#define noir_locked_inc64		_InterlockedIncrement64
+#define noir_locked_dec64		_InterlockedDecrement64
+#define noir_locked_and64		_InterlockedAnd64
+#define noir_locked_or64		_InterlockedOr64
+#define noir_locked_xor64		_InterlockedXor64
+#define noir_locked_xchg64		_InterlockedExchange64
+#define noir_locked_cmpxchg64	_InterlockedCompareExchange64
+#endif
 #endif
 
 // Unreference Parameters/Variables

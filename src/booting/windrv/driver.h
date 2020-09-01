@@ -34,6 +34,7 @@
 
 void LDE_Initialize();
 void LDE_Finalize();
+NTSTATUS NoirReportWindowsVersion();
 NTSTATUS NoirBuildProtectedFile();
 void NoirTeardownProtectedFile();
 void NoirSetProtectedFile(IN PWSTR FileName);

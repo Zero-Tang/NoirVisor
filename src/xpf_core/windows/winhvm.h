@@ -15,6 +15,25 @@
 #include <ntddk.h>
 #include <windef.h>
 
+#define HV_X64_MSR_GUEST_OS_ID		0x40000000
+#define HV_MICROSOFT_VENDOR_ID		0x0001
+#define HV_WINDOWS_NT_OS_ID			4
+
+typedef union _HV_MSR_PROPRIETARY_GUEST_OS_ID
+{
+	struct
+	{
+		ULONG64 BuildNumber:16;		// Bits	0-15
+		ULONG64 ServiceVersion:8;	// Bits	15-23
+		ULONG64 MinorVersion:8;		// Bits	24-31
+		ULONG64 MajorVersion:8;		// Bits	32-39
+		ULONG64 OsId:8;				// Bits	40-47
+		ULONG64 VendorId:15;		// Bits	48-62
+		ULONG64 OsType:1;			// Bit	63
+	};
+	ULONG64 Value;
+}HV_MSR_PROPRIETARY_GUEST_OS_ID,*PHV_MSR_PROPRIETARY_GUEST_OS_ID;
+
 void NoirBuildHookedPages();
 void NoirTeardownHookedPages();
 void __cdecl NoirDebugPrint(const char* Format,...);

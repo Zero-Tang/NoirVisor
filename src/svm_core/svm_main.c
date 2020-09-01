@@ -165,6 +165,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 		vcpu->enabled_feature|=noir_svm_virtual_gif;
 	if(d & amd64_cpuid_vmlsvirt_bit)
 		vcpu->enabled_feature|=noir_svm_virtualized_vmls;
+	vcpu->enabled_feature|=noir_svm_syscall_hook;
 	// Setup Memory Virtualization
 	if(vcpu->enabled_feature & noir_svm_nested_paging)
 	{
@@ -257,12 +258,18 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_efer,state.efer);
 #if defined(_amd64)
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_star,state.star);
-	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,(u64)noir_system_call);
+	if(vcpu->enabled_feature & noir_svm_syscall_hook)
+		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,(u64)noir_system_call);
+	else
+		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,(u64)orig_system_call);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_cstar,state.cstar);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_sfmask,state.sfmask);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_kernel_gs_base,state.gsswap);
 #else
-	noir_svm_vmwrite32(vcpu->vmcb.virt,guest_sysenter_eip,(u32)noir_system_call);
+	if(vcpu->enabled_feature & noir_svm_syscall_hook)
+		noir_svm_vmwrite32(vcpu->vmcb.virt,guest_sysenter_eip,(u32)noir_system_call);
+	else
+		noir_svm_vmwrite32(vcpu->vmcb.virt,guest_sysenter_eip,(u32)orig_system_call);
 #endif
 	// Setup Control Area
 	nvc_svm_setup_control_area(vcpu);
@@ -327,6 +334,7 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 		nvc_npt_cleanup(hvm_p->relative_hvm->primary_nptm);
 	if(hvm_p->relative_hvm->secondary_nptm)
 		nvc_npt_cleanup(hvm_p->relative_hvm->secondary_nptm);
+	nvc_svm_teardown_exit_handler();
 }
 
 // Calculate N*2MiB-4KiB size of allocation.
@@ -467,7 +475,8 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 		}
 	}
 	hvm_p->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
-	if(nvc_svm_build_cpuid_handler()==false)goto alloc_failure;
+	hvm_p->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();
+	if(hvm_p->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;
 	hvm_p->relative_hvm->msrpm.virt=noir_alloc_contd_memory(2*page_size);
 	if(hvm_p->relative_hvm->msrpm.virt)
 		hvm_p->relative_hvm->msrpm.phys=noir_get_physical_address(hvm_p->relative_hvm->msrpm.virt);
@@ -522,7 +531,6 @@ void nvc_svm_restore_system(noir_hypervisor_p hvm_p)
 	{
 		noir_generic_call(nvc_svm_restore_processor_thunk,hvm_p->virtual_cpu);
 		nvc_svm_cleanup(hvm_p);
-		nvc_svm_teardown_cpuid_handler();
-		nvc_svm_teardown_exit_handler();
+		nvc_mshv_teardown_cpuid_handlers();
 	}
 }

@@ -65,6 +65,33 @@
 #define amd64_rmp_base					0xC0010132
 #define amd64_rmp_end					0xC0010133
 
+// Index of Standard Leaves
+#define amd64_cpuid_std_max_num_vstr		0x0
+#define amd64_cpuid_std_proc_feature		0x1
+#define amd64_cpuid_std_monitor_feat		0x5
+#define amd64_cpuid_std_thermal_feat		0x6
+#define amd64_cpuid_std_struct_extid		0x7
+#define amd64_cpuid_std_pestate_enum		0xD
+
+// Index of Extended Leaves
+#define amd64_cpuid_ext_max_num_vstr		0x80000000
+#define amd64_cpuid_ext_proc_feature		0x80000001
+#define amd64_cpuid_ext_brand_str_p1		0x80000002
+#define amd64_cpuid_ext_brand_str_p2		0x80000003
+#define amd64_cpuid_ext_brand_str_p3		0x80000004
+#define amd64_cpuid_ext_caching_tlbs		0x80000005
+#define amd64_cpuid_ext_l23cache_tlb		0x80000006
+#define amd64_cpuid_ext_powermgr_ras		0x80000007
+#define amd64_cpuid_ext_pcap_prm_eid		0x80000008
+#define amd64_cpuid_ext_svm_features		0x8000000A
+#define amd64_cpuid_ext_svm_tlbs_1gb		0x80000019
+#define amd64_cpuid_ext_ins_optimize		0x8000001A
+#define amd64_cpuid_ext_ins_sampling		0x8000001B
+#define amd64_cpuid_ext_lw_profiling		0x8000001C
+#define amd64_cpuid_ext_cache_topinf		0x8000001D
+#define amd64_cpuid_ext_proc_topoinf		0x8000001E
+#define amd64_cpuid_ext_mem_crypting		0x8000001F
+
 // This is used for defining AMD64 architectural interrupt vectors.
 #define amd64_divide_error				0
 #define amd64_debug_exception			1

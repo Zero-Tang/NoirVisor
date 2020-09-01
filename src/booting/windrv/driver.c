@@ -80,6 +80,7 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		{
 			NoirSetProtectedPID((ULONG)PsGetCurrentProcessId());
 			NoirBuildHypervisor();
+			NoirReportWindowsVersion();
 			break;
 		}
 		case IOCTL_Restore:

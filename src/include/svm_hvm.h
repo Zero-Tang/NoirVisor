@@ -28,12 +28,6 @@
 #define noir_svm_virtualized_vmls	16		// Bit 4
 #define noir_svm_syscall_hook		32		// Bit 5
 
-typedef struct _memory_descriptor
-{
-	void* virt;
-	u64 phys;
-}memory_descriptor,*memory_descriptor_p;
-
 // Optimize Memory Usage of MSRPM and IOPM.
 typedef struct _noir_svm_hvm
 {
@@ -42,7 +36,7 @@ typedef struct _noir_svm_hvm
 	memory_descriptor blank_page;
 	void* primary_nptm;
 	void* secondary_nptm;
-	u32 cpuid_max_leaf[4];
+	u32 hvm_cpuid_leaf_max;
 }noir_svm_hvm,*noir_svm_hvm_p;
 
 typedef struct _noir_svm_virtual_msr

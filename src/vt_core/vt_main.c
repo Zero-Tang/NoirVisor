@@ -19,7 +19,6 @@
 #include <noirhvm.h>
 #include <nv_intrin.h>
 #include <ia32.h>
-#include "vt_cpuid.h"
 #include "vt_vmcs.h"
 #include "vt_def.h"
 #include "vt_ept.h"
@@ -124,7 +123,6 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 			noir_free_contd_memory(rhvm->msr_auto_list.virt);
 	}
 	nvc_vt_teardown_exit_handlers();
-	nvc_vt_teardown_cpuid_handler();
 }
 
 void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
@@ -630,7 +628,8 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 		goto alloc_failure;
 
 	if(nvc_vt_build_exit_handlers()==noir_insufficient_resources)goto alloc_failure;
-	if(nvc_vt_build_cpuid_handler()==noir_insufficient_resources)goto alloc_failure;
+	hvm->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();
+	if(hvm->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;
 	nvc_vt_setup_msr_hook(hvm);
 	nvc_vt_setup_msr_auto_list(hvm);
@@ -671,5 +670,6 @@ void nvc_vt_restore_system(noir_hypervisor_p hvm)
 	{
 		noir_generic_call(nvc_vt_restore_processor_thunk,hvm->virtual_cpu);
 		nvc_vt_cleanup(hvm);
+		nvc_mshv_teardown_cpuid_handlers();
 	}
 }

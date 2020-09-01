@@ -25,19 +25,13 @@
 #define noir_vt_vmcs_shadowing		4		// Bit	2
 #define noir_vt_ept_with_hooks		8		// Bit	3
 
-typedef struct _memory_descriptor
-{
-	void* virt;
-	u64 phys;
-}memory_descriptor,*memory_descriptor_p;
-
 typedef struct _noir_vt_hvm
 {
 	memory_descriptor msr_bitmap;
 	memory_descriptor io_bitmap_a;
 	memory_descriptor io_bitmap_b;
 	memory_descriptor msr_auto_list;
-	u32 cpuid_max_leaf[4];
+	u32 hvm_cpuid_leaf_max;
 }noir_vt_hvm,*noir_vt_hvm_p;
 
 typedef struct _noir_vt_msr_entry

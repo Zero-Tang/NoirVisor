@@ -22,7 +22,6 @@
 #include "vt_def.h"
 #include "vt_vmcs.h"
 #include "vt_exit.h"
-#include "vt_cpuid.h"
 #include "vt_ept.h"
 
 void nvc_vt_dump_vmcs_guest_state()
@@ -119,15 +118,31 @@ void static fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state,u32 exit_re
 	// First, classify the leaf function.
 	u32 leaf_class=noir_cpuid_class(ia);
 	u32 leaf_func=noir_cpuid_index(ia);
-	u32 info[4];
-	if(leaf_func<hvm_p->relative_hvm->cpuid_max_leaf[leaf_class])
-		vt_cpuid_handlers[leaf_class][leaf_func](ia,ic,info);		// Invoke if valid.
+	noir_cpuid_general_info info;
+	if(leaf_class==hvm_leaf_index)
+	{
+		if(leaf_func<hvm_p->relative_hvm->hvm_cpuid_leaf_max)
+			hvm_cpuid_handlers[leaf_func](&info);
+		else
+			noir_stosd((u32*)&info,0,4);
+	}
 	else
-		noir_stosd(info,0,4);
-	*(u32*)&gpr_state->rax=info[0];
-	*(u32*)&gpr_state->rbx=info[1];
-	*(u32*)&gpr_state->rcx=info[2];
-	*(u32*)&gpr_state->rdx=info[3];
+	{
+		noir_cpuid(ia,ic,&info.eax,&info.ebx,&info.ecx,&info.edx);
+		switch(ia)
+		{
+			case ia32_cpuid_std_proc_feature:
+			{
+				noir_btr(&info.ecx,ia32_cpuid_vmx);
+				noir_btr(&info.ecx,ia32_cpuid_hv_presence);
+				break;
+			}
+		}
+	}
+	*(u32*)&gpr_state->rax=info.eax;
+	*(u32*)&gpr_state->rbx=info.ebx;
+	*(u32*)&gpr_state->rcx=info.ecx;
+	*(u32*)&gpr_state->rdx=info.edx;
 	// Finally, advance the instruction pointer.
 	noir_vt_advance_rip();
 }
@@ -556,30 +571,36 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 	bool advance=true;
 	u32 index=(u32)gpr_state->rcx;
 	large_integer val;
-	// Expected Case: Query VMX MSR.
-	if(index>=ia32_vmx_basic && index<=ia32_vmx_vmfunc)
-	{
-		/*
-		  u32 cur_proc=noir_get_current_processor();
-		  noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[cur_proc];
-		  val.value=vcpu->nested_vcpu.vmx_msr[index-ia32_vmx_basic];
-		*/
-		// NoirVisor doesn't support Nested Intel VT-x right now.
-		// Reading VMX Capability MSRs would cause #GP exception.
-		noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
-		advance=false;	// For exception, rip does not advance.
-	}
-	// Expected Case: Check MSR Hook.
-#if defined(_amd64)
-	else if(index==ia32_lstar)
-		val.value=orig_system_call;
-#else
-	else if(index==ia32_sysenter_eip)
-		val.value=orig_system_call;
-#endif
-	// Maybe induced by Microsoft Top-Level Hypervisor Specification.
+	// Expected Case: Microsoft Synthetic MSR
+	if(noir_is_synthetic_msr(index))
+		val.value=nvc_mshv_rdmsr_handler(index);
 	else
-		nv_dprintf("Unexpected rdmsr is intercepted! Index=0x%X\n",index);
+	{
+		// Expected Case: Query VMX MSR.
+		if(index>=ia32_vmx_basic && index<=ia32_vmx_vmfunc)
+		{
+			/*
+			  u32 cur_proc=noir_get_current_processor();
+			  noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[cur_proc];
+			  val.value=vcpu->nested_vcpu.vmx_msr[index-ia32_vmx_basic];
+			*/
+			// NoirVisor doesn't support Nested Intel VT-x right now.
+			// Reading VMX Capability MSRs would cause #GP exception.
+			noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
+			advance=false;	// For exception, rip does not advance.
+		}
+		// Expected Case: Check MSR Hook.
+#if defined(_amd64)
+		else if(index==ia32_lstar)
+			val.value=orig_system_call;
+#else
+		else if(index==ia32_sysenter_eip)
+			val.value=orig_system_call;
+#endif
+		// Maybe induced by Microsoft Top-Level Hypervisor Specification.
+		else
+			nv_dprintf("Unexpected rdmsr is intercepted! Index=0x%X\n",index);
+	}
 	// Put into GPRs. Clear high 32-bits of each register.
 	gpr_state->rax=(ulong_ptr)val.low;
 	gpr_state->rdx=(ulong_ptr)val.high;
@@ -595,16 +616,21 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 	large_integer val;
 	val.low=(u32)gpr_state->rax;
 	val.high=(u32)gpr_state->rdx;
-#if defined(_amd64)
-	if(index==ia32_lstar)
-		vcpu->virtual_msr.lstar=val.value;
-#else
-	if(index==ia32_sysenter_eip)
-		vcpu->virtual_msr.sysenter_eip=val.value;
-#endif
+	if(noir_is_synthetic_msr(index))
+		nvc_mshv_wrmsr_handler(index,val.value);
 	else
-		nv_dprintf("Unexpected wrmsr is intercepted! Index=0x%X\t Value=0x%08X`%08X\n",index,val.low,val.high);
-	noir_wrmsr(index,val.value);
+	{
+#if defined(_amd64)
+		if(index==ia32_lstar)
+			vcpu->virtual_msr.lstar=val.value;
+#else
+		if(index==ia32_sysenter_eip)
+			vcpu->virtual_msr.sysenter_eip=val.value;
+#endif
+		else
+			nv_dprintf("Unexpected wrmsr is intercepted! Index=0x%X\t Value=0x%08X`%08X\n",index,val.low,val.high);
+		noir_wrmsr(index,val.value);
+	}
 	noir_vt_advance_rip();
 }
 
@@ -715,7 +741,7 @@ void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,u32 exit_r
 			if(xcr0.x87==0)gp_exception=true;
 			// AVX is sufficient condition of SSE.
 			if(xcr0.sse==0 && xcr0.avx==0)gp_exception=true;
-			noir_cpuid(std_pestate_enum,0,&a,null,null,&d);
+			noir_cpuid(7,0,&a,null,null,&d);
 			if((xcr0.lo&a)!=a)gp_exception=true;
 			if((xcr0.hi&d)!=d)gp_exception=true;
 			value=xcr0.value;

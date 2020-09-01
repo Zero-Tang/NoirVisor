@@ -52,6 +52,9 @@
 #define hvm_cpuid_base			0x40000000
 #define ext_cpuid_base			0x80000000
 
+// Synthetic MSR Macro
+#define noir_is_synthetic_msr(i)	((i>>30)==1)
+
 typedef union _large_integer
 {
 	struct
@@ -70,6 +73,12 @@ typedef struct _segment_register
 	u32 limit;
 	u64 base;
 }segment_register,*segment_register_p;
+
+typedef struct _memory_descriptor
+{
+	void* virt;
+	u64 phys;
+}memory_descriptor,*memory_descriptor_p;
 
 typedef struct _noir_processor_state
 {
@@ -154,6 +163,14 @@ typedef struct _noir_xmm_state
 	r128 xmm15;
 #endif
 }noir_xmm_state,*noir_xmm_state_p;
+
+typedef struct _noir_cpuid_general_info
+{
+	u32 eax;
+	u32 ebx;
+	u32 ecx;
+	u32 edx;
+}noir_cpuid_general_info,*noir_cpuid_general_info_p;
 
 typedef void (*noir_broadcast_worker)(void* context,u32 processor_id);
 typedef i32(cdecl *noir_sorting_comparator)(const void* a,const void*b);

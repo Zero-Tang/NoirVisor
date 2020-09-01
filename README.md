@@ -68,11 +68,12 @@ If there is already a hypervisor running in the system, make sure it supports na
 
 # Development Status
 Project NoirVisor has three future development plans: <br>
-- Develop Nested Virtualization. <br>
-- Port NoirVisor to 32-bit Windows platform. <br>
+- Develop Nested Virtualization.
+- Port NoirVisor to 32-bit Windows platform.
 - Port NoirVisor to UEFI and corresponding layered hypervisor.
 
 # Completed Features
+- Minimal Microsoft `Hv#1` Hypervisor Functionalities.
 - Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V.
 - Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel VT-x.
 - Tagged Translation Lookaside Buffer by ASID/VPID feature.

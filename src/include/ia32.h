@@ -75,6 +75,39 @@
 #define ia32_virtualization_exception	20
 #define ia32_control_protection			21
 
+// Index of Standard Leaves
+#define ia32_cpuid_std_max_num_vstr		0x0
+#define ia32_cpuid_std_proc_feature		0x1
+#define ia32_cpuid_std_cache_tlb_ft		0x2
+#define ia32_cpuid_std_proc_serialn		0x3
+#define ia32_cpuid_std_det_cc_param		0x4
+#define ia32_cpuid_std_monitor_feat		0x5
+#define ia32_cpuid_std_thermal_feat		0x6
+#define ia32_cpuid_std_struct_extid		0x7
+#define ia32_cpuid_std_di_cache_inf		0x9
+#define ia32_cpuid_std_arch_perfmon		0xA
+#define ia32_cpuid_std_ex_proc_topo		0xB
+#define ia32_cpuid_std_pestate_enum		0xD
+#define ia32_cpuid_std_irdt_mon_cap		0xF
+#define ia32_cpuid_std_irdt_alloc_e		0x10
+#define ia32_cpuid_std_sgx_cap_enum		0x12
+#define ia32_cpuid_std_prtrace_enum		0x14
+#define ia32_cpuid_std_tsc_ncc_info		0x15
+#define ia32_cpuid_std_proc_frq_inf		0x16
+#define ia32_cpuid_std_sys_ocv_attr		0x17
+#define ia32_cpuid_std_atrans_param		0x18
+
+// Index of Extended Leaves
+#define ia32_cpuid_ext_max_num_vstr		0x80000000
+#define ia32_cpuid_ext_proc_feature		0x80000001
+#define ia32_cpuid_ext_brand_str_p1		0x80000002
+#define ia32_cpuid_ext_brand_str_p2		0x80000003
+#define ia32_cpuid_ext_brand_str_p3		0x80000004
+#define ia32_cpuid_ext_caching_tlbs		0x80000005
+#define ia32_cpuid_ext_l23cache_tlb		0x80000006
+#define ia32_cpuid_ext_powermgr_ras		0x80000007
+#define ia32_cpuid_ext_pcap_prm_eid		0x80000008
+
 // This is used for defining IA-32 architectural cpuid flags.
 #define ia32_cpuid_vmx				5
 #define ia32_cpuid_vmx_bit			0x20

@@ -18,6 +18,27 @@
 #include <ntstrsafe.h>
 #include "winhvm.h"
 
+NTSTATUS NoirReportWindowsVersion()
+{
+	NTSTATUS st=STATUS_UNSUCCESSFUL;
+	RTL_OSVERSIONINFOEXW OsVer;
+	OsVer.dwOSVersionInfoSize=sizeof(OsVer);
+	st=RtlGetVersion((PRTL_OSVERSIONINFOW)&OsVer);
+	if(NT_SUCCESS(st))
+	{
+		HV_MSR_PROPRIETARY_GUEST_OS_ID HvMsrOsId;
+		HvMsrOsId.BuildNumber=OsVer.dwBuildNumber;
+		HvMsrOsId.ServiceVersion=OsVer.wServicePackMajor;
+		HvMsrOsId.MajorVersion=OsVer.dwMajorVersion;
+		HvMsrOsId.MinorVersion=OsVer.dwMinorVersion;
+		HvMsrOsId.OsId=HV_WINDOWS_NT_OS_ID;
+		HvMsrOsId.VendorId=HV_MICROSOFT_VENDOR_ID;
+		HvMsrOsId.OsType=0;
+		__writemsr(HV_X64_MSR_GUEST_OS_ID,HvMsrOsId.Value);
+	}
+	return st;
+}
+
 void NoirPrintCompilerVersion()
 {
 	ULONG Build=_MSC_FULL_VER%100000;

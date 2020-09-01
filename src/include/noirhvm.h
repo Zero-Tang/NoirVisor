@@ -114,6 +114,11 @@ extern noir_hypervisor_p hvm_p;
 extern ulong_ptr system_cr3;
 extern ulong_ptr orig_system_call;
 #endif
+// Functions from MSHV Core.
+u32 fastcall nvc_mshv_build_cpuid_handlers();
+void fastcall nvc_mshv_teardown_cpuid_handlers();
+u64 fastcall nvc_mshv_rdmsr_handler(u32 index);
+void fastcall nvc_mshv_wrmsr_handler(u32 index,u64 val);
 void noir_system_call(void);
 
 #if defined(_central_hvm)
@@ -158,4 +163,30 @@ u8 cpu_manuf_list[known_vendor_strings]=
 	via_processor,
 	vortex_processor
 };
+#endif
+
+typedef void (fastcall *noir_mshv_cpuid_handler)
+(
+ noir_cpuid_general_info_p param
+);
+
+typedef u64 (fastcall *noir_mshv_msr_handler)
+(
+ bool write,
+ u64 val
+);
+
+// Handlers of MSHV-Core
+#if defined(_mshv_cpuid)
+noir_mshv_cpuid_handler*	hvm_cpuid_handlers=null;
+noir_mshv_msr_handler*		hvm_msr_handlers=null;
+#else
+extern noir_mshv_cpuid_handler*	hvm_cpuid_handlers;
+extern noir_mshv_msr_handler*	hvm_msr_handlers;
+#endif
+
+// Globle Variables for MSHV-Core
+#if defined(_mshv_msr)
+u64v noir_mshv_guest_os_id=0;
+u64v noir_mshv_hypercall_ctrl=0;
 #endif
