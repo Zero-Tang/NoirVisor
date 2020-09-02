@@ -17,6 +17,8 @@ echo ============Start Compiling============
 echo Compiling Windows Driver Framework...
 %ddkpath%\amd64\cl.exe ..\src\booting\windrv\driver.c /I"%incpath%\crt" /I"%incpath%\api" /I"%incpath%\ddk" /Zi /nologo /W3 /WX /O2 /Oy- /D"_AMD64_" /D"_M_AMD64" /D"_WIN64" /D "_NDEBUG" /D"_UNICODE" /D "UNICODE" /Zc:wchar_t /FAcs /Fa"%objpath%\driver.cod" /Fo"%objpath%\driver.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gy /Gr /TC /c /errorReport:queue
 
+%ddkpath%\rc.exe /i"%incpath%\api" /i"%incpath%\ddk" /i"%incpath%\mfc42" /fo"%objpath%\version.res" /n ..\src\booting\windrv\version.rc
+
 echo Compiling Core Engine of Intel VT-x...
 for %%1 in (..\src\vt_core\*.c) do (%ddkpath%\amd64\cl.exe %%1 /I"..\src\include" /Zi /nologo /W3 /WX /Oi /O2 /favor:INTEL64 /D"_msvc" /D"_amd64" /D"_vt_core" /D"_%%~n1" /Zc:wchar_t /FAcs /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /Fd"%objpath%\vc90.pdb" /GS- /Gy /Gr /TC /c /errorReport:queue)
 
@@ -36,7 +38,7 @@ for %%1 in (..\src\xpf_core\windows\*.c) do (%ddkpath%\amd64\cl.exe %%1 /I"%incp
 for %%1 in (..\src\xpf_core\windows\*.asm) do (%ddkpath%\amd64\ml64.exe /W3 /WX /D"_amd64" /Zf /Zd /Fo"%objpath%\%%~n1.obj" /c /nologo %%1)
 
 echo ============Start Linking============
-%ddkpath%\amd64\link.exe "%objpath%\*.obj" /LIBPATH:"%libpath%\win7\amd64" /NODEFAULTLIB "ntoskrnl.lib" "..\src\disasm\LDE64.lib" /NOLOGO /OPT:REF /OPT:ICF /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
+%ddkpath%\amd64\link.exe "%objpath%\*.obj" "%objpath%\version.res" /LIBPATH:"%libpath%\win7\amd64" /NODEFAULTLIB "ntoskrnl.lib" "..\src\disasm\LDE64.lib" /NOLOGO /OPT:REF /OPT:ICF /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
 echo Completed!
 echo.
 

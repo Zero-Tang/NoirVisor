@@ -165,5 +165,4 @@ void NoirLocatePsLoadedModule(IN PDRIVER_OBJECT DriverObject)
 		NoirLocatePsLoadedModuleList(DriverObject);
 	// Print them to debug-console for debugging diagnostics purpose...
 	NoirDebugPrint("PsLoadedModuleList: 0x%p\t PsLoadedModuleResource: 0x%p\n",PsLoadedModuleList,PsLoadedModuleResource);
-
 }

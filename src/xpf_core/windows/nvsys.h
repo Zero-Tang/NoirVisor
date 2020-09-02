@@ -48,3 +48,8 @@ NTSYSAPI NTSTATUS NTAPI ZwAlertThread(IN HANDLE ThreadHandle);
 ULONG LDE(IN PVOID Code,IN ULONG Architecture);
 
 PNOIR_ASYNC_DEBUG_LOG_SYSTEM NoirAsyncDebugLogger=NULL;
+
+// Simple Memory Introspection Counters
+LONG volatile NoirAllocatedNonPagedPools=0;
+LONG volatile NoirAllocatedPagedPools=0;
+LONG volatile NoirAllocatedContiguousMemoryCount=0;

@@ -134,13 +134,16 @@ void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
 	noir_vt_vmwrite64(vmexit_msr_load_address,exit_load);
 	noir_vt_vmwrite64(vmexit_msr_store_address,exit_store);
 	noir_vt_vmwrite64(address_of_msr_bitmap,vcpu->relative_hvm->msr_bitmap.phys);
+	if(vcpu->enabled_features & noir_vt_syscall_hook)
+	{
 #if defined(_amd64)
-	noir_vt_vmwrite(vmentry_msr_load_count,1);
-	noir_vt_vmwrite(vmexit_msr_load_count,1);
+		noir_vt_vmwrite(vmentry_msr_load_count,1);
+		noir_vt_vmwrite(vmexit_msr_load_count,1);
 #else
-	noir_vt_vmwrite(guest_msr_ia32_sysenter_eip,(ulong_ptr)noir_system_call);
-	noir_vt_vmwrite(host_msr_ia32_sysenter_eip,orig_system_call);
+		noir_vt_vmwrite(guest_msr_ia32_sysenter_eip,(ulong_ptr)noir_system_call);
+		noir_vt_vmwrite(host_msr_ia32_sysenter_eip,orig_system_call);
 #endif
+	}
 }
 
 void static nvc_vt_setup_msr_auto_list(noir_hypervisor_p hvm)
@@ -454,15 +457,13 @@ void static nvc_vt_setup_available_features(noir_vt_vcpu_p vcpu)
 	{
 		/*
 			We require following supportability of Intel EPT:
-			Execute-Only Translation - This is used for stealth inline hook.
-			Write-Back EPT Paging Structure.
+			Write-Back EPT Paging Structure - We are allocating stuff cached in this way.
 			2MB-paging - This is used for reducing memory consumption.
 			(It can be better that processor supports 1GB-paging. However,
 			 VMware does not support emulating 1GB-paging for Intel EPT.)
 			Support invept Instruction - This is used for invalidating EPT TLB.
 		*/
 		bool ept_support_req=true;
-		ept_support_req&=ev_cap.support_exec_only_translation;
 		ept_support_req&=ev_cap.support_wb_ept;
 		ept_support_req&=ev_cap.support_2mb_paging;
 		ept_support_req&=ev_cap.support_invept;
@@ -471,6 +472,7 @@ void static nvc_vt_setup_available_features(noir_vt_vcpu_p vcpu)
 		if(ept_support_req)
 		{
 			vcpu->enabled_feature|=noir_vt_extended_paging;
+			// Execute-Only Translation should be supported in order to do stealth inline hook via EPT.
 			if(ev_cap.support_exec_only_translation)vcpu->enabled_feature|=noir_vt_ept_with_hooks;
 		}
 	}
@@ -486,8 +488,6 @@ void static nvc_vt_setup_available_features(noir_vt_vcpu_p vcpu)
 	// Check if VMCS Shadowing can be enabled.
 	if(proc2_cap.allowed1_settings.vmcs_shadowing)
 		vcpu->enabled_feature|=noir_vt_vmcs_shadowing;
-	// FIXME: Complete the CPUID Caching Architecture.
-	// vcpu->enabled_feature|=noir_vt_cpuid_caching;
 }
 
 void static nvc_vt_setup_control_area(bool true_msr)
@@ -506,6 +506,7 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	u8 vst=0;
 	noir_processor_state state;
 	noir_save_processor_state(&state);
+	vcpu->enabled_feature|=noir_vt_syscall_hook;
 	// Issue a sequence of vmwrite instructions to setup VMCS.
 	vt_basic.value=noir_rdmsr(ia32_vmx_basic);
 	nvc_vt_setup_available_features(vcpu);

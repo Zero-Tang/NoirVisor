@@ -243,6 +243,79 @@ ULONG32 noir_get_instruction_length(IN PVOID code,IN BOOLEAN LongMode)
 	return LDE(code,arch);
 }
 
+void NoirReportMemoryIntrospectionCounter()
+{
+	NoirDebugPrint("============NoirVisor Memory Introspection Report Start============\n");
+	NoirDebugPrint("Unreleased NonPaged Pools: %d\n",NoirAllocatedNonPagedPools);
+	NoirDebugPrint("Unreleased Paged Pools: %d\n",NoirAllocatedPagedPools);
+	NoirDebugPrint("Unreleased Contiguous Memory Couunt: %d\n",NoirAllocatedContiguousMemoryCount);
+	if(NoirAllocatedNonPagedPools || NoirAllocatedPagedPools || NoirAllocatedContiguousMemoryCount)
+		NoirDebugPrint("Memory Leak is detected!\n");
+	else
+		NoirDebugPrint("No Memory Leaks...\n");
+	NoirDebugPrint("=============NoirVisor Memory Introspection Report End=============\n");
+}
+
+PVOID NoirAllocateContiguousMemory(IN SIZE_T Length)
+{
+	PHYSICAL_ADDRESS H={0xFFFFFFFFFFFFFFFF};
+	PVOID p=MmAllocateContiguousMemory(Length,H);
+	if(p)
+	{
+		RtlZeroMemory(p,Length);
+		InterlockedIncrement(&NoirAllocatedContiguousMemoryCount);
+	}
+	return p;
+}
+
+PVOID NoirAllocateNonPagedMemory(IN SIZE_T Length)
+{
+	PVOID p=ExAllocatePoolWithTag(NonPagedPool,Length,'pNvN');
+	if(p)
+	{
+		RtlZeroMemory(p,Length);
+		InterlockedIncrement(&NoirAllocatedNonPagedPools);
+	}
+	return p;
+}
+
+PVOID NoirAllocatePagedMemory(IN SIZE_T Length)
+{
+	PVOID p=ExAllocatePoolWithTag(PagedPool,Length,'gPvN');
+	if(p)
+	{
+		RtlZeroMemory(p,Length);
+		InterlockedIncrement(&NoirAllocatedPagedPools);
+	}
+	return p;
+}
+
+void NoirFreeContiguousMemory(PVOID VirtualAddress)
+{
+#if defined(_WINNT5)
+	// It is recommended to release contiguous memory at APC level on NT5.
+	KIRQL f_oldirql;
+	KeRaiseIrql(APC_LEVEL,&f_oldirql);
+#endif
+	MmFreeContiguousMemory(VirtualAddress);
+	InterlockedDecrement(&NoirAllocatedContiguousMemoryCount);
+#if defined(_WINNT5)
+	KeLowerIrql(f_oldirql);
+#endif
+}
+
+void NoirFreeNonPagedMemory(void* VirtualAddress)
+{
+	ExFreePoolWithTag(VirtualAddress,'pNvN');
+	InterlockedDecrement(&NoirAllocatedNonPagedPools);
+}
+
+void NoirFreePagedMemory(void* virtual_address)
+{
+	ExFreePoolWithTag(virtual_address,'gPvN');
+	InterlockedDecrement(&NoirAllocatedPagedPools);
+}
+
 void* noir_alloc_contd_memory(size_t length)
 {
 	// PHYSICAL_ADDRESS L={0};
@@ -250,32 +323,45 @@ void* noir_alloc_contd_memory(size_t length)
 	// PHYSICAL_ADDRESS B={0};
 	// PVOID p=MmAllocateContiguousMemorySpecifyCacheNode(length,L,H,B,MmCached,MM_ANY_NODE_OK);
 	PVOID p=MmAllocateContiguousMemory(length,H);
-	if(p)RtlZeroMemory(p,length);
+	if(p)
+	{
+		RtlZeroMemory(p,length);
+		InterlockedIncrement(&NoirAllocatedContiguousMemoryCount);
+	}
 	return p;
 }
 
 void* noir_alloc_nonpg_memory(size_t length)
 {
 	PVOID p=ExAllocatePoolWithTag(NonPagedPool,length,'pNvN');
-	if(p)RtlZeroMemory(p,length);
+	if(p)
+	{
+		RtlZeroMemory(p,length);
+		InterlockedIncrement(&NoirAllocatedNonPagedPools);
+	}
 	return p;
 }
 
 void* noir_alloc_paged_memory(size_t length)
 {
 	PVOID p=ExAllocatePoolWithTag(PagedPool,length,'gPvN');
-	if(p)RtlZeroMemory(p,length);
+	if(p)
+	{
+		RtlZeroMemory(p,length);
+		InterlockedIncrement(&NoirAllocatedPagedPools);
+	}
 	return p;
 }
 
 void noir_free_contd_memory(void* virtual_address)
 {
 #if defined(_WINNT5)
-	//It is recommended to release contiguous memory at APC level on NT5.
+	// It is recommended to release contiguous memory at APC level on NT5.
 	KIRQL f_oldirql;
 	KeRaiseIrql(APC_LEVEL,&f_oldirql);
 #endif
 	MmFreeContiguousMemory(virtual_address);
+	InterlockedDecrement(&NoirAllocatedContiguousMemoryCount);
 #if defined(_WINNT5)
 	KeLowerIrql(f_oldirql);
 #endif
@@ -284,11 +370,13 @@ void noir_free_contd_memory(void* virtual_address)
 void noir_free_nonpg_memory(void* virtual_address)
 {
 	ExFreePoolWithTag(virtual_address,'pNvN');
+	InterlockedDecrement(&NoirAllocatedNonPagedPools);
 }
 
 void noir_free_paged_memory(void* virtual_address)
 {
 	ExFreePoolWithTag(virtual_address,'gPvN');
+	InterlockedDecrement(&NoirAllocatedPagedPools);
 }
 
 ULONG64 noir_get_physical_address(void* virtual_address)
@@ -298,7 +386,7 @@ ULONG64 noir_get_physical_address(void* virtual_address)
 	return pa.QuadPart;
 }
 
-//We need to map physical memory in nesting virtualization.
+// We need to map physical memory in nesting virtualization.
 void* noir_map_physical_memory(ULONG64 physical_address,size_t length)
 {
 	PHYSICAL_ADDRESS pa;
@@ -347,17 +435,11 @@ void noir_free_2mb_page(void* virtual_address)
 	MmFreeContiguousMemorySpecifyCache(virtual_address,0x200000,MmCached);
 }
 
-//Some Additional repetitive functions
+// Some Additional repetitive functions
 ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress)
 {
 	PHYSICAL_ADDRESS pa=MmGetPhysicalAddress(VirtualAddress);
 	return pa.QuadPart;
-}
-
-PVOID NoirAllocateContiguousMemory(IN ULONG Length)
-{
-	PHYSICAL_ADDRESS MaxAddr={0xFFFFFFFFFFFFFFFF};
-	return MmAllocateContiguousMemory(Length,MaxAddr);
 }
 
 // Essential Multi-Threading Facility.

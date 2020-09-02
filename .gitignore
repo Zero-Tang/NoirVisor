@@ -7,6 +7,10 @@
 *.obj
 *.elf
 
+# Binary Resources
+*.res
+RC*
+
 # Linker output
 *.ilk
 *.map

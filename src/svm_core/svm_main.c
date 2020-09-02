@@ -165,7 +165,6 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 		vcpu->enabled_feature|=noir_svm_virtual_gif;
 	if(d & amd64_cpuid_vmlsvirt_bit)
 		vcpu->enabled_feature|=noir_svm_virtualized_vmls;
-	vcpu->enabled_feature|=noir_svm_syscall_hook;
 	// Setup Memory Virtualization
 	if(vcpu->enabled_feature & noir_svm_nested_paging)
 	{
@@ -247,7 +246,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_dr6,state.dr6);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_dr7,state.dr7);
 	// Save RFlags, RSP and RIP
-	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rflags,2);	//Fixed bit should be set.
+	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rflags,2);	// Fixed bit should be set.
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rsp,gsp);
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
 	// Save Processor Hidden State
@@ -256,6 +255,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	// Save Model Specific Registers.
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_pat,state.pat);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_efer,state.efer);
+	vcpu->enabled_feature|=noir_svm_syscall_hook;		// Control of Stealth Syscall-Hook
 #if defined(_amd64)
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_star,state.star);
 	if(vcpu->enabled_feature & noir_svm_syscall_hook)
@@ -330,6 +330,8 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 		noir_free_contd_memory(hvm_p->relative_hvm->msrpm.virt);
 	if(hvm_p->relative_hvm->iopm.virt)
 		noir_free_contd_memory(hvm_p->relative_hvm->iopm.virt);
+	if(hvm_p->relative_hvm->blank_page.virt)
+		noir_free_contd_memory(hvm_p->relative_hvm->blank_page.virt);
 	if(hvm_p->relative_hvm->primary_nptm)
 		nvc_npt_cleanup(hvm_p->relative_hvm->primary_nptm);
 	if(hvm_p->relative_hvm->secondary_nptm)

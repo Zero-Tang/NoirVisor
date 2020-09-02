@@ -24,6 +24,7 @@
 #define noir_vt_vpid_tagged_tlb		2		// Bit	1
 #define noir_vt_vmcs_shadowing		4		// Bit	2
 #define noir_vt_ept_with_hooks		8		// Bit	3
+#define noir_vt_syscall_hook		16		// Bit	4
 
 typedef struct _noir_vt_hvm
 {
