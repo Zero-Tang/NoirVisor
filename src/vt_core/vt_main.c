@@ -134,7 +134,7 @@ void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
 	noir_vt_vmwrite64(vmexit_msr_load_address,exit_load);
 	noir_vt_vmwrite64(vmexit_msr_store_address,exit_store);
 	noir_vt_vmwrite64(address_of_msr_bitmap,vcpu->relative_hvm->msr_bitmap.phys);
-	if(vcpu->enabled_features & noir_vt_syscall_hook)
+	if(vcpu->enabled_feature & noir_vt_syscall_hook)
 	{
 #if defined(_amd64)
 		noir_vt_vmwrite(vmentry_msr_load_count,1);

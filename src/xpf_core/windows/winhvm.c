@@ -45,6 +45,7 @@ void NoirPrintCompilerVersion()
 	ULONG Minor=_MSC_VER%100;
 	ULONG Major=_MSC_VER/100;
 	NoirDebugPrint("Compiler Version: MSVC %02d.%02d.%05d\n",Major,Minor,Build);
+	NoirDebugPrint("NoirVisor Compliation Date: %s %s\n",__DATE__,__TIME__);
 }
 
 NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength)

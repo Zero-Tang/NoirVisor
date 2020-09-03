@@ -516,8 +516,8 @@ void static nvc_svm_restore_processor(noir_svm_vcpu_p vcpu)
 		noir_svm_vmmcall(noir_svm_callexit,(ulong_ptr)vcpu);
 	// Mark the processor is in "off" status as we are in Host Mode now.
 	if(vcpu->status==noir_virt_trans)
-		vcpu->status=noir_virt_off;
-	nvc_svm_disable();
+		vcpu->status=nvc_svm_disable();
+	// Things are problematic if vcpu status is not "off".
 }
 
 void static nvc_svm_restore_processor_thunk(void* context,u32 processor_id)

@@ -45,6 +45,8 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 {
 	NoirEfiInitialize(ImageHandle,SystemTable);
 	Print(L"Welcome to NoirVisor Runtime Driver!\r\n");
+	Print(L"NoirVisor's Compiler Version: LLVM Clang %a\r\n",__clang_version__);
+	Print(L"NoirVisor's Date of Compilation: %s %s\n",__DATE__,__TIME__);
 	gBS->CreateEvent(EVT_SIGNAL_EXIT_BOOT_SERVICES,TPL_NOTIFY,NoirNotifyExitBootServices,NULL,&NoirEfiExitBootServicesNotification);
 	EFI_LOADED_IMAGE_PROTOCOL* ImageInfo;
 	EFI_STATUS st=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocolGuid,&ImageInfo);
