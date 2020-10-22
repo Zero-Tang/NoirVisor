@@ -35,17 +35,37 @@ void __cdecl NoirDebugPrint(const char* Format,...)
 
 void __cdecl nvci_tracef(const char* format,...)
 {
+	LARGE_INTEGER SystemTime,LocalTime;
+	TIME_FIELDS Time;
+	char Buffer[512];
+	PSTR LogBuffer;
+	SIZE_T LogSize;
 	va_list arg_list;
 	va_start(arg_list,format);
-	vDbgPrintExWithPrefix("[NoirVisor - CI Log] ",DPFLTR_IHVDRIVER_ID,DPFLTR_TRACE_LEVEL,format,arg_list);
+	KeQuerySystemTime(&SystemTime);
+	ExSystemTimeToLocalTime(&SystemTime,&LocalTime);
+	RtlTimeToTimeFields(&LocalTime,&Time);
+	RtlStringCbPrintfExA(Buffer,sizeof(Buffer),&LogBuffer,&LogSize,STRSAFE_FILL_BEHIND_NULL,"[NoirVisor - CI Log]\t| %04d-%02d-%02d %02d:%02d:%02d.%03d | ",Time.Year,Time.Month,Time.Day,Time.Hour,Time.Minute,Time.Second,Time.Milliseconds);
+	RtlStringCbVPrintfA(LogBuffer,LogSize,format,arg_list);
+	DbgPrintEx(DPFLTR_IHVDRIVER_ID,DPFLTR_TRACE_LEVEL,Buffer);
 	va_end(arg_list);
 }
 
 void __cdecl nvci_panicf(const char* format,...)
 {
+	LARGE_INTEGER SystemTime,LocalTime;
+	TIME_FIELDS Time;
+	char Buffer[512];
+	PSTR LogBuffer;
+	SIZE_T LogSize;
 	va_list arg_list;
 	va_start(arg_list,format);
-	vDbgPrintExWithPrefix("[NoirVisor - CI Panic] ",DPFLTR_IHVDRIVER_ID,DPFLTR_ERROR_LEVEL,format,arg_list);
+	KeQuerySystemTime(&SystemTime);
+	ExSystemTimeToLocalTime(&SystemTime,&LocalTime);
+	RtlTimeToTimeFields(&LocalTime,&Time);
+	RtlStringCbPrintfExA(Buffer,sizeof(Buffer),&LogBuffer,&LogSize,STRSAFE_FILL_BEHIND_NULL,"[NoirVisor - CI Panic]\t| %04d-%02d-%02d %02d:%02d:%02d.%03d | ",Time.Year,Time.Month,Time.Day,Time.Hour,Time.Minute,Time.Second,Time.Milliseconds);
+	RtlStringCbVPrintfA(LogBuffer,LogSize,format,arg_list);
+	DbgPrintEx(DPFLTR_IHVDRIVER_ID,DPFLTR_ERROR_LEVEL,Buffer);
 	va_end(arg_list);
 }
 
@@ -175,6 +195,7 @@ NTSTATUS NoirInitializeAsyncDebugPrinter(IN BOOLEAN EnableFileLogging)
 	NoirDebugPrint("Async Debug Printer Initialization Status: 0x%X\n",st);
 	return st;
 }
+
 void __cdecl NoirAsyncDebugVPrint(ULONG FilterLevel,const char* Format,va_list ArgList)
 {
 	ULONG PN=KeGetCurrentProcessorNumber();
@@ -221,9 +242,8 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 	{
 		PLONG32 volatile GlobalOperatingNumber=(PULONG32)((ULONG_PTR)IpbBuffer+Num*sizeof(KDPC));
 		PKDPC pDpc=(PKDPC)IpbBuffer;
-		ULONG i=0;
 		*GlobalOperatingNumber=Num;
-		for(;i<Num;i++)
+		for(ULONG i=0;i<Num;i++)
 		{
 			KeInitializeDpc(&pDpc[i],NoirDpcRT,context);
 			KeSetTargetProcessorDpc(&pDpc[i],(BYTE)i);
@@ -239,8 +259,9 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 
 ULONG32 noir_get_instruction_length(IN PVOID code,IN BOOLEAN LongMode)
 {
-	ULONG arch=LongMode?64:0;
-	return LDE(code,arch);
+	if(LongMode)
+		return NoirGetInstructionLength64(code,0);
+	return NoirGetInstructionLength32(code,0);
 }
 
 void NoirReportMemoryIntrospectionCounter()

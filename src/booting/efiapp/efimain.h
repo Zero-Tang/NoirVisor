@@ -20,8 +20,9 @@
 #include <Protocol/LoadedImage.h>
 #include <Protocol/UgaDraw.h>
 #include <Protocol/SimpleFileSystem.h>
+#include <Guid/SmBios.h>
 #include <Guid/GlobalVariable.h>
-#include <Library/UefiLib.h>
+#include <IndustryStandard/SmBios.h>
 
 #define NoirVisorPath		L"\\NoirVisor.efi"
 #define NoirVisorPathLength	30
@@ -45,5 +46,7 @@ EFI_GUID gEfiDevicePathUtilitiesProtocolGuid=EFI_DEVICE_PATH_UTILITIES_PROTOCOL_
 EFI_GUID gEfiDevicePathToTextProtocolGuid=EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID;
 EFI_GUID gEfiDevicePathFromTextProtocolGuid=EFI_DEVICE_PATH_FROM_TEXT_PROTOCOL_GUID;
 EFI_GUID gEfiLoadedImageProtocolGuid=EFI_LOADED_IMAGE_PROTOCOL_GUID;
+EFI_GUID gEfiSmBiosTableGuid=SMBIOS_TABLE_GUID;
 
 extern EFI_BOOT_SERVICES *gBS;
+extern EFI_SYSTEM_TABLE *gST;

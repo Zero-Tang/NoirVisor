@@ -156,6 +156,7 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Context OPTIONAL,IN ULONG Count)
 {
 	NoirPrintCompilerVersion();
+	NoirInitializeDisassembler();
 	NoirInitializeCodeIntegrity(DriverObject->DriverStart);
 	NoirLocatePsLoadedModule(DriverObject);
 	system_cr3=__readcr3();

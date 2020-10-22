@@ -134,7 +134,7 @@ void static fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state,u32 exit_re
 			case ia32_cpuid_std_proc_feature:
 			{
 				noir_btr(&info.ecx,ia32_cpuid_vmx);
-				noir_btr(&info.ecx,ia32_cpuid_hv_presence);
+				noir_bts(&info.ecx,ia32_cpuid_hv_presence);
 				break;
 			}
 		}

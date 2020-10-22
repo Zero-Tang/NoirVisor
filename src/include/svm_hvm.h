@@ -35,7 +35,9 @@ typedef struct _noir_svm_hvm
 	memory_descriptor iopm;
 	memory_descriptor blank_page;
 	void* primary_nptm;
+#if !defined(_hv_type1)
 	void* secondary_nptm;
+#endif
 	u32 hvm_cpuid_leaf_max;
 }noir_svm_hvm,*noir_svm_hvm_p;
 

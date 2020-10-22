@@ -25,10 +25,9 @@ u32 static stdcall noir_crc32_page_std(void* page)
 {
 	u8* buf=(u8*)page;
 	u32 crc=0xffffffff;
-	u32 i=0;
-	for(;i<page_size;i++)
+	for(u32 i=0;i<page_size;i++)
 	{
-		u8 crc_index=(u8)(crc^buf[i]&0xff);
+		u8 crc_index=(u8)(crc^(buf[i]&0xff));
         crc=crc32c_table[crc_index]^(crc>>8);
     }
     return crc;
@@ -142,11 +141,10 @@ bool noir_initialize_ci(void* section,u32 size,bool soft_ci,bool hard_ci)
 		noir_ci=noir_alloc_nonpg_memory(sizeof(noir_ci_context)+sizeof(noir_ci_page)*page_num);
 		if(noir_ci)
 		{
-			u32 i=0;
 			noir_ci->pages=page_num;
 			noir_ci->base=(ulong_ptr)section;
 			// Initialize Code Integrity of Code Pages.
-			for(;i<page_num;i++)
+			for(u32 i=0;i<page_num;i++)
 			{
 				noir_ci->page_ci[i].virt=(void*)((ulong_ptr)noir_ci->base+(i<<12));
 				noir_ci->page_ci[i].crc=noir_crc32_page(noir_ci->page_ci[i].virt);
@@ -157,7 +155,7 @@ bool noir_initialize_ci(void* section,u32 size,bool soft_ci,bool hard_ci)
 			// Sort it to accelerate real-time CI.
 			// Do the sort only if we enable Hardware-Level CI. Sorting is unnecessary elsewise.
 			if(use_hard)noir_qsort(noir_ci->page_ci,page_num,sizeof(noir_ci_page),noir_ci_sorting_comparator);
-			for(i=0;i<page_num;i++)
+			for(u32 i=0;i<page_num;i++)
 				nvci_tracef("Physical: 0x%llX\t CRC32C: 0x%08X\t Virtual: 0x%p\n",noir_ci->page_ci[i].phys,noir_ci->page_ci[i].crc,noir_ci->page_ci[i].virt);
 			// Create Worker Thread.
 			if(soft_ci)noir_ci->ci_thread=noir_create_thread(noir_ci_enforcement_worker,noir_ci);

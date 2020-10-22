@@ -92,17 +92,17 @@ bool nvc_npt_update_pte(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bo
 		pte_p->virt=noir_alloc_contd_memory(page_size);
 		if(pte_p->virt)
 		{
-			u32 i=0;
 			u64 index=(gat.pdpte_offset<<9)+gat.pde_offset;
 			amd64_npt_pde_p pde_p=(amd64_npt_pde_p)&nptm->pde.virt[index];
 			// PTE Descriptor
 			pte_p->phys=noir_get_physical_address(pte_p->virt);
 			pte_p->gpa_start=index<<9;
-			for(;i<512;i++)
+			for(u32 i=0;i<512;i++)
 			{
-				pte_p->virt[i].present=1;
-				pte_p->virt[i].write=1;
-				pte_p->virt[i].user=1;
+				pte_p->virt[i].present=true;
+				pte_p->virt[i].write=true;
+				pte_p->virt[i].user=true;
+				pte_p->virt[i].no_execute=false;
 				pte_p->virt[i].page_base=pte_p->gpa_start+i;
 			}
 			pte_p->gpa_start<<=12;
@@ -149,14 +149,12 @@ bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm)
 	hvm->relative_hvm->blank_page.virt=noir_alloc_contd_memory(page_size);
 	if(hvm->relative_hvm->blank_page.virt)
 	{
-		noir_npt_pte_descriptor_p cur=null;
 		bool result=true;
-		u32 i=0;
 		hvm->relative_hvm->blank_page.phys=noir_get_physical_address(hvm->relative_hvm->blank_page.virt);
 		// Protect MSRPM and IOPM
 		result&=nvc_npt_update_pte(pri_nptm,hvm->relative_hvm->msrpm.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
 		// Protect HSAVE and VMCB
-		for(;i<hvm->cpu_count;i++)
+		for(u32 i=0;i<hvm->cpu_count;i++)
 		{
 			noir_svm_vcpu_p vcpu=&hvm->virtual_cpu[i];
 			result&=nvc_npt_update_pte(pri_nptm,vcpu->hsave.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
@@ -169,7 +167,7 @@ bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm)
 		// Disable the writing permission is enough, though.
 		result&=nvc_npt_update_pde(pri_nptm,pri_nptm->pde.phys,true,false,true);
 		// Update PTEs...
-		for(cur=pri_nptm->pte.head;cur;cur=cur->next)
+		for(noir_npt_pte_descriptor_p cur=pri_nptm->pte.head;cur;cur=cur->next)
 			result&=nvc_npt_update_pte(pri_nptm,cur->phys,hvm->relative_hvm->blank_page.phys,true,true,true);
 		return result;
 	}
@@ -179,8 +177,7 @@ bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm)
 bool nvc_npt_initialize_ci(noir_npt_manager_p nptm)
 {
 	bool r=true;
-	u32 i=0;
-	for(;i<noir_ci->pages;i++)
+	for(u32 i=0;i<noir_ci->pages;i++)
 	{
 		u64 phys=noir_ci->page_ci[i].phys;
 		r&=nvc_npt_update_pte(nptm,phys,phys,true,false,true);
@@ -189,6 +186,7 @@ bool nvc_npt_initialize_ci(noir_npt_manager_p nptm)
 	return r;
 }
 
+#if !defined(_hv_type1)
 void nvc_npt_build_hook_mapping(noir_hypervisor_p hvm)
 {
 	u32 i=0;
@@ -199,14 +197,12 @@ void nvc_npt_build_hook_mapping(noir_hypervisor_p hvm)
 	// In this function, we build mappings necessary to make stealth inline hook.
 	for(nhp=noir_hook_pages;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
 		nvc_npt_update_pte(pri_nptm,nhp->orig.phys,nhp->orig.phys,true,true,false);
-	i=0;
-	for(nhp=noir_hook_pages;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
+	for(nhp=noir_hook_pages,i=0;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
 		nvc_npt_update_pte(sec_nptm,nhp->hook.phys,nhp->orig.phys,true,true,true);
 	// Set all necessary PDEs to NX.
 	for(i=0;i<512;i++)
 	{
-		u32 j=0;
-		for(;j<512;j++)
+		for(u32 j=0;j<512;j++)
 		{
 			u32 k=(i<<9)+j;
 			if(sec_nptm->pde.virt[k].large_pde)
@@ -218,8 +214,7 @@ void nvc_npt_build_hook_mapping(noir_hypervisor_p hvm)
 		for(i=0;i<512;i++)
 			pte_p->virt[i].no_execute=true;
 	// Select PTEs that should be X.
-	i=0;
-	for(nhp=noir_hook_pages;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
+	for(nhp=noir_hook_pages,i=0;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
 	{
 		amd64_addr_translator trans;
 		trans.value=nhp->orig.phys;
@@ -228,6 +223,8 @@ void nvc_npt_build_hook_mapping(noir_hypervisor_p hvm)
 		{
 			if(nhp->orig.phys>=pte_p->gpa_start && nhp->orig.phys<pte_p->gpa_start+page_2mb_size)
 			{
+				// To enable execution of a specific 4KiB page, upper PDE should be executable as well.
+				nvc_npt_update_pde(sec_nptm,pte_p->gpa_start,true,true,true);
 				pte_p->virt[trans.pte_offset].no_execute=false;
 				nhp->pte_descriptor=(void*)&pte_p->virt[trans.pte_offset];
 				break;
@@ -235,6 +232,7 @@ void nvc_npt_build_hook_mapping(noir_hypervisor_p hvm)
 		}
 	}
 }
+#endif
 
 /*
   Introduction to Identity map:
@@ -278,11 +276,9 @@ noir_npt_manager_p nvc_npt_build_identity_map()
 	}
 	if(alloc_success)
 	{
-		u32 i=0;
-		for(;i<512;i++)
+		for(u32 i=0;i<512;i++)
 		{
-			u32 j=0;
-			for(;j<512;j++)
+			for(u32 j=0;j<512;j++)
 			{
 				const u32 k=(i<<9)+j;
 				// Build Page-Directory Entries (PDE)

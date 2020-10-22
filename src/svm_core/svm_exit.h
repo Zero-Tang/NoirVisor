@@ -138,7 +138,9 @@ void inline noir_svm_advance_rip(void* vmcb)
 	ulong_ptr gflags=noir_svm_vmread(vmcb,guest_rflags);
 	// In case the guest is single-step debugging, we should inject debug trace trap so that
 	// the next instruction won't be skipped in debugger, confusing the debugging personnel.
-	if(noir_bt((u32*)&gflags,amd64_rflags_tf))
+	// If guest is single-step debugging, slight penalty due to branch predictor is acceptable.
+	if(unlikely(noir_bt((u32*)&gflags,amd64_rflags_tf)))
 		noir_svm_inject_event(vmcb,amd64_debug_exception,amd64_fault_trap_exception,false,true,0);
+	// FIXME: Check Debug Registers. If condition matches, inject #DB exception.
 	if(nrip)noir_svm_vmwrite(vmcb,guest_rip,nrip);
 }

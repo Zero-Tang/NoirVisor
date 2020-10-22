@@ -23,7 +23,11 @@ ULONG GetPatchSize(IN PVOID Code,IN ULONG HookLength)
 	while(s<HookLength)
 	{
 		PVOID p=(PVOID)((ULONG_PTR)Code+s);
-		s+=LDE(p,sizeof(void*)*16-64);
+#if defined(_WIN64)
+		s+=NoirGetInstructionLength64(Code,0);
+#else
+		s+=NoirGetInstructionLength32(Code,0);
+#endif
 	}
 	return s;
 }
@@ -105,13 +109,12 @@ void static NoirLocatePsLoadedModuleResource()
 	ULONG_PTR p1=(ULONG_PTR)MmGetSystemRoutineAddress(&uniFuncName);
 	if(p1)
 	{
-		ULONG_PTR p2=p1;
 		ULONG Len=0;
 		// Search Instruction
-		for(;p2<p1+0x200;p2+=Len)
+		for(ULONG_PTR p2=p1;p2<p1+0x200;p2+=Len)
 		{
-			Len=LDE((PVOID)p2,sizeof(void*)*16-64);
 #if defined(_WIN64)
+			Len=NoirGetInstructionLength64((PBYTE)p2,0);
 			// Compare if current instruction is "lea rcx,xxxx"
 			// 48 8D 0D XX XX XX XX		lea rcx,PsLoadedModuleResource
 			if(Len==7 && *(PUSHORT)p2==0x8D48 && *(PBYTE)(p2+2)==0xD)

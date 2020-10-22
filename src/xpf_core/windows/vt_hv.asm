@@ -28,7 +28,7 @@ ifdef _amd64
 
 noir_vt_invept proc
 
-	invept xmmword ptr [rdx],rcx
+	invept rcx,xmmword ptr [rdx]
 	setc al
 	setz cl
 	adc al,cl
@@ -38,7 +38,7 @@ noir_vt_invept endp
 
 noir_vt_invvpid proc
 
-	invvpid xmmword ptr [rdx],rcx
+	invvpid rcx,xmmword ptr [rdx]
 	setc al
 	setz cl
 	adc al,cl

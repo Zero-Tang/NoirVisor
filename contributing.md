@@ -12,8 +12,8 @@ By saying Netizen Name, it refers to the name you use in GitHub. Your real name 
 Starting from your first contribution, you, nonetheless, cannot use other names on your future contribution, unless you contribute through another account.
 
 ## Coding Conventions
-- In VT-Core and SVM-Core, use lower-case when coding.
-- For Windows platform-specific, use Windows API style.
+- In VT-Core, SVM-Core and MSHV-Core, use lower-case when coding.
+- For platform-specific coding, use the style specific to that platform.
 - No spaces unless it significantly affects reading.
 
 ## Raising Issues
@@ -29,7 +29,7 @@ It is recommended to use following languages:
 - English, US
 
 It could also be fine if it is stated in following languages:
-- Traditional Chinese, Taiwan Province (繁體中文，臺灣省)
+- Traditional Chinese, Taiwan Province (正體中文，臺灣省)
 - Traditional Chinese, Hong Kong S.A.R (繁體中文，香港特別行政區)
 - English, UK
 

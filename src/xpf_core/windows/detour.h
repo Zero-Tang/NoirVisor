@@ -37,7 +37,10 @@ typedef struct _KLDR_DATA_TABLE_ENTRY
 }KLDR_DATA_TABLE_ENTRY,*PKLDR_DATA_TABLE_ENTRY;
 
 void __cdecl NoirDebugPrint(const char* Format,...);
-ULONG LDE(IN PVOID Code,IN ULONG Architecture);
+BYTE NoirDisasmCode32(PSTR Mnemonic,SIZE_T MnemonicLength,PBYTE Code,SIZE_T CodeLength,ULONG64 VirtualAddress);
+BYTE NoirDisasmCode64(PSTR Mnemonic,SIZE_T MnemonicLength,PBYTE Code,SIZE_T CodeLength,ULONG64 VirtualAddress);
+BYTE NoirGetInstructionLength32(BYTE* Code,SIZE_T CodeLength);
+BYTE NoirGetInstructionLength64(BYTE* Code,SIZE_T CodeLength);
 
 PKLDR_DATA_TABLE_ENTRY PsLoadedModuleList=NULL;
 PERESOURCE PsLoadedModuleResource=NULL;

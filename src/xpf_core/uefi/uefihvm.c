@@ -14,6 +14,7 @@
 
 #include <Uefi.h>
 #include <IndustryStandard/PeImage.h>
+#include <Library/BaseLib.h>
 #include "uefihvm.h"
 
 BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)
@@ -29,7 +30,7 @@ BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)
 			for(UINT16 i=0;i<NtHead->FileHeader.NumberOfSections;i++)
 			{
 				// Locate Code Section
-				if(NoirStringCompareInsensitiveNA(SectionHeaders[i].Name,".text",EFI_IMAGE_SIZEOF_SHORT_NAME)==0)
+				if(AsciiStrnCmp((CHAR8*)SectionHeaders[i].Name,".text",EFI_IMAGE_SIZEOF_SHORT_NAME)==0)
 				{
 					VOID* CodeBase=(VOID*)((UINTN)ImageBase+SectionHeaders[i].VirtualAddress);
 					UINT32 CodeSize=SectionHeaders[i].SizeOfRawData;

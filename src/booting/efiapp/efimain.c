@@ -12,11 +12,37 @@
   File Location: /booting/efiapp/efimain.c
 */
 
-#include "efimain.h"
-#include <intrin.h>
+#include <Uefi.h>
+#include <Library/UefiLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/MemoryAllocationLib.h>
+#include <intrin.h>
+#include "efimain.h"
+
+INT32 NoirCompareGuid(EFI_GUID *Guid1,EFI_GUID *Guid2)
+{
+	if(Guid1->Data1>Guid2->Data1)
+		return 1;
+	else if(Guid1->Data1<Guid2->Data1)
+		return -1;
+	if(Guid1->Data2>Guid2->Data2)
+		return 1;
+	else if(Guid1->Data2<Guid2->Data2)
+		return -1;
+	if(Guid1->Data3>Guid2->Data3)
+		return 1;
+	else if(Guid1->Data3<Guid2->Data3)
+		return -1;
+	for(UINT8 i=0;i<8;i++)
+	{
+		if(Guid1->Data4[i]>Guid2->Data4[i])
+			return 1;
+		else if(Guid1->Data4[i]<Guid2->Data4[i])
+			return -1;
+	}
+	return 0;
+}
 
 void NoirBlockUntilKeyStroke(IN CHAR16 Unicode)
 {
@@ -27,6 +53,56 @@ void NoirBlockUntilKeyStroke(IN CHAR16 Unicode)
 		gBS->WaitForEvent(1,&StdIn->WaitForKey,&fi);
 		StdIn->ReadKeyStroke(StdIn,&InKey);
 	}while(InKey.UnicodeChar!=Unicode);
+}
+
+UINTN NoirGetSmBiosEntrySize(IN SMBIOS_STRUCTURE *SmBiosEntry)
+{
+	CHAR8 *String=(CHAR8*)((UINTN)SmBiosEntry+SmBiosEntry->Length);
+	UINTN i=0;
+	for(i=0;String[i]!='\0' || String[i+1]!='\0';i++);
+	return SmBiosEntry->Length+i+2;
+}
+
+void NoirPrintSystemMemoryInformation()
+{
+	for(UINTN i=0;i<gST->NumberOfTableEntries;i++)
+	{
+		if(NoirCompareGuid(&gEfiSmBiosTableGuid,&gST->ConfigurationTable[i].VendorGuid)==0)
+		{
+			SMBIOS_TABLE_ENTRY_POINT *SmBiosConfigTable=(SMBIOS_TABLE_ENTRY_POINT*)gST->ConfigurationTable[i].VendorTable;
+			SMBIOS_STRUCTURE *SmBiosHeader=(SMBIOS_STRUCTURE*)SmBiosConfigTable->TableAddress;
+			UINT64 MemorySize=0;		// Total Memory Size. Granularity at 1 KiB
+			Print(L"Located SMBIOS Configuration Table! Address=0x%p\n",SmBiosConfigTable);
+			Print(L"Anchor: %.4a Version: %d.%d\n",SmBiosConfigTable->AnchorString,SmBiosConfigTable->MajorVersion,SmBiosConfigTable->MinorVersion);
+			// Some machines might hang if the final entry of SMBIOS was accessed.
+			// Therefore, we will purposefully ignore the final entry in traversal.
+			for(UINT16 i=0;i<SmBiosConfigTable->NumberOfSmbiosStructures-1;i++)
+			{
+				UINTN Length=NoirGetSmBiosEntrySize(SmBiosHeader);
+				if(SmBiosHeader->Type==SMBIOS_TYPE_MEMORY_DEVICE)
+				{
+					SMBIOS_TABLE_TYPE17 *MemoryRecord=(SMBIOS_TABLE_TYPE17*)SmBiosHeader;
+					if(MemoryRecord->Size)
+					{
+						if(_bittest(&MemoryRecord->Size,15))
+							MemorySize+=MemoryRecord->Size;
+						else
+						{
+							if(MemoryRecord->Size==0x7FFF)
+								// Memory Module is too large to be represented by 15-bit integer.
+								MemorySize+=(MemoryRecord->ExtendedSize<<10);
+							else
+								MemorySize+=(MemoryRecord->Size<<10);
+						}
+					}
+				}
+				else if(SmBiosHeader->Type==SMBIOS_TYPE_END_OF_TABLE)
+					break;
+				SmBiosHeader=(SMBIOS_STRUCTURE*)((UINTN)SmBiosHeader+Length);
+			}
+			Print(L"Total Memory: %d KiB\n",MemorySize);
+		}
+	}
 }
 
 void NoirSetConsoleModeToMaximumRows()
@@ -58,7 +134,7 @@ void NoirPrintProcessorInformation()
 	*(int*)&VendorString[4]=Info[3];
 	*(int*)&VendorString[8]=Info[2];
 	VendorString[12]='\0';
-	Print(L"Processor Vendor: %a\r\n",VendorString);
+	Print(L"Processor Vendor: %a\n",VendorString);
 	CHAR8 BrandString[0x31];
 	__cpuid(Info,0x80000002);
 	*(int*)&BrandString[0x00]=Info[0];
@@ -192,13 +268,9 @@ EFI_STATUS EFIAPI NoirEfiEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *Sy
 	Print(L"Firmware UEFI Specification: %d.%d.%d\r\n",RevHi,RevP1,RevP2);
 	Print(L"Initialization Status: 0x%X\r\n",st);
 	NoirPrintProcessorInformation();
+	NoirPrintSystemMemoryInformation();
 	st=NoirLoadHypervisorDriver(ImageHandle,&HvImage);
-	Print(L"Load Image Status: 0x%X\r\n",st);
-	if(st==EFI_SUCCESS)
-	{
-		st=gBS->StartImage(HvImage,NULL,NULL);
-		Print(L"Start Image Status: 0x%X\r\n",st);
-	}
+	if(st==EFI_SUCCESS)st=gBS->StartImage(HvImage,NULL,NULL);
 	Print(L"Press enter key to continue...\r\n");
 	NoirBlockUntilKeyStroke(L'\r');
 	return EFI_SUCCESS;

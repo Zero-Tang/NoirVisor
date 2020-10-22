@@ -32,8 +32,7 @@
 #define IOCTL_OsVer			CTL_CODE_GEN(0x813)
 #define IOCTL_VirtCap		CTL_CODE_GEN(0x814)
 
-void LDE_Initialize();
-void LDE_Finalize();
+void NoirInitializeDisassembler();
 NTSTATUS NoirReportWindowsVersion();
 NTSTATUS NoirBuildProtectedFile();
 void NoirTeardownProtectedFile();

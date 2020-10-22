@@ -306,14 +306,16 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	bool advance=true;
-	i32 lo=0,hi=noir_hook_pages_count;
 	// Necessary Information for #NPF VM-Exit.
-	u64 gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
 	amd64_npt_fault_code fault;
 	fault.value=noir_svm_vmread64(vcpu->vmcb.virt,exit_info1);
+#if !defined(_hv_type1)
 	if(fault.execute)
 	{
+		i32 lo=0,hi=noir_hook_pages_count;
+		u64 gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
 		// Check if we should switch to secondary.
+		// Use binary search to reduce searching time complexity.
 		while(hi>=lo)
 		{
 			i32 mid=(lo+hi)>>1;
@@ -341,24 +343,15 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 		// We switched NPT. Thus we should clean VMCB cache state.
 		noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_npt);
 		// It is necessary to flush TLB.
-		noir_svm_vmwrite32(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+		noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_entire);
 	}
-	/*
-	  There are three inspections in #NPF handler of NoirVisor.
-	  Inspection I:		Stealth Inline Hook Concealment
-	  Inspection II:	Real-Time Code Integrity Enforcement
-	  Inspection III:	Critical Hypervisor Protection
-	  
-	  We simply have to make inspection I.
-	  Inspection II & III does not matter as we initialized
-	  the "advance" variable to true.
-	*/
-	// Fix ME: Complete the Inspection I - Stealth Inline Hook.
-	// Inspection I completed...
+#endif
 	if(advance)
 	{
 		// Note that SVM won't save the next rip in #NPF.
 		// Hence we should advance rip by software analysis.
+		// Usually, if #NPF handler goes here, it might be induced by Hardware-Enforced CI.
+		// In this regard, we assume this instruction is writing protected page.
 		void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
 		// Determine Long-Mode through CS.L bit.
 		u16* cs_attrib=(u16*)((ulong_ptr)vcpu->vmcb.virt+guest_cs_attrib);
@@ -387,7 +380,7 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 	noir_svm_vmwrite32(vmcb_va,tlb_control,nvc_svm_tlb_control_do_nothing);
 	// Check if the interception is due to invalid guest state.
 	// Invoke the handler accordingly.
-	if(intercept_code==-1)
+	if(unlikely(intercept_code==-1))		// Rare circumstance.
 		nvc_svm_invalid_guest_state(gpr_state,vcpu);
 	else
 		svm_exit_handlers[code_group][code_num](gpr_state,vcpu);

@@ -31,17 +31,21 @@ To build NoirVisor, using batch is essential. <br>
 Note that you should execute the `build_prep.bat` to make directories for first-time compilation. 
 
 ## Windows Driver
-To build a kernel-mode driver on Windows, you should install Windows Driver Kit 7.1.0 to default path on C disk. Then run the provided batch file to build it. <br>
-Also note that, you have to create certain directories required by the batch complilation. This can be done by executing the preparation batch.<br>
-You may download the WDK 7.1.0 from Microsoft: https://www.microsoft.com/en-us/download/details.aspx?id=11800 <br>
+To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 10 (version 2004) ISO file to B disk. Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. <br>
+You may download the EWDK10 from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019 <br>
+Make sure you download the correct version. <br>
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
 ## EFI Application and Runtime Driver
 Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. <br>
-To build a EFI Runtime Driver and Application, you should install LLVM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. <br>
-You may download LLVM from GitHub: https://github.com/llvm/llvm-project/releases <br>
-You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases <br>
+To build a EFI Runtime Driver and Application, you should install LLVM, NASM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. <br>
+You may download NASM from its official website: https://www.nasm.us/pub/nasm/stable/win64/. Make sure you have added the directory to the `PATH` environment variable. <br>
+You may download LLVM from GitHub: https://github.com/llvm/llvm-project/releases. Download the Win64 option. <br>
+You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases. Download the source code. <br>
 NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) on GitHub in order to build them.
+
+## Disassembler
+Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should pre-compile Zydis as a static library. Visit the [documents for disassembler](src/disasm/readme.md) for further details.
 
 # Test
 

@@ -77,7 +77,7 @@ BOOLEAN NoirIsProtectedFile(IN PWSTR FilePath)
 			if(FileName)
 			{
 				FileName++;
-				Result=(_wcsnicmp(NoirProtectedFile->FileName,FileName,NoirProtectedFile->MaximumLength)==0);
+				Result=(_wcsnicmp(NoirProtectedFile->FileName,FileName,NoirProtectedFile->MaximumLength>>1)==0);
 			}
 			ExReleaseResourceLite(&NoirProtectedFile->Lock);
 		}
@@ -115,12 +115,11 @@ NTSTATUS NoirConstructHook(IN PVOID Address,IN PVOID Proxy,OUT PVOID* Detour)
 	PNOIR_HOOK_PAGE HookPage=NULL;
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
 	ULONG64 FPA=NoirGetPhysicalAddress(Address);
-	ULONG i=0;
 	ULONG PatchSize=GetPatchSize(Address,HookLength);
 	*Detour=NoirAllocateNonPagedMemory(PatchSize+DetourLength);
 	if(*Detour==NULL)return st;
 	// Search if there is a hooked page containing the function.
-	for(;i<HookPageCount;i++)
+	for(ULONG i=0;i<HookPageCount;i++)
 	{
 		if(FPA>=HookPages[i].OriginalPage.PhysicalAddress && FPA<HookPages[i].OriginalPage.PhysicalAddress+PAGE_SIZE)
 		{
@@ -232,8 +231,7 @@ void NoirTeardownHookedPages()
 	// Free all hook pages.
 	if(HookPages)
 	{
-		ULONG i=0;
-		for(;i<HookPageCount;i++)
+		for(ULONG i=0;i<HookPageCount;i++)
 			if(HookPages[i].HookedPage.VirtualAddress)
 				NoirFreeContiguousMemory(HookPages[i].HookedPage.VirtualAddress);
 		NoirFreeNonPagedMemory(HookPages);

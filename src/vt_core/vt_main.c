@@ -98,8 +98,7 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 		if(hvm->virtual_cpu)
 		{
 			u32 i=0;
-			noir_vt_vcpu_p vcpu=hvm->virtual_cpu;
-			for(;i<hvm->cpu_count;vcpu=&hvm->virtual_cpu[++i])
+			for(noir_vt_vcpu_p vcpu=hvm->virtual_cpu;i<hvm->cpu_count;vcpu=&hvm->virtual_cpu[++i])
 			{
 				if(vcpu->vmxon.virt)
 					noir_free_contd_memory(vcpu->vmxon.virt);
@@ -134,6 +133,7 @@ void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
 	noir_vt_vmwrite64(vmexit_msr_load_address,exit_load);
 	noir_vt_vmwrite64(vmexit_msr_store_address,exit_store);
 	noir_vt_vmwrite64(address_of_msr_bitmap,vcpu->relative_hvm->msr_bitmap.phys);
+#if defined(_hv_type1)
 	if(vcpu->enabled_feature & noir_vt_syscall_hook)
 	{
 #if defined(_amd64)
@@ -144,6 +144,7 @@ void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
 		noir_vt_vmwrite(host_msr_ia32_sysenter_eip,orig_system_call);
 #endif
 	}
+#endif
 }
 
 void static nvc_vt_setup_msr_auto_list(noir_hypervisor_p hvm)
@@ -162,11 +163,13 @@ void static nvc_vt_setup_msr_auto_list(noir_hypervisor_p hvm)
 	ia32_vmx_msr_auto_p exit_store=(ia32_vmx_msr_auto_p)((ulong_ptr)hvm->relative_hvm->msr_auto_list.virt+0x800);
 	unref_var(exit_store);
 	// Setup custom MSR-Auto list.
+#if defined(_hv_type1)
 #if defined(_amd64)
 	entry_load[0].index=ia32_lstar;
 	entry_load[0].data=(ulong_ptr)noir_system_call;
 	exit_load[0].index=ia32_lstar;
 	exit_load[0].data=orig_system_call;
+#endif
 #endif
 }
 
@@ -179,12 +182,14 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 	unref_var(write_bitmap_low);
 	unref_var(write_bitmap_high);
 	// Setup custom MSR-Interception.
+#if defined(_hv_type1)
 #if defined(_amd64)
 	noir_set_bitmap(read_bitmap_high,ia32_lstar-0xC0000000);	// Hide MSR Hook
 	noir_set_bitmap(write_bitmap_high,ia32_lstar-0xC0000000);	// Mask MSR Hook
 #else
 	noir_set_bitmap(read_bitmap_low,ia32_sysenter_eip);			// Hide MSR Hook
 	noir_set_bitmap(write_bitmap_high,ia32_sysenter_eip);		// Mask MSR Hook
+#endif
 #endif
 	// Setup Nested Virtualization MSR Read-Hook.
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_basic);
@@ -211,10 +216,12 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 void static nvc_vt_setup_virtual_msr(noir_vt_vcpu_p vcpu)
 {
 	noir_vt_virtual_msr_p vmsr=&vcpu->virtual_msr;
+#if defined(_hv_type1)
 #if defined(_amd64)
 	vmsr->lstar=(u64)orig_system_call;
 #else
 	vmsr->sysenter_eip=(u64)orig_system_call;
+#endif
 #endif
 }
 
@@ -472,8 +479,10 @@ void static nvc_vt_setup_available_features(noir_vt_vcpu_p vcpu)
 		if(ept_support_req)
 		{
 			vcpu->enabled_feature|=noir_vt_extended_paging;
+#if defined(_hv_type1)
 			// Execute-Only Translation should be supported in order to do stealth inline hook via EPT.
 			if(ev_cap.support_exec_only_translation)vcpu->enabled_feature|=noir_vt_ept_with_hooks;
+#endif
 		}
 	}
 	// Check if Virtual Processor Identifier can be enabled.
@@ -576,12 +585,11 @@ void static nvc_vt_subvert_processor_thunk(void* context,u32 processor_id)
 */
 noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 {
-	u32 i=0;
 	hvm->cpu_count=noir_get_processor_count();
 	hvm->virtual_cpu=noir_alloc_nonpg_memory(hvm->cpu_count*sizeof(noir_vt_vcpu));
 	if(hvm->virtual_cpu)
 	{
-		for(;i<hvm->cpu_count;i++)
+		for(u32 i=0;i<hvm->cpu_count;i++)
 		{
 			noir_vt_vcpu_p vcpu=&hvm->virtual_cpu[i];
 			vcpu->vmcs.virt=noir_alloc_contd_memory(page_size);
@@ -634,7 +642,7 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 	if(hvm->virtual_cpu==null)goto alloc_failure;
 	nvc_vt_setup_msr_hook(hvm);
 	nvc_vt_setup_msr_auto_list(hvm);
-	for(i=0;i<hvm->cpu_count;i++)
+	for(u32 i=0;i<hvm->cpu_count;i++)
 		if(nvc_ept_protect_hypervisor(hvm,(noir_ept_manager_p)hvm->virtual_cpu[i].ept_manager)==false)
 			goto alloc_failure;
 	nv_dprintf("All allocations are done, start subversion!\n");

@@ -94,6 +94,11 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 #define noir_movsp		__movsd
 #endif
 
+// Memory Barrier instructions.
+#define noir_load_fence		_mm_lfence
+#define noir_store_fence	_mm_sfence
+#define noir_memory_fence	_mm_mfence
+
 // Clear/Set RFlags.IF
 #define noir_cli	_disable
 #define noir_sti	_enable
@@ -126,6 +131,23 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 #define noir_locked_xchg64		_InterlockedExchange64
 #define noir_locked_cmpxchg64	_InterlockedCompareExchange64
 #endif
+#endif
+
+// Optimization Intrinsics for Branch-Prediction
+#if defined(_llvm) || defined(_gcc)
+// Clang and GCC supports optimizing branches by intrinsics.
+#define likely(x)		__builtin_expect((x),1)
+#define unlikely(x)		__builtin_expect((x),0)
+#else
+#define likely(x)		(x)
+#define unlikely(x)		(x)
+#endif
+
+#if defined(_llvm)
+#define strchr	__builtin_strchr
+#define strcmp	__builtin_strcmp
+#define strlen	__builtin_strlen
+#define strncmp	__builtin_strncmp
 #endif
 
 // Unreference Parameters/Variables

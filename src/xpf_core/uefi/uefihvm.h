@@ -20,5 +20,5 @@
 #define EFI_IMAGE_NT_HEADERS	EFI_IMAGE_NT_HEADERS32
 #endif
 
-BOOLEAN noir_initialize_ci(PVOID section,ULONG size,BOOLEAN soft_ci,BOOLEAN hard_ci);
+BOOLEAN noir_initialize_ci(VOID* section,UINT32 size,BOOLEAN soft_ci,BOOLEAN hard_ci);
 void noir_finalize_ci();

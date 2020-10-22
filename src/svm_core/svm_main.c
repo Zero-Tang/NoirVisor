@@ -118,6 +118,7 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,1));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,0));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,1));
+#if defined(_hv_type1)
 	// Setup custom MSR-Interception.
 #if defined(_amd64)
 	unref_var(bitmap1);
@@ -127,15 +128,18 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,0));		// Hide MSR Hook
 	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,1));		// Mask MSR Hook
 #endif
+#endif
 }
 
 void static nvc_svm_setup_virtual_msr(noir_svm_vcpu_p vcpu)
 {
+#if defined(_hv_type1)
 	noir_svm_virtual_msr_p vmsr=&vcpu->virtual_msr;
 #if defined(_amd64)
 	vmsr->lstar=(u64)orig_system_call;
 #else
 	vmsr->sysenter_eip=(u64)orig_system_call;
+#endif
 #endif
 }
 
@@ -255,6 +259,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	// Save Model Specific Registers.
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_pat,state.pat);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_efer,state.efer);
+#if !defined(_hv_type1)
 	vcpu->enabled_feature|=noir_svm_syscall_hook;		// Control of Stealth Syscall-Hook
 #if defined(_amd64)
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_star,state.star);
@@ -270,6 +275,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 		noir_svm_vmwrite32(vcpu->vmcb.virt,guest_sysenter_eip,(u32)noir_system_call);
 	else
 		noir_svm_vmwrite32(vcpu->vmcb.virt,guest_sysenter_eip,(u32)orig_system_call);
+#endif
 #endif
 	// Setup Control Area
 	nvc_svm_setup_control_area(vcpu);
@@ -311,8 +317,7 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 {
 	if(hvm_p->virtual_cpu)
 	{
-		u32 i=0;
-		for(;i<hvm_p->cpu_count;i++)
+		for(u32 i=0;i<hvm_p->cpu_count;i++)
 		{
 			noir_svm_vcpu_p vcpu=&hvm_p->virtual_cpu[i];
 			if(vcpu->vmcb.virt)
@@ -334,8 +339,10 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 		noir_free_contd_memory(hvm_p->relative_hvm->blank_page.virt);
 	if(hvm_p->relative_hvm->primary_nptm)
 		nvc_npt_cleanup(hvm_p->relative_hvm->primary_nptm);
+#if !defined(_hv_type1)
 	if(hvm_p->relative_hvm->secondary_nptm)
 		nvc_npt_cleanup(hvm_p->relative_hvm->secondary_nptm);
+#endif
 	nvc_svm_teardown_exit_handler();
 }
 
@@ -390,7 +397,7 @@ u32 nvc_svm_get_allocation_size(noir_hypervisor_p hvm_p)
   vCPU Size + Hypervisor Size + NPTM Size + PDE Pages + Alignment
 */
 /*
-noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
+noir_status nvc_svm_subvert_system2(noir_hypervisor_p hvm_p)
 {
 	u32 alloc_size;
 	hvm_p->cpu_count=noir_get_processor_count();
@@ -452,8 +459,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	// Thus allocate everything at this moment, even if it costs more on single processor core.
 	if(hvm_p->virtual_cpu)
 	{
-		u32 i=0;
-		for(;i<hvm_p->cpu_count;i++)
+		for(u32 i=0;i<hvm_p->cpu_count;i++)
 		{
 			noir_svm_vcpu_p vcpu=&hvm_p->virtual_cpu[i];
 			vcpu->vmcb.virt=noir_alloc_contd_memory(page_size);
@@ -491,12 +497,15 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 		goto alloc_failure;
 	hvm_p->relative_hvm->primary_nptm=(void*)nvc_npt_build_identity_map();
 	if(hvm_p->relative_hvm->primary_nptm==null)goto alloc_failure;
-	if(nvc_npt_initialize_ci(hvm_p->relative_hvm->primary_nptm)==false)goto alloc_failure;
+#if !defined(_hv_type1)
+	// Only Type-II Hypervisor would hook into guest.
 	hvm_p->relative_hvm->secondary_nptm=(void*)nvc_npt_build_identity_map();
 	if(hvm_p->relative_hvm->secondary_nptm==null)goto alloc_failure;
-	if(hvm_p->virtual_cpu==null)goto alloc_failure;
-	nvc_svm_setup_msr_hook(hvm_p);
 	// nvc_npt_build_hook_mapping(hvm_p);
+#endif
+	nvc_svm_setup_msr_hook(hvm_p);
+	if(hvm_p->virtual_cpu==null)goto alloc_failure;
+	if(nvc_npt_initialize_ci(hvm_p->relative_hvm->primary_nptm)==false)goto alloc_failure;
 	if(nvc_npt_protect_critical_hypervisor(hvm_p)==false)goto alloc_failure;
 	nv_dprintf("All allocations are done, start subversion!\n");
 	noir_generic_call(nvc_svm_subvert_processor_thunk,hvm_p->virtual_cpu);
