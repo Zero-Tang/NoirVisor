@@ -356,6 +356,7 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 		// Determine Long-Mode through CS.L bit.
 		u16* cs_attrib=(u16*)((ulong_ptr)vcpu->vmcb.virt+guest_cs_attrib);
 		u32 increment=noir_get_instruction_length(instruction,noir_bt(cs_attrib,9));
+		// Just increment the rip. Don't emulate a read/write for guest.
 		ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
 		gip+=increment;
 		noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);

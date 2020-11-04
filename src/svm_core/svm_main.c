@@ -118,7 +118,7 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,1));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,0));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,1));
-#if defined(_hv_type1)
+#if !defined(_hv_type1)
 	// Setup custom MSR-Interception.
 #if defined(_amd64)
 	unref_var(bitmap1);
@@ -128,12 +128,14 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,0));		// Hide MSR Hook
 	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,1));		// Mask MSR Hook
 #endif
+#else
+	unref_var(bitmap1);
 #endif
 }
 
 void static nvc_svm_setup_virtual_msr(noir_svm_vcpu_p vcpu)
 {
-#if defined(_hv_type1)
+#if !defined(_hv_type1)
 	noir_svm_virtual_msr_p vmsr=&vcpu->virtual_msr;
 #if defined(_amd64)
 	vmsr->lstar=(u64)orig_system_call;

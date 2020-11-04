@@ -133,7 +133,7 @@ void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
 	noir_vt_vmwrite64(vmexit_msr_load_address,exit_load);
 	noir_vt_vmwrite64(vmexit_msr_store_address,exit_store);
 	noir_vt_vmwrite64(address_of_msr_bitmap,vcpu->relative_hvm->msr_bitmap.phys);
-#if defined(_hv_type1)
+#if !defined(_hv_type1)
 	if(vcpu->enabled_feature & noir_vt_syscall_hook)
 	{
 #if defined(_amd64)
@@ -163,13 +163,16 @@ void static nvc_vt_setup_msr_auto_list(noir_hypervisor_p hvm)
 	ia32_vmx_msr_auto_p exit_store=(ia32_vmx_msr_auto_p)((ulong_ptr)hvm->relative_hvm->msr_auto_list.virt+0x800);
 	unref_var(exit_store);
 	// Setup custom MSR-Auto list.
-#if defined(_hv_type1)
+#if !defined(_hv_type1)
 #if defined(_amd64)
 	entry_load[0].index=ia32_lstar;
 	entry_load[0].data=(ulong_ptr)noir_system_call;
 	exit_load[0].index=ia32_lstar;
 	exit_load[0].data=orig_system_call;
 #endif
+#else
+	unref_var(entry_load);
+	unref_var(exit_load);
 #endif
 }
 
@@ -182,7 +185,7 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 	unref_var(write_bitmap_low);
 	unref_var(write_bitmap_high);
 	// Setup custom MSR-Interception.
-#if defined(_hv_type1)
+#if !defined(_hv_type1)
 #if defined(_amd64)
 	noir_set_bitmap(read_bitmap_high,ia32_lstar-0xC0000000);	// Hide MSR Hook
 	noir_set_bitmap(write_bitmap_high,ia32_lstar-0xC0000000);	// Mask MSR Hook
@@ -190,6 +193,8 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 	noir_set_bitmap(read_bitmap_low,ia32_sysenter_eip);			// Hide MSR Hook
 	noir_set_bitmap(write_bitmap_high,ia32_sysenter_eip);		// Mask MSR Hook
 #endif
+#else
+	unref_var(read_bitmap_high);
 #endif
 	// Setup Nested Virtualization MSR Read-Hook.
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_basic);
@@ -216,12 +221,14 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 void static nvc_vt_setup_virtual_msr(noir_vt_vcpu_p vcpu)
 {
 	noir_vt_virtual_msr_p vmsr=&vcpu->virtual_msr;
-#if defined(_hv_type1)
+#if !defined(_hv_type1)
 #if defined(_amd64)
 	vmsr->lstar=(u64)orig_system_call;
 #else
 	vmsr->sysenter_eip=(u64)orig_system_call;
 #endif
+#else
+	unref_var(vmsr);
 #endif
 }
 
@@ -479,7 +486,7 @@ void static nvc_vt_setup_available_features(noir_vt_vcpu_p vcpu)
 		if(ept_support_req)
 		{
 			vcpu->enabled_feature|=noir_vt_extended_paging;
-#if defined(_hv_type1)
+#if !defined(_hv_type1)
 			// Execute-Only Translation should be supported in order to do stealth inline hook via EPT.
 			if(ev_cap.support_exec_only_translation)vcpu->enabled_feature|=noir_vt_ept_with_hooks;
 #endif

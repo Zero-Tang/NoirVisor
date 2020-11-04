@@ -32,7 +32,7 @@ noir_save_processor_state:
 	push rbx
 	mov rbx,rcx
 
-	; Initialize the Structure with zero.
+	; Initialize the Structure with zero by string instruction.
 	push rdi
 	cld
 	mov rdi,rcx
@@ -113,35 +113,10 @@ noir_save_processor_state:
 	mov word[rbx+52h],ax
 
 	; Save Segment Attributes - TR
-	mov rcx,qword[rbx+78h]
-	mov dx,word[rbx+60h]
-	call noir_get_segment_attributes
-	mov word[rbx+62h],ax
-
-	; Save Segment Base of TR
-	mov rcx,qword[rbx+78h]
-	mov ax,word[rbx+60h]
-	and rax,0fff8h
-	add rcx,rax
-	xor edx,edx
-	mov dx,word[rcx+2]
-	xor eax,eax
-	or rax,rdx
-	xor edx,edx
-	mov dl,byte[rcx+4]
-	shl edx,16
-	or rax,rdx
-	xor edx,edx
-	mov dl,byte[rcx+7]
-	shl edx,24
-	or rax,rdx
-	mov edx,dword[rcx+8]
-	shl rdx,32
-	or rax,rdx
-	mov qword[rbx+68h],rax
+	; TR is null in UEFI. Leave it be zero.
 
 	; Save LDT Register Selector
-	sldt word[rbx+90h]
+	; LDT is null in UEFI. Leave it be zero.
 
 	; Save Control Registers
 	mov rax,cr0
@@ -258,7 +233,8 @@ noir_save_processor_state:
 	add rsp,20h
 	ret
 
-global noir_xsetbv:
+global noir_xsetbv
+noir_xsetbv:
 
 	mov eax,edx
 	shr rdx,32

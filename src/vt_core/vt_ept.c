@@ -24,6 +24,7 @@
 #include "vt_ept.h"
 #include "vt_def.h"
 
+#if !defined(_hv_type1)
 bool nvc_ept_insert_pte(noir_ept_manager_p eptm,noir_hook_page_p nhp)
 {
 	for(u32 h=0;h<noir_hook_pages_count;h++)
@@ -88,6 +89,7 @@ bool nvc_ept_insert_pte(noir_ept_manager_p eptm,noir_hook_page_p nhp)
 	}
 	return true;
 }
+#endif
 
 void nvc_ept_cleanup(noir_ept_manager_p eptm)
 {
@@ -312,8 +314,10 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 			eptm->pdpt.virt[i].write=1;
 			eptm->pdpt.virt[i].execute=1;
 		}
+#if !defined(_hv_type1)
 		if(nvc_ept_insert_pte(eptm,noir_hook_pages)==false)
 			goto alloc_failure;
+#endif
 		if(nvc_ept_initialize_ci(eptm)==false)
 			goto alloc_failure;
 		// Build Page Map Level-4 Entry (PML4E)

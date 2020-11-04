@@ -7,3 +7,7 @@ Zydis is licensed under the MIT license. <br>
 
 ## Build
 Compilation of Zydis is not included in NoirVisor's compilation script. Hence, you should build Zydis before compiling NoirVisor. Since Zydis is included in Project NoirVisor via git submodule, you should make sure that you have cloned NoirVisor's repository recursively. <br>
+Execute following command to pull Zydis source code:
+```
+git pull --recurse-submodules
+```
