@@ -242,7 +242,7 @@ typedef void (fastcall *noir_vt_cpuid_exit_handler)
 (
  u32 leaf,
  u32 subleaf,
- u32* info
+ noir_cpuid_general_info_p info
 );
 
 #if defined(_vt_exit)
@@ -320,7 +320,7 @@ const char* vmx_exit_msg[vmx_maximum_exit_reason]=
 };
 
 noir_vt_exit_handler_routine* vt_exit_handlers=null;
-extern noir_vt_cpuid_exit_handler** vt_cpuid_handlers;
+noir_vt_cpuid_exit_handler nvcp_vt_cpuid_handler=null;
 #endif
 
 void inline noir_vt_advance_rip()

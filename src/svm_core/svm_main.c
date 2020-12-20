@@ -118,30 +118,27 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,1));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,0));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,1));
-#if !defined(_hv_type1)
-	// Setup custom MSR-Interception.
+	if(hvm_p->options.stealth_msr_hook)
+	{
+	// Setup custom MSR-Interception if enabled.
 #if defined(_amd64)
-	unref_var(bitmap1);
-	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,0));			// Hide MSR Hook
-	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,1));			// Mask MSR Hook
+		unref_var(bitmap1);
+		noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,0));			// Hide MSR Hook
+		noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,1));			// Mask MSR Hook
 #else
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,0));		// Hide MSR Hook
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,1));		// Mask MSR Hook
+		noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,0));		// Hide MSR Hook
+		noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,1));		// Mask MSR Hook
 #endif
-#else
-	unref_var(bitmap1);
-#endif
+	}
 }
 
 void static nvc_svm_setup_virtual_msr(noir_svm_vcpu_p vcpu)
 {
-#if !defined(_hv_type1)
 	noir_svm_virtual_msr_p vmsr=&vcpu->virtual_msr;
 #if defined(_amd64)
 	vmsr->lstar=(u64)orig_system_call;
 #else
 	vmsr->sysenter_eip=(u64)orig_system_call;
-#endif
 #endif
 }
 
@@ -157,8 +154,13 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	list1.intercept_msr=1;
 	list1.intercept_shutdown=1;
 	list2.value=0;
-	list2.intercept_vmrun=1;	// The vmrun should always be intercepted as required by AMD.
+	list2.intercept_vmrun=1;		// The vmrun should always be intercepted as required by AMD.
 	list2.intercept_vmmcall=1;
+	list2.intercept_vmload=1;
+	list2.intercept_vmsave=1;
+	list2.intercept_stgi=1;
+	list2.intercept_clgi=1;
+	list2.intercept_skinit=1;
 	// Policy: Enable as most features as possible.
 	// Save them to vCPU.
 	if(d & amd64_cpuid_vmcb_clean_bit)
@@ -261,8 +263,6 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	// Save Model Specific Registers.
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_pat,state.pat);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_efer,state.efer);
-#if !defined(_hv_type1)
-	vcpu->enabled_feature|=noir_svm_syscall_hook;		// Control of Stealth Syscall-Hook
 #if defined(_amd64)
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_star,state.star);
 	if(vcpu->enabled_feature & noir_svm_syscall_hook)
@@ -277,7 +277,8 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 		noir_svm_vmwrite32(vcpu->vmcb.virt,guest_sysenter_eip,(u32)noir_system_call);
 	else
 		noir_svm_vmwrite32(vcpu->vmcb.virt,guest_sysenter_eip,(u32)orig_system_call);
-#endif
+	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_sysenter_cs,state.sysenter_cs);
+	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_sysenter_esp,state.sysenter_esp);
 #endif
 	// Setup Control Area
 	nvc_svm_setup_control_area(vcpu);
@@ -348,109 +349,6 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 	nvc_svm_teardown_exit_handler();
 }
 
-// Calculate N*2MiB-4KiB size of allocation.
-u32 nvc_svm_get_allocation_size(noir_hypervisor_p hvm_p)
-{
-	u32 discrete_size,cumulate_pages;
-	// Accumulate small pages...
-	u32 size_total=hvm_p->cpu_count*nvc_stack_size;		// Size of all vCPUs.
-	size_total+=14*page_size;							// Hypervisor + NPT Managers.
-	discrete_size=page_2mb_offset(size_total);
-	cumulate_pages=page_2mb_count(size_total);
-	if(discrete_size)cumulate_pages++;
-	size_total=page_2mb_mult(cumulate_pages)-page_size;
-	// Add PDE Pages...
-	size_total+=3*page_2mb_size;						// 2 PDEs and 1 fail-safe 2MiB page.
-	return size_total;
-}
-
-/*
-  Memory Layout per vCPU: (Total: 64KiB)
-  +0x0000:	Reserved for "Saved State" while restoring system.
-  +0x1000:	Guest VMCB.
-  +0x2000:	Host VMCB.
-  +0x3000:	Host Save Page.
-  +0x4000:	8 Nested L2T VMCBs.
-  +0xC000:	Stack Bottom Address.
-  (Remaining space are for stack. Stack Size: 16KiB)
-  +0xFFE0:	Initial Stack Pointer for Hypervisor.
-
-  Memory Layout for NPT Managers: (Base: 24KiB)
-  +0x0000:	Primary NPT Manager
-  +0x0040:	Secondary NPT Manager
-  +0x0080:	PTE Descriptors Array.
-  (Remaining size toward 4KiB is for PTE Descriptors)
-  +0x1000:	Primary PML4E Page.
-  +0x2000:	Primary PDPTE Page.
-  +0x3000:	Secondary PML4E Page.
-  +0x4000:	Secondary PDPTE Page.
-  +0x5000:	Blank Page
-  +0x6000:	PTE Pages...
-  ......
-  (Aligned at 2MiB) PDE Pages...
-
-  Memory Layout for Hypervisor: (Base: 32KiB)
-  +0x0000:	MSRPM
-  +0x2000:	IOPM
-  +0x5000:	Virtual Processors
-  +0x6000:	NPT Managers & vCPUs
-
-  Overall Allocation Size Formula:
-  vCPU Size + Hypervisor Size + NPTM Size + PDE Pages + Alignment
-*/
-/*
-noir_status nvc_svm_subvert_system2(noir_hypervisor_p hvm_p)
-{
-	u32 alloc_size;
-	hvm_p->cpu_count=noir_get_processor_count();
-	alloc_size=nvc_svm_get_allocation_size(hvm_p);
-	hvm_p->address_start=noir_alloc_contd_memory(alloc_size);
-	if(hvm_p->address_start)
-	{
-		// Initialize Page Allocator
-		ulong_ptr lo=(ulong_ptr)hvm_p->address_start,hi=lo+alloc_size;
-		u32 lob=(u32)page_2mb_offset(lo),hib=(u32)page_2mb_offset(hi);
-		hvm_p->alloc_pos_lo=lo;
-		if(lob)hvm_p->lower_remainder=page_2mb_size-lob;
-		hvm_p->alloc_pos_hi=hvm_p->alloc_pos_lo+hvm_p->lower_remainder+2*page_2mb_size;
-		// Start allocation - Relative HVM
-		hvm_p->relative_hvm->msrpm.virt=nvc_hv_alloc_page(hvm_p,2);
-		if(hvm_p->relative_hvm->msrpm.virt)
-			hvm_p->relative_hvm->msrpm.phys=noir_get_physical_address(hvm_p->relative_hvm->msrpm.virt);
-		else
-			goto alloc_failure;
-		hvm_p->relative_hvm->iopm.virt=nvc_hv_alloc_page(hvm_p,3);
-		if(hvm_p->relative_hvm->iopm.virt)
-			hvm_p->relative_hvm->iopm.phys=noir_get_physical_address(hvm_p->relative_hvm->iopm.virt);
-		else
-			goto alloc_failure;
-		hvm_p->relative_hvm->blank_page.virt=nvc_hv_alloc_page(hvm_p,1);
-		if(hvm_p->relative_hvm->blank_page.virt)
-			hvm_p->relative_hvm->blank_page.phys=noir_get_physical_address(hvm_p->relative_hvm->blank_page.virt);
-		else
-			goto alloc_failure;
-		// Start allocation - vCPU
-		hvm_p->virtual_cpu=nvc_hv_alloc_page(hvm_p,2);
-		if(hvm_p->virtual_cpu)
-		{
-			noir_svm_vcpu_p vcpu=hvm_p->virtual_cpu;
-			u32 i=0;
-			for(;i<hvm_p->cpu_count;vcpu=&hvm_p->virtual_cpu[++i])
-			{
-				vcpu->hv_stack=nvc_hv_alloc_page(nvc_stack_pages);
-				if(vcpu->hv_stack==null)goto alloc_failure;
-				vcpu->vmcb.virt=(void*)((ulong_ptr)vcpu->hv_stack+0x2000);
-				vcpu->hvmcb.virt=(void*)((ulong_ptr)vcpu->hv_stack+0x3000);
-				vcpu->hsave.virt=(void*)((ulong_ptr)vcpu->hv_stack+0x4000);
-				vcpu->cpuid_cache.cache_base=(void*)((ulong_ptr)vcpu->hv_stack+sizeof(noir_gpr_state));
-			}
-		}
-	}
-alloc_failure:
-	return noir_insufficient_resources;
-}
-*/
-
 noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 {
 	hvm_p->cpu_count=noir_get_processor_count();
@@ -482,6 +380,8 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			vcpu->hv_stack=noir_alloc_nonpg_memory(nvc_stack_size);
 			if(vcpu->hv_stack==null)return noir_insufficient_resources;
 			vcpu->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
+			if(hvm_p->options.stealth_msr_hook)vcpu->enabled_feature|=noir_svm_syscall_hook;
+			// Do not enable stealth inline hook right now since this feature is incomplete.
 		}
 	}
 	hvm_p->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;

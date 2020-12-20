@@ -26,6 +26,18 @@
 #define noir_svm_vmwrite32(v,o,d)		*(u32*)((ulong_ptr)v+o)=(u32)d
 #define noir_svm_vmwrite64(v,o,d)		*(u64*)((ulong_ptr)v+o)=(u64)d
 
+#define noir_svm_vmcb_bt32(v,o,d)		noir_bt((u32*)((ulong_ptr)v+o),d)
+#define noir_svm_vmcb_bts32(v,o,d)		noir_bts((u32*)((ulong_ptr)v+o),d)
+#define noir_svm_vmcb_btr32(v,o,d)		noir_btr((u32*)((ulong_ptr)v+o),d)
+#define noir_svm_vmcb_btc32(v,o,d)		noir_btc((u32*)((ulong_ptr)v+o),d)
+
+#if defined(_amd64)
+#define noir_svm_vmcb_bt64(v,o,d)		noir_bt64((u64*)((ulong_ptr)v+o),d)
+#define noir_svm_vmcb_bts64(v,o,d)		noir_bts64((u64*)((ulong_ptr)v+o),d)
+#define noir_svm_vmcb_btr64(v,o,d)		noir_btr64((u64*)((ulong_ptr)v+o),d)
+#define noir_svm_vmcb_btc64(v,o,d)		noir_btc64((u64*)((ulong_ptr)v+o),d)
+#endif
+
 #if defined(_amd64)
 #define noir_svm_vmread		noir_svm_vmread64
 #define noir_svm_vmwrite	noir_svm_vmwrite64

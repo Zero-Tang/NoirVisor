@@ -98,7 +98,7 @@ typedef void (fastcall *noir_svm_cpuid_exit_handler)
 (
  u32 leaf,
  u32 subleaf,
- u32 *info
+ noir_cpuid_general_info_p info
 );
 
 typedef union _amd64_event_injection
@@ -117,7 +117,7 @@ typedef union _amd64_event_injection
 
 #if defined(_svm_exit)
 noir_svm_exit_handler_routine** svm_exit_handlers=null;
-extern noir_svm_cpuid_exit_handler** svm_cpuid_handlers;
+noir_svm_cpuid_exit_handler nvcp_svm_cpuid_handler=null;
 #endif
 
 void inline noir_svm_inject_event(void* vmcb,u8 vector,u8 type,u8 ev,u8 v,u32 ec)

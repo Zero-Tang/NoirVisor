@@ -109,36 +109,56 @@ void static fastcall nvc_vt_task_switch_handler(noir_gpr_state_p gpr_state,u32 e
 	nv_dprintf("Task switch is intercepted!");
 }
 
+// Hypervisor-Present CPUID Handler
+void static fastcall nvc_vt_cpuid_hvp_handler(u32 leaf,u32 subleaf,noir_cpuid_general_info_p info)
+{
+	const u32 leaf_class=noir_cpuid_class(leaf);
+	const u32 leaf_func=noir_cpuid_index(leaf);
+	if(leaf_class==hvm_leaf_index)
+	{
+		if(leaf_func<hvm_p->relative_hvm->hvm_cpuid_leaf_max)
+			hvm_cpuid_handlers[leaf_func](info);
+		else
+			noir_stosd((u32*)&info,0,4);
+	}
+	else
+	{
+		noir_cpuid(leaf,subleaf,&info->eax,&info->ebx,&info->ecx,&info->edx);
+		switch(leaf)
+		{
+			case ia32_cpuid_std_proc_feature:
+			{
+				noir_btr(&info->ecx,ia32_cpuid_vmx);
+				noir_bts(&info->ecx,ia32_cpuid_hv_presence);
+				break;
+			}
+		}
+	}
+}
+
+// Hypervisor-Stealthy CPUID Handler
+void static fastcall nvc_vt_cpuid_hvs_handler(u32 leaf,u32 subleaf,noir_cpuid_general_info_p info)
+{
+	noir_cpuid(leaf,subleaf,&info->eax,&info->ebx,&info->ecx,&info->edx);
+	switch(leaf)
+	{
+		case ia32_cpuid_std_proc_feature:
+		{
+			noir_btr(&info->ecx,ia32_cpuid_vmx);
+			break;
+		}
+	}
+}
+
 // Expected Exit Reason: 10
 // This is VM-Exit of obligation.
 void static fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
 {
 	u32 ia=(u32)gpr_state->rax;
 	u32 ic=(u32)gpr_state->rcx;
-	// First, classify the leaf function.
-	u32 leaf_class=noir_cpuid_class(ia);
-	u32 leaf_func=noir_cpuid_index(ia);
 	noir_cpuid_general_info info;
-	if(leaf_class==hvm_leaf_index)
-	{
-		if(leaf_func<hvm_p->relative_hvm->hvm_cpuid_leaf_max)
-			hvm_cpuid_handlers[leaf_func](&info);
-		else
-			noir_stosd((u32*)&info,0,4);
-	}
-	else
-	{
-		noir_cpuid(ia,ic,&info.eax,&info.ebx,&info.ecx,&info.edx);
-		switch(ia)
-		{
-			case ia32_cpuid_std_proc_feature:
-			{
-				noir_btr(&info.ecx,ia32_cpuid_vmx);
-				noir_bts(&info.ecx,ia32_cpuid_hv_presence);
-				break;
-			}
-		}
-	}
+	// Invoke handlers.
+	nvcp_vt_cpuid_handler(ia,ic,&info);
 	*(u32*)&gpr_state->rax=info.eax;
 	*(u32*)&gpr_state->rbx=info.ebx;
 	*(u32*)&gpr_state->rcx=info.ecx;
@@ -205,6 +225,7 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,u32 exit_r
 				noir_writecr3(gcr3);
 				// Mark vCPU is in transition state
 				vcpu->status=noir_virt_trans;
+				nv_dprintf("Restoration completed!\n");
 				nvc_vt_resume_without_entry(saved_state);
 				break;
 			}
@@ -573,7 +594,12 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 	large_integer val;
 	// Expected Case: Microsoft Synthetic MSR
 	if(noir_is_synthetic_msr(index))
-		val.value=nvc_mshv_rdmsr_handler(index);
+	{
+		if(hvm_p->options.cpuid_hv_presence)
+			val.value=nvc_mshv_rdmsr_handler(index);
+		else
+			noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
+	}
 	else
 	{
 		// Expected Case: Query VMX MSR.
@@ -616,8 +642,14 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 	large_integer val;
 	val.low=(u32)gpr_state->rax;
 	val.high=(u32)gpr_state->rdx;
+	// Expected Case: Microsoft Synthetic MSR
 	if(noir_is_synthetic_msr(index))
-		nvc_mshv_wrmsr_handler(index,val.value);
+	{
+		if(hvm_p->options.cpuid_hv_presence)
+			nvc_mshv_wrmsr_handler(index,val.value);
+		else
+			noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
+	}
 	else
 	{
 #if defined(_amd64)
@@ -770,14 +802,19 @@ void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,u32 exit_r
 }
 
 // It is important that this function uses fastcall convention.
-void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state)
+void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,u64 tsc_at_exit)
 {
 	u32 exit_reason;
+	u64 tc;
 	noir_vt_vmread(vmexit_reason,&exit_reason);
 	if((exit_reason&0xFFFF)<vmx_maximum_exit_reason)
 		vt_exit_handlers[exit_reason&0xFFFF](gpr_state,exit_reason);
 	else
 		nvc_vt_default_handler(gpr_state,exit_reason);
+	// Right now, decrement tsc offset.
+	noir_vt_vmread(tsc_offset,&tc);
+	tc-=(noir_rdtsc()-tsc_at_exit+noir_vt_tsc_asm_offset);
+	noir_vt_vmwrite(tsc_offset,tc);
 	// Guest RIP is supposed to be advanced in specific handlers, not here.
 	// Do not execute vmresume here. It will be done as this function returns.
 }
@@ -815,6 +852,11 @@ noir_status nvc_vt_build_exit_handlers()
 		vt_exit_handlers[intercept_invept]=nvc_vt_vmx_handler;
 		vt_exit_handlers[intercept_invvpid]=nvc_vt_vmx_handler;
 		vt_exit_handlers[intercept_xsetbv]=nvc_vt_xsetbv_handler;
+		// Special CPUID-Handler
+		if(hvm_p->options.cpuid_hv_presence)
+			nvcp_vt_cpuid_handler=nvc_vt_cpuid_hvp_handler;
+		else
+			nvcp_vt_cpuid_handler=nvc_vt_cpuid_hvs_handler;
 		return noir_success;
 	}
 	return noir_insufficient_resources;

@@ -19,6 +19,9 @@
 #define noir_nvt_vmxe			0
 #define noir_nvt_vmxon			1
 
+// Constant for TSC offseting by Assembly Part.
+#define noir_vt_tsc_asm_offset		666		// To be fine tuned.
+
 // Definition of Enabled Features
 #define noir_vt_extended_paging		1		// Bit	0
 #define noir_vt_vpid_tagged_tlb		2		// Bit	1

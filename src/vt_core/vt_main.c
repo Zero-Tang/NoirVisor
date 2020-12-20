@@ -535,6 +535,7 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	vcpu->status=noir_virt_on;
 	// Everything are done, perform subversion.
 	vst=noir_vt_vmlaunch();
+	nv_dprintf("Error while launching the Guest! VMX Status: %d\n",vst);
 	if(vst==vmx_fail_valid)
 	{
 		u32 err_code;
@@ -564,7 +565,38 @@ void static nvc_vt_subvert_processor(noir_vt_vcpu_p vcpu)
 				// Start subverting.
 				nv_dprintf("VMCS has been loaded to CPU successfully!\n");
 				vst=nvc_vt_subvert_processor_a(vcpu);
+				// Indicator other than zero means failure.
 				nv_dprintf("Subversion Indicator: %d\n",vst);
+				switch(vst)
+				{
+					case vmx_success:
+					{
+						nv_dprintf("Subversion is successful!\n");
+						break;
+					}
+					case vmx_fail_valid:
+					{
+						u32 err_code;
+						noir_vt_vmread(vm_instruction_error,&err_code);
+						nv_dprintf("vmlaunch failed! %s\n",vt_error_message[err_code]);
+						break;
+					}
+					case vmx_fail_invalid:
+					{
+						nv_dprintf("vmlaunch failed due to no VMCS is currently loaded!\n");
+						break;
+					}
+					case 3:
+					{
+						nv_dprintf("vmlaunch failed due to invalid guest state!\n");
+						break;
+					}
+					default:
+					{
+						nv_dprintf("Invalid Status: %d\n",vst);
+						break;
+					}
+				}
 			}
 		}
 	}

@@ -31,9 +31,10 @@ To build NoirVisor, using batch is essential. <br>
 Note that you should execute the `build_prep.bat` to make directories for first-time compilation. 
 
 ## Windows Driver
-To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 10 (version 2004) ISO file to B disk. Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. <br>
-You may download the EWDK10 from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019 <br>
-Make sure you download the correct version. <br>
+To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 10 (version 2004) ISO file to T disk. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are not using Windows 10. <br>
+Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. <br>
+You may download the EWDK10-2004 from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019 <br>
+Make sure you have downloaded the correct version. NoirVisor would continue updating. If not using correct version, you might fail to compile the latest version of NoirVisor. <br>
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
 ## EFI Application and Runtime Driver
@@ -64,6 +65,11 @@ As the USB flash stick is ready, enter your firmware settings and set it prior t
 # Detection of NoirVisor
 As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]` indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors defines leaf 0x40000000 is used to identify hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is `VMwareVMware`. In NoirVisor, hypervisor vendor string is defined as `NoirVisor ZT`.
 
+You may disable the detection for NoirVisor in Windows via setting up the registry. <br>
+Locate the registry key: `HKLM\Software\Zero-Tang\NoirVisor`. If this key does not exist then create it. <br>
+Edit the `CpuidPresence` Key Value to 0. If not exist then create it. <br>
+The TSC due to VM-Exit is always omitted in Exit Handler. This feature can not be disabled. Please note that omitted TSC is approximate and thereby cannot counter precise time-profiler.
+
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. <br>
 Currently, NoirVisor supports the Windows Operating System newer than or same as Windows XP, running as a kernel-mode driver. <br>
@@ -71,10 +77,13 @@ Porting to Unified Extensible Firmware Interface (UEFI) is in progress. <br>
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has three future development plans: <br>
+Project NoirVisor has four future development plans: <br>
 - Develop Nested Virtualization.
+- Develop IOMMU Core.
 - Port NoirVisor to 32-bit Windows platform.
 - Port NoirVisor to UEFI and corresponding layered hypervisor.
+
+For more information, check out the [NoirVisor 2020+](https://github.com/Zero-Tang/NoirVisor/projects/2) Project.
 
 # Completed Features
 - Minimal Microsoft `Hv#1` Hypervisor Functionalities.

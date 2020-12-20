@@ -94,6 +94,10 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 #define noir_movsp		__movsd
 #endif
 
+// Processor TSC instruction
+#define noir_rdtsc		__rdtsc
+#define noir_rdtscp		__rdtscp
+
 // Memory Barrier instructions.
 #define noir_load_fence		_mm_lfence
 #define noir_store_fence	_mm_sfence

@@ -378,42 +378,42 @@ typedef enum _ia32_vmx_instruction_error
 #if defined(_vt_main)
 char* vt_error_message[0x20]=
 {
-	"Invalid Error, Number=0!",										//Error=0
-	"vmcall is executed in VMX Root Operation!",					//Error=1
-	"vmclear is given invalid physical address as operand!",		//Error=2
-	"vmclear is given vmxon region as operand!",					//Error=3
-	"vmlaunch is given non-clear vmcs as operand!",					//Error=4
-	"vmresume is given non-launched vmcs as operand!",				//Error=5
-	"vmresume is executed after vmxoff!",							//Error=6
-	"VM-Entry failed due to invalid control fields!",				//Error=7
-	"VM-Entry failed due to invalid host state!",					//Error=8
-	"vmptrld is given invalid physical address as operand!",		//Error=9
-	"vmptrld is given vmxon region as operand!",					//Error=10
-	"vmptrld is given vmcs with incorrect revision id!",			//Error=11
-	"vmread/vmwrite is given unsupported field as operand!",		//Error=12
-	"vmwrite is given read-only field as operand!",					//Error=13
-	"Invalid Error, Number=14!",									//Error=14
-	"vmxon is executed in VMX Root Operation!",						//Error=15
-	"VM-Entry failed due to invalid executive-vmcs!",				//Error=16
-	"VM-Entry failed due to non-launched executive-vmcs!",			//Error=17
-	//Error=18
+	"Invalid Error, Number=0!",										// Error=0
+	"vmcall is executed in VMX Root Operation!",					// Error=1
+	"vmclear is given invalid physical address as operand!",		// Error=2
+	"vmclear is given vmxon region as operand!",					// Error=3
+	"vmlaunch is given non-clear vmcs as operand!",					// Error=4
+	"vmresume is given non-launched vmcs as operand!",				// Error=5
+	"vmresume is executed after vmxoff!",							// Error=6
+	"VM-Entry failed due to invalid control fields!",				// Error=7
+	"VM-Entry failed due to invalid host state!",					// Error=8
+	"vmptrld is given invalid physical address as operand!",		// Error=9
+	"vmptrld is given vmxon region as operand!",					// Error=10
+	"vmptrld is given vmcs with incorrect revision id!",			// Error=11
+	"vmread/vmwrite is given unsupported field as operand!",		// Error=12
+	"vmwrite is given read-only field as operand!",					// Error=13
+	"Invalid Error, Number=14!",									// Error=14
+	"vmxon is executed in VMX Root Operation!",						// Error=15
+	"VM-Entry failed due to invalid executive-vmcs!",				// Error=16
+	"VM-Entry failed due to non-launched executive-vmcs!",			// Error=17
+	// Error=18
 	"VM-Entry failed due to executive-vmcs not vmxon region! (Are you attempting to deactivate dual-monitor treatment?)",
-	//Error=19
+	// Error=19
 	"VM-Entry failed due to non-clear vmcs! (Are you attempting to deactivate dual-monitor treatment?)",
-	"vmcall is given invalid vmexit control fields!",				//Error=20
-	"Invalid Error, Number=21!",									//Error=21
-	//Error=22
+	"vmcall is given invalid vmexit control fields!",				// Error=20
+	"Invalid Error, Number=21!",									// Error=21
+	// Error=22
 	"vmcall is given incorrect mseg revision id! (Are you attempting to deactivate dual-monitor treatment?)",
-	"vmxoff is executed under dual-monitor treatment!",				//Error=23
-	//Error=24
+	"vmxoff is executed under dual-monitor treatment!",				// Error=23
+	// Error=24
 	"vmcall is given invalid SMM-Monitor features! (Are you attempting to activate dual-monitor treatment?)",
-	//Error=25
+	// Error=25
 	"VM-Entry failed due to invalid VM-Execution Control! (Are attempting to return from SMM?)",
-	"VM-Entry failed due to events blocked by mov ss!",				//Error=26,
-	"Invalid Error, Number=27!"										//Error=27
-	"Invalid Operand to invept/invvpid Instructions!",				//Error=28
-	"Invalid Error, Number=29!",									//Error=29
-	"Invalid Error, Number=30!",									//Error=30
-	"Invalid Error, Number=31!"										//Error=31
+	"VM-Entry failed due to events blocked by mov ss!",				// Error=26,
+	"Invalid Error, Number=27!"										// Error=27
+	"Invalid Operand to invept/invvpid Instructions!",				// Error=28
+	"Invalid Error, Number=29!",									// Error=29
+	"Invalid Error, Number=30!",									// Error=30
+	"Invalid Error, Number=31!"										// Error=31
 };
 #endif

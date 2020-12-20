@@ -60,16 +60,22 @@ typedef struct _noir_hypervisor
 	void* virtual_cpu;
 	void* relative_hvm;
 #endif
-	void* address_start;
-	ulong_ptr alloc_pos_lo;
-	ulong_ptr alloc_pos_hi;
-	u32 upper_remainder;
-	u32 lower_remainder;
 	struct
 	{
 		ulong_ptr base;
 		u32 size;
 	}hv_image;
+	union
+	{
+		struct
+		{
+			u64 stealth_msr_hook:1;
+			u64 stealth_inline_hook:1;
+			u64 cpuid_hv_presence:1;
+			u64 reserved:61;
+		};
+		u64 value;
+	}options;		// Enable certain features.
 	u32 cpu_count;
 	char vendor_string[13];
 	u8 cpu_manuf;
@@ -103,7 +109,6 @@ bool nvc_svm_subvert_system(noir_hypervisor_p hvm);
 void nvc_svm_restore_system(noir_hypervisor_p hvm);
 // Central Hypervisor Structure.
 void nvc_store_image_info(ulong_ptr* base,u32* size);
-void* nvc_hv_alloc_page(noir_hypervisor_p hvm_p,u32 pages);
 noir_hypervisor_p hvm_p=null;
 ulong_ptr system_cr3=0;
 ulong_ptr orig_system_call=0;
@@ -119,6 +124,9 @@ u32 fastcall nvc_mshv_build_cpuid_handlers();
 void fastcall nvc_mshv_teardown_cpuid_handlers();
 u64 fastcall nvc_mshv_rdmsr_handler(u32 index);
 void fastcall nvc_mshv_wrmsr_handler(u32 index,u64 val);
+
+// Miscellaneous
+u64 noir_query_enabled_features_in_system();
 void noir_system_call(void);
 
 #if defined(_central_hvm)

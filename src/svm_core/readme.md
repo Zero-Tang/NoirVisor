@@ -68,6 +68,7 @@ We will divide the problem into several sub-problems, as stated below:
 - Virtualize VM-Entry
 - Virtualize VM-Exit
 - Virtualize ASID
+- Virtualize GIF
 - Virtualize Nested Paging
 - Utilize Accelerated Nested Virtualization
 - Virtualize L2 VMCB
@@ -98,6 +99,7 @@ Then, we follow the steps indicated in AMD64 architecture programming manual. De
 - Saving Host State. We save host state to the address indicated by SVM_HSAVE_PA MSR.
 - Validate and Load Guest State. We should check consistency of the Guest State from VMCB. If no inconsistency is found, load the Guest State to L2 VMCB. Otherwise, fails the consistency check and issue VM-Exit.
 - Load Control State. Again, check inconsistency check, like ASID and VMRUN interception. If no inconsistency is found, load Control State to L2 VMCB. Otherwise, fails the consistency check and issue VM-Exit.
+- Virtualize GIF. We emulate that GIF is set.
 - Finally, execute vmrun instruction with address of L2 VMCB, concluding the VM-Entry.
 
 More details will be included in chapter Virtualize L2 VMCB.
@@ -109,10 +111,36 @@ Steps are given in the following:
 - Load the address of VMCB as rax register to L1 VMCB.
 - Load L1 Host State as Guest State to L1 VMCB.
 - Load Control State. Due to Decode Assist and Next-RIP-Saving features, we need to set something in VMCB Control State, such as Exit Reason, Information, Next RIP, etc.
+- Virtualize GIF. We emulate that vGIF is cleared.
 - Finally, execute vmrun instruction with address of L1 VMCB, concluding the VM-Exit.
 
 ## Virtualize ASID
-In NoirVisor, the L0 context use ASID=0, and L1 context use ASID=1. To virtualize ASID, we first we should use ASID>1 for any L2 context. For a simple algorithm, we increment ASID by 1 to virtualize it. If L2 ASID<2, then the VMCB is inconsistent.
+In NoirVisor, the L0 context use ASID=0, and L1 context use ASID=1. To virtualize ASID, we should use ASID>1 for any L2 context. For a simple algorithm, we increment ASID by 1 to virtualize it. If L2 ASID<2, then the VMCB is inconsistent. In CPUID, we decrement the ASID range by 1.
+
+## Virtualize GIF
+GIF is quite a special feature in AMD-V. It is a global flag that controls the interrupt behavior of the processor. To virtualize GIF, we should identify two scenarios and do what should be done. <br>
+- The processor provides hardware support for virtualizing GIF. As far as I know, processors starting at Ryzen should be providing this feature.
+- No hardware support for virtualizing GIF. VMware Workstation 16.1.0 does not provide this feature.
+
+If there is hardware support, things are easy: we set `vGIF` bit in VMCB accordingly. <br>
+If there is no hardware support, we should intercept `stgi` and `clgi` instructions. When vGIF is cleared, we set interceptions on interrupts according to AMD-V specifications. If interrupt should be ignored and discarded, then simply return to guest. If interrupt should be pending, save it to vCPU, but do not write to VMCB. When vGIF is set, we clear interceptions on interrupts, and inject the pending interrupt into guest after VM-Entry for returning from interceptions of `stgi` or `vmrun`.
+
+As defined by AMD, certain interrupts are controlled by GIF:
+| Interrupt Source                                      | Actions on `GIF=0` Scenario   |
+|-------------------------------------------------------|-------------------------------|
+| Debug Trace Trap due to breakpointer register match   | Discarded                     |
+| `INIT` Signal                                         | Held Pending                  |
+| `NMI` - Nonmaskable Interrupt                         | Held Pending                  |
+| External `SMI`                                        | Held Pending                  |
+| Internal `SMI`                                        | Discarded                     |
+| External Interrupts and Virtual Interrupts            | Held Pending                  |
+| Machine Check                                         | Held Pending                  |
+Therefore, all interrupts listed above, when `GIF=0`, should be intercepted. If interrupts are overlapping, discard the lower prioritized.
+
+### SMI Injection
+Unlike other sorts of interrupts, SMIs are not injected as `Event Injection`. Instead, there is an `SMM Control` MSR.
+
+Duly note that `vmrun` instruction would set GIF and that VM-Exit would clear GIF. Therefore, GIF on this aspect should be emulated accordingly as well.
 
 ## Virtualize Nested Paging
 To virtualize NPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the SVM-nesting feature in future NoirVisor may not support NPT unless I have one.
@@ -158,6 +186,14 @@ Also, as defined in architecture manual, following processor states will not be 
 - Event Injections.
 - RFlags, RIP, RSP, RAX registers.
 
+We may assume that uncached state is always dirty. If certain state is not marked as clean in L2C VMCB Clean Fields, that state is dirty. Dirty state should be synchronized to the L2T VMCB. Therefore, hypervisors that always leave VMCB-Clean Fields as zeros would suffer a great performance penalty.
+
 ## Devirtualize on-the-fly
 Since NoirVisor is possible to be unloaded before the nested hypervisor ends, it is necessary to put nested hypervisor directly onto the processor - that is, L1 becomes L0 and L2 becomes L1. <br>
 This is a suggestion for Nested Virtualization in NoirVisor. By now, algorithm design will not be made. After the Nested Virtualization feature completes, NoirVisor may refuse unloading as long as the nested hypervisor did not leave. <br>
+
+## Roadmap of Nested Virtualization
+Nested Virtualization in NoirVisor will be developped in three stages:
+- Simple Level (No NPT, single VMCB): Like [SimpleSvm](https://github.com/tandasat/SimpleSvm)
+- Intermediate (with NPT, single VMCB): Like [SimpleSvmHook](https://github.com/tandasat/SimpleSvmHook) or [NoirVisor](https://github.com/Zero-Tang/NoirVisor)
+- Advanced (with NPT, multiple VMCBs): Like [VMware Workstation](https://www.vmware.com/products/workstation-pro/workstation-pro-evaluation.html), [VirtualBox](https://www.virtualbox.org/), or Hyper-V.

@@ -48,6 +48,58 @@ void NoirPrintCompilerVersion()
 	NoirDebugPrint("NoirVisor Compliation Date: %s %s\n",__DATE__,__TIME__);
 }
 
+NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
+{
+	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
+	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=ExAllocatePool(PagedPool,PAGE_SIZE);
+	*Features=0;
+	if(KvPartInf)
+	{
+		HANDLE hKey=NULL;
+		UNICODE_STRING uniKeyName=RTL_CONSTANT_STRING(L"\\Registry\\Machine\\Software\\Zero-Tang\\NoirVisor");
+		OBJECT_ATTRIBUTES oa;
+		InitializeObjectAttributes(&oa,&uniKeyName,OBJ_CASE_INSENSITIVE|OBJ_KERNEL_HANDLE,NULL,NULL);
+		st=ZwOpenKey(&hKey,GENERIC_READ,&oa);
+		if(NT_SUCCESS(st))
+		{
+			UNICODE_STRING uniKvName;
+			ULONG RetLen=0;
+			ULONG32 CpuidPresence=1;		// Enable CPUID Presence at default.
+			ULONG32 StealthMsrHook=0;		// Enable Stealth MSR Hook at default.
+			ULONG32 StealthInlineHook=0;	// Enable Stealth Inline Hook at default.
+			// Detect if CPUID-Presence is enabled.
+			RtlInitUnicodeString(&uniKvName,L"CpuidPresence");
+			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+			if(NT_SUCCESS(st))CpuidPresence=*(PULONG32)KvPartInf->Data;
+			NoirDebugPrint("CPUID-Presence is %s!\n",CpuidPresence?"enabled":"disabled");
+			// Detect if Stealth MSR Hook is enabled
+			RtlInitUnicodeString(&uniKvName,L"StealthMsrHook");
+			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+			if(NT_SUCCESS(st))StealthMsrHook=*(PULONG32)KvPartInf->Data;
+			NoirDebugPrint("Stealth MSR Hook is %s!\n",StealthMsrHook?"enabled":"disabled");
+			// Detect if Stealth Inline Hook is enabled
+			RtlInitUnicodeString(&uniKvName,L"StealthInlineHook");
+			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+			if(NT_SUCCESS(st))StealthInlineHook=*(PULONG32)KvPartInf->Data;
+			NoirDebugPrint("Stealth Inline Hook is %s!\n",StealthInlineHook?"enabled":"disabled");
+			// Summarize
+			*Features|=CpuidPresence<<NOIR_HVM_FEATURE_CPUID_PRESENCE_BIT;
+			*Features|=StealthMsrHook<<NOIR_HVM_FEATURE_STEALTH_MSR_HOOK_BIT;
+			*Features|=StealthInlineHook<<NOIR_HVM_FEATURE_STEALTH_INLINE_HOOK_BIT;
+			ZwClose(hKey);
+		}
+		ExFreePool(KvPartInf);
+	}
+	return st;
+}
+
+ULONG64 noir_query_enabled_features_in_system()
+{
+	ULONG64 Features=0;
+	NoirQueryEnabledFeaturesInSystem(&Features);
+	return Features;
+}
+
 NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength)
 {
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;

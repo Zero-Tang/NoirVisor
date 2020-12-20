@@ -14,9 +14,6 @@
 
 #include <nvdef.h>
 
-#define noir_svm_cpuid_std_submask	0x2080
-#define noir_svm_cpuid_ext_submask	0x20000000
-
 // Definition of vmmcall Codes
 #define noir_svm_callexit			1
 
@@ -27,6 +24,9 @@
 #define noir_svm_virtual_gif		8		// Bit 3
 #define noir_svm_virtualized_vmls	16		// Bit 4
 #define noir_svm_syscall_hook		32		// Bit 5
+
+// Constant for TSC offseting by Assembly Part.
+#define noir_svm_tsc_asm_offset		666		// To be fine tuned.
 
 // Optimize Memory Usage of MSRPM and IOPM.
 typedef struct _noir_svm_hvm
@@ -52,7 +52,14 @@ typedef struct _noir_svm_virtual_msr
 typedef struct _noir_svm_nested_vcpu
 {
 	u64 hsave_gpa;
-	bool svme;
+	void* hsave_hva;
+	struct
+	{
+		u64 svme:1;
+		u64 gif:1;
+		u64 smm_status:1;	// 0 for outside SMM. 1 for inside SMM.
+		u64 reserved:61;
+	};
 }noir_svm_nested_vcpu,*noir_svm_nested_vcpu_p;
 
 typedef struct _noir_svm_vcpu

@@ -73,14 +73,23 @@ nvc_vt_resume_without_entry endp
 
 nvc_vt_exit_handler_a proc
 
-	pushax
+	; pushax
 	pushaq
+	; Counter Time-Profiling
+	rdtsc
+	shl rdx,32
+	or rax,rdx
+	mov rdx,rax	; Current TSC to the second parameter.
+	; Load the Guest GPR State to the first parameter.
 	mov rcx,rsp
 	sub rsp,20h
 	call nvc_vt_exit_handler
 	add rsp,20h
+	; The rest of exit handler is not counted by time-
+	; profiler counter. It should be speculated and
+	; fine-tuned in constant "noir_vt_tsc_asm_offset"
 	popaq
-	popax
+	; popax
 	vmresume
 
 nvc_vt_exit_handler_a endp
@@ -88,6 +97,7 @@ nvc_vt_exit_handler_a endp
 nvc_vt_subvert_processor_a proc
 
 	pushfq
+	xor rax,rax		; Make sure it would return zero if vmlaunch succeeds.
 	pushaq
 	mov r8,rsp
 	mov r9,vt_launched
