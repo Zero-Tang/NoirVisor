@@ -104,13 +104,13 @@ void nvc_ept_cleanup(noir_ept_manager_p eptm)
 		if(eptm->pte.head)
 		{
 			noir_ept_pte_descriptor_p cur=eptm->pte.head;
-			while(cur)
+			do
 			{
 				noir_ept_pte_descriptor_p next=cur->next;
 				noir_free_contd_memory(cur->virt);
 				noir_free_nonpg_memory(cur);
 				cur=next;
-			}
+			}while(cur);
 		}
 		if(eptm->blank_page.virt)
 			noir_free_contd_memory(eptm->blank_page.virt);
@@ -315,8 +315,9 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 			eptm->pdpt.virt[i].execute=1;
 		}
 #if !defined(_hv_type1)
-		if(nvc_ept_insert_pte(eptm,noir_hook_pages)==false)
-			goto alloc_failure;
+		if(hvm_p->options.stealth_inline_hook)
+			if(nvc_ept_insert_pte(eptm,noir_hook_pages)==false)
+				goto alloc_failure;
 #endif
 		if(nvc_ept_initialize_ci(eptm)==false)
 			goto alloc_failure;

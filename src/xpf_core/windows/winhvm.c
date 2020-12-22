@@ -20,21 +20,34 @@
 
 NTSTATUS NoirReportWindowsVersion()
 {
-	NTSTATUS st=STATUS_UNSUCCESSFUL;
-	RTL_OSVERSIONINFOEXW OsVer;
-	OsVer.dwOSVersionInfoSize=sizeof(OsVer);
-	st=RtlGetVersion((PRTL_OSVERSIONINFOW)&OsVer);
-	if(NT_SUCCESS(st))
+	NTSTATUS st=STATUS_NOT_SUPPORTED;
+	int Info[4];
+	__cpuid(Info,1);
+	if(_bittest(&Info[2],31))
 	{
-		HV_MSR_PROPRIETARY_GUEST_OS_ID HvMsrOsId;
-		HvMsrOsId.BuildNumber=OsVer.dwBuildNumber;
-		HvMsrOsId.ServiceVersion=OsVer.wServicePackMajor;
-		HvMsrOsId.MajorVersion=OsVer.dwMajorVersion;
-		HvMsrOsId.MinorVersion=OsVer.dwMinorVersion;
-		HvMsrOsId.OsId=HV_WINDOWS_NT_OS_ID;
-		HvMsrOsId.VendorId=HV_MICROSOFT_VENDOR_ID;
-		HvMsrOsId.OsType=0;
-		__writemsr(HV_X64_MSR_GUEST_OS_ID,HvMsrOsId.Value);
+		__cpuid(Info,CPUID_LEAF_HV_VENDOR_ID);
+		if(Info[0]>=CPUID_LEAF_HV_VENDOR_NEUTRAL)
+		{
+			__cpuid(Info,CPUID_LEAF_HV_VENDOR_NEUTRAL);
+			if(Info[0]=='1#vH')
+			{
+				RTL_OSVERSIONINFOEXW OsVer;
+				OsVer.dwOSVersionInfoSize=sizeof(OsVer);
+				st=RtlGetVersion((PRTL_OSVERSIONINFOW)&OsVer);
+				if(NT_SUCCESS(st))
+				{
+					HV_MSR_PROPRIETARY_GUEST_OS_ID HvMsrOsId;
+					HvMsrOsId.BuildNumber=OsVer.dwBuildNumber;
+					HvMsrOsId.ServiceVersion=OsVer.wServicePackMajor;
+					HvMsrOsId.MajorVersion=OsVer.dwMajorVersion;
+					HvMsrOsId.MinorVersion=OsVer.dwMinorVersion;
+					HvMsrOsId.OsId=HV_WINDOWS_NT_OS_ID;
+					HvMsrOsId.VendorId=HV_MICROSOFT_VENDOR_ID;
+					HvMsrOsId.OsType=0;
+					__writemsr(HV_X64_MSR_GUEST_OS_ID,HvMsrOsId.Value);
+				}
+			}
+		}
 	}
 	return st;
 }

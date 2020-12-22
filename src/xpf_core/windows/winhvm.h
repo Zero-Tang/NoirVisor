@@ -15,9 +15,14 @@
 #include <ntddk.h>
 #include <windef.h>
 
+// MSR Constants
 #define HV_X64_MSR_GUEST_OS_ID		0x40000000
 #define HV_MICROSOFT_VENDOR_ID		0x0001
 #define HV_WINDOWS_NT_OS_ID			4
+
+// CPUID Constants
+#define CPUID_LEAF_HV_VENDOR_ID			0x40000000
+#define CPUID_LEAF_HV_VENDOR_NEUTRAL	0x40000001
 
 // Constants for Enabled Feature
 #define NOIR_HVM_FEATURE_STEALTH_MSR_HOOK		0x1

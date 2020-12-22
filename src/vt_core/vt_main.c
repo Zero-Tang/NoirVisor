@@ -164,12 +164,15 @@ void static nvc_vt_setup_msr_auto_list(noir_hypervisor_p hvm)
 	unref_var(exit_store);
 	// Setup custom MSR-Auto list.
 #if !defined(_hv_type1)
+	if(hvm->options.stealth_msr_hook)
+	{
 #if defined(_amd64)
-	entry_load[0].index=ia32_lstar;
-	entry_load[0].data=(ulong_ptr)noir_system_call;
-	exit_load[0].index=ia32_lstar;
-	exit_load[0].data=orig_system_call;
+		entry_load[0].index=ia32_lstar;
+		entry_load[0].data=(ulong_ptr)noir_system_call;
+		exit_load[0].index=ia32_lstar;
+		exit_load[0].data=orig_system_call;
 #endif
+	}
 #else
 	unref_var(entry_load);
 	unref_var(exit_load);
@@ -186,13 +189,16 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 	unref_var(write_bitmap_high);
 	// Setup custom MSR-Interception.
 #if !defined(_hv_type1)
+	if(hvm->options.stealth_msr_hook)
+	{
 #if defined(_amd64)
-	noir_set_bitmap(read_bitmap_high,ia32_lstar-0xC0000000);	// Hide MSR Hook
-	noir_set_bitmap(write_bitmap_high,ia32_lstar-0xC0000000);	// Mask MSR Hook
+		noir_set_bitmap(read_bitmap_high,ia32_lstar-0xC0000000);	// Hide MSR Hook
+		noir_set_bitmap(write_bitmap_high,ia32_lstar-0xC0000000);	// Mask MSR Hook
 #else
-	noir_set_bitmap(read_bitmap_low,ia32_sysenter_eip);			// Hide MSR Hook
-	noir_set_bitmap(write_bitmap_high,ia32_sysenter_eip);		// Mask MSR Hook
+		noir_set_bitmap(read_bitmap_low,ia32_sysenter_eip);			// Hide MSR Hook
+		noir_set_bitmap(write_bitmap_high,ia32_sysenter_eip);		// Mask MSR Hook
 #endif
+	}
 #else
 	unref_var(read_bitmap_high);
 #endif

@@ -218,9 +218,11 @@ typedef union _nvc_svm_npt_control
 		u64 enable_sev:1;
 		u64 enable_sev_es:1;
 		u64 gmet:1;
-		u64 reserved1:1;
+		u64 enable_sss_check:1;
 		u64 virtual_transparent_encryption:1;
-		u64 reserved2:58;
+		u64 reserved1:1;
+		u64 enable_invlpgb_tlbsync:1;
+		u64 reserved2:56;
 	};
 	u64 value;
 }nvc_svm_npt_control,*nvc_svm_npt_control_p;
@@ -267,3 +269,4 @@ typedef union _nvc_svm_avic_physical_table
 #define noir_svm_clean_cr2				9
 #define noir_svm_clean_lbr				10
 #define noir_svm_clean_avic				11
+#define noir_svm_clean_cet				12
