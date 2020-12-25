@@ -32,8 +32,8 @@ Note that you should execute the `build_prep.bat` to make directories for first-
 
 ## Windows Driver
 To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 10 (version 2004) ISO file to T disk. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are not using Windows 10. <br>
-Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. <br>
-You may download the EWDK10-2004 from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019 <br>
+Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. If you use WinCDEmu, however, you may order the system to mount EWDK10 and specify its drive letter during startup. <br>
+You may download the EWDK10-2004 (with VS Build Tools 16.7) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019 <br>
 Make sure you have downloaded the correct version. NoirVisor would continue updating. If not using correct version, you might fail to compile the latest version of NoirVisor. <br>
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
@@ -67,7 +67,10 @@ As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]`
 
 You may disable the detection for NoirVisor in Windows via setting up the registry. <br>
 Locate the registry key: `HKLM\Software\Zero-Tang\NoirVisor`. If this key does not exist then create it. <br>
-Edit the `CpuidPresence` Key Value to 0. If not exist then create it. <br>
+Edit the `CpuidPresence` Key Value to 0. If not exist then create it using following command: <br>
+```bat
+reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 1 /f
+```
 The TSC due to VM-Exit is always omitted in Exit Handler. This feature can not be disabled. Please note that omitted TSC is approximate and thereby cannot counter precise time-profiler.
 
 # Supported Platforms
@@ -89,6 +92,7 @@ For more information, check out the [NoirVisor 2020+](https://github.com/Zero-Ta
 - Minimal Microsoft `Hv#1` Hypervisor Functionalities.
 - Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V.
 - Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel VT-x.
+- TSC Offseting as Countermeasure for TSC-based Time-Profiler.
 - Tagged Translation Lookaside Buffer by ASID/VPID feature.
 - Critical Hypervisor Protection.
 - Software-Level Code Integrity Enforcement.
