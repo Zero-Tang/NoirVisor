@@ -82,6 +82,8 @@ nvc_vt_exit_handler_a proc
 	mov rdx,rax	; Current TSC to the second parameter.
 	; Load the Guest GPR State to the first parameter.
 	mov rcx,rsp
+	; Load vcpu to third parameter.
+	mov r8,qword ptr [rsp+80h]
 	sub rsp,20h
 	call nvc_vt_exit_handler
 	add rsp,20h

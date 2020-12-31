@@ -202,6 +202,9 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 #else
 	unref_var(read_bitmap_high);
 #endif
+	// Setup Microcode-Updater MSR Hook. Microcode update should be intercepted in
+	// that if it is not intercepted, processor may result in undefined behavior.
+	noir_set_bitmap(write_bitmap_low,ia32_bios_updt_trig);
 	// Setup Nested Virtualization MSR Read-Hook.
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_basic);
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_pinbased_ctrl);
@@ -327,6 +330,10 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 
 void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_state_p state_p)
 {
+	// Setup stack for Exit Handler.
+	noir_vt_initial_stack_p stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
+	stack->vcpu=vcpu;
+	stack->proc_id=noir_get_current_processor();
 	// Host State Area - Segment Selectors
 	noir_vt_vmwrite(host_cs_selector,state_p->cs.selector & selector_rplti_mask);
 	noir_vt_vmwrite(host_ds_selector,state_p->ds.selector & selector_rplti_mask);
@@ -347,7 +354,7 @@ void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_stat
 	noir_vt_vmwrite(host_cr3,system_cr3);	// We should use the system page table.
 	noir_vt_vmwrite(host_cr4,state_p->cr4);
 	// Host State Area - Stack Pointer, Instruction Pointer
-	noir_vt_vmwrite(host_rsp,(ulong_ptr)vcpu->hv_stack+nvc_stack_size-0x20);
+	noir_vt_vmwrite(host_rsp,(ulong_ptr)stack);
 	noir_vt_vmwrite(host_rip,(ulong_ptr)nvc_vt_exit_handler_a);
 }
 

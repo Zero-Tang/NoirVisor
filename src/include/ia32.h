@@ -20,6 +20,8 @@
 
 // This is used for defining MSRs.
 #define ia32_feature_control			0x3A
+#define ia32_bios_updt_trig				0x79
+#define ia32_bios_sign_id				0x8B
 #define ia32_sysenter_cs				0x174
 #define ia32_sysenter_esp				0x175
 #define ia32_sysenter_eip				0x176

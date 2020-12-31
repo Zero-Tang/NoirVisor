@@ -88,15 +88,17 @@ void nvc_vt_dump_vmcs_guest_state()
 
 // This is the default exit-handler for unexpected VM-Exit.
 // You might want to debug your code if this function is invoked.
-void static fastcall nvc_vt_default_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_default_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	nv_dprintf("Unhandled VM-Exit!, Exit Reason: %s\n",vmx_exit_msg[exit_reason]);
+	u32 exit_reason;
+	noir_vt_vmread(vmexit_reason,&exit_reason);
+	nv_dprintf("Unhandled VM-Exit!, Exit Reason: %s\n",vmx_exit_msg[exit_reason&0xFFFF]);
 }
 
 // Expected Exit Reason: 2
 // If this handler is invoked, we should crash the system.
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_trifault_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_trifault_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	nv_panicf("Triple fault occured! System is crashed!\n");
 }
@@ -104,7 +106,7 @@ void static fastcall nvc_vt_trifault_handler(noir_gpr_state_p gpr_state,u32 exit
 // Expected Exit Reason: 9
 // This is not an expected VM-Exit. In handler, we should help to switch task.
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_task_switch_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_task_switch_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	nv_dprintf("Task switch is intercepted!");
 }
@@ -152,7 +154,7 @@ void static fastcall nvc_vt_cpuid_hvs_handler(u32 leaf,u32 subleaf,noir_cpuid_ge
 
 // Expected Exit Reason: 10
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	u32 ia=(u32)gpr_state->rax;
 	u32 ic=(u32)gpr_state->rcx;
@@ -170,7 +172,7 @@ void static fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state,u32 exit_re
 // Expected Exit Reason: 11
 // We should virtualize the SMX (Safer Mode Extension) in this handler.
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_getsec_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_getsec_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	nv_dprintf("SMX Virtualization is not supported!");
 	noir_vt_advance_rip();
@@ -178,7 +180,7 @@ void static fastcall nvc_vt_getsec_handler(noir_gpr_state_p gpr_state,u32 exit_r
 
 // Expected Exit Reason: 13
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_invd_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_invd_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	// In Hyper-V, it invoked wbinvd at invd exit.
 	noir_wbinvd();
@@ -187,7 +189,7 @@ void static fastcall nvc_vt_invd_handler(noir_gpr_state_p gpr_state,u32 exit_rea
 
 // Expected Exit Reason: 18
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	ulong_ptr gip;
 	noir_vt_vmread(guest_rip,&gip);
@@ -199,7 +201,6 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,u32 exit_r
 		{
 			case noir_vt_callexit:
 			{
-				noir_vt_vcpu_p vcpu=(noir_vt_vcpu_p)gpr_state->rdx;
 				noir_gpr_state_p saved_state=(noir_gpr_state_p)vcpu->hv_stack;
 				invept_descriptor ied;
 				invvpid_descriptor ivd;
@@ -243,8 +244,6 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,u32 exit_r
 		// execution not in VMX Non-Root Operation.
 		// Note that this is Nested VMX scenario.
 		// Check status of vCPU.
-		u32 proc_id=noir_get_current_processor();
-		noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[proc_id];
 		if(vcpu->status==noir_virt_nesting)
 		{
 			u64 linked_vmcs;
@@ -292,10 +291,9 @@ ulong_ptr static nvc_vt_parse_vmx_pointer(noir_gpr_state_p gpr_state)
 
 // Expected Exit Reason: 19
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_vmclear_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_vmclear_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	u32 proc_id=noir_get_current_processor();
-	noir_vt_nested_vcpu_p nested_vcpu=&hvm_p->virtual_cpu[proc_id].nested_vcpu;
+	noir_vt_nested_vcpu_p nested_vcpu=&vcpu->nested_vcpu;
 	// Check if Guest is under VMX Operation.
 	if(noir_bt(&nested_vcpu->status,noir_nvt_vmxon))
 	{
@@ -328,10 +326,8 @@ void static fastcall nvc_vt_vmclear_handler(noir_gpr_state_p gpr_state,u32 exit_
 
 // Expected Exit Reason: 21
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_vmptrld_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_vmptrld_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	u32 proc_id=noir_get_current_processor();
-	noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[proc_id];
 	noir_vt_nested_vcpu_p nested_vcpu=&vcpu->nested_vcpu;
 	// Check if Guest is under VMX Operation.
 	if(noir_bt(&nested_vcpu->status,noir_nvt_vmxon))
@@ -367,10 +363,9 @@ void static fastcall nvc_vt_vmptrld_handler(noir_gpr_state_p gpr_state,u32 exit_
 
 // Expected Exit Reason: 22
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_vmptrst_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_vmptrst_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	u32 proc_id=noir_get_current_processor();
-	noir_vt_nested_vcpu_p nested_vcpu=&hvm_p->virtual_cpu[proc_id].nested_vcpu;
+	noir_vt_nested_vcpu_p nested_vcpu=&vcpu->nested_vcpu;
 	if(noir_bt(&nested_vcpu->status,noir_nvt_vmxon))
 	{
 		ulong_ptr pointer=nvc_vt_parse_vmx_pointer(gpr_state);
@@ -383,10 +378,9 @@ void static fastcall nvc_vt_vmptrst_handler(noir_gpr_state_p gpr_state,u32 exit_
 
 // Expected Exit Reason: 26
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_vmxoff_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_vmxoff_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	u32 proc_id=noir_get_current_processor();
-	noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[proc_id];
+	noir_vt_nested_vcpu_p nested_vcpu=&vcpu->nested_vcpu;
 	// Check if VMXON has been executed. Plus, revoke vmxon.
 	if(noir_btr(&vcpu->nested_vcpu.status,noir_nvt_vmxon))
 	{
@@ -403,10 +397,9 @@ void static fastcall nvc_vt_vmxoff_handler(noir_gpr_state_p gpr_state,u32 exit_r
 
 // Expected Exit Reason: 27
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_vmxon_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_vmxon_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	u32 proc_id=noir_get_current_processor();
-	noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[proc_id];
+	noir_vt_nested_vcpu_p nested_vcpu=&vcpu->nested_vcpu;
 	// Check if Nested VMX is enabled.
 	if(noir_bt(&vcpu->nested_vcpu.status,noir_nvt_vmxe))
 	{
@@ -464,8 +457,10 @@ void static fastcall nvc_vt_vmxon_handler(noir_gpr_state_p gpr_state,u32 exit_re
 
 // Expected Exit Reason: 19-25,50,53
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_vmx_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_vmx_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
+	u32 exit_reason;
+	noir_vt_vmread(vmexit_reason,&exit_reason);
 	nv_dprintf("VMX Nesting is not implemented! %s\n",vmx_exit_msg[exit_reason]);
 	noir_vt_vmfail_invalid();
 	noir_vt_advance_rip();
@@ -474,11 +469,9 @@ void static fastcall nvc_vt_vmx_handler(noir_gpr_state_p gpr_state,u32 exit_reas
 // Expected Exit Reason: 28
 // Filter unwanted behaviors.
 // Besides, we need to virtualize CR4.VMXE and CR4.SMXE here.
-void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	// On default NoirVisor's setting of VMCS, this handler only traps writes to CR0 and CR4.
-	u32 cur_proc=noir_get_current_processor();
-	noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[cur_proc];
 	ia32_cr_access_qualification info;
 	bool advance_ip=true;
 	noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&info);
@@ -587,7 +580,7 @@ void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,u32 exi
 
 // Expected Exit Reason: 31
 // This is the key feature of MSR-Hook Hiding.
-void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	bool advance=true;
 	u32 index=(u32)gpr_state->rcx;
@@ -603,29 +596,56 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 	else
 	{
 		// Expected Case: Query VMX MSR.
-		if(index>=ia32_vmx_basic && index<=ia32_vmx_vmfunc)
+		switch(index)
 		{
-			/*
-			  u32 cur_proc=noir_get_current_processor();
-			  noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[cur_proc];
-			  val.value=vcpu->nested_vcpu.vmx_msr[index-ia32_vmx_basic];
-			*/
-			// NoirVisor doesn't support Nested Intel VT-x right now.
-			// Reading VMX Capability MSRs would cause #GP exception.
-			noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
-			advance=false;	// For exception, rip does not advance.
-		}
+			case ia32_vmx_basic:
+			case ia32_vmx_pinbased_ctrl:
+			case ia32_vmx_priproc_ctrl:
+			case ia32_vmx_exit_ctrl:
+			case ia32_vmx_entry_ctrl:
+			case ia32_vmx_misc:
+			case ia32_vmx_cr0_fixed0:
+			case ia32_vmx_cr0_fixed1:
+			case ia32_vmx_cr4_fixed0:
+			case ia32_vmx_cr4_fixed1:
+			case ia32_vmx_vmcs_enum:
+			case ia32_vmx_2ndproc_ctrl:
+			case ia32_vmx_true_pinbased_ctrl:
+			case ia32_vmx_true_priproc_ctrl:
+			case ia32_vmx_true_exit_ctrl:
+			case ia32_vmx_true_entry_ctrl:
+			case ia32_vmx_vmfunc:
+			{
+				/*
+				  u32 cur_proc=noir_get_current_processor();
+				  noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[cur_proc];
+				  val.value=vcpu->nested_vcpu.vmx_msr[index-ia32_vmx_basic];
+				*/
+				// NoirVisor doesn't support Nested Intel VT-x right now.
+				// Reading VMX Capability MSRs would cause #GP exception.
+				noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
+				advance=false;	// For exception, rip does not advance.
+			}
 		// Expected Case: Check MSR Hook.
 #if defined(_amd64)
-		else if(index==ia32_lstar)
-			val.value=orig_system_call;
+			case ia32_lstar:
+			{
+				val.value=orig_system_call;
+				break;
+			}
 #else
-		else if(index==ia32_sysenter_eip)
-			val.value=orig_system_call;
+			case ia32_sysenter_eip:
+			{
+				val.value=orig_system_call;
+				break;
+			}
 #endif
-		// Maybe induced by Microsoft Top-Level Hypervisor Specification.
-		else
-			nv_dprintf("Unexpected rdmsr is intercepted! Index=0x%X\n",index);
+			default:
+			{
+				nv_dprintf("Unexpected rdmsr is intercepted! Index=0x%X\n",index);
+				break;
+			}
+		}
 	}
 	// Put into GPRs. Clear high 32-bits of each register.
 	gpr_state->rax=(ulong_ptr)val.low;
@@ -634,11 +654,9 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 }
 
 // Expected Exit Reason: 32
-void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	u32 index=(u32)gpr_state->rcx;
-	u32 proc_num=noir_get_current_processor();
-	noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[proc_num];
 	large_integer val;
 	val.low=(u32)gpr_state->rax;
 	val.high=(u32)gpr_state->rdx;
@@ -652,15 +670,41 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 	}
 	else
 	{
-#if defined(_amd64)
-		if(index==ia32_lstar)
-			vcpu->virtual_msr.lstar=val.value;
+		switch(index)
+		{
+			case ia32_bios_updt_trig:
+			{
+				// To update processor microcode, a virtual address is supplied to the MSR.
+#if defined(_hv_type1)
+				// If NoirVisor is running as a Type-I hypervisor, the GVA should be
+				// translated to HPA, and copy the microcode data to host page-by-page.
+				// Another alternative approach is to forbid any microcode update.
 #else
-		if(index==ia32_sysenter_eip)
-			vcpu->virtual_msr.sysenter_eip=val.value;
+				// If NoirVisor is running as a Type-II hypervisor,
+				// there is nothing really should be going on here,
+				// in that we may simply throw the value to MSR.
 #endif
-		else
-			nv_dprintf("Unexpected wrmsr is intercepted! Index=0x%X\t Value=0x%08X`%08X\n",index,val.low,val.high);
+				break;
+			}
+#if defined(_amd64)
+			case ia32_lstar:
+			{
+				vcpu->virtual_msr.lstar=val.value;
+				break;
+			}
+#else
+			case ia32_sysenter_eip:
+			{
+				vcpu->virtual_msr.sysenter_eip=val.value;
+				break;
+			}
+#endif
+			default:
+			{
+				nv_dprintf("Unexpected wrmsr is intercepted! Index=0x%X\t Value=0x%08X`%08X\n",index,val.low,val.high);
+				break;
+			}
+		}
 		noir_wrmsr(index,val.value);
 	}
 	noir_vt_advance_rip();
@@ -669,7 +713,7 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,u32 exit_re
 // Expected Exit Reason: 33
 // This is VM-Exit of obligation.
 // You may want to debug your code if this handler is invoked.
-void static fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	nv_dprintf("VM-Entry failed! Check the Guest-State in VMCS!\n");
 	nvc_vt_dump_vmcs_guest_state();
@@ -678,7 +722,7 @@ void static fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr_state,u32 e
 // Expected Exit Reason: 34
 // This is VM-Exit of obligation.
 // You may want to debug your code if this handler is invoked.
-void static fastcall nvc_vt_invalid_msr_loading(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_invalid_msr_loading(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	nv_dprintf("VM-Entry failed! Check the MSR-Auto list in VMCS!\n");
 }
@@ -688,7 +732,7 @@ void static fastcall nvc_vt_invalid_msr_loading(noir_gpr_state_p gpr_state,u32 e
 // Specifically, this handler is invoked on EPT-based stealth hook feature.
 // Critical Hypervisor Protection and Real-Time Code Integrity features
 // may invoke this handler. Simply advance the rip for these circumstances.
-void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	i32 lo=0,hi=noir_hook_pages_count;
 	u64 gpa;
@@ -748,7 +792,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,u32
 // Expected Exit Reason: 49
 // This is VM-Exit of obligation on EPT.
 // You may want to debug your code if this handler is invoked.
-void static fastcall nvc_vt_ept_misconfig_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_ept_misconfig_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	nv_panicf("EPT Misconfiguration Occured!\n");
 	noir_int3();
@@ -756,7 +800,7 @@ void static fastcall nvc_vt_ept_misconfig_handler(noir_gpr_state_p gpr_state,u32
 
 // Expected Exit Reason: 55
 // This is VM-Exit of obligation.
-void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,u32 exit_reason)
+void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	u64 value=0;
 	u32 index=(u32)gpr_state->rcx;
@@ -802,19 +846,18 @@ void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,u32 exit_r
 }
 
 // It is important that this function uses fastcall convention.
-void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,u64 tsc_at_exit)
+void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,u64 tsc_at_exit,noir_vt_vcpu_p vcpu)
 {
 	u32 exit_reason;
-	u64 tc;
 	noir_vt_vmread(vmexit_reason,&exit_reason);
-	if((exit_reason&0xFFFF)<vmx_maximum_exit_reason)
-		vt_exit_handlers[exit_reason&0xFFFF](gpr_state,exit_reason);
+	exit_reason&=0xFFFF;
+	if(exit_reason<vmx_maximum_exit_reason)
+		vt_exit_handlers[exit_reason](gpr_state,vcpu);
 	else
-		nvc_vt_default_handler(gpr_state,exit_reason);
+		nvc_vt_default_handler(gpr_state,vcpu);
 	// Right now, decrement tsc offset.
-	noir_vt_vmread(tsc_offset,&tc);
-	tc-=(noir_rdtsc()-tsc_at_exit+noir_vt_tsc_asm_offset);
-	noir_vt_vmwrite(tsc_offset,tc);
+	vcpu->tsc_offset-=(noir_rdtsc()-tsc_at_exit+noir_vt_tsc_asm_offset);
+	noir_vt_vmwrite(tsc_offset,vcpu->tsc_offset);
 	// Guest RIP is supposed to be advanced in specific handlers, not here.
 	// Do not execute vmresume here. It will be done as this function returns.
 }

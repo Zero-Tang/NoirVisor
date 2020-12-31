@@ -63,9 +63,13 @@ void NoirPrintCompilerVersion()
 
 NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 {
+	// Setup default values.
+	ULONG32 CpuidPresence=1;		// Enable CPUID Presence at default.
+	ULONG32 StealthMsrHook=0;		// Disable Stealth MSR Hook at default.
+	ULONG32 StealthInlineHook=1;	// Enable Stealth Inline Hook at default.
+	// Initialize.
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
 	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=ExAllocatePool(PagedPool,PAGE_SIZE);
-	*Features=0;
 	if(KvPartInf)
 	{
 		HANDLE hKey=NULL;
@@ -77,9 +81,6 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 		{
 			UNICODE_STRING uniKvName;
 			ULONG RetLen=0;
-			ULONG32 CpuidPresence=1;		// Enable CPUID Presence at default.
-			ULONG32 StealthMsrHook=0;		// Enable Stealth MSR Hook at default.
-			ULONG32 StealthInlineHook=0;	// Enable Stealth Inline Hook at default.
 			// Detect if CPUID-Presence is enabled.
 			RtlInitUnicodeString(&uniKvName,L"CpuidPresence");
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
@@ -95,14 +96,14 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 			if(NT_SUCCESS(st))StealthInlineHook=*(PULONG32)KvPartInf->Data;
 			NoirDebugPrint("Stealth Inline Hook is %s!\n",StealthInlineHook?"enabled":"disabled");
-			// Summarize
-			*Features|=CpuidPresence<<NOIR_HVM_FEATURE_CPUID_PRESENCE_BIT;
-			*Features|=StealthMsrHook<<NOIR_HVM_FEATURE_STEALTH_MSR_HOOK_BIT;
-			*Features|=StealthInlineHook<<NOIR_HVM_FEATURE_STEALTH_INLINE_HOOK_BIT;
 			ZwClose(hKey);
 		}
 		ExFreePool(KvPartInf);
 	}
+	// Summarize
+	*Features|=CpuidPresence<<NOIR_HVM_FEATURE_CPUID_PRESENCE_BIT;
+	*Features|=StealthMsrHook<<NOIR_HVM_FEATURE_STEALTH_MSR_HOOK_BIT;
+	*Features|=StealthInlineHook<<NOIR_HVM_FEATURE_STEALTH_INLINE_HOOK_BIT;
 	return st;
 }
 

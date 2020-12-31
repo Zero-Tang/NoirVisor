@@ -71,16 +71,20 @@ typedef struct _noir_vt_vcpu
 	void* ept_manager;
 	noir_vt_virtual_msr virtual_msr;
 	noir_vt_nested_vcpu nested_vcpu;
+	u64 tsc_offset;
 	u8 status;
 	u8 enabled_feature;
 }noir_vt_vcpu,*noir_vt_vcpu_p;
 
+typedef struct _noir_vt_initial_stack
+{
+	noir_vt_vcpu_p vcpu;
+	u32 proc_id;
+}noir_vt_initial_stack,*noir_vt_initial_stack_p;
+
 u8 fastcall nvc_vt_subvert_processor_a(noir_vt_vcpu_p vcpu);
 noir_status nvc_vt_build_exit_handlers();
 void nvc_vt_teardown_exit_handlers();
-bool nvc_vt_build_cpuid_handler();
-void nvc_vt_teardown_cpuid_handler();
-void fastcall nvc_vt_reserved_cpuid_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void nvc_vt_resume_without_entry(noir_gpr_state_p state);
 void nvc_vt_exit_handler_a(void);
 void noir_vt_vmsuccess();

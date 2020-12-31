@@ -53,7 +53,16 @@ Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should p
 ## Windows Driver
 There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://github.com/Zero-Tang/NoirVisorLoader <br>
 If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher. <br>
-If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine.
+If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine. <br>
+You may disable Stealth SSDT Hook by setting up registry: (If your system is updated with certain patches since the latter half of 2018, you should, nonetheless, disable Stealth MSR Hook feature. Otherwise, your system could result in #DF failure.)
+```Bat
+reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "StealthMsrHook" /t REG_DWORD /d 0 /f
+```
+You may disable Stealth Inline Hook by setting up registry:
+```bat
+reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "StealthInlineHook" /t REG_DWORD /d 0 /f
+```
+You may set the values to 1, or remove the value key, in order to re-enable the features.
 
 ## EFI Application and Runtime Driver
 Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a partition and format it info FAT32 file system. After you successfully build the image, you should see two images: `bootx64.efi` and `NoirVisor.efi` <br> 
@@ -69,7 +78,7 @@ You may disable the detection for NoirVisor in Windows via setting up the regist
 Locate the registry key: `HKLM\Software\Zero-Tang\NoirVisor`. If this key does not exist then create it. <br>
 Edit the `CpuidPresence` Key Value to 0. If not exist then create it using following command: <br>
 ```bat
-reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 1 /f
+reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 0 /f
 ```
 The TSC due to VM-Exit is always omitted in Exit Handler. This feature can not be disabled. Please note that omitted TSC is approximate and thereby cannot counter precise time-profiler.
 

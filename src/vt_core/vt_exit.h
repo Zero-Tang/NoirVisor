@@ -235,7 +235,7 @@ typedef union _ia32_vmexit_instruction_information
 typedef void (fastcall *noir_vt_exit_handler_routine)
 (
  noir_gpr_state_p gpr_state,
- u32 exit_reason
+ noir_vt_vcpu_p vcpu
 );
 
 typedef void (fastcall *noir_vt_cpuid_exit_handler)

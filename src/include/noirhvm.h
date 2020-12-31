@@ -72,7 +72,8 @@ typedef struct _noir_hypervisor
 			u64 stealth_msr_hook:1;
 			u64 stealth_inline_hook:1;
 			u64 cpuid_hv_presence:1;
-			u64 reserved:61;
+			u64 disable_patchguard:1;
+			u64 reserved:60;
 		};
 		u64 value;
 	}options;		// Enable certain features.
