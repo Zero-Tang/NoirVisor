@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2020, Zero Tang. All rights reserved.
+  Copyright 2018-2021, Zero Tang. All rights reserved.
 
   This file defines constants and structures for AMD64 processors.
 

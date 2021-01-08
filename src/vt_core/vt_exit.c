@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2020, Zero Tang. All rights reserved.
+  Copyright 2018-2021, Zero Tang. All rights reserved.
 
   This file is the exit handler of Intel VT-x.
 
@@ -382,7 +382,7 @@ void static fastcall nvc_vt_vmxoff_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 {
 	noir_vt_nested_vcpu_p nested_vcpu=&vcpu->nested_vcpu;
 	// Check if VMXON has been executed. Plus, revoke vmxon.
-	if(noir_btr(&vcpu->nested_vcpu.status,noir_nvt_vmxon))
+	if(noir_btr(&nested_vcpu->status,noir_nvt_vmxon))
 	{
 		// Mark as success operation.
 		noir_vt_vmsuccess();
@@ -401,24 +401,24 @@ void static fastcall nvc_vt_vmxon_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 {
 	noir_vt_nested_vcpu_p nested_vcpu=&vcpu->nested_vcpu;
 	// Check if Nested VMX is enabled.
-	if(noir_bt(&vcpu->nested_vcpu.status,noir_nvt_vmxe))
+	if(noir_bt(&nested_vcpu->status,noir_nvt_vmxe))
 	{
 		// Check if VMXON has been executed.
-		if(!noir_bt(&vcpu->nested_vcpu.status,noir_nvt_vmxon))
+		if(!noir_bt(&nested_vcpu->status,noir_nvt_vmxon))
 		{
 			ulong_ptr pointer=nvc_vt_parse_vmx_pointer(gpr_state);
 			nv_dprintf("VMXON Region VA: 0x%p!\n",pointer);
 			// Get the VMXON Region Physical Address.
-			vcpu->nested_vcpu.vmxon.phys=*(u64*)pointer;
+			nested_vcpu->vmxon.phys=*(u64*)pointer;
 			// Check if page-aligned.
-			if((vcpu->nested_vcpu.vmxon.phys & 0xfff)==0)
+			if((nested_vcpu->vmxon.phys & 0xfff)==0)
 			{
 				// Get the Virtual Address in System Space.
-				vcpu->nested_vcpu.vmxon.virt=noir_find_virt_by_phys(vcpu->nested_vcpu.vmxon.phys);
-				if(vcpu->nested_vcpu.vmxon.virt)
+				nested_vcpu->vmxon.virt=noir_find_virt_by_phys(nested_vcpu->vmxon.phys);
+				if(nested_vcpu->vmxon.virt)
 				{
 					// Get VMX Revision ID.
-					u32* revision_id=(u32*)vcpu->nested_vcpu.vmxon.virt;
+					u32* revision_id=(u32*)nested_vcpu->vmxon.virt;
 					u32 true_revision_id=(u32)vcpu->virtual_msr.vmx_msr[0];
 					// Check if Revision ID is correct.
 					if(noir_bt(revision_id,31) || *revision_id!=true_revision_id)
@@ -426,10 +426,10 @@ void static fastcall nvc_vt_vmxon_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 					else
 					{
 						// Revision ID is correct. Initialize Nested VMCS.
-						vcpu->nested_vcpu.vmcs_c.virt=null;
-						vcpu->nested_vcpu.vmcs_c.phys=maxu64;
+						nested_vcpu->vmcs_c.virt=null;
+						nested_vcpu->vmcs_c.phys=maxu64;
 						// Mark that the vCPU is after vmxon.
-						noir_bts(&vcpu->nested_vcpu.status,noir_nvt_vmxon);
+						noir_bts(&nested_vcpu->status,noir_nvt_vmxon);
 						noir_vt_vmsuccess();
 						// As we obtained the VMXON region pointer, we are
 						// totally free to use the 4KB in guest.

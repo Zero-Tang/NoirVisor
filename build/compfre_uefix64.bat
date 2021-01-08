@@ -10,7 +10,7 @@ echo Project: NoirVisor
 echo Platform: Unified Extensible Firmware Interface
 echo Preset: Debug/Checked Build
 echo Powered by zero.tangptr@gmail.com
-echo Copyright (c) 2018-2020, zero.tangptr@gmail.com. All Rights Reserved.
+echo Copyright (c) 2018-2021, zero.tangptr@gmail.com. All Rights Reserved.
 clang-cl --version
 lld-link --version
 pause

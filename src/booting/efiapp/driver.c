@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2020, Zero Tang. All rights reserved.
+  Copyright 2018-2021, Zero Tang. All rights reserved.
 
   This file is the UEFI Runtime Driver Framework.
 
@@ -28,6 +28,17 @@ EFI_STATUS EFIAPI NoirDriverUnload(IN EFI_HANDLE ImageHandle)
 void EFIAPI NoirNotifyExitBootServices(IN EFI_EVENT Event,IN VOID* Context)
 {
 	;
+}
+
+void NoirBlockUntilKeyStroke(IN CHAR16 Unicode)
+{
+	EFI_INPUT_KEY InKey;
+	do
+	{
+		UINTN fi=0;
+		gBS->WaitForEvent(1,&StdIn->WaitForKey,&fi);
+		StdIn->ReadKeyStroke(StdIn,&InKey);
+	}while(InKey.UnicodeChar!=Unicode);
 }
 
 EFI_STATUS EFIAPI NoirEfiInitialize(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable)

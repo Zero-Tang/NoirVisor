@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2020, Zero Tang. All rights reserved.
+  Copyright 2018-2021, Zero Tang. All rights reserved.
 
   This file builds the host environment for NoirVisor on UEFI.
 
@@ -18,6 +18,7 @@
 #include <Library/UefiLib.h>
 #include <Pi/PiMultiPhase.h>
 #include <Protocol/MpService.h>
+#include <intrin.h>
 #include "host.h"
 
 void NoirFreeHostEnvironment()
@@ -25,7 +26,11 @@ void NoirFreeHostEnvironment()
 	if(Host.ProcessorBlocks)
 	{
 		for(UINTN i=0;i<Host.NumberOfProcessors;i++)
-			FreePages(Host.ProcessorBlocks[i].DescriptorTables,1);
+		{
+			FreePool(Host.ProcessorBlocks[i].Idt);
+			FreePool(Host.ProcessorBlocks[i].Gdt);
+			FreePool(Host.ProcessorBlocks[i].Tss);
+		}
 		FreePool(Host.ProcessorBlocks);
 		Host.ProcessorBlocks=NULL;
 	}
@@ -41,88 +46,39 @@ void NoirFreeHostEnvironment()
 	}
 }
 
-EFI_STATUS NoirBuildHostProcessor(OUT PNHPCR Processor)
+void NoirBuildInterruptDescriptorTable(OUT PNHIDTENTRY64 Idt)
 {
-	EFI_STATUS st=EFI_OUT_OF_RESOURCES;
-	Processor->DescriptorTables=AllocateRuntimePages(1);
-	if(Processor->DescriptorTables)
+	UINTN Handler=(UINTN)NoirUnexpectedInterruptHandler;
+	for(UINT8 i=0;i<=255;i++)
 	{
-		ZeroMem(Processor->DescriptorTables,EFI_PAGE_SIZE);
-		// Initialize Structures of Necessary Pointers.
-		Processor->Self=Processor;
-		Processor->Gdt=(PNHGDTENTRY64)Processor->DescriptorTables;
-		Processor->Idt=(PNHIDTENTRY64)((UINTN)Processor->DescriptorTables+0x400);
-		Processor->Tss=(PNHTSS64)((UINTN)Processor->DescriptorTables+0x100);
-		// Initialize Host Context - CS.
-		Processor->ProcessorState.Cs.Selector=NH_X64_CS_SELECTOR;
-		Processor->ProcessorState.Cs.Attributes=NH_X64_CODE_ATTRIBUTES;
-		Processor->ProcessorState.Cs.Limit=0xFFFFFFFF;
-		Processor->ProcessorState.Cs.Base=0;
-		// Initialize Host Context - DS
-		Processor->ProcessorState.Ds.Selector=NH_X64_DS_SELECTOR;
-		Processor->ProcessorState.Ds.Attributes=NH_X64_DATA_ATTRIBUTES;
-		Processor->ProcessorState.Ds.Limit=0xFFFFFFFF;
-		Processor->ProcessorState.Ds.Base=0;
-		// Initialize Host Context - ES
-		Processor->ProcessorState.Es.Selector=NH_X64_ES_SELECTOR;
-		Processor->ProcessorState.Es.Attributes=NH_X64_DATA_ATTRIBUTES;
-		Processor->ProcessorState.Es.Limit=0xFFFFFFFF;
-		Processor->ProcessorState.Es.Base=0;
-		// Initialize Host Context - FS
-		Processor->ProcessorState.Fs.Selector=NH_X64_FS_SELECTOR;
-		Processor->ProcessorState.Fs.Attributes=NH_X64_DATA_ATTRIBUTES;
-		Processor->ProcessorState.Fs.Limit=0xFFFFFFFF;
-		Processor->ProcessorState.Fs.Base=0;
-		// Initialize Host Context - GS
-		Processor->ProcessorState.Gs.Selector=NH_X64_GS_SELECTOR;
-		Processor->ProcessorState.Gs.Attributes=NH_X64_DATA_ATTRIBUTES;
-		Processor->ProcessorState.Gs.Limit=0xFFFFFFFF;
-		Processor->ProcessorState.Gs.Base=0;
-		// Initialize Host Context - SS
-		Processor->ProcessorState.Ss.Selector=NH_X64_SS_SELECTOR;
-		Processor->ProcessorState.Ss.Attributes=NH_X64_DATA_ATTRIBUTES;
-		Processor->ProcessorState.Ss.Limit=0xFFFFFFFF;
-		Processor->ProcessorState.Ss.Base=0;
-		// Initialize Host Context - TR
-		Processor->ProcessorState.Tr.Selector=NH_X64_TR_SELECTOR;
-		Processor->ProcessorState.Tr.Attributes=NH_X64_TASK_ATTRIBUTES;
-		Processor->ProcessorState.Tr.Limit=sizeof(NHTSS64);
-		Processor->ProcessorState.Tr.Base=(UINT64)Processor->Tss;
-		// Initialize Host Context - GDTR
-		Processor->ProcessorState.Gdtr.Limit=0x50;
-		Processor->ProcessorState.Gdtr.Base=(UINT64)Processor->Gdt;
-		// Initialize Host Context - IDTR
-		Processor->ProcessorState.Idtr.Limit=0xFFF;
-		Processor->ProcessorState.Idtr.Base=(UINT64)Processor->Idt;
-		// Initialize Global Descriptor Table
-		PNHGDTENTRY64 CodeEntry=(PNHGDTENTRY64)((UINTN)Processor->Gdt+NH_X64_CS_SELECTOR);
-		CodeEntry->Bits.LimitLo=0xFFFF;
-		CodeEntry->Bytes.Flags=NH_X64_CODE_ATTRIBUTES;
-		CodeEntry->Bits.LimitHi=0xF;
-		PNHGDTENTRY64 DataEntry=(PNHGDTENTRY64)((UINTN)Processor->Gdt+NH_X64_DS_SELECTOR);
-		DataEntry->Bits.LimitLo=0xFFFF;
-		DataEntry->Bytes.Flags=NH_X64_DATA_ATTRIBUTES;
-		DataEntry->Bits.LimitHi=0xF;
-		PNHGDTENTRY64 TaskEntry=(PNHGDTENTRY64)((UINTN)Processor->Gdt+NH_X64_TR_SELECTOR);
-		TaskEntry->Bits.LimitLo=sizeof(NHTSS64);
-		TaskEntry->Bytes.Flags=NH_X64_TASK_ATTRIBUTES;
-		/*
-		  Even though we try not to generate any exceptions in NoirVisor, we
-		  should set up IDT in order to process NMI and (maybe) we'll throw
-		  the NMI right to the Guest.
-		  Since we require IDT, TSS is required to be setup correspondingly,
-		  in that stack will be switched according to the setup of TSS.
-		*/
-		// Initialize Control Registers...
-		Processor->ProcessorState.Cr0=0x80000033;	// PE MP ET NE PG
-		Processor->ProcessorState.Cr3=(UINTN)Host.Pml4Base;
-		Processor->ProcessorState.Cr4=0x406F8;		// DE PSE PAE MCE PGE OSFXSR OSXMMEXCEPT OSXSAVE
-		// No debug-register initializations...
-		st=EFI_SUCCESS;
+		// Set the address.
+		Idt[i].OffsetLow=(UINT16)Handler;
+		Idt[i].OffsetMid=(UINT16)((Handler>>16)&0xFFFF);
+		Idt[i].OffsetHigh=(UINT32)(Handler>>32);
+		// Miscellaneous.
+		Idt[i].Selector=NH_X64_CS_SELECTOR;
+		Idt[i].IstIndex=1;
+		Idt[i].Type=NH_INTERRUPT_GATE_TYPE;
+		Idt[i].Present=1;
 	}
-	return st;
 }
 
+UINT16 NoirAllocateSegmentSelector(IN PNHGDTENTRY64 GdtBase,IN UINT16 Limit)
+{
+	for(UINT16 i=8;i<Limit;i+=8)
+	{
+		if(GdtBase[i>>3].Bits.Present==0)
+		{
+			// This selector is available for use.
+			GdtBase[i>>3].Bits.Present=1;	// Mark as used.
+			return i;
+		}
+	}
+	return 0;
+}
+
+// This function is invoked by Center HVM Core prior to subverting system,
+// but do not load host's special processor state
 EFI_STATUS NoirBuildHostEnvironment()
 {
 	UINTN EnabledProcessors=0;
@@ -147,13 +103,6 @@ EFI_STATUS NoirBuildHostEnvironment()
 		Host.PdptBase=AllocateRuntimePages(1);
 		if(Host.ProcessorBlocks && Host.Pml4Base && Host.PdptBase)
 		{
-			// Initialize Per-Processor Blocks.
-			for(UINTN i=0;i<Host.NumberOfProcessors;i++)
-			{
-				st=NoirBuildHostProcessor(&Host.ProcessorBlocks[i]);
-				Host.ProcessorBlocks[i].ProcessorNumber=i;
-				if(st!=EFI_SUCCESS)goto AllocFailure;
-			}
 			// Initialize Host Paging supporting 512GiB data.
 			// Initialize Host Paging - Page Map Level 4 Entries.
 			ZeroMem(Host.Pml4Base,EFI_PAGE_SIZE);
@@ -168,18 +117,149 @@ EFI_STATUS NoirBuildHostEnvironment()
 				Host.PdptBase[i].Write=1;
 				Host.PdptBase[i].PageSize=1;
 			}
+			Print(L"NoirVisor starts initialization per processor...\n");
+			// Initialize Per-Processor Blocks.
+			for(UINTN i=0;i<Host.NumberOfProcessors;i++)
+				Host.ProcessorBlocks[i].ProcessorNumber=i;
 			// If it reaches here, the initialization is successful.
 			Print(L"NoirVisor Host Context is initialized successfully! Host System=0x%p\n",&Host);
 			st=EFI_SUCCESS;
 		}
 		else
 		{
-AllocFailure:
 			NoirFreeHostEnvironment();
 			st=EFI_OUT_OF_RESOURCES;
 		}
 	}
 	return st;
+}
+
+void* noir_alloc_nonpg_memory(IN UINTN Length)
+{
+	void* p=AllocateRuntimePool(Length);
+	if(p)ZeroMem(p,Length);
+	return p;
+}
+
+void* noir_alloc_contd_memory(IN UINTN Length)
+{
+	void* p=AllocateRuntimePages(EFI_SIZE_TO_PAGES(Length));
+	if(p)ZeroMem(p,Length);
+	return p;
+}
+
+void static NoirGenericCallRT(IN VOID* ProcedureArgument)
+{
+	PNV_MP_SERVICE_GENERIC_INFO GenericInfo=(PNV_MP_SERVICE_GENERIC_INFO)ProcedureArgument;
+	UINTN ProcId=0;
+	if(MpServices)MpServices->WhoAmI(MpServices,&ProcId);
+	GenericInfo->Worker(GenericInfo->Context,(UINT32)ProcId);
+}
+
+void noir_generic_call(noir_broadcast_worker worker,void* context)
+{
+	// Initialize Structure for Generic Call.
+	NV_MP_SERVICE_GENERIC_INFO GenericInfo;
+	GenericInfo.Worker=worker;
+	GenericInfo.Context=context;
+	if(MpServices)
+	{
+#if defined(_GPC)
+		// We are going to do Generic Calls asynchronously.
+		EFI_EVENT GenericCallEvent;
+		EFI_STATUS st=gBS->CreateEvent(EVT_NOTIFY_WAIT,TPL_APPLICATION,NULL,NULL,&GenericCallEvent);
+		if(st==EFI_SUCCESS)
+		{
+			UINTN SignaledIndex;
+			// Initiate Asynchronous & Simultaneous Generic Call.
+			st=MpServices->StartupAllAPs(MpServices,NoirGenericCallRT,FALSE,GenericCallEvent,0,&GenericInfo,NULL);
+			// BSP is not invoked during the Generic Call. Do it here.
+			NoirGenericCallRT((VOID*)&GenericInfo);
+			// BSP has finished its job for Generic Call. Wait for all APs.
+			st=gBS->WaitForEvent(1,&GenericCallEvent,&SingaledIndex);
+			gBS->CloseEvent(GenericCallEvent);
+		}
+#else
+		// Do it in BSP before other APs.
+		NoirGenericCallRT((VOID*)&GenericInfo);
+		// Initiate Synchronous & Serialized Generic Call.
+		MpServices->StartupAllAPs(MpServices,NoirGenericCallRT,TRUE,NULL,0,&GenericInfo,NULL);
+#endif
+	}
+	else
+	{
+		// Only one core is accessible.
+		NoirGenericCallRT((VOID*)&GenericInfo);
+	}
+}
+
+void NoirGetSegmentAttributes(IN UINTN GdtBase,IN UINT16 Selector,OUT PSEGMENT_REGISTER Segment)
+{
+	PNHGDTENTRY64 GdtEntry=(PNHGDTENTRY64)(GdtBase+(Selector&GDT_SELECTOR_MASK));
+	Segment->Attributes=GdtEntry->Bytes.Flags;
+	Segment->Limit=(UINT32)(GdtEntry->Bits.LimitLo|(GdtEntry->Bits.LimitHi<<16))+1;
+	if(GdtEntry->Bits.Granularity)Segment->Limit<<=EFI_PAGE_SHIFT;
+	Segment->Limit-=1;
+	Segment->Base=(UINT64)((GdtEntry->Bytes.BaseHi<<24)|(GdtEntry->Bytes.BaseMid<<16)|GdtEntry->Bytes.BaseLo);
+	Segment->Base|=((UINT64)(*(UINT32*)(GdtBase+8))<<32);
+}
+
+void noir_save_processor_state(OUT PNOIR_PROCESSOR_STATE State)
+{
+	IA32_DESCRIPTOR Gdtr,Idtr;
+	// Save IDTR/GDTR...
+	AsmReadGdtr(&Gdtr);
+	AsmReadIdtr(&Idtr);
+	State->Gdtr.Limit=Gdtr.Limit;
+	State->Gdtr.Base=Gdtr.Base;
+	State->Idtr.Limit=Idtr.Limit;
+	State->Idtr.Base=Idtr.Base;
+	// Save Segment Selectors...
+	State->Cs.Selector=AsmReadCs();
+	State->Ds.Selector=AsmReadDs();
+	State->Es.Selector=AsmReadEs();
+	State->Fs.Selector=AsmReadFs();
+	State->Gs.Selector=AsmReadGs();
+	State->Ss.Selector=AsmReadSs();
+	State->Tr.Selector=AsmReadTr();
+	// Save Segment Attributes...
+	NoirGetSegmentAttributes(Gdtr.Base,State->Cs.Selector,&State->Cs);
+	NoirGetSegmentAttributes(Gdtr.Base,State->Ds.Selector,&State->Ds);
+	NoirGetSegmentAttributes(Gdtr.Base,State->Es.Selector,&State->Es);
+	NoirGetSegmentAttributes(Gdtr.Base,State->Fs.Selector,&State->Fs);
+	NoirGetSegmentAttributes(Gdtr.Base,State->Gs.Selector,&State->Gs);
+	NoirGetSegmentAttributes(Gdtr.Base,State->Ss.Selector,&State->Ss);
+	NoirGetSegmentAttributes(Gdtr.Base,State->Tr.Selector,&State->Tr);
+	State->Cs.Base=State->Ds.Base=State->Es.Base=State->Ss.Base=0;
+	// Save Control Registers...
+	State->Cr0=AsmReadCr0();
+	State->Cr2=AsmReadCr2();
+	State->Cr3=AsmReadCr3();
+	State->Cr4=AsmReadCr4();
+	// Save Debug Registers...
+	State->Dr0=AsmReadDr0();
+	State->Dr1=AsmReadDr1();
+	State->Dr2=AsmReadDr2();
+	State->Dr3=AsmReadDr3();
+	State->Dr6=AsmReadDr6();
+	State->Dr7=AsmReadDr7();
+	// Save Model Specific Registers...
+	State->SysEnter_Cs=AsmReadMsr64(MSR_SYSENTER_CS);
+	State->SysEnter_Esp=AsmReadMsr64(MSR_SYSENTER_ESP);
+	State->SysEnter_Eip=AsmReadMsr64(MSR_SYSENTER_EIP);
+	State->DebugControl=AsmReadMsr64(MSR_DEBUG_CONTROL);
+	State->Pat=AsmReadMsr64(MSR_PAT);
+	State->Efer=AsmReadMsr64(MSR_EFER);
+	State->Star=AsmReadMsr64(MSR_STAR);
+	State->LStar=AsmReadMsr64(MSR_LSTAR);
+	State->CStar=AsmReadMsr64(MSR_CSTAR);
+	State->SfMask=AsmReadMsr64(MSR_SFMASK);
+	State->FsBase=AsmReadMsr64(MSR_FSBASE);
+	State->GsBase=AsmReadMsr64(MSR_GSBASE);
+	State->GsSwap=AsmReadMsr64(MSR_GSSWAP);
+	// Save Segment Bases...
+	State->Fs.Base=State->FsBase;
+	State->Gs.Base=State->GsBase;
 }
 
 void NoirDisplayProcessorState()

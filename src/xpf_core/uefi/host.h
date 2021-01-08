@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2020, Zero Tang. All rights reserved.
+  Copyright 2018-2021, Zero Tang. All rights reserved.
 
   This file builds the host environment for NoirVisor on UEFI.
 
@@ -16,6 +16,22 @@
 #include <Library/UefiLib.h>
 #include <Pi/PiMultiPhase.h>
 #include <Protocol/MpService.h>
+
+#define MSR_SYSENTER_CS		0x174
+#define MSR_SYSENTER_ESP	0x175
+#define MSR_SYSENTER_EIP	0x176
+#define MSR_DEBUG_CONTROL	0x1D9
+#define MSR_PAT				0x277
+#define MSR_EFER			0xC0000080
+#define MSR_STAR			0xC0000081
+#define MSR_LSTAR			0xC0000082
+#define MSR_CSTAR			0xC0000083
+#define MSR_SFMASK			0xC0000084
+#define MSR_FSBASE			0xC0000100
+#define MSR_GSBASE			0xC0000101
+#define MSR_GSSWAP			0xC0000102
+
+#define GDT_SELECTOR_MASK		0xFFF8
 
 typedef struct _SEGMENT_REGISTER
 {
@@ -222,14 +238,16 @@ typedef union _NHX64_HUGE_PDPTE
 }NHX64_HUGE_PDPTE,*PNHX64_HUGE_PDPTE;
 
 // Definitions of NoirVisor Host Segment Selectors
-#define NH_X64_CS_SELECTOR		0x10
-#define NH_X64_DS_SELECTOR		0x20
-#define NH_X64_ES_SELECTOR		0x20
-#define NH_X64_FS_SELECTOR		0x30
-#define NH_X64_GS_SELECTOR		0x30
-#define NH_X64_SS_SELECTOR		0x20
+#define NH_X64_CS_SELECTOR		0x18
+#define NH_X64_DS_SELECTOR		0x08
+#define NH_X64_ES_SELECTOR		0x08
+#define NH_X64_FS_SELECTOR		0x28
+#define NH_X64_GS_SELECTOR		0x28
+#define NH_X64_SS_SELECTOR		0x08
 #define NH_X64_TR_SELECTOR		0x40
 #define NH_X64_NULL_SELECTOR	0x00
+
+#define NH_INTERRUPT_GATE_TYPE	0xE
 
 // Definitions of NoirVisor Host Segment Attributes
 #define NH_X64_CODE_ATTRIBUTES	0xA09B
@@ -251,7 +269,6 @@ typedef union _NHX64_HUGE_PDPTE
 
 typedef struct _NHPCR
 {
-	VOID* DescriptorTables;		// Includes IDT, GDT, TSS
 	struct _NHPCR* Self;		// Point to this structure (Base of FS&GS)
 	UINTN ProcessorNumber;		// Current Processor Number
 	PNHGDTENTRY64 Gdt;			// Global Descriptor Table
@@ -259,7 +276,6 @@ typedef struct _NHPCR
 	PNHTSS64 Tss;				// Task Segment State
 	VOID* IntStack;				// Stack Base for Interrupt Handler.
 	// Processor State will be forged for NoirVisor in Host Mode.
-	NOIR_PROCESSOR_STATE ProcessorState;
 	CHAR8 ProcessorVendor[13];
 }NHPCR,*PNHPCR;
 
@@ -271,9 +287,21 @@ typedef struct _NV_HOST_SYSTEM
 	PNHX64_HUGE_PDPTE PdptBase;	// Paging for NoirVisor in Host Mode
 }NV_HOST_SYSTEM,*PNV_HOST_SYSTEM;
 
-void noir_save_processor_state(OUT PNOIR_PROCESSOR_STATE ProcessorState);
+typedef void(*noir_broadcast_worker)(void* context,UINT32 ProcessorNumber);
+
+typedef struct _NV_MP_SERVICE_GENERIC_INFO
+{
+	noir_broadcast_worker Worker;
+	VOID* Context;
+}NV_MP_SERVICE_GENERIC_INFO,*PNV_MP_SERVICE_GENERIC_INFO;
+
 #define NoirSaveProcessorState	noir_save_processor_state
+UINT32 noir_lsl(UINT16 selector);
+void NoirBlockUntilKeyStroke(IN CHAR16 Unicode);
+void NoirUnexpectedInterruptHandler(void);
 
 extern EFI_MP_SERVICES_PROTOCOL *MpServices;
+extern EFI_BOOT_SERVICES *gBS;
+extern EFI_SYSTEM_TABLE *gST;
 
 NV_HOST_SYSTEM Host;

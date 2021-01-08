@@ -1,6 +1,13 @@
 # NoirVisor
 NoirVisor - Hardware-Accelerated Hypervisor solution with support to complex functions and purposes and nested virtualization.
 
+<p align=center>
+    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT">
+    <a href="https://discord.gg/5cKn5FdK6U">
+        <img src="https://img.shields.io/discord/796222913774354432?color=red&label=Discord&style=flat">
+    </a>
+</p>
+
 # Introduction
 NoirVisor is a hardware-accelerated hypervisor (a.k.a VMM, Virtual Machine Monitor) with support to complex functions and purposes. It is designed to support processors based on x86 architecture with hardware-accelerated virtualization feature. For example, Intel processors supporting Intel VT-x or AMD processors supporting AMD-V meet the requirement. By designation, NoirVisor determines the processor manufacturer and selects the function core.
 
@@ -19,7 +26,9 @@ Note that early Zhaoxin and VIA use Centaur as vendor.
 
 # Nested Virtualization
 NoirVisor is developed in highest focus on nested virtualization. It is not currently supported, but will be developed in future. <br>
-Algorithm regarding the Nested Virtualization was stated down in the readme files in both VT-Core and SVM-Core directories.
+Algorithm regarding the Nested Virtualization was stated down in the readme files in both VT-Core and SVM-Core directories. <br>
+For Nested Intel VT-x Algorithm, visit [here](src/vt_core/readme.md#vmx-nesting-algorithm-incomplete-version). <br>
+For Nested AMD-V Algorithm, visit [here](src/svm_core/readme.md#svm-nesting-algorithm-incomplete-version).
 
 # Announcement to all contributors
 NoirVisor is coded in the C programming language and the assembly since it is procedure-oriented designed. <br>
