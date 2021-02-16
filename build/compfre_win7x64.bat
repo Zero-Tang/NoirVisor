@@ -11,7 +11,7 @@ echo Platform: 64-Bit Windows
 echo Preset: Release/Free Build
 echo Powered by zero.tangptr@gmail.com
 echo Copyright (c) 2018-2021, zero.tangptr@gmail.com. All Rights Reserved.
-pause
+if "%~1"=="/s" (echo DO-NOT-PAUSE is activated!) else (pause)
 
 echo ============Start Compiling============
 echo Compiling Windows Driver Framework...
@@ -39,10 +39,8 @@ for %%1 in (..\src\xpf_core\windows\*.asm) do (ml64 /W3 /WX /D"_amd64" /Zf /Zd /
 
 echo ============Start Linking============
 link "%objpath%\*.obj" "%objpath%\version.res" /LIBPATH:"%libpath%\win7\km\x64" /NODEFAULTLIB "ntoskrnl.lib" "..\src\disasm\bin\compchk_win7x64\zydis.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /OPT:REF /OPT:ICF /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
-echo Completed!
-echo.
 
 echo This is Release/Free Build. Compiling Script will not perform signing!
 echo You are supposed to sign this binary file with a formal signature!
 
-pause
+if "%~1"=="/s" (echo Completed!) else (pause)

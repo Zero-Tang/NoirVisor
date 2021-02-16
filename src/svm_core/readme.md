@@ -45,7 +45,7 @@ There is performance problem as well. There will be no performance cost for read
 3. The proxy function may detour to function remainder, #NPF occurs and swapped to the Secondary.
 4. Hooked function execution completed, #NPF occurs and swapped to the Primary.
 
-In summary, four #NPF will occur in a single execution of hooked function. In comparison, Intel EPT offers flexibility that intensive access can still have least performance penalty.
+In summary, there will be at least four #NPF occurring in a single execution of hooked function. In comparison, Intel EPT offers flexibility that intensive access can still have least performance penalty.
 
 # Critical Hypervisor Protection
 This feature is an essential security feature. I found this feature missing in most open-source light-weight hypervisor project. The key is that VMCB and other essential pages are not protected through Nested Paging even if they enabled AMD NPT. It should be pointed out that a malware is aware of the format of VMCB. In this regard, malware may corrupt the VMCB through memory access instruction.
@@ -126,16 +126,17 @@ If there is hardware support, things are easy: we set `vGIF` bit in VMCB accordi
 If there is no hardware support, we should intercept `stgi` and `clgi` instructions. When vGIF is cleared, we set interceptions on interrupts according to AMD-V specifications. If interrupt should be ignored and discarded, then simply return to guest. If interrupt should be pending, save it to vCPU, but do not write to VMCB. When vGIF is set, we clear interceptions on interrupts, and inject the pending interrupt into guest after VM-Entry for returning from interceptions of `stgi` or `vmrun`.
 
 As defined by AMD, certain interrupts are controlled by GIF:
-| Interrupt Source                                      | Actions on `GIF=0` Scenario   |
-|-------------------------------------------------------|-------------------------------|
-| Debug Trace Trap due to breakpointer register match   | Discarded                     |
-| `INIT` Signal                                         | Held Pending                  |
-| `NMI` - Nonmaskable Interrupt                         | Held Pending                  |
-| External `SMI`                                        | Held Pending                  |
-| Internal `SMI`                                        | Discarded                     |
-| External Interrupts and Virtual Interrupts            | Held Pending                  |
-| Machine Check                                         | Held Pending                  |
-Therefore, all interrupts listed above, when `GIF=0`, should be intercepted. If interrupts are overlapping, discard the lower prioritized.
+| Interrupt Source                                      | Actions on `GIF=0` Scenario   | Actions on `GIF=1` Scenario   |
+|-------------------------------------------------------|-------------------------------|-------------------------------|
+| Debug Trace Trap due to breakpoint register match     | Discarded                     | Act as usual                  |
+| `INIT` Signal                                         | Held Pending                  | Act as usual                  |
+| `NMI` - Nonmaskable Interrupt                         | Held Pending                  | Act as usual                  |
+| External `SMI`                                        | Held Pending                  | Act as usual                  |
+| Internal `SMI`                                        | Discarded                     | Act as usual                  |
+| External Interrupts and Virtual Interrupts            | Held Pending                  | Act as usual                  |
+| Machine Check                                         | Held Pending                  | Act as usual                  |
+
+Therefore, all interrupts listed above, when `GIF=0`, should be intercepted. If interrupts are overlapping, discard the lower prioritized. When `GIF=1`, clear interceptions on these interrupts.
 
 ### SMI Injection
 Unlike other sorts of interrupts, SMIs are not injected as `Event Injection`. Instead, there is an `SMM Control` MSR.
@@ -194,6 +195,6 @@ This is a suggestion for Nested Virtualization in NoirVisor. By now, algorithm d
 
 ## Roadmap of Nested Virtualization
 Nested Virtualization in NoirVisor will be developped in three stages:
-- Simple Level (No NPT, single VMCB): Like [SimpleSvm](https://github.com/tandasat/SimpleSvm)
+- Simple (No NPT, single VMCB): Like [SimpleSvm](https://github.com/tandasat/SimpleSvm)
 - Intermediate (with NPT, single VMCB): Like [SimpleSvmHook](https://github.com/tandasat/SimpleSvmHook) or [NoirVisor](https://github.com/Zero-Tang/NoirVisor)
 - Advanced (with NPT, multiple VMCBs): Like [VMware Workstation](https://www.vmware.com/products/workstation-pro/workstation-pro-evaluation.html), [VirtualBox](https://www.virtualbox.org/), or Hyper-V.

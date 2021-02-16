@@ -18,5 +18,4 @@ clang-cl ..\disasm.c /I"..\zydis\include" /I"..\zycore-c\include" /I"..\zydis\ms
 echo =============Start Linking=============
 llvm-lib /NOLOGO /OUT:"%binpath%\zydis.lib" /MACHINE:X64 "%objpath%\*.obj"
 
-echo Completed!
-pause.
+if "%~1"=="/s" (echo Completed!) else (pause)

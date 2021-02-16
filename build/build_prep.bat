@@ -36,5 +36,4 @@ echo Making Directories for NoirVisor Free Build, 64-Bit UEFI
 mkdir ..\bin\compfre_uefix64
 mkdir ..\bin\compfre_uefix64\Intermediate
 
-echo Preparation Completed!
-pause.
+if "%~1"=="/s" (echo Preparation Completed!) else (pause)

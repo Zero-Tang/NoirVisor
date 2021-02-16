@@ -108,8 +108,8 @@ For more information, check out the [NoirVisor 2020+](https://github.com/Zero-Ta
 
 # Completed Features
 - Minimal Microsoft `Hv#1` Hypervisor Functionalities.
-- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V.
-- Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel VT-x.
+- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V. (Incompatible with `KiErrata704Present`)
+- Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel VT-x. (Note: Stable with Windows 10 x64 20H2)
 - TSC Offseting as Countermeasure for TSC-based Time-Profiler.
 - Tagged Translation Lookaside Buffer by ASID/VPID feature.
 - Critical Hypervisor Protection.

@@ -1,5 +1,5 @@
 @echo off
-set path=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.23.28105\bin\Hostx64\x64;T:\Program Files\Windows Kits\10\bin\10.0.19041.0\x64;%path%
+set path=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.27.29110\bin\Hostx64\x64;T:\Program Files\Windows Kits\10\bin\10.0.19041.0\x64;%path%
 set incpath=T:\Program Files\Windows Kits\10\Include\10.0.19041.0
 set libpath=T:\Program Files\Windows Kits\10\Lib
 set binpath=..\bin\compfre_win7x64
@@ -21,5 +21,4 @@ cl ..\disasm.c /I"..\zydis\include" /I"..\zycore-c\include" /I"..\zydis\msvc" /n
 echo =============Start Linking=============
 lib "%objpath%\*.obj" /NOLOGO /OUT:"%binpath%\zydis.lib" /MACHINE:X64 /ERRORREPORT:QUEUE
 
-echo Completed!
-pause.
+if "%~1"=="/s" (echo Completed!) else (pause)

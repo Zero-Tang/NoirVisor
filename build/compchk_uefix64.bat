@@ -13,7 +13,7 @@ echo Powered by zero.tangptr@gmail.com
 echo Copyright (c) 2018-2021, zero.tangptr@gmail.com. All Rights Reserved.
 clang-cl --version
 lld-link --version
-pause
+if "%~1"=="/s" (echo DO-NOT-PAUSE is activated!) else (pause)
 
 echo ============Start Compiling============
 echo Compiling UEFI Booting Facility...
@@ -46,5 +46,4 @@ lld-link "%objpath%\efimain.obj" /NODEFAULTLIB /LIBPATH:"%libpath%\compchk_uefix
 echo Linking NoirVisor EFI Hypervisor Runtime Driver...
 lld-link "%objpath%\driver.obj" "%objpath%\host.obj" "%objpath%\kpcr.obj" /NODEFAULTLIB /LIBPATH:"%libpath%\compchk_uefix64" "BaseLib.lib" "BaseDebugPrintErrorLevelLib.lib" "BaseMemoryLib.lib" "BasePrintLib.lib" "UefiLib.lib" "UefiDebugLibConOut.lib" "UefiMemoryAllocationLib.lib" "UefiDevicePathLib.Lib" "UefiBootServicesTableLib.Lib" "UefiRuntimeServicesTableLib.Lib" /OUT:"%binpath%\NoirVisor.efi" /SUBSYSTEM:EFI_RUNTIME_DRIVER /ENTRY:"NoirDriverEntry" /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /Machine:X64
 
-echo Completed!
-pause.
+if "%~1"=="/s" (echo Completed!) else (pause)

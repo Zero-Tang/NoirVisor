@@ -11,5 +11,4 @@ pause.
 echo Performing cleanup...
 del ..\bin /q /s
 
-echo Cleanup Completed!
-pause.
+if "%~1"=="/s" (echo Cleanup Completed!) else (pause)
