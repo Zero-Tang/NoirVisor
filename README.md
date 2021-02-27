@@ -40,7 +40,7 @@ To build NoirVisor, using batch is essential. <br>
 Note that you should execute the `build_prep.bat` to make directories for first-time compilation. 
 
 ## Windows Driver
-To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 10 (version 2004) ISO file to T disk. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are not using Windows 10. <br>
+To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 10 (version 2004) ISO file to T disk. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. <br>
 Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. If you use WinCDEmu, however, you may order the system to mount EWDK10 and specify its drive letter during startup. <br>
 You may download the EWDK10-2004 (with VS Build Tools 16.7) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019 <br>
 Make sure you have downloaded the correct version. NoirVisor would continue updating. If not using correct version, you might fail to compile the latest version of NoirVisor. <br>
@@ -91,6 +91,10 @@ reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 0
 ```
 The TSC due to VM-Exit is always omitted in Exit Handler. This feature can not be disabled. Please note that omitted TSC is approximate and thereby cannot counter precise time-profiler.
 
+# Customizable VM
+Customizable VM is the true explanation of "complex functions and purposes". As the project creator and director, Zero's true intention to create this project is for studying Hardware-Acclerated Virtualization Technology. Therefore, any features which is related to virtualization and which Zero has ideas to implement will be added in the project. <br>
+Customizable VM is the feature that Zero researches about Virtualization: to run an arbitrary guest, instead of to just subvert the host system.
+
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. <br>
 Currently, NoirVisor supports the Windows Operating System newer than or same as Windows XP, running as a kernel-mode driver. <br>
@@ -98,7 +102,8 @@ Porting to Unified Extensible Firmware Interface (UEFI) is in progress. <br>
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has four future development plans: <br>
+Project NoirVisor has five future development plans: <br>
+- Develop Customizable VM engine for complex purposes.
 - Develop Nested Virtualization.
 - Develop IOMMU Core.
 - Port NoirVisor to 32-bit Windows platform.
@@ -108,9 +113,9 @@ For more information, check out the [NoirVisor 2020+](https://github.com/Zero-Ta
 
 # Completed Features
 - Minimal Microsoft `Hv#1` Hypervisor Functionalities.
-- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V. (Incompatible with `KiErrata704Present`)
-- Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, Intel VT-x. (Note: Stable with Windows 10 x64 20H2)
-- TSC Offseting as Countermeasure for TSC-based Time-Profiler.
+- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V. (Incompatible with `KiErrata704Present` mitigation.)
+- Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, both Intel VT-x/EPT and AMD-V/NPT.
+- TSC Offsetting as Countermeasure for TSC-based Time-Profiler.
 - Tagged Translation Lookaside Buffer by ASID/VPID feature.
 - Critical Hypervisor Protection.
 - Software-Level Code Integrity Enforcement.

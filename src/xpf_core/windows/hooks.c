@@ -141,6 +141,23 @@ NTSTATUS NoirConstructHook(IN PVOID Address,IN PVOID Proxy,OUT PVOID* Detour)
 		if(HookPage->HookedPage.VirtualAddress==NULL)return st;
 		HookPage->OriginalPage.VirtualAddress=NoirGetPageBase(Address);
 		HookPage->OriginalPage.PhysicalAddress=NoirGetPhysicalAddress(HookPage->OriginalPage.VirtualAddress);
+		// The hooked page is not guaranteed to always be resident, so lock it.
+		HookPage->Mdl=IoAllocateMdl(HookPage->OriginalPage.VirtualAddress,PAGE_SIZE,FALSE,FALSE,NULL);
+		if(HookPage->Mdl)
+		{
+			__try
+			{
+				MmProbeAndLockPages(HookPage->Mdl,KernelMode,IoWriteAccess);
+			}
+			__except(EXCEPTION_EXECUTE_HANDLER)
+			{
+				IoFreeMdl(HookPage->Mdl);
+				HookPage->Mdl=NULL;			// Purposefully set MDL to null to avoid re-unlock and re-free.
+				return GetExceptionCode();
+			}
+		}
+		else
+			return st;
 		HookPage->HookedPage.PhysicalAddress=NoirGetPhysicalAddress(HookPage->HookedPage.VirtualAddress);
 		RtlCopyMemory(HookPage->HookedPage.VirtualAddress,HookPage->OriginalPage.VirtualAddress,PAGE_SIZE);
 	}
@@ -232,8 +249,15 @@ void NoirTeardownHookedPages()
 	if(HookPages)
 	{
 		for(ULONG i=0;i<HookPageCount;i++)
+		{
 			if(HookPages[i].HookedPage.VirtualAddress)
 				NoirFreeContiguousMemory(HookPages[i].HookedPage.VirtualAddress);
+			if(HookPages[i].Mdl)
+			{
+				MmUnlockPages(HookPages[i].Mdl);
+				IoFreeMdl(HookPages[i].Mdl);
+			}
+		}
 		NoirFreeNonPagedMemory(HookPages);
 		HookPages=NULL;
 	}

@@ -41,6 +41,6 @@ echo ============Start Linking============
 link "%objpath%\*.obj" "%objpath%\version.res" /LIBPATH:"%libpath%\win7\km\x64" /NODEFAULTLIB "ntoskrnl.lib" "..\src\disasm\bin\compchk_win7x64\zydis.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
 
 echo ============Start Signing============
-signtool sign /v /f .\ztnxtest.pfx /t http://timestamp.globalsign.com/scripts/timestamp.dll %binpath%\NoirVisor.sys
+signtool sign /v /f .\ztnxtest.pfx  %binpath%\NoirVisor.sys
 
 if "%~1"=="/s" (echo Completed!) else (pause)

@@ -24,6 +24,7 @@
 #define noir_svm_virtual_gif		8		// Bit 3
 #define noir_svm_virtualized_vmls	16		// Bit 4
 #define noir_svm_syscall_hook		32		// Bit 5
+#define noir_svm_npt_with_hooks		64		// Bit 6
 
 // Constant for TSC offseting by Assembly Part.
 #define noir_svm_tsc_asm_offset		666		// To be fine tuned.
@@ -45,6 +46,7 @@ typedef struct _noir_svm_virtual_msr
 {
 	// Add virtualized SVM MSR here.
 	// System Call MSR
+	u64 efer;
 	u64 lstar;
 	u64 sysenter_eip;
 }noir_svm_virtual_msr,*noir_svm_virtual_msr_p;
@@ -70,10 +72,13 @@ typedef struct _noir_svm_vcpu
 	void* hv_stack;
 	noir_svm_hvm_p relative_hvm;
 	u32 proc_id;
+	u32 asid;
 	noir_svm_virtual_msr virtual_msr;
 	noir_svm_nested_vcpu nested_hvm;
+	noir_vcpu_state_p state;
 	u8 status;
 	u8 enabled_feature;
+	u8 vcpu_property;
 	u8 reserved;
 }noir_svm_vcpu,*noir_svm_vcpu_p;
 

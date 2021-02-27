@@ -81,6 +81,12 @@ typedef union r128
 	double d[2];	// Double-Precision
 }*r128;
 
+typedef union r256
+{
+	float s[8];		// Single-Precision
+	double d[4];	// Double-Precision
+}*r256;
+
 #if defined(_msvc) || defined(_llvm)
 typedef enum
 {

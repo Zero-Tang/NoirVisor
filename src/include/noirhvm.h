@@ -13,6 +13,16 @@
 */
 
 #include "nvdef.h"
+
+typedef struct _noir_vcpu_state
+{
+	noir_fx_state fxs;
+	noir_ymm_state ymm;
+	noir_gpr_state gpr;
+	noir_thread vcpu_thread;
+	u32 proc_id;
+}noir_vcpu_state,*noir_vcpu_state_p;
+
 #if defined(_vt_core)
 #include "vt_hvm.h"
 #elif defined(_svm_core)
@@ -48,6 +58,24 @@
 #define nvc_stack_size			0x10000
 #define nvc_stack_pages			0x10
 
+typedef struct _noir_virtual_machine
+{
+	struct _noir_virtual_machine* next;
+#if defined(_vt_core)
+	noir_vt_vcpu_p virtual_cpu;
+	noir_vt_hvm_p relative_hvm;
+#elif defined(_svm_core)
+	noir_svm_vcpu_p virtual_cpu;
+	noir_svm_hvm_p relative_hvm;
+#else
+	void* virtual_cpu;
+	void* relative_hvm;
+#endif
+	u32 vcpu_count;
+	u32 asid;
+	u64 reserved[0x10];	// Reserve 128 bytes for Relative HVM.
+}noir_virtual_machine,*noir_virtual_machine_p;
+
 typedef struct _noir_hypervisor
 {
 #if defined(_vt_core)
@@ -60,6 +88,11 @@ typedef struct _noir_hypervisor
 	void* virtual_cpu;
 	void* relative_hvm;
 #endif
+	struct
+	{
+		noir_virtual_machine_p head;
+		noir_virtual_machine_p tail;
+	}vm;
 	struct
 	{
 		ulong_ptr base;
@@ -90,6 +123,7 @@ typedef struct _noir_hook_page
 	memory_descriptor orig;
 	memory_descriptor hook;
 	void* pte_descriptor;
+	void* reserved;
 }noir_hook_page,*noir_hook_page_p;
 extern noir_hook_page_p noir_hook_pages;
 extern u32 noir_hook_pages_count;

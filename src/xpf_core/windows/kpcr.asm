@@ -19,6 +19,122 @@ endif
 
 ifdef _amd64
 
+noir_xmmsave proc
+
+	movaps xmmword ptr [rcx],xmm0
+	movaps xmmword ptr [rcx+10h],xmm1
+	movaps xmmword ptr [rcx+20h],xmm2
+	movaps xmmword ptr [rcx+30h],xmm3
+	movaps xmmword ptr [rcx+40h],xmm4
+	movaps xmmword ptr [rcx+50h],xmm5
+	movaps xmmword ptr [rcx+60h],xmm6
+	movaps xmmword ptr [rcx+70h],xmm7
+	movaps xmmword ptr [rcx+80h],xmm8
+	movaps xmmword ptr [rcx+90h],xmm9
+	movaps xmmword ptr [rcx+0A0h],xmm10
+	movaps xmmword ptr [rcx+0B0h],xmm10
+	movaps xmmword ptr [rcx+0C0h],xmm10
+	movaps xmmword ptr [rcx+0D0h],xmm10
+	movaps xmmword ptr [rcx+0E0h],xmm10
+	movaps xmmword ptr [rcx+0F0h],xmm10
+	ret
+
+noir_xmmsave endp
+
+noir_xmmrestore proc
+
+	movaps xmm0,xmmword ptr[rcx]
+	movaps xmm1,xmmword ptr[rcx+10h]
+	movaps xmm2,xmmword ptr[rcx+20h]
+	movaps xmm3,xmmword ptr[rcx+30h]
+	movaps xmm4,xmmword ptr[rcx+40h]
+	movaps xmm5,xmmword ptr[rcx+50h]
+	movaps xmm6,xmmword ptr[rcx+60h]
+	movaps xmm7,xmmword ptr[rcx+70h]
+	movaps xmm8,xmmword ptr[rcx+80h]
+	movaps xmm9,xmmword ptr[rcx+90h]
+	movaps xmm10,xmmword ptr[rcx+0A0h]
+	movaps xmm11,xmmword ptr[rcx+0B0h]
+	movaps xmm12,xmmword ptr[rcx+0C0h]
+	movaps xmm13,xmmword ptr[rcx+0D0h]
+	movaps xmm14,xmmword ptr[rcx+0E0h]
+	movaps xmm15,xmmword ptr[rcx+0F0h]
+	ret
+
+noir_xmmrestore endp
+
+noir_ymmsave proc
+
+	vmovaps ymmword ptr [rcx+000h],ymm0
+	vmovaps ymmword ptr [rcx+020h],ymm1
+	vmovaps ymmword ptr [rcx+040h],ymm2
+	vmovaps ymmword ptr [rcx+060h],ymm3
+	vmovaps ymmword ptr [rcx+080h],ymm4
+	vmovaps ymmword ptr [rcx+0A0h],ymm5
+	vmovaps ymmword ptr [rcx+0C0h],ymm6
+	vmovaps ymmword ptr [rcx+0E0h],ymm7
+	vmovaps ymmword ptr [rcx+100h],ymm8
+	vmovaps ymmword ptr [rcx+120h],ymm9
+	vmovaps ymmword ptr [rcx+140h],ymm10
+	vmovaps ymmword ptr [rcx+160h],ymm10
+	vmovaps ymmword ptr [rcx+180h],ymm10
+	vmovaps ymmword ptr [rcx+1A0h],ymm10
+	vmovaps ymmword ptr [rcx+1C0h],ymm10
+	vmovaps ymmword ptr [rcx+1E0h],ymm10
+	ret
+
+noir_ymmsave endp
+
+noir_ymmrestore proc
+
+	vmovaps ymm0,ymmword ptr[rcx]
+	vmovaps ymm1,ymmword ptr[rcx+10h]
+	vmovaps ymm2,ymmword ptr[rcx+20h]
+	vmovaps ymm3,ymmword ptr[rcx+30h]
+	vmovaps ymm4,ymmword ptr[rcx+40h]
+	vmovaps ymm5,ymmword ptr[rcx+50h]
+	vmovaps ymm6,ymmword ptr[rcx+60h]
+	vmovaps ymm7,ymmword ptr[rcx+70h]
+	vmovaps ymm8,ymmword ptr[rcx+80h]
+	vmovaps ymm9,ymmword ptr[rcx+90h]
+	vmovaps ymm10,ymmword ptr[rcx+0A0h]
+	vmovaps ymm11,ymmword ptr[rcx+0B0h]
+	vmovaps ymm12,ymmword ptr[rcx+0C0h]
+	vmovaps ymm13,ymmword ptr[rcx+0D0h]
+	vmovaps ymm14,ymmword ptr[rcx+0E0h]
+	vmovaps ymm15,ymmword ptr[rcx+0F0h]
+	ret
+
+noir_ymmrestore endp
+
+noir_fxsave proc
+
+	fxsave [rcx]
+	; Determine if FFXSR is enabled.
+	cmp qword ptr[rcx+464],0
+	jz non_ffxsr
+	; FFXSR is enabled. Save XMMs manually.
+	add rcx,160
+	call noir_xmmsave
+non_ffxsr:
+	ret
+
+noir_fxsave endp
+
+noir_fxrestore proc
+
+	fxrstor [rcx]
+	; Determine if FFXSR is enabled.
+	cmp qword ptr[rcx+464],0
+	jz non_ffxsr
+	; FFXSR is enabled. Restore XMMs manually.
+	add rcx,160
+	call noir_xmmrestore
+non_ffxsr:
+	ret
+
+noir_fxrestore endp
+
 noir_get_segment_attributes proc
 
 	and rdx,0fff8h

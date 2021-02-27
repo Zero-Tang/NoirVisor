@@ -305,6 +305,7 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 		stack->vcpu=vcpu;
 		noir_wrmsr(amd64_hsave_pa,vcpu->hsave.phys);
 		nvc_svm_setup_virtual_msr(vcpu);
+		vcpu->asid=1;		// Subverted host always has ASID=0.
 		vcpu->status=nvc_svm_subvert_processor_a(stack);
 	}
 }
@@ -381,7 +382,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			if(vcpu->hv_stack==null)return noir_insufficient_resources;
 			vcpu->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
 			if(hvm_p->options.stealth_msr_hook)vcpu->enabled_feature|=noir_svm_syscall_hook;
-			// Do not enable stealth inline hook right now since this feature is incomplete.
+			if(hvm_p->options.stealth_inline_hook)vcpu->enabled_feature|=noir_svm_npt_with_hooks;
 		}
 	}
 	hvm_p->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
@@ -403,7 +404,8 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	// Only Type-II Hypervisor would hook into guest.
 	hvm_p->relative_hvm->secondary_nptm=(void*)nvc_npt_build_identity_map();
 	if(hvm_p->relative_hvm->secondary_nptm==null)goto alloc_failure;
-	// nvc_npt_build_hook_mapping(hvm_p);
+	if(hvm_p->options.stealth_inline_hook)
+		nvc_npt_build_hook_mapping(hvm_p);		// This feature does not have a good performance.
 #endif
 	nvc_svm_setup_msr_hook(hvm_p);
 	if(hvm_p->virtual_cpu==null)goto alloc_failure;

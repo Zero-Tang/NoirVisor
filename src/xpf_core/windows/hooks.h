@@ -54,7 +54,8 @@ typedef struct _NOIR_HOOK_PAGE
 {
 	MEMORY_DESCRIPTOR OriginalPage;
 	MEMORY_DESCRIPTOR HookedPage;
-	PVOID Reserved;
+	PVOID Pte;	// PTE for EPT/NPT. DO NOT TOUCH!
+	PMDL Mdl;
 }NOIR_HOOK_PAGE,*PNOIR_HOOK_PAGE;
 
 typedef struct _NOIR_PROTECTED_FILE_NAME

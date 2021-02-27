@@ -164,6 +164,81 @@ typedef struct _noir_xmm_state
 #endif
 }noir_xmm_state,*noir_xmm_state_p;
 
+typedef struct _noir_ymm_state
+{
+	r256 ymm0;
+	r256 ymm1;
+	r256 ymm2;
+	r256 ymm3;
+	r256 ymm4;
+	r256 ymm5;
+	r256 ymm6;
+	r256 ymm7;
+#if defined(_amd64)
+	r256 ymm8;
+	r256 ymm9;
+	r256 ymm10;
+	r256 ymm11;
+	r256 ymm12;
+	r256 ymm13;
+	r256 ymm14;
+	r256 ymm15;
+#endif
+}noir_ymm_state,*noir_ymm_state_p;
+
+// 512-byte region of fxsave instruction.
+// Including FPU, x87, XMM.
+typedef struct _noir_fx_state
+{
+	struct
+	{
+		u16 fcw;
+		u16 fsw;
+		u8 ftw;
+		u8 reserved;
+		u16 fop;
+		u32 fip;
+		u16 fcs;
+		u16 reserved1;
+#if defined(_amd64)
+		u64 fdp;
+#else
+		u32 fdp;
+		u16 fds;
+		u16 reserved2;
+#endif
+		u32 mxcsr;
+		u32 mxcsr_mask;
+	}fpu;
+	struct
+	{
+		u64 mm0;		// st0
+		u64 reserved0;
+		u64 mm1;		// st1
+		u64 reserved1;
+		u64 mm2;		// st2
+		u64 reserved2;
+		u64 mm3;		// st3
+		u64 reserved3;
+		u64 mm4;		// st4
+		u64 reserved4;
+		u64 mm5;		// st5
+		u64 reserved5;
+		u64 mm6;		// st6
+		u64 reserved6;
+		u64 mm7;		// st7
+		u64 reserved7;
+	}x87;
+	noir_xmm_state sse;
+#if defined(_amd64)
+	u64 reserved[6];
+#else
+	u64 reserved[22];
+#endif
+	// If available[0]==0, FFXSR is disabled.
+	u64 available[6];
+}noir_fx_state,*noir_fx_state_p;
+
 typedef struct _noir_cpuid_general_info
 {
 	u32 eax;
@@ -180,6 +255,15 @@ void noir_generic_call(noir_broadcast_worker worker,void* context);
 u32 noir_get_processor_count();
 u32 noir_get_current_processor();
 u32 noir_get_instruction_length(void* code,bool long_mode);
+
+// Processor Extension Register Context Instructions
+// Use when switching from/to customizable VMs.
+void noir_fxsave(noir_fx_state_p state);
+void noir_fxrestore(noir_fx_state_p state);
+void noir_xmmsave(noir_xmm_state_p state);
+void noir_xmmrestore(noir_xmm_state_p state);
+void noir_ymmsave(noir_ymm_state_p state);
+void noir_ymmrestore(noir_ymm_state_p state);
 
 // Memory Facility
 void* noir_alloc_contd_memory(size_t length);

@@ -170,15 +170,15 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 
 NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING RegistryPath)
 {
-	NTSTATUS st=STATUS_UNSUCCESSFUL;
+	NTSTATUS st=STATUS_DEVICE_CONFIGURATION_ERROR;
 	PDEVICE_OBJECT DeviceObject=NULL;
 	UNICODE_STRING uniDevName=RTL_CONSTANT_STRING(DEVICE_NAME);
 	UNICODE_STRING uniLinkName=RTL_CONSTANT_STRING(LINK_NAME);
-	//Setup Dispatch Routines
+	// Setup Dispatch Routines
 	DriverObject->MajorFunction[IRP_MJ_CREATE]=DriverObject->MajorFunction[IRP_MJ_CLOSE]=NoirDispatchCreateClose;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]=NoirDispatchIoControl;
 	DriverObject->DriverUnload=NoirDriverUnload;
-	//Create Device and corresponding Symbolic Name
+	// Create Device and corresponding Symbolic Name
 	IoRegisterDriverReinitialization(DriverObject,NoirDriverReinitialize,NULL);
 	st=IoCreateDevice(DriverObject,0,&uniDevName,FILE_DEVICE_UNKNOWN,FILE_DEVICE_SECURE_OPEN,FALSE,&DeviceObject);
 	if(NT_SUCCESS(st))
