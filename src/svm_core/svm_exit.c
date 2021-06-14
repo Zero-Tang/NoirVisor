@@ -281,6 +281,7 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 // If this VM-Exit occurs, it may indicate a triple fault.
 void static fastcall nvc_svm_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
+	noir_svm_stgi();	// Enable GIF for Debug-Printing
 	nv_dprintf("Shutdown is Intercepted!\n");
 	noir_int3();
 }
@@ -329,6 +330,8 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				// Directly use space from the starting stack position.
 				// Normally it is unused.
 				noir_gpr_state_p saved_state=(noir_gpr_state_p)vcpu->hv_stack;
+				noir_svm_stgi();
+				// Before Debug-Print, GIF should be set because Debug-Printing requires IPI not to be blocked.
 				nv_dprintf("VMM-Call for Restoration is intercepted. Exiting...\n");
 				// Copy state.
 				noir_movsp(saved_state,gpr_state,sizeof(void*)*2);
@@ -337,7 +340,6 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				saved_state->rdx=gsp;
 				// Restore processor's hidden state.
 				noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,(u64)orig_system_call);
-				noir_svm_stgi();
 				noir_svm_vmload((ulong_ptr)vcpu->vmcb.phys);
 				// Switch to Restored CR3
 				noir_writecr3(gcr3);
@@ -349,6 +351,14 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 			}
 			// If execution goes here, then the invoker is malicious.
 			nv_dprintf("Malicious call of exit!\n");
+			break;
+		}
+		case noir_svm_run_custom_vcpu:
+		{
+			// Step 1: Save State of the Subverted Host.
+			// Step 2: Load Guest State and run Guest.
+			// Step 3: Save Guest State and Load Host State.
+			// Step 4: Return to Host.
 			break;
 		}
 		default:
@@ -523,7 +533,7 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 				hi=mid-1;
 			else
 			{
-				noir_npt_manager_p nptm=(noir_npt_manager_p)hvm_p->relative_hvm->secondary_nptm;
+				noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->secondary_nptm;
 				noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
 				advance=false;
 				break;
@@ -533,7 +543,7 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 		{
 			// Execution is outside hooked page.
 			// We should switch to primary.
-			noir_npt_manager_p nptm=(noir_npt_manager_p)hvm_p->relative_hvm->primary_nptm;
+			noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->primary_nptm;
 			noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
 			advance=false;
 		}
@@ -560,41 +570,49 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 	}
 }
 
-void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,u64 tsc_at_exit)
+void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	// Get the linear address of VMCB.
-	const void* vmcb_va=vcpu->vmcb.virt;
-	// Tick-Profiling countering.
-	u64 tc=noir_svm_vmread64(vmcb_va,tsc_offset);
-	// Read the Intercept Code.
-	i32 intercept_code=noir_svm_vmread32(vmcb_va,exit_code);
-	// Determine the group and number of interception.
-	u8 code_group=(u8)((intercept_code&0xC00)>>10);
-	u16 code_num=(u16)(intercept_code&0x3FF);
-	// rax is saved to VMCB, not GPR state.
-	gpr_state->rax=noir_svm_vmread(vmcb_va,guest_rax);
-	// Set VMCB Cache State as all to be cached.
-	if(vcpu->enabled_feature & noir_svm_vmcb_caching)
-		noir_svm_vmwrite32(vmcb_va,vmcb_clean_bits,0xffffffff);
-	// Set TLB Control to Do-not-Flush
-	noir_svm_vmwrite32(vmcb_va,tlb_control,nvc_svm_tlb_control_do_nothing);
-	// Check if the interception is due to invalid guest state.
-	// Invoke the handler accordingly.
-	if(unlikely(intercept_code==-1))		// Rare circumstance.
-		nvc_svm_invalid_guest_state(gpr_state,vcpu);
+	noir_svm_initial_stack_p loader_stack=(noir_svm_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack));
+	// Confirm which vCPU is exiting so that the correct handler is to be invoked...
+	if(likely(loader_stack->guest_vmcb_pa==vcpu->vmcb.phys))		// Let branch predictor favor subverted host.
+	{
+		// Subverted Host is exiting...
+		const void* vmcb_va=vcpu->vmcb.virt;
+		// Read the Intercept Code.
+		i64 intercept_code=noir_svm_vmread64(vmcb_va,exit_code);
+		// Determine the group and number of interception.
+		u8 code_group=(u8)((intercept_code&0xC00)>>10);
+		u16 code_num=(u16)(intercept_code&0x3FF);
+		// rax is saved to VMCB, not GPR state.
+		gpr_state->rax=noir_svm_vmread(vmcb_va,guest_rax);
+		// Set VMCB Cache State as all to be cached.
+		if(vcpu->enabled_feature & noir_svm_vmcb_caching)
+			noir_svm_vmwrite32(vmcb_va,vmcb_clean_bits,0xffffffff);
+		// Set TLB Control to Do-not-Flush
+		noir_svm_vmwrite32(vmcb_va,tlb_control,nvc_svm_tlb_control_do_nothing);
+		// Check if the interception is due to invalid guest state.
+		// Invoke the handler accordingly.
+		if(unlikely(intercept_code<0))		// Rare circumstance.
+			svm_exit_handler_negative[-intercept_code](gpr_state,vcpu);
+		else
+			svm_exit_handlers[code_group][code_num](gpr_state,vcpu);
+		// Since rax register is operated, save to VMCB.
+		noir_svm_vmwrite(vmcb_va,guest_rax,gpr_state->rax);
+	}
 	else
-		svm_exit_handlers[code_group][code_num](gpr_state,vcpu);
-	// Since rax register is operated, save to VMCB.
-	noir_svm_vmwrite(vmcb_va,guest_rax,gpr_state->rax);
+	{
+		// Customizable VM is exiting...
+		const void* vmcb_va=loader_stack->custom_vcpu->vmcb.virt;
+		;
+	}
 	// The rax in GPR state should be the physical address of VMCB
 	// in order to execute the vmrun instruction properly.
-	gpr_state->rax=(ulong_ptr)vcpu->vmcb.phys;
-	noir_svm_vmload((ulong_ptr)vcpu->vmcb.phys);
-	// Tick-Profiling countering.
-	tc-=(noir_rdtsc()-tsc_at_exit+noir_svm_tsc_asm_offset);
-	noir_svm_vmwrite64(vmcb_va,tsc_offset,tc);
+	gpr_state->rax=(ulong_ptr)loader_stack->guest_vmcb_pa;
+	noir_svm_vmload((ulong_ptr)loader_stack->guest_vmcb_pa);
 }
 
+/*
 bool nvc_svm_build_exit_handler()
 {
 	// Allocate the array of Exit-Handler Group
@@ -659,4 +677,10 @@ void nvc_svm_teardown_exit_handler()
 		// Mark as released.
 		svm_exit_handlers=null;
 	}
+}
+*/
+
+void nvc_svm_set_mshv_handler(bool option)
+{
+	nvcp_svm_cpuid_handler=option?nvc_svm_cpuid_hvp_handler:nvc_svm_cpuid_hvs_handler;
 }

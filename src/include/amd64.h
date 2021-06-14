@@ -32,11 +32,40 @@
 #define amd64_smmctrl_rsm_cycle			4
 
 // This is used for defining MSRs
+#define amd64_mtrr_cap					0xFE
 #define amd64_sysenter_cs				0x174
 #define amd64_sysenter_esp				0x175
 #define amd64_sysenter_eip				0x176
 #define amd64_debug_control				0x1D9
+#define amd64_mtrr_phys_base0			0x200
+#define amd64_mtrr_phys_mask0			0x201
+#define amd64_mtrr_phys_base1			0x202
+#define amd64_mtrr_phys_mask1			0x203
+#define amd64_mtrr_phys_base2			0x204
+#define amd64_mtrr_phys_mask2			0x205
+#define amd64_mtrr_phys_base3			0x206
+#define amd64_mtrr_phys_mask3			0x207
+#define amd64_mtrr_phys_base4			0x208
+#define amd64_mtrr_phys_mask4			0x209
+#define amd64_mtrr_phys_base5			0x20A
+#define amd64_mtrr_phys_mask5			0x20B
+#define amd64_mtrr_phys_base6			0x20C
+#define amd64_mtrr_phys_mask6			0x20D
+#define amd64_mtrr_phys_base7			0x20E
+#define amd64_mtrr_phys_mask7			0x20F
+#define amd64_mtrr_fix64k_00000			0x250
+#define amd64_mtrr_fix16k_80000			0x258
+#define amd64_mtrr_fix16k_a0000			0x259
+#define amd64_mtrr_fix4k_c0000			0x268
+#define amd64_mtrr_fix4k_c8000			0x269
+#define amd64_mtrr_fix4k_d0000			0x26A
+#define amd64_mtrr_fix4k_d8000			0x26B
+#define amd64_mtrr_fix4k_e0000			0x26C
+#define amd64_mtrr_fix4k_e8000			0x26D
+#define amd64_mtrr_fix4k_f0000			0x26E
+#define amd64_mtrr_fix4k_f8000			0x26F
 #define amd64_pat						0x277
+#define amd64_mtrr_def_type				0x2FF
 #define amd64_efer						0xC0000080
 #define amd64_star						0xC0000081
 #define amd64_lstar						0xC0000082
@@ -112,6 +141,14 @@
 #define amd64_alignment_check			17
 #define amd64_machine_check				18
 #define amd64_simd_exception			19
+
+// This is used for defining AMD64 architectural memory types.
+#define amd64_memory_type_uc			0x00	// Uncacheable
+#define amd64_memory_type_wc			0x01	// Write-Combining
+#define amd64_memory_type_wt			0x04	// Write-Through
+#define amd64_memory_type_wp			0x05	// Write-Protect
+#define amd64_memory_type_wb			0x06	// Write-Back
+#define amd64_memory_type_ucm			0x07	// UC-minus
 
 // This is used for defining AMD64 architectural cpuid flags.
 #define amd64_cpuid_svm					2

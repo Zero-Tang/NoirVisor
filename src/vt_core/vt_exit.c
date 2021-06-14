@@ -216,13 +216,20 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 				saved_state->rcx=gflags&0x3f7f96;		// Clear ZF and CF bits.
 				saved_state->rdx=gsp;
 				// Invalidate all TLBs associated with EPT and VPID.
-				ied.eptp=0;
-				ied.reserved=0;
-				noir_vt_invept(ept_global_invd,&ied);
-				ivd.vpid=0;
-				ivd.reserved[0]=ivd.reserved[1]=ivd.reserved[2]=0;
-				ivd.linear_address=0;
-				noir_vt_invvpid(vpid_global_invd,&ivd);
+				// If EPT/VPID is disabled, do not invalidate.
+				if(vcpu->enabled_feature & noir_vt_extended_paging)
+				{
+					ied.eptp=0;
+					ied.reserved=0;
+					noir_vt_invept(ept_global_invd,&ied);
+				}
+				if(vcpu->enabled_feature & noir_vt_vpid_tagged_tlb)
+				{
+					ivd.vpid=0;
+					ivd.reserved[0]=ivd.reserved[1]=ivd.reserved[2]=0;
+					ivd.linear_address=0;
+					noir_vt_invvpid(vpid_global_invd,&ivd);
+				}
 				noir_writecr3(gcr3);
 				// Mark vCPU is in transition state
 				vcpu->status=noir_virt_trans;

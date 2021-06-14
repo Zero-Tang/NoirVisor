@@ -76,11 +76,11 @@ noir_ymmsave proc
 	vmovaps ymmword ptr [rcx+100h],ymm8
 	vmovaps ymmword ptr [rcx+120h],ymm9
 	vmovaps ymmword ptr [rcx+140h],ymm10
-	vmovaps ymmword ptr [rcx+160h],ymm10
-	vmovaps ymmword ptr [rcx+180h],ymm10
-	vmovaps ymmword ptr [rcx+1A0h],ymm10
-	vmovaps ymmword ptr [rcx+1C0h],ymm10
-	vmovaps ymmword ptr [rcx+1E0h],ymm10
+	vmovaps ymmword ptr [rcx+160h],ymm11
+	vmovaps ymmword ptr [rcx+180h],ymm12
+	vmovaps ymmword ptr [rcx+1A0h],ymm13
+	vmovaps ymmword ptr [rcx+1C0h],ymm14
+	vmovaps ymmword ptr [rcx+1E0h],ymm15
 	ret
 
 noir_ymmsave endp
@@ -88,24 +88,38 @@ noir_ymmsave endp
 noir_ymmrestore proc
 
 	vmovaps ymm0,ymmword ptr[rcx]
-	vmovaps ymm1,ymmword ptr[rcx+10h]
-	vmovaps ymm2,ymmword ptr[rcx+20h]
-	vmovaps ymm3,ymmword ptr[rcx+30h]
-	vmovaps ymm4,ymmword ptr[rcx+40h]
-	vmovaps ymm5,ymmword ptr[rcx+50h]
-	vmovaps ymm6,ymmword ptr[rcx+60h]
-	vmovaps ymm7,ymmword ptr[rcx+70h]
-	vmovaps ymm8,ymmword ptr[rcx+80h]
-	vmovaps ymm9,ymmword ptr[rcx+90h]
-	vmovaps ymm10,ymmword ptr[rcx+0A0h]
-	vmovaps ymm11,ymmword ptr[rcx+0B0h]
-	vmovaps ymm12,ymmword ptr[rcx+0C0h]
-	vmovaps ymm13,ymmword ptr[rcx+0D0h]
-	vmovaps ymm14,ymmword ptr[rcx+0E0h]
-	vmovaps ymm15,ymmword ptr[rcx+0F0h]
+	vmovaps ymm1,ymmword ptr[rcx+020h]
+	vmovaps ymm2,ymmword ptr[rcx+040h]
+	vmovaps ymm3,ymmword ptr[rcx+060h]
+	vmovaps ymm4,ymmword ptr[rcx+080h]
+	vmovaps ymm5,ymmword ptr[rcx+0A0h]
+	vmovaps ymm6,ymmword ptr[rcx+0C0h]
+	vmovaps ymm7,ymmword ptr[rcx+0E0h]
+	vmovaps ymm8,ymmword ptr[rcx+100h]
+	vmovaps ymm9,ymmword ptr[rcx+120h]
+	vmovaps ymm10,ymmword ptr[rcx+140h]
+	vmovaps ymm11,ymmword ptr[rcx+160h]
+	vmovaps ymm12,ymmword ptr[rcx+180h]
+	vmovaps ymm13,ymmword ptr[rcx+1A0h]
+	vmovaps ymm14,ymmword ptr[rcx+1C0h]
+	vmovaps ymm15,ymmword ptr[rcx+1E0h]
 	ret
 
 noir_ymmrestore endp
+
+noir_ffxsave proc
+
+	fxsave [rcx]
+	ret
+
+noir_ffxsave endp
+
+noir_ffxrestore proc
+
+	fxrstor [rcx]
+	ret
+
+noir_ffxrestore endp
 
 noir_fxsave proc
 

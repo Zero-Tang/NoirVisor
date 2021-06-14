@@ -140,7 +140,7 @@ void static NoirLocatePsLoadedModuleList(IN PDRIVER_OBJECT DriverObject)
 			PKLDR_DATA_TABLE_ENTRY tLdr=(PKLDR_DATA_TABLE_ENTRY)pLdr->InLoadOrderLinks.Blink;
 			while(pLdr!=tLdr)
 			{
-				if(pLdr->ImageSize==0)	// I assert it is zero here. Not sure if there is exceptions.
+				if(pLdr->ImageSize==0)	// I assert it is zero here, not sure if there could be exceptions.
 				{
 					PsLoadedModuleList=pLdr;
 					break;

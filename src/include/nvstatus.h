@@ -91,6 +91,16 @@ typedef unsigned int noir_status;
 #define noir_unknown_processor			0xC0000003
 
 /*
+  Status Indicator: noir_invalid_parameter
+  If invalid parameters are passed to the function,
+  then this value is supposed to be returned.
+
+  Value: 0xC0000004
+*/
+
+#define noir_invalid_parameter			0xC0000004
+
+/*
   Status Indicator: noir_not_intel
   If a procedure is specific for Intel Processor,
   and the processor is not manufactured by Intel,

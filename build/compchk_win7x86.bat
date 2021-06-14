@@ -1,9 +1,9 @@
 @echo off
-set path=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.27.29110\bin\Hostx86\x86;T:\Program Files\Windows Kits\10\bin\10.0.19041.0\x86;%path%
-set incpath=T:\Program Files\Windows Kits\10\Include\10.0.19041.0
+set path=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.28.29910\bin\Hostx86\x86;T:\Program Files\Windows Kits\10\bin\10.0.20348.0\x86;%path%
+set incpath=T:\Program Files\Windows Kits\10\Include\10.0.20348.0
 set libpath=T:\Program Files\Windows Kits\10\Lib
-set binpath=..\bin\compchk_win7x64
-set objpath=..\bin\compchk_win7x64\Intermediate
+set binpath=..\bin\compchk_win7x86
+set objpath=..\bin\compchk_win7x86\Intermediate
 
 title Compiling NoirVisor, Checked Build, 32-Bit Windows (IA-32 Architecture)
 echo Project: NoirVisor
@@ -41,6 +41,6 @@ echo ============Start Linking============
 link "%objpath%\*.obj" "%objpath%\version.res" /LIBPATH:"%libpath%\win7\km\x86" /NODEFAULTLIB "ntoskrnl.lib" "..\src\disasm\LDE32.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X86 /ERRORREPORT:QUEUE
 
 echo ============Start Signing============
-signtool sign /v /f .\ztnxtest.pfx /t http://timestamp.globalsign.com/scripts/timestamp.dll %binpath%\NoirVisor.sys
+signtool sign /v /fd SHA1 /f .\ztnxtest.pfx /t http://timestamp.globalsign.com/scripts/timestamp.dll %binpath%\NoirVisor.sys
 
 if "%~1"=="/s" (echo Completed!) else (pause)

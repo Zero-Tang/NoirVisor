@@ -63,10 +63,10 @@ void NoirPrintCompilerVersion()
 
 NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 {
-	// Setup default values.
+	// Setup default values. Hooking becomes a very unstable feature in Windows with post-2018 updates!
 	ULONG32 CpuidPresence=1;		// Enable CPUID Presence at default.
 	ULONG32 StealthMsrHook=0;		// Disable Stealth MSR Hook at default.
-	ULONG32 StealthInlineHook=1;	// Enable Stealth Inline Hook at default.
+	ULONG32 StealthInlineHook=0;	// Disable Stealth Inline Hook at default.
 	// Initialize.
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
 	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=ExAllocatePool(PagedPool,PAGE_SIZE);
@@ -249,7 +249,6 @@ void static NoirPowerStateCallback(IN PVOID CallbackContext,IN PVOID Argument1,I
 {
 	if(Argument1==(PVOID)PO_CB_SYSTEM_STATE_LOCK)
 	{
-		NoirDebugPrint("At Power State Callback, IRQL=%d\n",KeGetCurrentIrql());
 		if(Argument2)
 		{
 			// System is resuming from sleeping or hibernating.

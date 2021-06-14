@@ -23,20 +23,18 @@
 #include "svm_def.h"
 #include "svm_npt.h"
 
-void nvc_svm_release_vcpu(noir_svm_vcpu_p vcpu)
+void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 {
 	if(vcpu)
 	{
 		if(vcpu->vmcb.virt)noir_free_contd_memory(vcpu->vmcb.virt);
-		if(vcpu->hv_stack)noir_free_nonpg_memory(vcpu->hv_stack);
-		if(vcpu->state)noir_free_nonpg_memory(vcpu->state);
 		noir_free_nonpg_memory(vcpu);
 	}
 }
 
-noir_status nvc_svm_create_vcpu(noir_svm_vcpu_p* virtual_cpu)
+noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_custom_vm_p virtual_machine)
 {
-	noir_svm_vcpu_p vcpu=noir_alloc_nonpg_memory(sizeof(noir_svm_vcpu));
+	noir_svm_custom_vcpu_p vcpu=noir_alloc_nonpg_memory(sizeof(noir_svm_custom_vcpu));
 	if(vcpu)
 	{
 		vcpu->vmcb.virt=noir_alloc_contd_memory(page_size);
@@ -44,8 +42,16 @@ noir_status nvc_svm_create_vcpu(noir_svm_vcpu_p* virtual_cpu)
 			vcpu->vmcb.phys=noir_get_physical_address(vcpu->vmcb.virt);
 		else
 			goto alloc_failure;
-		vcpu->state=noir_alloc_nonpg_memory(sizeof(noir_vcpu_state));
-		if(vcpu->state==null)goto alloc_failure;
+		// Insert the vCPU into the VM.
+		if(virtual_machine->vcpu.head)
+			virtual_machine->vcpu.head=virtual_machine->vcpu.tail=vcpu;
+		else
+		{
+			virtual_machine->vcpu.tail->next=vcpu;
+			virtual_machine->vcpu.tail=vcpu;
+		}
+		// Mark the owner VM of vCPU.
+		vcpu->vm=virtual_machine;
 	}
 	*virtual_cpu=vcpu;
 	return noir_success;
@@ -53,7 +59,41 @@ alloc_failure:
 	return noir_insufficient_resources;
 }
 
-noir_status nvc_svm_create_vm(noir_virtual_machine_p* vm)
+void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 {
-	return noir_not_implemented;
+	if(vm)
+	{
+		for(noir_svm_custom_vcpu_p vcpu=vm->vcpu.head;vcpu;vcpu=vcpu->next)
+			nvc_svmc_release_vcpu(vcpu);
+		if(vm->nptm.ncr3.virt)
+			noir_free_contd_memory(vm->nptm.ncr3.virt);
+		for(noir_npt_pdpte_descriptor_p pdpte_d=vm->nptm.pdpte.head;pdpte_d;pdpte_d=pdpte_d->next)
+		{
+			noir_free_contd_memory(pdpte_d->virt);
+			noir_free_nonpg_memory(pdpte_d);
+		}
+		noir_free_nonpg_memory(vm);
+	}
+}
+
+// Creating a CVM does not create corresponding vCPUs and lower paging structures!
+noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine)
+{
+	noir_status st=noir_invalid_parameter;
+	if(virtual_machine)
+	{
+		noir_svm_custom_vm_p vm=noir_alloc_nonpg_memory(sizeof(noir_svm_custom_vm));
+		st=noir_insufficient_resources;
+		if(vm)
+		{
+			// Create a generic Page Map Level 4 (PML4) Table.
+			vm->nptm.ncr3.virt=noir_alloc_contd_memory(page_size);
+			if(vm->nptm.ncr3.virt)
+			{
+				vm->nptm.ncr3.phys=noir_get_physical_address(vm->nptm.ncr3.virt);
+				st=noir_success;
+			}
+		}
+	}
+	return st;
 }

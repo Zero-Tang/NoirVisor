@@ -149,8 +149,28 @@ typedef union _amd64_npt_pte
 	u64 value;
 }amd64_npt_pte,*amd64_npt_pte_p;
 
+// Notice that NPT PDE Descriptor is describing
+// 512 1GiB-Pages in a 512GiB Page.
+typedef struct _noir_npt_pdpte_descriptor
+{
+	struct _noir_npt_pdpte_descriptor* next;
+	amd64_npt_pdpte_p virt;
+	u64 phys;
+	u64 gpa_start;
+}noir_npt_pdpte_descriptor,*noir_npt_pdpte_descriptor_p;
+
+// Notice that NPT PDE Descriptor is describing
+// 512 2MiB-Pages in a 1GiB Page.
+typedef struct _noir_npt_pde_descriptor
+{
+	struct _noir_npt_pde_descriptor* next;
+	amd64_npt_pde_p virt;
+	u64 phys;
+	u64 gpa_start;
+}noir_npt_pde_descriptor,*noir_npt_pde_descriptor_p;
+
 // Notice that NPT PTE Descriptor is describing
-// 512 4KB-Pages in a 2MB Page.
+// 512 4KiB-Pages in a 2MiB Page.
 typedef struct _noir_npt_pte_descriptor
 {
 	struct _noir_npt_pte_descriptor* next;
@@ -204,6 +224,6 @@ bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm);
 bool nvc_npt_initialize_ci(noir_npt_manager_p nptm);
 noir_npt_manager_p nvc_npt_build_identity_map();
 bool nvc_npt_update_pde(noir_npt_manager_p nptm,u64 hpa,bool r,bool w,bool x);
-void nvc_npt_build_hook_mapping(noir_hypervisor_p hvm);
+void nvc_npt_build_hook_mapping(noir_svm_vcpu_p vcpu);
 void nvc_npt_cleanup(noir_npt_manager_p nptm);
 u32 nvc_npt_get_allocation_size();

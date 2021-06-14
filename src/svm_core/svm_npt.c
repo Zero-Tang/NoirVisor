@@ -49,6 +49,104 @@ void nvc_npt_cleanup(noir_npt_manager_p nptm)
 	}
 }
 
+u8 nvc_npt_convert_pat_type(u64 pat,u8 type)
+{
+	u8* pat_array=(u8*)&pat;
+	u8 final_type=0xff;
+	// Search if such type is defined in PAT
+	for(u8 i=0;i<8;i++)
+		if((pat_array[i]&0x7)==type)
+			final_type=i;
+	return final_type;
+}
+
+bool nvc_npt_update_pde_type(noir_npt_manager_p nptm,u64 gpa,u8 type,u64 pat)
+{
+	amd64_addr_translator gat;
+	u8 final_type=nvc_npt_convert_pat_type(pat,type);
+	// Fail the process if memory type is undefined in PAT.
+	if(final_type==0xff)return false;
+	// Fail the process if GPA is above 512GiB limit.
+	gat.value=gpa;
+	if(gat.pml4e_offset==0)
+	{
+		u32 index=(u32)((gat.pdpte_offset<<9)+gat.pde_offset);
+		nptm->pde.virt[index].pat=noir_bt(&final_type,2);
+		nptm->pde.virt[index].pcd=noir_bt(&final_type,1);
+		nptm->pde.virt[index].pwt=noir_bt(&final_type,0);
+		return true;
+	}
+	return false;
+}
+
+bool nvc_npt_update_pte_type(noir_npt_manager_p nptm,u64 gpa,u8 type,u64 pat)
+{
+	amd64_addr_translator gat;
+	noir_npt_pte_descriptor_p pte_p=nptm->pte.head;
+	u8 final_type=nvc_npt_convert_pat_type(pat,type);
+	// Fail the process if memory type is undefined in PAT.
+	if(final_type==0xff)return false;
+	// Fail the process if GPA is above 512GiB limit.
+	gat.value=gpa;
+	if(gat.pml4e_offset)return false;
+	while(pte_p)
+	{
+		if(gpa>=pte_p->gpa_start && gpa<pte_p->gpa_start+page_2mb_size)
+		{
+			// The 2MB page has already be described.
+			pte_p->virt[gat.pte_offset].pat=noir_bt(&final_type,2);
+			pte_p->virt[gat.pte_offset].pcd=noir_bt(&final_type,1);
+			pte_p->virt[gat.pte_offset].pwt=noir_bt(&final_type,0);
+			return true;
+		}
+		pte_p=pte_p->next;
+	}
+	// The 2MB page has not been described yet.
+	pte_p=noir_alloc_nonpg_memory(sizeof(noir_npt_pte_descriptor));
+	if(pte_p)
+	{
+		pte_p->virt=noir_alloc_nonpg_memory(page_size);
+		if(pte_p->virt)
+		{
+			u64 index=(gat.pdpte_offset<<9)+gat.pde_offset;
+			amd64_npt_pde_p pde_p=(amd64_npt_pde_p)&nptm->pde.virt[index];
+			// PTE Descriptor
+			pte_p->phys=noir_get_physical_address(pte_p->virt);
+			pte_p->gpa_start=index<<9;
+			for(u32 i=0;i<512;i++)
+			{
+				pte_p->virt[i].present=true;
+				pte_p->virt[i].write=true;
+				pte_p->virt[i].user=true;
+				pte_p->virt[i].no_execute=false;
+				pte_p->virt[i].page_base=pte_p->gpa_start+i;
+			}
+			pte_p->gpa_start<<=12;
+			// Page Attributes
+			pte_p->virt[gat.pte_offset].pat=noir_bt(&final_type,2);
+			pte_p->virt[gat.pte_offset].pcd=noir_bt(&final_type,1);
+			pte_p->virt[gat.pte_offset].pwt=noir_bt(&final_type,0);
+			// Update PDE
+			pde_p->reserved1=0;
+			pde_p->pte_base=pte_p->phys>>12;
+			// Update Linked-List
+			if(nptm->pte.head && nptm->pte.tail)
+			{
+				nptm->pte.tail->next=pte_p;
+				nptm->pte.tail=pte_p;
+			}
+			else
+			{
+				nptm->pte.head=pte_p;
+				nptm->pte.tail=pte_p;
+			}
+			return true;
+		}
+		noir_free_nonpg_memory(pte_p);
+	}
+	return false;
+}
+
 bool nvc_npt_update_pde(noir_npt_manager_p nptm,u64 hpa,bool r,bool w,bool x)
 {
 	amd64_addr_translator trans;
@@ -145,30 +243,30 @@ bool nvc_npt_update_pte(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bo
 */
 bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm)
 {
-	noir_npt_manager_p pri_nptm=(noir_npt_manager_p)hvm->relative_hvm->primary_nptm;
 	hvm->relative_hvm->blank_page.virt=noir_alloc_contd_memory(page_size);
 	if(hvm->relative_hvm->blank_page.virt)
 	{
 		bool result=true;
 		hvm->relative_hvm->blank_page.phys=noir_get_physical_address(hvm->relative_hvm->blank_page.virt);
-		// Protect MSRPM and IOPM
-		result&=nvc_npt_update_pte(pri_nptm,hvm->relative_hvm->msrpm.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
 		// Protect HSAVE and VMCB
 		for(u32 i=0;i<hvm->cpu_count;i++)
 		{
 			noir_svm_vcpu_p vcpu=&hvm->virtual_cpu[i];
+			noir_npt_manager_p pri_nptm=(noir_npt_manager_p)vcpu->primary_nptm;
+			// Protect MSRPM and IOPM
+			result&=nvc_npt_update_pte(pri_nptm,hvm->relative_hvm->msrpm.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
 			result&=nvc_npt_update_pte(pri_nptm,vcpu->hsave.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
 			result&=nvc_npt_update_pte(pri_nptm,vcpu->vmcb.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
+			// Protect Nested Paging Structure
+			result&=nvc_npt_update_pte(pri_nptm,pri_nptm->ncr3.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
+			result&=nvc_npt_update_pte(pri_nptm,pri_nptm->pdpt.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
+			// For PDE, memory usage would be too high to protect a 2MB page.
+			// Disable the writing permission is enough, though.
+			result&=nvc_npt_update_pde(pri_nptm,pri_nptm->pde.phys,true,false,true);
+			// Update PTEs...
+			for(noir_npt_pte_descriptor_p cur=pri_nptm->pte.head;cur;cur=cur->next)
+				result&=nvc_npt_update_pte(pri_nptm,cur->phys,hvm->relative_hvm->blank_page.phys,true,true,true);
 		}
-		// Protect Nested Paging Structure
-		result&=nvc_npt_update_pte(pri_nptm,pri_nptm->ncr3.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
-		result&=nvc_npt_update_pte(pri_nptm,pri_nptm->pdpt.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
-		// For PDE, memory usage would be too high to protect a 2MB page.
-		// Disable the writing permission is enough, though.
-		result&=nvc_npt_update_pde(pri_nptm,pri_nptm->pde.phys,true,false,true);
-		// Update PTEs...
-		for(noir_npt_pte_descriptor_p cur=pri_nptm->pte.head;cur;cur=cur->next)
-			result&=nvc_npt_update_pte(pri_nptm,cur->phys,hvm->relative_hvm->blank_page.phys,true,true,true);
 		return result;
 	}
 	return false;
@@ -187,13 +285,13 @@ bool nvc_npt_initialize_ci(noir_npt_manager_p nptm)
 }
 
 #if !defined(_hv_type1)
-void nvc_npt_build_hook_mapping(noir_hypervisor_p hvm)
+void nvc_npt_build_hook_mapping(noir_svm_vcpu_p vcpu)
 {
 	u32 i=0;
 	noir_npt_pte_descriptor_p pte_p=null;
 	noir_hook_page_p nhp=null;
-	noir_npt_manager_p pri_nptm=(noir_npt_manager_p)hvm->relative_hvm->primary_nptm;
-	noir_npt_manager_p sec_nptm=(noir_npt_manager_p)hvm->relative_hvm->secondary_nptm;
+	noir_npt_manager_p pri_nptm=(noir_npt_manager_p)vcpu->primary_nptm;
+	noir_npt_manager_p sec_nptm=(noir_npt_manager_p)vcpu->secondary_nptm;
 	// In this function, we build mappings necessary to make stealth inline hook.
 	for(nhp=noir_hook_pages;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
 		nvc_npt_update_pte(pri_nptm,nhp->orig.phys,nhp->orig.phys,true,true,false);

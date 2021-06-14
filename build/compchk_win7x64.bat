@@ -1,6 +1,6 @@
 @echo off
-set path=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.27.29110\bin\Hostx64\x64;T:\Program Files\Windows Kits\10\bin\10.0.19041.0\x64;%path%
-set incpath=T:\Program Files\Windows Kits\10\Include\10.0.19041.0
+set path=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.28.29910\bin\Hostx64\x64;T:\Program Files\Windows Kits\10\bin\10.0.20348.0\x64;%path%
+set incpath=T:\Program Files\Windows Kits\10\Include\10.0.20348.0
 set libpath=T:\Program Files\Windows Kits\10\Lib
 set binpath=..\bin\compchk_win7x64
 set objpath=..\bin\compchk_win7x64\Intermediate
@@ -38,9 +38,9 @@ cl ..\src\xpf_core\ci.c /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc"
 for %%1 in (..\src\xpf_core\windows\*.asm) do (ml64 /W3 /WX /D"_amd64" /Zf /Zd /Fo"%objpath%\%%~n1.obj" /c /nologo %%1)
 
 echo ============Start Linking============
-link "%objpath%\*.obj" "%objpath%\version.res" /LIBPATH:"%libpath%\win7\km\x64" /NODEFAULTLIB "ntoskrnl.lib" "..\src\disasm\bin\compchk_win7x64\zydis.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
+link "%objpath%\*.obj" "%objpath%\version.res" /LIBPATH:"%libpath%\win7\km\x64" /NODEFAULTLIB "ntoskrnl.lib" "hal.lib" "..\src\disasm\bin\compchk_win7x64\zydis.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
 
 echo ============Start Signing============
-signtool sign /v /f .\ztnxtest.pfx  %binpath%\NoirVisor.sys
+signtool sign /v /fd SHA1 /f .\ztnxtest.pfx  %binpath%\NoirVisor.sys
 
 if "%~1"=="/s" (echo Completed!) else (pause)

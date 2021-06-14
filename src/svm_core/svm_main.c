@@ -81,6 +81,8 @@ u8 nvc_svm_enable()
 		// Not sure about the reason, but
 		// Intel blocks A20M in vmxon.
 		noir_bts(&vmcr,amd64_vmcr_disa20m);
+		// Redirect INIT Signal in that AMD-V's
+		// INIT Interception doesn't make sense.
 		noir_wrmsr(amd64_vmcr,vmcr);
 		return noir_virt_trans;
 	}
@@ -101,6 +103,8 @@ u8 nvc_svm_disable()
 		// Not sure about the reason, but
 		// Intel unblocks A20M in vmxoff.
 		noir_btr(&vmcr,amd64_vmcr_disa20m);
+		// Stop redirecting INIT Signals.
+		noir_bts(&vmcr,amd64_vmcr_r_init);
 		noir_wrmsr(amd64_vmcr,vmcr);
 		return noir_virt_off;
 	}
@@ -118,6 +122,36 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,1));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,0));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,1));
+	// Intercept Memory-Typing MSRs.
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base0,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask0,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base1,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask1,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base2,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask2,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base3,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask3,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base4,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask4,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base5,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask5,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base6,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask6,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base7,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask7,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix64k_00000,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix16k_80000,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix16k_a0000,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_c0000,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_c8000,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_d0000,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_d8000,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_e0000,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_e8000,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_f0000,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_f8000,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_pat,1));
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_def_type,1));
 	if(hvm_p->options.stealth_msr_hook)
 	{
 	// Setup custom MSR-Interception if enabled.
@@ -177,7 +211,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	if(vcpu->enabled_feature & noir_svm_nested_paging)
 	{
 		// Enable NPT
-		noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->relative_hvm->primary_nptm;
+		noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->primary_nptm;
 		nvc_svm_npt_control npt_ctrl;
 		npt_ctrl.value=0;
 		npt_ctrl.enable_npt=1;
@@ -307,6 +341,7 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 		nvc_svm_setup_virtual_msr(vcpu);
 		vcpu->asid=1;		// Subverted host always has ASID=0.
 		vcpu->status=nvc_svm_subvert_processor_a(stack);
+		nv_dprintf("Processor %d Subversion Status: %d\n",vcpu->proc_id,vcpu->status);
 	}
 }
 
@@ -332,6 +367,12 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 				noir_free_contd_memory(vcpu->hvmcb.virt);
 			if(vcpu->hv_stack)
 				noir_free_nonpg_memory(vcpu->hv_stack);
+			if(vcpu->primary_nptm)
+				nvc_npt_cleanup(vcpu->primary_nptm);
+#if !defined(_hv_type1)
+			if(vcpu->secondary_nptm)
+				nvc_npt_cleanup(vcpu->secondary_nptm);
+#endif
 		}
 		noir_free_nonpg_memory(hvm_p->virtual_cpu);
 	}
@@ -341,19 +382,13 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 		noir_free_contd_memory(hvm_p->relative_hvm->iopm.virt);
 	if(hvm_p->relative_hvm->blank_page.virt)
 		noir_free_contd_memory(hvm_p->relative_hvm->blank_page.virt);
-	if(hvm_p->relative_hvm->primary_nptm)
-		nvc_npt_cleanup(hvm_p->relative_hvm->primary_nptm);
-#if !defined(_hv_type1)
-	if(hvm_p->relative_hvm->secondary_nptm)
-		nvc_npt_cleanup(hvm_p->relative_hvm->secondary_nptm);
-#endif
-	nvc_svm_teardown_exit_handler();
+	// nvc_svm_teardown_exit_handler();
 }
 
 noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 {
 	hvm_p->cpu_count=noir_get_processor_count();
-	if(nvc_svm_build_exit_handler()==false)goto alloc_failure;
+	// if(nvc_svm_build_exit_handler()==false)goto alloc_failure;
 	hvm_p->virtual_cpu=noir_alloc_nonpg_memory(hvm_p->cpu_count*sizeof(noir_svm_vcpu));
 	// Implementation of Generic Call might differ.
 	// In subversion routine, it might not be allowed to allocate memory.
@@ -381,6 +416,16 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			vcpu->hv_stack=noir_alloc_nonpg_memory(nvc_stack_size);
 			if(vcpu->hv_stack==null)return noir_insufficient_resources;
 			vcpu->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
+			vcpu->primary_nptm=nvc_npt_build_identity_map();
+			if(vcpu->primary_nptm==null)goto alloc_failure;
+#if !defined(_hv_type1)
+			// Only Type-II Hypervisor would hook into guest.
+			vcpu->secondary_nptm=nvc_npt_build_identity_map();
+			if(vcpu->secondary_nptm==null)goto alloc_failure;
+			if(hvm_p->options.stealth_inline_hook)
+				nvc_npt_build_hook_mapping(vcpu);		// This feature does not have a good performance.
+#endif
+			if(nvc_npt_initialize_ci(vcpu->primary_nptm)==false)goto alloc_failure;
 			if(hvm_p->options.stealth_msr_hook)vcpu->enabled_feature|=noir_svm_syscall_hook;
 			if(hvm_p->options.stealth_inline_hook)vcpu->enabled_feature|=noir_svm_npt_with_hooks;
 		}
@@ -398,19 +443,10 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 		hvm_p->relative_hvm->iopm.phys=noir_get_physical_address(hvm_p->relative_hvm->iopm.virt);
 	else
 		goto alloc_failure;
-	hvm_p->relative_hvm->primary_nptm=(void*)nvc_npt_build_identity_map();
-	if(hvm_p->relative_hvm->primary_nptm==null)goto alloc_failure;
-#if !defined(_hv_type1)
-	// Only Type-II Hypervisor would hook into guest.
-	hvm_p->relative_hvm->secondary_nptm=(void*)nvc_npt_build_identity_map();
-	if(hvm_p->relative_hvm->secondary_nptm==null)goto alloc_failure;
-	if(hvm_p->options.stealth_inline_hook)
-		nvc_npt_build_hook_mapping(hvm_p);		// This feature does not have a good performance.
-#endif
 	nvc_svm_setup_msr_hook(hvm_p);
-	if(hvm_p->virtual_cpu==null)goto alloc_failure;
-	if(nvc_npt_initialize_ci(hvm_p->relative_hvm->primary_nptm)==false)goto alloc_failure;
 	if(nvc_npt_protect_critical_hypervisor(hvm_p)==false)goto alloc_failure;
+	if(hvm_p->virtual_cpu==null)goto alloc_failure;
+	nvc_svm_set_mshv_handler(hvm_p->options.cpuid_hv_presence);
 	nv_dprintf("All allocations are done, start subversion!\n");
 	noir_generic_call(nvc_svm_subvert_processor_thunk,hvm_p->virtual_cpu);
 	nv_dprintf("Subversion completed!\n");

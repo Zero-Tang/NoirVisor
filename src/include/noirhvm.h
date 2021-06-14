@@ -14,15 +14,7 @@
 
 #include "nvdef.h"
 
-typedef struct _noir_vcpu_state
-{
-	noir_fx_state fxs;
-	noir_ymm_state ymm;
-	noir_gpr_state gpr;
-	noir_thread vcpu_thread;
-	u32 proc_id;
-}noir_vcpu_state,*noir_vcpu_state_p;
-
+#include "cvm_hvm.h"
 #if defined(_vt_core)
 #include "vt_hvm.h"
 #elif defined(_svm_core)
@@ -54,27 +46,9 @@ typedef struct _noir_vcpu_state
 #define noir_virt_trans			2
 #define noir_virt_nesting		3
 
-// Stack Size = 64KB
-#define nvc_stack_size			0x10000
-#define nvc_stack_pages			0x10
-
-typedef struct _noir_virtual_machine
-{
-	struct _noir_virtual_machine* next;
-#if defined(_vt_core)
-	noir_vt_vcpu_p virtual_cpu;
-	noir_vt_hvm_p relative_hvm;
-#elif defined(_svm_core)
-	noir_svm_vcpu_p virtual_cpu;
-	noir_svm_hvm_p relative_hvm;
-#else
-	void* virtual_cpu;
-	void* relative_hvm;
-#endif
-	u32 vcpu_count;
-	u32 asid;
-	u64 reserved[0x10];	// Reserve 128 bytes for Relative HVM.
-}noir_virtual_machine,*noir_virtual_machine_p;
+// Stack Size = 16KB
+#define nvc_stack_size			0x4000
+#define nvc_stack_pages			4
 
 typedef struct _noir_hypervisor
 {
@@ -90,8 +64,8 @@ typedef struct _noir_hypervisor
 #endif
 	struct
 	{
-		noir_virtual_machine_p head;
-		noir_virtual_machine_p tail;
+		noir_cvm_virtual_machine_p head;
+		noir_cvm_virtual_machine_p tail;
 	}vm;
 	struct
 	{
