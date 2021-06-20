@@ -108,12 +108,14 @@ extern u32 noir_hook_pages_count;
 bool nvc_is_vt_supported();
 bool nvc_is_ept_supported();
 bool nvc_is_vmcs_shadowing_supported();
+bool nvc_is_vt_enabled();
 bool nvc_vt_subvert_system(noir_hypervisor_p hvm);
 void nvc_vt_restore_system(noir_hypervisor_p hvm);
 // Functions from SVM Core.
 bool nvc_is_svm_supported();
 bool nvc_is_npt_supported();
 bool nvc_is_acnested_svm_supported();
+bool nvc_is_svm_disabled();
 bool nvc_svm_subvert_system(noir_hypervisor_p hvm);
 void nvc_svm_restore_system(noir_hypervisor_p hvm);
 // Central Hypervisor Structure.

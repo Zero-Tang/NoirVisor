@@ -75,21 +75,13 @@ nvc_vt_exit_handler_a proc
 
 	; pushax
 	pushaq
-	; Counter Time-Profiling
-	rdtsc
-	shl rdx,32
-	or rax,rdx
-	mov rdx,rax	; Current TSC to the second parameter.
 	; Load the Guest GPR State to the first parameter.
 	mov rcx,rsp
-	; Load vcpu to third parameter.
-	mov r8,qword ptr [rsp+80h]
+	; Load vcpu to second parameter.
+	mov rdx,qword ptr [rsp+80h]
 	sub rsp,20h
 	call nvc_vt_exit_handler
 	add rsp,20h
-	; The rest of exit handler is not counted by time-
-	; profiler counter. It should be speculated and
-	; fine-tuned in constant "noir_vt_tsc_asm_offset"
 	popaq
 	; popax
 	vmresume

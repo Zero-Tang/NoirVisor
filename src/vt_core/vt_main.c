@@ -90,6 +90,16 @@ bool nvc_is_ept_supported()
 	return false;
 }
 
+bool nvc_is_vt_enabled()
+{
+	ia32_feature_control_msr feat_ctrl;
+	feat_ctrl.value=noir_rdmsr(ia32_feature_control);
+	if(feat_ctrl.lock)return feat_ctrl.vmx_enabled_outside_smx;
+	// Albeit we may set to enable VMX here if this MSR is not locked,
+	// It seems to be the firmware's job to do so.
+	return false;
+}
+
 void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 {
 	if(hvm)
@@ -121,7 +131,7 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 		if(rhvm->msr_auto_list.virt)
 			noir_free_contd_memory(rhvm->msr_auto_list.virt);
 	}
-	nvc_vt_teardown_exit_handlers();
+	// nvc_vt_teardown_exit_handlers();
 }
 
 void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
@@ -317,6 +327,7 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	noir_vt_vmwrite(guest_cr4,state_p->cr4);
 	noir_vt_vmwrite(cr0_read_shadow,state_p->cr0);
 	noir_vt_vmwrite64(cr4_read_shadow,state_p->cr4 & ~ia32_cr4_vmxe_bit);
+	noir_vt_vmwrite(guest_msr_ia32_efer,state_p->efer);
 	// Guest State Area - Debug Controls
 	noir_vt_vmwrite(guest_dr7,state_p->dr7);
 	noir_vt_vmwrite64(guest_msr_ia32_debug_ctrl,state_p->debug_ctrl);
@@ -353,6 +364,7 @@ void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_stat
 	noir_vt_vmwrite(host_cr0,state_p->cr0);
 	noir_vt_vmwrite(host_cr3,system_cr3);	// We should use the system page table.
 	noir_vt_vmwrite(host_cr4,state_p->cr4);
+	noir_vt_vmwrite(host_msr_ia32_efer,state_p->efer);
 	// Host State Area - Stack Pointer, Instruction Pointer
 	noir_vt_vmwrite(host_rsp,(ulong_ptr)stack);
 	noir_vt_vmwrite(host_rip,(ulong_ptr)nvc_vt_exit_handler_a);
@@ -433,6 +445,8 @@ void static nvc_vt_setup_vmexit_controls(bool true_msr)
 	// This field should be set if NoirVisor is in 64-Bit mode.
 	exit_ctrl.host_address_space_size=1;
 #endif
+	// EFER is to be saved and loaded on exit.
+	exit_ctrl.load_ia32_efer=exit_ctrl.save_ia32_efer=1;
 	// Filter unsupported fields.
 	exit_ctrl.value|=exit_ctrl_msr.allowed0_settings.value;
 	exit_ctrl.value&=exit_ctrl_msr.allowed1_settings.value;
@@ -455,6 +469,7 @@ void static nvc_vt_setup_vmentry_controls(bool true_msr)
 	// This field should be set if NoirVisor is in 64-Bit mode.
 	entry_ctrl.ia32e_mode_guest=1;
 #endif
+	entry_ctrl.load_ia32_efer=1;		// EFER is to be loaded on entry.
 	// Filter unsupported fields.
 	entry_ctrl.value|=entry_ctrl_msr.allowed0_settings.value;
 	entry_ctrl.value&=entry_ctrl_msr.allowed1_settings.value;
@@ -688,7 +703,8 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 	else
 		goto alloc_failure;
 
-	if(nvc_vt_build_exit_handlers()==noir_insufficient_resources)goto alloc_failure;
+	// if(nvc_vt_build_exit_handlers()==noir_insufficient_resources)goto alloc_failure;
+	nvc_vt_set_mshv_handler(hvm_p->options.cpuid_hv_presence);
 	hvm->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();
 	if(hvm->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;

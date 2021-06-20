@@ -383,6 +383,13 @@ noir_xsetbv proc
 
 noir_xsetbv endp
 
+noir_writecr2 proc
+
+	mov cr2,rcx
+	ret
+
+noir_writecr2 endp
+
 else
 
 assume fs:nothing

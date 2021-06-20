@@ -141,6 +141,13 @@
 #define amd64_alignment_check			17
 #define amd64_machine_check				18
 #define amd64_simd_exception			19
+#define amd64_control_protection		21
+#define amd64_hypervisor_injection		28
+#define amd64_vmm_communication			29
+#define amd64_security_exception		30
+
+// #SX Exception Error Codes
+#define amd64_sx_init_redirection		1
 
 // This is used for defining AMD64 architectural memory types.
 #define amd64_memory_type_uc			0x00	// Uncacheable

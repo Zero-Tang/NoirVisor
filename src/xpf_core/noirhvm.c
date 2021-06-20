@@ -57,6 +57,20 @@ u8 nvc_confirm_cpu_manufacturer(char* vendor_string)
 	return unknown_processor;
 }
 
+bool noir_is_virtualization_enabled()
+{
+	char vstr[13];
+	u8 manuf=0;
+	noir_get_vendor_string(vstr);
+	manuf=nvc_confirm_cpu_manufacturer(vstr);
+	if(manuf==intel_processor || manuf==via_processor || manuf==zhaoxin_processor)
+		return nvc_is_vt_enabled();
+	else if(manuf==amd_processor || manuf==hygon_processor)
+		return !nvc_is_svm_disabled();
+	// Unknown vendor.
+	return false;
+}
+
 u32 noir_get_virtualization_supportability()
 {
 	char vstr[13];

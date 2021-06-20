@@ -41,6 +41,7 @@
 
 // Write Control Register instructions
 #define noir_writecr0	__writecr0
+void noir_writecr2(ulong_ptr value);
 #define noir_writecr3	__writecr3
 #define noir_writecr4	__writecr4
 
@@ -53,20 +54,20 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 #endif
 
 // Read Debug Register instructions
-#define noir_readdr0	__readdr(0)
-#define noir_readdr1	__readdr(1)
-#define noir_readdr2	__readdr(2)
-#define noir_readdr3	__readdr(3)
-#define noir_readdr6	__readdr(6)
-#define noir_readdr7	__readdr(7)
+#define noir_readdr0()		__readdr(0)
+#define noir_readdr1()		__readdr(1)
+#define noir_readdr2()		__readdr(2)
+#define noir_readdr3()		__readdr(3)
+#define noir_readdr6()		__readdr(6)
+#define noir_readdr7()		__readdr(7)
 
 // Write Debug Register instructions
-#define noir_writedr0	__writedr(0)
-#define noir_writedr1	__writedr(1)
-#define noir_writedr2	__writedr(2)
-#define noir_writedr3	__writedr(3)
-#define noir_writedr6	__writedr(6)
-#define noir_writedr7	__writedr(7)
+#define noir_writedr0(x)	__writedr(0,x)
+#define noir_writedr1(x)	__writedr(1,x)
+#define noir_writedr2(x)	__writedr(2,x)
+#define noir_writedr3(x)	__writedr(3,x)
+#define noir_writedr6(x)	__writedr(6,x)
+#define noir_writedr7(x)	__writedr(7,x)
 
 // Read/Write Model Specific Registers
 #define noir_rdmsr		__readmsr

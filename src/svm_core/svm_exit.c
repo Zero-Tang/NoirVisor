@@ -72,6 +72,114 @@ void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir
 	noir_int3();
 }
 
+// Expected Intercept Code: 0x5E
+void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	u32 error_code=noir_svm_vmread32(vmcb,exit_info1);
+	switch(error_code)
+	{
+		case amd64_sx_init_redirection:
+		{
+			// The default treatment of INIT interception is absurd in AMD-V
+			// in that INIT signal would not disappear on interception!
+			// We thereby have to redirect INIT signals into #SX exceptions.
+			// Emulate what a real INIT Signal would do.
+			// For details of emulation, see Table 14-1 in Vol.2 of AMD64 APM.
+			u64 cr0=noir_svm_vmread64(vmcb,guest_cr0);
+			cr0&=0x60000000;		// Bits CD & NW of CR0 are unchanged during INIT.
+			cr0|=0x00000010;		// Bit ET of CR0 is always set.
+			noir_svm_vmwrite64(vmcb,guest_cr0,cr0);
+			// CR2, CR3 and CR4 are cleared to zero.
+			noir_svm_vmwrite64(vmcb,guest_cr2,0);
+			noir_svm_vmwrite64(vmcb,guest_cr3,0);
+			noir_svm_vmwrite64(vmcb,guest_cr4,0);
+			// Leave SVME set but others reset in EFER.
+			noir_svm_vmwrite64(vmcb,guest_efer,amd64_efer_svme_bit);
+			// Debug Registers...
+			noir_writedr0(0);
+			noir_writedr1(0);
+			noir_writedr2(0);
+			noir_writedr3(0);
+			noir_svm_vmwrite64(vmcb,guest_dr6,0xFFFF0FF0);
+			noir_svm_vmwrite64(vmcb,guest_dr7,0x400);
+			// Segment Register - CS
+			noir_svm_vmwrite16(vmcb,guest_cs_selector,0xF000);
+			noir_svm_vmwrite16(vmcb,guest_cs_attrib,0x9B);
+			noir_svm_vmwrite32(vmcb,guest_cs_limit,0xFFFF);
+			noir_svm_vmwrite64(vmcb,guest_cs_base,0xFFFF0000);
+			// Segment Register - DS
+			noir_svm_vmwrite16(vmcb,guest_ds_selector,0);
+			noir_svm_vmwrite16(vmcb,guest_ds_attrib,0x93);
+			noir_svm_vmwrite32(vmcb,guest_ds_limit,0xFFFF);
+			noir_svm_vmwrite64(vmcb,guest_ds_base,0);
+			// Segment Register - ES
+			noir_svm_vmwrite16(vmcb,guest_es_selector,0);
+			noir_svm_vmwrite16(vmcb,guest_es_attrib,0x93);
+			noir_svm_vmwrite32(vmcb,guest_es_limit,0xFFFF);
+			noir_svm_vmwrite64(vmcb,guest_es_base,0);
+			// Segment Register - FS
+			noir_svm_vmwrite16(vmcb,guest_fs_selector,0);
+			noir_svm_vmwrite16(vmcb,guest_fs_attrib,0x93);
+			noir_svm_vmwrite32(vmcb,guest_fs_limit,0xFFFF);
+			noir_svm_vmwrite64(vmcb,guest_fs_base,0);
+			// Segment Register - GS
+			noir_svm_vmwrite16(vmcb,guest_gs_selector,0);
+			noir_svm_vmwrite16(vmcb,guest_gs_attrib,0x93);
+			noir_svm_vmwrite32(vmcb,guest_gs_limit,0xFFFF);
+			noir_svm_vmwrite64(vmcb,guest_gs_base,0);
+			// Segment Register - SS
+			noir_svm_vmwrite16(vmcb,guest_ss_selector,0);
+			noir_svm_vmwrite16(vmcb,guest_ss_attrib,0x93);
+			noir_svm_vmwrite32(vmcb,guest_ss_limit,0xFFFF);
+			noir_svm_vmwrite64(vmcb,guest_ss_base,0);
+			// Segment Register - GDTR
+			noir_svm_vmwrite32(vmcb,guest_gdtr_limit,0xFFFF);
+			noir_svm_vmwrite64(vmcb,guest_gdtr_base,0);
+			// Segment Register - IDTR
+			noir_svm_vmwrite32(vmcb,guest_idtr_limit,0xFFFF);
+			noir_svm_vmwrite64(vmcb,guest_idtr_base,0);
+			// Segment Register - LDTR
+			noir_svm_vmwrite16(vmcb,guest_ldtr_selector,0);
+			noir_svm_vmwrite16(vmcb,guest_ldtr_attrib,0x82);
+			noir_svm_vmwrite32(vmcb,guest_ldtr_limit,0xFFFF);
+			noir_svm_vmwrite64(vmcb,guest_ldtr_base,0);
+			// Segment Register - TR
+			noir_svm_vmwrite16(vmcb,guest_tr_selector,0);
+			noir_svm_vmwrite16(vmcb,guest_tr_attrib,0x8b);
+			noir_svm_vmwrite32(vmcb,guest_tr_limit,0xFFFF);
+			noir_svm_vmwrite64(vmcb,guest_tr_base,0);
+			// IDTR & GDTR
+			noir_svm_vmwrite16(vmcb,guest_gdtr_limit,0xFFFF);
+			noir_svm_vmwrite16(vmcb,guest_idtr_limit,0xFFFF);
+			noir_svm_vmwrite64(vmcb,guest_gdtr_base,0);
+			noir_svm_vmwrite64(vmcb,guest_idtr_base,0);
+			// General Purpose Registers...
+			noir_svm_vmwrite64(vmcb,guest_rsp,0);
+			noir_svm_vmwrite64(vmcb,guest_rip,0xfff0);
+			noir_svm_vmwrite64(vmcb,guest_rflags,2);
+			noir_stosp(gpr_state,0,sizeof(void*)*2);	// Clear the GPRs.
+			gpr_state->rdx=vcpu->cpuid_fms;				// Use info from cached CPUID.
+			// FIXME: Set the vCPU to "Wait-for-SPI" State. AMD-V lacks this feature.
+			// Flush all TLBs in that paging in the guest is switched off during INIT signal.
+			noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_guest);
+			// Mark certain cached items as dirty in order to invalidate them.
+			noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_control_reg);
+			noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_debug_reg);
+			noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_idt_gdt);
+			noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_segment_reg);
+			noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_cr2);
+			break;
+		}
+		default:
+		{
+			// Unrecognized #SX Exception, leave it be for the Guest.
+			noir_svm_inject_event(vmcb,amd64_security_exception,amd64_fault_trap_exception,true,true,error_code);
+			break;
+		}
+	}
+}
+
 // Hypervisor-Present CPUID Handler
 void static fastcall nvc_svm_cpuid_hvp_handler(u32 leaf,u32 subleaf,noir_cpuid_general_info_p info)
 {
@@ -586,7 +694,8 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 		u16 code_num=(u16)(intercept_code&0x3FF);
 		// rax is saved to VMCB, not GPR state.
 		gpr_state->rax=noir_svm_vmread(vmcb_va,guest_rax);
-		// Set VMCB Cache State as all to be cached.
+		// Set VMCB Cache State as all to be cached, except the Intercept Caching
+		// in that TSC Offseting field is one part of this cache.
 		if(vcpu->enabled_feature & noir_svm_vmcb_caching)
 			noir_svm_vmwrite32(vmcb_va,vmcb_clean_bits,0xffffffff);
 		// Set TLB Control to Do-not-Flush

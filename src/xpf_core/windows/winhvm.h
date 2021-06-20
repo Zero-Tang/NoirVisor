@@ -57,6 +57,7 @@ ULONG noir_visor_version();
 void noir_get_vendor_string(char* vendor_string);
 void noir_get_processor_name(char* processor_name);
 ULONG noir_get_virtualization_supportability();
+BOOLEAN noir_is_virtualization_enabled();
 BOOLEAN noir_initialize_ci(PVOID section,ULONG size,BOOLEAN soft_ci,BOOLEAN hard_ci);
 void noir_finalize_ci();
 

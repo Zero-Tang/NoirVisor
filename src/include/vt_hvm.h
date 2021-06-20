@@ -71,7 +71,7 @@ typedef struct _noir_vt_vcpu
 	void* ept_manager;
 	noir_vt_virtual_msr virtual_msr;
 	noir_vt_nested_vcpu nested_vcpu;
-	u64 tsc_offset;
+	u32 family_ext;		// Cached info of Extended Family.
 	u8 status;
 	u8 enabled_feature;
 }noir_vt_vcpu,*noir_vt_vcpu_p;
@@ -87,6 +87,7 @@ noir_status nvc_vt_build_exit_handlers();
 void nvc_vt_teardown_exit_handlers();
 void nvc_vt_resume_without_entry(noir_gpr_state_p state);
 void nvc_vt_exit_handler_a(void);
+void nvc_vt_set_mshv_handler(bool option);
 void noir_vt_vmsuccess();
 void noir_vt_vmfail_invalid();
 void noir_vt_vmfail_valid();

@@ -57,6 +57,7 @@ typedef enum _svm_vmcb_offset
 	intercept_read_dr=0x4,
 	intercept_write_dr=0x6,
 	intercept_access_dr=0x4,
+	intercept_exceptions=0x8,
 	intercept_instruction1=0xC,
 	intercept_instruction2=0x10,
 	intercept_write_cr_post=0x12,

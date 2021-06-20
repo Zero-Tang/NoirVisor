@@ -31,6 +31,7 @@
 #define IOCTL_CpuPn			CTL_CODE_GEN(0x812)
 #define IOCTL_OsVer			CTL_CODE_GEN(0x813)
 #define IOCTL_VirtCap		CTL_CODE_GEN(0x814)
+#define IOCTL_VirtEn		CTL_CODE_GEN(0x815)
 
 void NoirInitializeDisassembler();
 NTSTATUS NoirReportWindowsVersion();
@@ -44,6 +45,7 @@ ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();
 ULONG NoirVisorVersion();
 ULONG NoirQueryVirtualizationSupportability();
+BOOLEAN NoirIsVirtualizationEnabled();
 void NoirLocatePsLoadedModule(IN PDRIVER_OBJECT DriverObject);
 BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase);
 void NoirFinalizeCodeIntegrity();

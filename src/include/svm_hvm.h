@@ -79,6 +79,7 @@ typedef struct _noir_svm_vcpu
 	noir_svm_virtual_msr virtual_msr;
 	noir_svm_nested_vcpu nested_hvm;
 	noir_cvm_virtual_cpu cvm_state;
+	u32 cpuid_fms;
 	u8 status;
 	u8 enabled_feature;
 	u8 vcpu_property;

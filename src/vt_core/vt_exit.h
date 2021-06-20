@@ -19,7 +19,7 @@
 
 #include <nvdef.h>
 
-#define vmx_maximum_exit_reason		69
+#define vmx_maximum_exit_reason		70
 
 typedef enum _vmx_vmexit_reason
 {
@@ -87,7 +87,8 @@ typedef enum _vmx_vmexit_reason
 	intercept_xrstors=64,
 	spp_related_event=66,
 	intercept_umwait=67,
-	intercept_tpause=68
+	intercept_tpause=68,
+	intercept_loadiwkey=69
 }vmx_vmexit_reason,*vmx_vmexit_reason_p;
 
 #define ia32_external_interrupt			0
@@ -316,10 +317,107 @@ const char* vmx_exit_msg[vmx_maximum_exit_reason]=
 	"Unknown Exit, Reason=65",								// Reason=65
 	"Sub-Page Miss or Misconfiguration is intercepted!",	// Reason=66
 	"UMWAIT instruction is intercepted!",					// Reason=67
-	"TPAUSE instruction is intercepted!"					// Reason=68
+	"TPAUSE instruction is intercepted!",					// Reason=68
+	"LOADIWKEY instruction is intercepted!",				// Reason=69
 };
 
-noir_vt_exit_handler_routine* vt_exit_handlers=null;
+void static fastcall nvc_vt_default_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_trifault_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_init_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_sipi_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_task_switch_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_getsec_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_invd_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_vmclear_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_vmptrld_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_vmptrst_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_vmxoff_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_vmxon_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_vmx_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_invalid_msr_loading(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_ept_misconfig_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+
+noir_vt_exit_handler_routine vt_exit_handlers[vmx_maximum_exit_reason]=
+{
+	nvc_vt_default_handler,			// Exception or NMI
+	nvc_vt_default_handler,			// External Interrupt
+	nvc_vt_trifault_handler,		// Triple Fault
+	nvc_vt_init_handler,			// INIT Signal
+	nvc_vt_sipi_handler,			// Start-up IPI
+	nvc_vt_default_handler,			// I/O SMI
+	nvc_vt_default_handler,			// Other SMI
+	nvc_vt_default_handler,			// Interrupt Window
+	nvc_vt_default_handler,			// NMI Window
+	nvc_vt_task_switch_handler,		// Task Switch
+	nvc_vt_cpuid_handler,			// CPUID Instruction
+	nvc_vt_getsec_handler,			// GETSEC Instruction
+	nvc_vt_default_handler,			// HLT Instruction
+	nvc_vt_invd_handler,			// INVD Instruction
+	nvc_vt_default_handler,			// INVLPG Instruction
+	nvc_vt_default_handler,			// RDPMC Instruction
+	nvc_vt_default_handler,			// RDTSC Instruction
+	nvc_vt_default_handler,			// RSM Instruction
+	nvc_vt_vmcall_handler,			// VMCALL Instruction
+	nvc_vt_vmclear_handler,			// VMCLEAR Instruction
+	nvc_vt_default_handler,			// VMLAUNCH Instruction
+	nvc_vt_vmptrld_handler,			// VMPTRLD Instruction
+	nvc_vt_vmptrst_handler,			// VMPTRST Instruction
+	nvc_vt_default_handler,			// VMREAD Instruction
+	nvc_vt_default_handler,			// VMRESUME Instruction
+	nvc_vt_default_handler,			// VMWRITE Instruction
+	nvc_vt_vmxoff_handler,			// VMXOFF Instruction
+	nvc_vt_vmxon_handler,			// VMXON Instruction
+	nvc_vt_cr_access_handler,		// Control-Register Access
+	nvc_vt_default_handler,			// Debug-Register Access
+	nvc_vt_default_handler,			// I/O Instruction
+	nvc_vt_rdmsr_handler,			// RDMSR Instruction
+	nvc_vt_wrmsr_handler,			// WRMSR Instruction
+	nvc_vt_invalid_guest_state,		// Invalid Guest State
+	nvc_vt_invalid_msr_loading,		// MSR-Loading Failure
+	nvc_vt_default_handler,			// Reserved (35)
+	nvc_vt_default_handler,			// MWAIT Instruction
+	nvc_vt_default_handler,			// Monitor Trap Flag
+	nvc_vt_default_handler,			// Reserved (38)
+	nvc_vt_default_handler,			// MONITOR Instruction
+	nvc_vt_default_handler,			// PAUSE Instruction
+	nvc_vt_default_handler,			// Machine-Check during VM-Entry
+	nvc_vt_default_handler,			// Reserved (42)
+	nvc_vt_default_handler,			// TPR Below Threshold
+	nvc_vt_default_handler,			// APIC Access
+	nvc_vt_default_handler,			// Virtualized EOI
+	nvc_vt_default_handler,			// GDTR/IDTR Access
+	nvc_vt_default_handler,			// LDTR/TR Access
+	nvc_vt_ept_violation_handler,	// EPT Violation
+	nvc_vt_ept_misconfig_handler,	// EPT Misconfiguration
+	nvc_vt_default_handler,			// INVEPT Instruction
+	nvc_vt_default_handler,			// RDTSCP Instruction
+	nvc_vt_default_handler,			// VMX-Preemption Timer Expiry
+	nvc_vt_default_handler,			// INVVPID Instruction
+	nvc_vt_default_handler,			// WBINVD/WBNOINVD Instruction
+	nvc_vt_xsetbv_handler,			// XSETBV Instruction
+	nvc_vt_default_handler,			// APIC Write
+	nvc_vt_default_handler,			// RDRAND Instruction
+	nvc_vt_default_handler,			// INVPCID Instruction
+	nvc_vt_default_handler,			// VMFUNC Instruction
+	nvc_vt_default_handler,			// ENCLS Instruction
+	nvc_vt_default_handler,			// RDSEED Instruction
+	nvc_vt_default_handler,			// Page-Modification Log Full
+	nvc_vt_default_handler,			// XSAVES Instruction
+	nvc_vt_default_handler,			// XRSTORS Instruction
+	nvc_vt_default_handler,			// Reserved (65)
+	nvc_vt_default_handler,			// Sub-Page Permission Related Event
+	nvc_vt_default_handler,			// UMWAIT Instruction
+	nvc_vt_default_handler,			// TPAUSE Instruction
+	nvc_vt_default_handler			// LOADIWKEY Instruction
+};
 noir_vt_cpuid_exit_handler nvcp_vt_cpuid_handler=null;
 #endif
 
@@ -343,8 +441,6 @@ void inline noir_vt_advance_rip()
 		noir_vt_vmread(guest_interruptibility_state,&interruptibility.value);
 		interruptibility.blocking_by_sti=false;
 		interruptibility.blocking_by_mov_ss=false;
-		interruptibility.blocking_by_smi=false;
-		interruptibility.blocking_by_nmi=false;
 		noir_vt_vmwrite(guest_interruptibility_state,interruptibility.value);
 	}
 	// Regular stuff...

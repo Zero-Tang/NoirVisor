@@ -15,9 +15,6 @@ ifdef _ia32
 .model flat
 endif
 
-tsc_offset equ 50h
-tsc_diff equ 8		; Fine-Tune this value for Time-Profiler Countering.
-
 .code
 
 include noirhv.inc
@@ -58,14 +55,6 @@ nvc_svm_exit_handler_a proc
 	; At this moment, VM-Exit occured.
 	; Save all GPRs, and pass to Exit Handler
 	pushaq
-ifdef _tsc_ctp
-	; Counter Time-Profiling - First Part.
-	rdtsc
-	shl rdx,32
-	mov r15d,eax
-	or r15,rdx
-	neg r15			; Negation comes handy with "lea" instruction later.
-endif
 	; Save processor's hidden state for Guest.
 	mov rax,qword ptr[rsp+80h]
 	vmsave rax
@@ -79,21 +68,6 @@ endif
 	; Call Exit Handler
 	call nvc_svm_exit_handler
 	add rsp,20h
-ifdef _tsc_ctp
-	; Counter Time-Profiling - Last Part
-	mov rbx,qword ptr[rsp+90h]			; Load vCPU
-	mov rbx,qword ptr[rbx]				; Load Guest VMCB VA
-	; Load TSC value to r9.
-	rdtscp		; Unlike rdtsc, rdtscp would wait for previous instructions to retire.
-	; The rest of exit handler is not timed by time-profiler counter.
-	; It should be speculated and fine-tuned in the constant "tsc_diff".
-	shl rdx,32
-	mov r9d,eax
-	or r9,rdx
-	; Calculate the difference then accumulate it to VMCB.
-	lea rcx,[r9+r15+tsc_diff]			; r9=r9+r15+tsc_diff
-	sub qword ptr[rbx+tsc_offset],rcx	; TSC Offset Accumulation
-endif
 	; Restore all the GPRs.
 	; Certain context should be revised by VMM.
 	popaq

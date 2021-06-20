@@ -119,6 +119,7 @@ typedef union _amd64_event_injection
 #if defined(_svm_exit)
 void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
@@ -161,7 +162,9 @@ noir_svm_exit_handler_routine svm_exit_handler_group1[noir_svm_maximum_code1]=
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
-	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
+	nvc_svm_default_handler,nvc_svm_default_handler,
+	nvc_svm_sx_exception_handler,	// Security Exception
+	nvc_svm_default_handler,		// Exception Vector 31
 	// 32 Interception Handlers from Vector 1
 	nvc_svm_default_handler,		// Physical External Interrupt
 	nvc_svm_default_handler,		// Physical Non-Maskable Interrupt

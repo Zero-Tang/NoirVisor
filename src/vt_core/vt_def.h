@@ -178,7 +178,7 @@ typedef union _ia32_vmx_exit_controls
 		u32 save_vmx_preemption_timer:1;		// bit	22
 		u32 clear_ia32_bound_cfg:1;				// bit	23
 		u32 conceal_vmexit_from_pt:1;			// bit	24
-		u32 clear_ia23_rtit_ctrl:1;				// bit	25
+		u32 clear_ia32_rtit_ctrl:1;				// bit	25
 		u32 reserved5:2;						// bits	26-27
 		u32 load_cet_state:1;					// bit	28
 		u32 reserved6:3;						// bits	29-31
@@ -374,6 +374,14 @@ typedef enum _ia32_vmx_instruction_error
 	vmentry_failed_movss_blocked_events=26,
 	invept_invvpid_invalid_operand=28
 }ia32_vmx_instruction_error,*ia32_vmx_instruction_error_p;
+
+typedef enum _ia32_vmx_guest_activity_state
+{
+	guest_is_active=0,
+	guest_is_halted=1,
+	guest_is_shutdown=2,
+	guest_is_waiting_for_sipi=3
+}ia32_vmx_guest_activity_state,*ia32_vmx_guest_activity_state_p;
 
 #if defined(_vt_main)
 char* vt_error_message[0x20]=

@@ -64,14 +64,14 @@ There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://
 If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher. <br>
 If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine. <br>
 You may enable Stealth SSDT Hook by setting up registry: (If your system is updated with certain patches since 2018, you should, nonetheless, disable Stealth MSR Hook feature. Otherwise, your system could result in #DF failure.) Please note that since hooking is a very dangerous behavior, NoirVisor disables them on default.
-```Bat
+```bat
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "StealthMsrHook" /t REG_DWORD /d 1 /f
 ```
-You may disable Stealth Inline Hook by setting up registry:
+You may enable Stealth Inline Hook by setting up registry:
 ```bat
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "StealthInlineHook" /t REG_DWORD /d 1 /f
 ```
-You may set the values to 0, or remove the value key, in order to disable the features.
+You may set the values to 0, or remove the value key, in order to disable these features again.
 
 ## EFI Application and Runtime Driver
 Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a partition and format it info FAT32 file system. After you successfully build the image, you should see two images: `bootx64.efi` and `NoirVisor.efi` <br> 
@@ -85,11 +85,14 @@ As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]`
 
 You may disable the detection for NoirVisor in Windows via setting up the registry. <br>
 Locate the registry key: `HKLM\Software\Zero-Tang\NoirVisor`. If this key does not exist then create it. <br>
-Edit the `CpuidPresence` Key Value to 0. If not exist then create it using following command: <br>
+Edit the `CpuidPresence` Key Value to 0. Feel free to execute the following command if you find it less taxing to do: <br>
 ```bat
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 0 /f
 ```
-The TSC due to VM-Exit is always omitted in Exit Handler. This feature can not be disabled. Please note that omitted TSC is approximate and thereby cannot counter precise time-profiler.
+
+## TSC-Omission
+Since the end of 2020, NoirVisor implemented a simple Time-Profiler Countermeasure. According to the half-year test, this technique is deemed unstable with multiprocessing systems. For example, TSC-omission may cause external hardwares to trigger drivers resetting themselves. Everything could be messed up: Timer, Graphics Card, NIC, etc. <br>
+By virtue of this unexpected and unpleasant side-effect, this feature is now obsolete. Codes addressing this feature are now removed.
 
 # Customizable VM
 Customizable VM is the true explanation of "complex functions and purposes". As the project creator and director, Zero's true intention to create this project is for studying Hardware-Acclerated Virtualization Technology. Therefore, any features which is related to virtualization and which Zero has ideas to implement will be added in the project. <br>
@@ -113,9 +116,8 @@ For more information, check out the [NoirVisor 2020+](https://github.com/Zero-Ta
 
 # Completed Features
 - Minimal Microsoft `Hv#1` Hypervisor Functionalities.
-- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V. (Incompatible with `KiErrata704Present` mitigation.)
+- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V. (**Incompatible** with the `KiErrata704Present` mitigation.)
 - Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, both Intel VT-x/EPT and AMD-V/NPT.
-- TSC Offsetting as Countermeasure for TSC-based Time-Profiler.
 - Tagged Translation Lookaside Buffer by ASID/VPID feature.
 - Critical Hypervisor Protection.
 - Software-Level Code Integrity Enforcement.

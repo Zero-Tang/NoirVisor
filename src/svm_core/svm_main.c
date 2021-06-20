@@ -83,6 +83,7 @@ u8 nvc_svm_enable()
 		noir_bts(&vmcr,amd64_vmcr_disa20m);
 		// Redirect INIT Signal in that AMD-V's
 		// INIT Interception doesn't make sense.
+		noir_bts(&vmcr,amd64_vmcr_r_init);
 		noir_wrmsr(amd64_vmcr,vmcr);
 		return noir_virt_trans;
 	}
@@ -120,6 +121,8 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	// This is also for nested virtualization.
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,0));
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,1));
+	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_vmcr,0));
+	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_vmcr,1));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,0));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,1));
 	// Intercept Memory-Typing MSRs.
@@ -180,6 +183,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 {
 	nvc_svm_instruction_intercept1 list1;
 	nvc_svm_instruction_intercept2 list2;
+	u32 listex=0;
 	u32 a,b,c,d;
 	noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
 	// Basic features...
@@ -195,6 +199,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	list2.intercept_stgi=1;
 	list2.intercept_clgi=1;
 	list2.intercept_skinit=1;
+	noir_bts(&listex,amd64_security_exception);			// Intercept Security Exceptions...
 	// Policy: Enable as most features as possible.
 	// Save them to vCPU.
 	if(d & amd64_cpuid_vmcb_clean_bit)
@@ -339,6 +344,8 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 		stack->vcpu=vcpu;
 		noir_wrmsr(amd64_hsave_pa,vcpu->hsave.phys);
 		nvc_svm_setup_virtual_msr(vcpu);
+		// Cache the Family-Model-Stepping Information for INIT Signal Emulation.
+		noir_cpuid(amd64_cpuid_std_proc_feature,0,&vcpu->cpuid_fms,null,null,null);
 		vcpu->asid=1;		// Subverted host always has ASID=0.
 		vcpu->status=nvc_svm_subvert_processor_a(stack);
 		nv_dprintf("Processor %d Subversion Status: %d\n",vcpu->proc_id,vcpu->status);

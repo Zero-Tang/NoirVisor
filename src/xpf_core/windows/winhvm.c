@@ -199,6 +199,11 @@ ULONG NoirQueryVirtualizationSupportability()
 	return noir_get_virtualization_supportability();
 }
 
+BOOLEAN NoirIsVirtualizationEnabled()
+{
+	return noir_is_virtualization_enabled();
+}
+
 void NoirSaveImageInfo(IN PDRIVER_OBJECT DriverObject)
 {
 	if(DriverObject)

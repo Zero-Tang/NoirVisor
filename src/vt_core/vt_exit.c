@@ -103,6 +103,123 @@ void static fastcall nvc_vt_trifault_handler(noir_gpr_state_p gpr_state,noir_vt_
 	nv_panicf("Triple fault occured! System is crashed!\n");
 }
 
+// Expected Exit Reason: 3
+// This is VM-Exit of obligation.
+void static fastcall nvc_vt_init_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
+{
+	vmx_segment_access_right code_ar,data_ar,ldtr_ar,task_ar;
+	ia32_vmx_entry_controls entry_ctrl;
+	ulong_ptr cr0;
+	// General-Purpose Registers
+	noir_vt_vmwrite(guest_rip,0xFFF0);
+	noir_vt_vmwrite(guest_rsp,0);
+	noir_vt_vmwrite(guest_rflags,2);
+	noir_stosp(gpr_state,0,sizeof(void*)*2);
+	gpr_state->rdx=vcpu->family_ext;
+	// Control Registers
+	noir_vt_vmread(guest_cr0,&cr0);
+	cr0&=0x60000000;		// Bits CD & NW of CR0 are unchanged during INIT.
+	cr0|=0x00000010;		// Bit ET of CR0 is always set.
+	noir_vt_vmwrite(guest_cr0,cr0);
+	noir_vt_vmwrite(cr0_read_shadow,0x60000010);
+	noir_vt_vmwrite(guest_cr3,0);
+	noir_vt_vmwrite(guest_cr4,ia32_cr4_vmxe_bit);
+	noir_vt_vmwrite(cr4_read_shadow,0);
+	noir_writecr2(0);
+	noir_vt_vmwrite(guest_msr_ia32_efer,0);
+	// Debug Registers
+	noir_writedr0(0);
+	noir_writedr1(0);
+	noir_writedr2(0);
+	noir_writedr3(0);
+	noir_writedr6(0xFFFF0FF0);
+	noir_vt_vmwrite(guest_dr7,0x400);
+	// Segment Register Access Rights
+	code_ar.value=data_ar.value=ldtr_ar.value=task_ar.value=0;
+	code_ar.present=data_ar.present=ldtr_ar.present=task_ar.present=1;
+	code_ar.descriptor_type=data_ar.descriptor_type=1;
+	code_ar.segment_type=ia32_segment_code_rx_accessed;
+	data_ar.segment_type=ia32_segment_data_rw_accessed;
+	ldtr_ar.segment_type=ia32_segment_system_ldt;
+	task_ar.segment_type=ia32_segment_system_16bit_tss_busy;
+	// Segment Registers - CS
+	noir_vt_vmwrite(guest_cs_selector,0xF000);
+	noir_vt_vmwrite(guest_cs_access_rights,code_ar.value);
+	noir_vt_vmwrite(guest_cs_limit,0xFFFF);
+	noir_vt_vmwrite(guest_cs_base,0xFFFF0000);
+	// Segment Registers - DS
+	noir_vt_vmwrite(guest_ds_selector,0);
+	noir_vt_vmwrite(guest_ds_access_rights,data_ar.value);
+	noir_vt_vmwrite(guest_ds_limit,0xFFFF);
+	noir_vt_vmwrite(guest_ds_base,0);
+	// Segment Registers - ES
+	noir_vt_vmwrite(guest_es_selector,0);
+	noir_vt_vmwrite(guest_es_access_rights,data_ar.value);
+	noir_vt_vmwrite(guest_es_limit,0xFFFF);
+	noir_vt_vmwrite(guest_es_base,0);
+	// Segment Registers - FS
+	noir_vt_vmwrite(guest_gs_selector,0);
+	noir_vt_vmwrite(guest_gs_access_rights,data_ar.value);
+	noir_vt_vmwrite(guest_gs_limit,0xFFFF);
+	noir_vt_vmwrite(guest_gs_base,0);
+	// Segment Registers - GS
+	noir_vt_vmwrite(guest_gs_selector,0);
+	noir_vt_vmwrite(guest_gs_access_rights,data_ar.value);
+	noir_vt_vmwrite(guest_gs_limit,0xFFFF);
+	noir_vt_vmwrite(guest_gs_base,0);
+	// Segment Registers - SS
+	noir_vt_vmwrite(guest_ss_selector,0);
+	noir_vt_vmwrite(guest_ss_access_rights,data_ar.value);
+	noir_vt_vmwrite(guest_ss_limit,0xFFFF);
+	noir_vt_vmwrite(guest_ss_base,0);
+	// Segment Registers - LDTR
+	noir_vt_vmwrite(guest_ldtr_selector,0);
+	noir_vt_vmwrite(guest_ldtr_access_rights,ldtr_ar.value);
+	noir_vt_vmwrite(guest_ldtr_limit,0xFFFF);
+	noir_vt_vmwrite(guest_ldtr_base,0);
+	// Segment Registers - TR
+	noir_vt_vmwrite(guest_tr_selector,0);
+	noir_vt_vmwrite(guest_tr_access_rights,task_ar.value);
+	noir_vt_vmwrite(guest_tr_limit,0xFFFF);
+	noir_vt_vmwrite(guest_tr_base,0);
+	// IDTR & GDTR
+	noir_vt_vmwrite(guest_gdtr_base,0);
+	noir_vt_vmwrite(guest_idtr_base,0);
+	noir_vt_vmwrite(guest_gdtr_limit,0xFFFF);
+	noir_vt_vmwrite(guest_idtr_limit,0xFFFF);
+	// VM-Entry Controls (Important: Guest is definitely not in IA-32e mode)
+	noir_vt_vmread(vmentry_controls,&entry_ctrl.value);
+	entry_ctrl.ia32e_mode_guest=0;
+	noir_vt_vmwrite(vmentry_controls,entry_ctrl.value);
+	// Invalidate TLBs associated with this vCPU in that paging is switched off.
+	// There is no need to invalidate TLBs related to EPT.
+	if(vcpu->enabled_feature & noir_vt_vpid_tagged_tlb)
+	{
+		invvpid_descriptor ivd;
+		noir_vt_vmread(virtual_processor_identifier,&ivd.vpid);
+		ivd.reserved[0]=ivd.reserved[1]=ivd.reserved[2]=0;
+		ivd.linear_address=0;
+		noir_vt_invvpid(vpid_single_invd,&ivd);
+	}
+	// Upon INIT, vCPU enters inactive state to wait for Startup-IPI.
+	noir_vt_vmwrite(guest_activity_state,guest_is_waiting_for_sipi);
+}
+
+// Expected Exit Reason: 4
+// This is VM-Exit of obligation.
+void static fastcall nvc_vt_sipi_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
+{
+	// The SIPI Vector is stored in Exit-Qualification.
+	ulong_ptr vector;
+	noir_vt_vmread(vmexit_qualification,&vector);
+	// According to vector, set control-flow fields of vCPU.
+	noir_vt_vmwrite(guest_cs_selector,vector<<8);
+	noir_vt_vmwrite(guest_cs_base,vector<<12);
+	noir_vt_vmwrite(guest_rip,0);
+	// Startup-IPI is received, resume to active state.
+	noir_vt_vmwrite(guest_activity_state,guest_is_active);
+}
+
 // Expected Exit Reason: 9
 // This is not an expected VM-Exit. In handler, we should help to switch task.
 // This is VM-Exit of obligation.
@@ -202,8 +319,6 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 			case noir_vt_callexit:
 			{
 				noir_gpr_state_p saved_state=(noir_gpr_state_p)vcpu->hv_stack;
-				invept_descriptor ied;
-				invvpid_descriptor ivd;
 				ulong_ptr gsp,gflags,gcr3;
 				u32 inslen=3;		// By default, vmcall uses 3 bytes.
 				noir_vt_vmread(guest_rsp,&gsp);
@@ -219,12 +334,14 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 				// If EPT/VPID is disabled, do not invalidate.
 				if(vcpu->enabled_feature & noir_vt_extended_paging)
 				{
+					invept_descriptor ied;
 					ied.eptp=0;
 					ied.reserved=0;
 					noir_vt_invept(ept_global_invd,&ied);
 				}
 				if(vcpu->enabled_feature & noir_vt_vpid_tagged_tlb)
 				{
+					invvpid_descriptor ivd;
 					ivd.vpid=0;
 					ivd.reserved[0]=ivd.reserved[1]=ivd.reserved[2]=0;
 					ivd.linear_address=0;
@@ -853,7 +970,7 @@ void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 }
 
 // It is important that this function uses fastcall convention.
-void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,u64 tsc_at_exit,noir_vt_vcpu_p vcpu)
+void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	u32 exit_reason;
 	noir_vt_vmread(vmexit_reason,&exit_reason);
@@ -862,13 +979,10 @@ void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,u64 tsc_at_exit,noi
 		vt_exit_handlers[exit_reason](gpr_state,vcpu);
 	else
 		nvc_vt_default_handler(gpr_state,vcpu);
-	// Right now, decrement tsc offset.
-	vcpu->tsc_offset-=(noir_rdtsc()-tsc_at_exit+noir_vt_tsc_asm_offset);
-	noir_vt_vmwrite(tsc_offset,vcpu->tsc_offset);
 	// Guest RIP is supposed to be advanced in specific handlers, not here.
 	// Do not execute vmresume here. It will be done as this function returns.
 }
-
+/*
 noir_status nvc_vt_build_exit_handlers()
 {
 	vt_exit_handlers=noir_alloc_nonpg_memory(vmx_maximum_exit_reason*sizeof(void*));
@@ -917,4 +1031,10 @@ void nvc_vt_teardown_exit_handlers()
 	if(vt_exit_handlers)
 		noir_free_nonpg_memory(vt_exit_handlers);
 	vt_exit_handlers=null;
+}
+*/
+
+void nvc_vt_set_mshv_handler(bool option)
+{
+	nvcp_vt_cpuid_handler=option?nvc_vt_cpuid_hvp_handler:nvc_vt_cpuid_hvs_handler;
 }

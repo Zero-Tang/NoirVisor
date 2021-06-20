@@ -139,6 +139,12 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			*(PULONG)OutputBuffer=NoirQueryVirtualizationSupportability();
 			break;
 		}
+		case IOCTL_VirtEn:
+		{
+			st=STATUS_SUCCESS;
+			*(PBOOLEAN)OutputBuffer=NoirIsVirtualizationEnabled();
+			break;
+		}
 		default:
 		{
 			break;
