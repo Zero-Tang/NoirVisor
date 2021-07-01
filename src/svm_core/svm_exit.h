@@ -121,6 +121,7 @@ void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm
 void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_invlpga_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_vmrun_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
@@ -192,7 +193,7 @@ noir_svm_exit_handler_routine svm_exit_handler_group1[noir_svm_maximum_code1]=
 	nvc_svm_default_handler,		// pause Instruction	
 	nvc_svm_default_handler,		// hlt Instruction
 	nvc_svm_default_handler,		// invlpg Instruction
-	nvc_svm_default_handler,		// invlpga Instruction
+	nvc_svm_invlpga_handler,		// invlpga Instruction
 	nvc_svm_default_handler,		// in/out Instruction
 	nvc_svm_msr_handler,			// rdmsr/wrmsr Instruction
 	nvc_svm_default_handler,		// Task Switch

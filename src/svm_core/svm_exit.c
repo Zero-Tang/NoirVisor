@@ -261,6 +261,28 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	noir_svm_advance_rip(vcpu->vmcb.virt);
 }
 
+// Expected Intercept Code: 0x7A
+void static fastcall nvc_svm_invlpga_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	if(vcpu->nested_hvm.svme)
+	{
+		// To virtualize the invlpga instruction is just to virtualize the ASID.
+		void* addr=(void*)gpr_state->rax;
+		u32 asid=(u32)gpr_state->rcx;
+		// Perform ASID Range Check then Invalidate the TLB.
+		// Beyond the range are the ASIDs reserved for Customizable VM.
+		if(asid>0 && asid<vcpu->nested_hvm.asid_max)
+			noir_svm_invlpga(addr,asid+1);
+		noir_svm_advance_rip(vmcb);
+	}
+	else
+	{
+		// SVM is disabled in guest EFER. Inject #UD to guest.
+		noir_svm_inject_event(vmcb,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
+	}
+}
+
 // This is a branch of MSR-Exit. DO NOT ADVANCE RIP HERE!
 void static fastcall nvc_svm_rdmsr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
@@ -374,7 +396,7 @@ void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 // Expected Intercept Code: 0x7C
 void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	const void* vmcb=vcpu->vmcb.virt;
+	void* vmcb=vcpu->vmcb.virt;
 	// Determine the type of operation.
 	bool op_write=noir_svm_vmread8(vmcb,exit_info1);
 	// 
@@ -382,7 +404,7 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 		nvc_svm_wrmsr_handler(gpr_state,vcpu);
 	else
 		nvc_svm_rdmsr_handler(gpr_state,vcpu);
-	noir_svm_advance_rip(vcpu->vmcb.virt);
+	noir_svm_advance_rip(vmcb);
 }
 
 // Expected Intercept Code: 0x7F
@@ -410,7 +432,7 @@ void static fastcall nvc_svm_vmrun_handler(noir_gpr_state_p gpr_state,noir_svm_v
 		nv_dprintf("VM-Exit occured by vmrun instruction!\n");
 			nv_dprintf("Nested Virtualization of SVM is not supported!\n");
 		// There is absolutely no SVM instructions since we don't support nested virtualization at this point.
-		noir_svm_advance_rip(vcpu->vmcb.virt);
+		noir_svm_advance_rip(vmcb);
 	}
 	else
 	{
@@ -517,7 +539,7 @@ void static fastcall nvc_svm_vmload_handler(noir_gpr_state_p gpr_state,noir_svm_
 		noir_svm_vmwrite64(vmcb,guest_sfmask,noir_svm_vmread64(nested_vmcb,guest_sfmask));
 		noir_svm_vmwrite64(vmcb,guest_kernel_gs_base,noir_svm_vmread64(nested_vmcb,guest_kernel_gs_base));
 		// Everything are loaded to Current VMCB. Return to guest.
-		noir_svm_advance_rip(vcpu->vmcb.virt);
+		noir_svm_advance_rip(vmcb);
 	}
 	else
 	{
@@ -565,7 +587,7 @@ void static fastcall nvc_svm_vmsave_handler(noir_gpr_state_p gpr_state,noir_svm_
 		noir_svm_vmwrite64(nested_vmcb,guest_sfmask,noir_svm_vmread64(vmcb,guest_sfmask));
 		noir_svm_vmwrite64(nested_vmcb,guest_kernel_gs_base,noir_svm_vmread64(vmcb,guest_kernel_gs_base));
 		// Everything are saved to Nested VMCB. Return to guest.
-		noir_svm_advance_rip(vcpu->vmcb.virt);
+		noir_svm_advance_rip(vmcb);
 	}
 	else
 	{
@@ -582,7 +604,7 @@ void static fastcall nvc_svm_stgi_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 	{
 		vcpu->nested_hvm.gif=1;		// Marks that GIF is set in Guest.
 		// FIXME: Inject pending interrupts held due to cleared GIF, and clear interceptions on certain interrupts.
-		noir_svm_advance_rip(vcpu->vmcb.virt);
+		noir_svm_advance_rip(vmcb);
 	}
 	else
 	{
@@ -599,7 +621,7 @@ void static fastcall nvc_svm_clgi_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 	{
 		vcpu->nested_hvm.gif=0;		// Marks that GIF is reset in Guest.
 		// FIXME: Setup interceptions on certain interrupts.
-		noir_svm_advance_rip(vcpu->vmcb.virt);
+		noir_svm_advance_rip(vmcb);
 	}
 	else
 	{

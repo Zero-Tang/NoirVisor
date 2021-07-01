@@ -83,6 +83,8 @@ u8 nvc_svm_enable()
 		noir_bts(&vmcr,amd64_vmcr_disa20m);
 		// Redirect INIT Signal in that AMD-V's
 		// INIT Interception doesn't make sense.
+		// Intel VT-x would block INIT Signal when
+		// the processor is in VMX Root Operation.
 		noir_bts(&vmcr,amd64_vmcr_r_init);
 		noir_wrmsr(amd64_vmcr,vmcr);
 		return noir_virt_trans;
@@ -189,6 +191,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	// Basic features...
 	list1.value=0;
 	list1.intercept_cpuid=1;
+	list1.intercept_invlpga=1;
 	list1.intercept_msr=1;
 	list1.intercept_shutdown=1;
 	list2.value=0;

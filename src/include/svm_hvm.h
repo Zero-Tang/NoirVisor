@@ -53,6 +53,7 @@ typedef struct _noir_svm_nested_vcpu
 {
 	u64 hsave_gpa;
 	void* hsave_hva;
+	u32 asid_max;
 	struct
 	{
 		u64 svme:1;

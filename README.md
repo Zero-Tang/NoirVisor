@@ -1,5 +1,5 @@
 # NoirVisor
-NoirVisor - The Grimoire Hypervisor solution for x86.
+NoirVisor - The Grimoire Hypervisor solution for x86 Processors.
 
 <p align=center>
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT">
