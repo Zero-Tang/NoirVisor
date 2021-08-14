@@ -579,17 +579,6 @@ void static fastcall nvc_vt_vmxon_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 	}
 }
 
-// Expected Exit Reason: 19-25,50,53
-// This is VM-Exit of obligation.
-void static fastcall nvc_vt_vmx_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
-{
-	u32 exit_reason;
-	noir_vt_vmread(vmexit_reason,&exit_reason);
-	nv_dprintf("VMX Nesting is not implemented! %s\n",vmx_exit_msg[exit_reason]);
-	noir_vt_vmfail_invalid();
-	noir_vt_advance_rip();
-}
-
 // Expected Exit Reason: 28
 // Filter unwanted behaviors.
 // Besides, we need to virtualize CR4.VMXE and CR4.SMXE here.
@@ -982,57 +971,6 @@ void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu
 	// Guest RIP is supposed to be advanced in specific handlers, not here.
 	// Do not execute vmresume here. It will be done as this function returns.
 }
-/*
-noir_status nvc_vt_build_exit_handlers()
-{
-	vt_exit_handlers=noir_alloc_nonpg_memory(vmx_maximum_exit_reason*sizeof(void*));
-	if(vt_exit_handlers)
-	{
-		// Initialize handler-array with default handler.
-		// Use stos to accelerate the initialization and reduce codes.
-		noir_stosp(vt_exit_handlers,(ulong_ptr)nvc_vt_default_handler,vmx_maximum_exit_reason);
-		vt_exit_handlers[triple_fault]=nvc_vt_trifault_handler;
-		vt_exit_handlers[task_switch]=nvc_vt_task_switch_handler;
-		vt_exit_handlers[intercept_cpuid]=nvc_vt_cpuid_handler;
-		vt_exit_handlers[intercept_getsec]=nvc_vt_getsec_handler;
-		vt_exit_handlers[intercept_invd]=nvc_vt_invd_handler;
-		vt_exit_handlers[intercept_vmcall]=nvc_vt_vmcall_handler;
-		vt_exit_handlers[intercept_vmclear]=nvc_vt_vmclear_handler;
-		vt_exit_handlers[intercept_vmlaunch]=nvc_vt_vmx_handler;
-		vt_exit_handlers[intercept_vmptrld]=nvc_vt_vmptrld_handler;
-		vt_exit_handlers[intercept_vmptrst]=nvc_vt_vmptrst_handler;
-		vt_exit_handlers[intercept_vmread]=nvc_vt_vmx_handler;
-		vt_exit_handlers[intercept_vmresume]=nvc_vt_vmx_handler;
-		vt_exit_handlers[intercept_vmwrite]=nvc_vt_vmx_handler;
-		vt_exit_handlers[intercept_vmxoff]=nvc_vt_vmxoff_handler;
-		vt_exit_handlers[intercept_vmxon]=nvc_vt_vmxon_handler;
-		vt_exit_handlers[cr_access]=nvc_vt_cr_access_handler;
-		vt_exit_handlers[intercept_rdmsr]=nvc_vt_rdmsr_handler;
-		vt_exit_handlers[intercept_wrmsr]=nvc_vt_wrmsr_handler;
-		vt_exit_handlers[invalid_guest_state]=nvc_vt_invalid_guest_state;
-		vt_exit_handlers[msr_loading_failure]=nvc_vt_invalid_msr_loading;
-		vt_exit_handlers[ept_violation]=nvc_vt_ept_violation_handler;
-		vt_exit_handlers[ept_misconfiguration]=nvc_vt_ept_misconfig_handler;
-		vt_exit_handlers[intercept_invept]=nvc_vt_vmx_handler;
-		vt_exit_handlers[intercept_invvpid]=nvc_vt_vmx_handler;
-		vt_exit_handlers[intercept_xsetbv]=nvc_vt_xsetbv_handler;
-		// Special CPUID-Handler
-		if(hvm_p->options.cpuid_hv_presence)
-			nvcp_vt_cpuid_handler=nvc_vt_cpuid_hvp_handler;
-		else
-			nvcp_vt_cpuid_handler=nvc_vt_cpuid_hvs_handler;
-		return noir_success;
-	}
-	return noir_insufficient_resources;
-}
-
-void nvc_vt_teardown_exit_handlers()
-{
-	if(vt_exit_handlers)
-		noir_free_nonpg_memory(vt_exit_handlers);
-	vt_exit_handlers=null;
-}
-*/
 
 void nvc_vt_set_mshv_handler(bool option)
 {

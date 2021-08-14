@@ -33,6 +33,14 @@
 #define noir_bts64	_bittestandset64
 #endif
 
+// bit-scan instructions
+#define noir_bsf	_BitScanForward
+#define noir_bsr	_BitScanReverse
+#if defined(_amd64)
+#define noir_bsf64	_BitScanForward64
+#define noir_bsr64	_BitScanReverse64
+#endif
+
 // Read Control Register instructions
 #define noir_readcr0	__readcr0
 #define noir_readcr2	__readcr2
@@ -45,6 +53,7 @@ void noir_writecr2(ulong_ptr value);
 #define noir_writecr3	__writecr3
 #define noir_writecr4	__writecr4
 
+u64 noir_xgetbv(u32 xcr_id);
 void noir_xsetbv(u32 xcr_id,u64 val);
 
 // Read/Write CR8 Register instructions(64-bit only)

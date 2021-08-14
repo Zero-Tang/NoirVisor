@@ -14,8 +14,51 @@
 
 #include <nvdef.h>
 
+// CR0 Bit Fields
+#define amd64_cr0_pe		0
+#define amd64_cr0_mp		1
+#define amd64_cr0_em		2
+#define amd64_cr0_ts		3
+#define amd64_cr0_et		4
+#define amd64_cr0_ne		5
+#define amd64_cr0_wp		16
+#define amd64_cr0_am		18
+#define amd64_cr0_nw		29
+#define amd64_cr0_cd		30
+#define amd64_cr0_pg		31
+#define amd64_cr0_pe_bit	0x1
+#define amd64_cr0_mp_bit	0x2
+#define amd64_cr0_em_bit	0x4
+#define amd64_cr0_ts_bit	0x8
+#define amd64_cr0_et_bit	0x10
+#define amd64_cr0_ne_bit	0x20
+#define amd64_cr0_wp_bit	0x10000
+#define amd64_cr0_am_bit	0x40000
+#define amd64_cr0_nw_bit	0x20000000
+#define amd64_cr0_cd_bit	0x40000000
+#define amd64_cr0_pg_bit	0x80000000
+
+// EFER Bit Fields
+#define amd64_efer_sce			0
+#define amd64_efer_lme			8
+#define amd64_efer_lma			10
+#define amd64_efer_nxe			11
 #define amd64_efer_svme			12
+#define amd64_efer_lmsle		13
+#define amd64_efer_ffxsr		14
+#define amd64_efer_tce			15
+#define amd64_efer_mcommit		17
+#define amd64_efer_intwb		18
+#define amd64_efer_sce_bit		0x1
+#define amd64_efer_lme_bit		0x100
+#define amd64_efer_lma_bit		0x400
+#define amd64_efer_nxe_bit		0x800
 #define amd64_efer_svme_bit		0x1000
+#define amd64_efer_lmsle_bit	0x2000
+#define amd64_efer_ffxsr_bit	0x4000
+#define amd64_efer_tce_bit		0x8000
+#define amd64_efer_mcommit_bit	0x20000
+#define amd64_efer_intwb_bit	0x40000
 
 // This is used for SVM Control Register Flags
 #define amd64_vmcr_dpd				0
@@ -75,6 +118,7 @@
 #define amd64_gs_base					0xC0000101
 #define amd64_kernel_gs_base			0xC0000102
 #define amd64_tsc_ratio					0xC0000104
+#define amd64_hwcr						0xC0010015
 
 // SVM/SMM Related MSRs
 #define amd64_smbase					0xC0010111

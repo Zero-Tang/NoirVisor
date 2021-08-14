@@ -45,8 +45,12 @@ typedef void(*noir_broadcast_worker)(void* context,ULONG ProcessorNumber);
 typedef LONG(__cdecl *noir_sorting_comparator)(const void* a,const void*b);
 
 NTSYSAPI NTSTATUS NTAPI ZwAlertThread(IN HANDLE ThreadHandle);
-BYTE NoirGetInstructionLength32(BYTE* Code,SIZE_T CodeLength);
-BYTE NoirGetInstructionLength64(BYTE* Code,SIZE_T CodeLength);
+BYTE NoirDisasmCode16(PSTR Mnemonic,SIZE_T MnemonicLength,PBYTE Code,SIZE_T CodeLength,ULONG64 VirtualAddress);
+BYTE NoirDisasmCode32(PSTR Mnemonic,SIZE_T MnemonicLength,PBYTE Code,SIZE_T CodeLength,ULONG64 VirtualAddress);
+BYTE NoirDisasmCode64(PSTR Mnemonic,SIZE_T MnemonicLength,PBYTE Code,SIZE_T CodeLength,ULONG64 VirtualAddress);
+BYTE NoirGetInstructionLength16(PBYTE Code,SIZE_T CodeLength);
+BYTE NoirGetInstructionLength32(PBYTE Code,SIZE_T CodeLength);
+BYTE NoirGetInstructionLength64(PBYTE Code,SIZE_T CodeLength);
 
 PNOIR_ASYNC_DEBUG_LOG_SYSTEM NoirAsyncDebugLogger=NULL;
 

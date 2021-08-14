@@ -374,6 +374,16 @@ noir_save_processor_state proc
 
 noir_save_processor_state endp
 
+noir_xgetbv proc
+
+	xor eax,eax
+	xgetbv
+	shl rdx,32
+	or rax,rdx
+	ret
+
+noir_xgetbv endp
+
 noir_xsetbv proc
 
 	mov eax,edx

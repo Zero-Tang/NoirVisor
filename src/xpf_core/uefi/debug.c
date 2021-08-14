@@ -127,7 +127,7 @@ void static NoirX64PrintProcessorState(IN EFI_SYSTEM_CONTEXT_X64* Context)
 
 void static NoirX64ExceptionCallback(IN EFI_EXCEPTION_TYPE ExceptionType,IN OUT EFI_SYSTEM_CONTEXT SystemContext)
 {
-	NoirX64PrintProcessorState(SystemContext->SystemContextX64);
+	NoirX64PrintProcessorState(SystemContext.SystemContextX64);
 }
 #endif
 

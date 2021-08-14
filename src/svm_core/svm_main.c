@@ -14,8 +14,8 @@
 
 #include <nvdef.h>
 #include <nvbdk.h>
-#include <noirhvm.h>
 #include <nvstatus.h>
+#include <noirhvm.h>
 #include <svm_intrin.h>
 #include <nv_intrin.h>
 #include <amd64.h>
@@ -26,11 +26,11 @@
 bool nvc_is_svm_supported()
 {
 	u32 a,b,c,d;
-	noir_cpuid(0x80000001,0,null,null,&c,null);
+	noir_cpuid(amd64_cpuid_ext_proc_feature,0,null,null,&c,null);
 	if(noir_bt(&c,amd64_cpuid_svm))
 	{
 		bool basic_supported=true;
-		noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
+		noir_cpuid(amd64_cpuid_ext_svm_features,0,&a,&b,&c,&d);
 		// At least one ASID should be available.
 		basic_supported&=(b>0);
 		// Decode Assists is the required feature.
@@ -46,7 +46,7 @@ bool nvc_is_npt_supported()
 {
 	u32 a,b,c,d;
 	bool npt_support=true;
-	noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
+	noir_cpuid(amd64_cpuid_ext_svm_features,0,&a,&b,&c,&d);
 	npt_support&=noir_bt(&d,amd64_cpuid_npt);
 	npt_support&=noir_bt(&d,amd64_cpuid_vmcb_clean);
 	return npt_support;
@@ -56,7 +56,7 @@ bool nvc_is_acnested_svm_supported()
 {
 	u32 a,b,c,d;
 	bool acnv_support=true;
-	noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
+	noir_cpuid(amd64_cpuid_ext_svm_features,0,&a,&b,&c,&d);
 	acnv_support&=noir_bt(&d,amd64_cpuid_vmlsvirt);
 	acnv_support&=noir_bt(&d,amd64_cpuid_vgif);
 	return acnv_support;
@@ -66,6 +66,13 @@ bool nvc_is_svm_disabled()
 {
 	u64 vmcr=noir_rdmsr(amd64_vmcr);
 	return noir_bt(&vmcr,amd64_vmcr_svmdis);
+}
+
+u32 nvc_svm_get_avail_asid()
+{
+	u32 count;
+	noir_cpuid(amd64_cpuid_ext_svm_features,0,null,&count,null,null);
+	return count;
 }
 
 u8 nvc_svm_enable()
@@ -232,6 +239,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
 }
 
+// This function has context of cleared GIF.
 ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_ptr gip)
 {
 	// Save Processor State
@@ -290,7 +298,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_cr4,state.cr4);
 #if defined(_amd64)
 	// Save Task Priority Register (CR8)
-	noir_svm_vmwrite8(vcpu->vmcb.virt,avid_control,(u8)state.cr8);
+	noir_svm_vmwrite8(vcpu->vmcb.virt,avic_control,(u8)state.cr8&0xf);
 #endif
 	// Save Debug Registers
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_dr6,state.dr6);
@@ -392,13 +400,17 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 		noir_free_contd_memory(hvm_p->relative_hvm->iopm.virt);
 	if(hvm_p->relative_hvm->blank_page.virt)
 		noir_free_contd_memory(hvm_p->relative_hvm->blank_page.virt);
-	// nvc_svm_teardown_exit_handler();
+#if !defined(_hv_type1)
+	if(hvm_p->tlb_tagging.asid_pool_lock)
+		noir_finalize_reslock(hvm_p->tlb_tagging.asid_pool_lock);
+	if(hvm_p->tlb_tagging.asid_pool)
+		noir_free_nonpg_memory(hvm_p->tlb_tagging.asid_pool);
+#endif
 }
 
 noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 {
 	hvm_p->cpu_count=noir_get_processor_count();
-	// if(nvc_svm_build_exit_handler()==false)goto alloc_failure;
 	hvm_p->virtual_cpu=noir_alloc_nonpg_memory(hvm_p->cpu_count*sizeof(noir_svm_vcpu));
 	// Implementation of Generic Call might differ.
 	// In subversion routine, it might not be allowed to allocate memory.
@@ -453,6 +465,16 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 		hvm_p->relative_hvm->iopm.phys=noir_get_physical_address(hvm_p->relative_hvm->iopm.virt);
 	else
 		goto alloc_failure;
+#if !defined(_hv_type1)
+	// Initialize CVM Module.
+	if(nvc_svmc_initialize_cvm_module()!=noir_success)goto alloc_failure;
+	// Half of the available ASIDs are reserved for Customizable VMs. Others are reserved for Nested VMM.
+	hvm_p->tlb_tagging.limit=nvc_svm_get_avail_asid()>>1;
+	hvm_p->tlb_tagging.asid_pool=noir_alloc_nonpg_memory(hvm_p->tlb_tagging.limit>>3);
+	if(hvm_p->tlb_tagging.asid_pool==null)goto alloc_failure;
+	hvm_p->tlb_tagging.asid_pool_lock=noir_initialize_reslock();
+	if(hvm_p->tlb_tagging.asid_pool_lock==null)goto alloc_failure;
+#endif
 	nvc_svm_setup_msr_hook(hvm_p);
 	if(nvc_npt_protect_critical_hypervisor(hvm_p)==false)goto alloc_failure;
 	if(hvm_p->virtual_cpu==null)goto alloc_failure;
@@ -492,6 +514,7 @@ void nvc_svm_restore_system(noir_hypervisor_p hvm_p)
 	{
 		noir_generic_call(nvc_svm_restore_processor_thunk,hvm_p->virtual_cpu);
 		nvc_svm_cleanup(hvm_p);
+		nvc_svmc_finalize_cvm_module();
 		nvc_mshv_teardown_cpuid_handlers();
 	}
 }

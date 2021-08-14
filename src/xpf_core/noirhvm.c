@@ -57,6 +57,17 @@ u8 nvc_confirm_cpu_manufacturer(char* vendor_string)
 	return unknown_processor;
 }
 
+u32 nvc_query_physical_asid_limit(char* vendor_string)
+{
+	u8 manuf=nvc_confirm_cpu_manufacturer(vendor_string);
+	if(manuf==intel_processor || manuf==via_processor || manuf==zhaoxin_processor)
+		return nvc_vt_get_avail_vpid();
+	else if(manuf==amd_processor || manuf==hygon_processor)
+		return nvc_svm_get_avail_asid();
+	// Unknown vendor.
+	return 0;
+}
+
 bool noir_is_virtualization_enabled()
 {
 	char vstr[13];
@@ -109,6 +120,140 @@ bool noir_is_under_hvm()
 	return noir_bt(&c,31);
 }
 
+#if !defined(_hv_type1)
+noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu)
+{
+	return noir_not_implemented;
+}
+
+noir_status nvc_release_vcpu(noir_cvm_virtual_cpu_p vcpu)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		st=noir_success;
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			nvc_svmc_release_vcpu(vcpu);
+		else
+			st=noir_unknown_processor;
+	}
+	return st;
+}
+
+noir_status nvc_create_vcpu(noir_cvm_virtual_machine_p vm,noir_cvm_virtual_cpu_p* vcpu)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		st=noir_success;
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			st=nvc_svmc_create_vcpu(vcpu,vm);
+		else
+			st=noir_unknown_processor;
+	}
+	return st;
+}
+
+noir_status nvc_release_vm(noir_cvm_virtual_machine_p vm)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		st=noir_success;
+		// Remove the VM from the list.
+		noir_acquire_reslock_exclusive(noir_vm_list_lock);
+		noir_remove_list_entry(&vm->active_vm_list);
+		// Remove the vCPU list Resource Lock.
+		if(vm->vcpu_list_lock)noir_finalize_reslock(vm->vcpu_list_lock);
+		// Finally, release the VM structure.
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			nvc_svmc_release_vm(vm);
+		else
+			st=noir_unknown_processor;
+		noir_release_reslock(noir_vm_list_lock);
+	}
+	return st;
+}
+
+noir_status nvc_create_vm(noir_cvm_virtual_machine_p* vm,u32 process_id)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		// Select a core.
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			st=nvc_svmc_create_vm(vm);
+		else
+			st=noir_unknown_processor;
+		if(st==noir_success)
+		{
+			st=noir_insufficient_resources;
+			// Initialize the vCPU list Resource Lock.
+			(*vm)->vcpu_list_lock=noir_initialize_reslock();
+			if((*vm)->vcpu_list_lock)
+			{
+				// Insert the VM to the list.
+				noir_acquire_reslock_exclusive(noir_vm_list_lock);
+				noir_insert_to_prev(&noir_idle_vm.active_vm_list,&(*vm)->active_vm_list);
+				noir_release_reslock(noir_vm_list_lock);
+				st=noir_success;
+			}
+			(*vm)->pid=process_id;
+		}
+	}
+	return st;
+}
+
+u32 nvc_get_vm_pid(noir_cvm_virtual_machine_p vm)
+{
+	return vm->pid;
+}
+
+u32 nvc_get_vm_asid(noir_cvm_virtual_machine_p vm)
+{
+	// Idle VM has ASID=1.
+	if(vm==&noir_idle_vm)return 1;
+	// Check if NoirVisor is present.
+	if(hvm_p)
+	{
+		// Select a core and invoke its function.
+		if(hvm_p->selected_core==use_svm_core)
+			return nvc_svmc_get_vm_asid(vm);
+		else
+			return noir_unknown_processor;
+	}
+	// Zero indicates failure.
+	return 0;
+}
+
+void nvc_print_vm_list()
+{
+	noir_cvm_virtual_machine_p head=&noir_idle_vm,cur=null;
+	u32 count=0;
+	// Acquire the Resource Lock for Shared (Read) Access.
+	noir_acquire_reslock_shared(noir_vm_list_lock);
+	cur=(noir_cvm_virtual_machine_p)head->active_vm_list.next;
+	// Traverse the List and Print to Tracing Log.
+	while(cur!=head)
+	{
+		nv_tracef("[Enum VM] ASID=%u\n",nvc_get_vm_asid(cur));
+		cur=(noir_cvm_virtual_machine_p)cur->active_vm_list.next;
+		count++;
+	}
+	nv_tracef("Number of VMs: %u\n",count);
+	// Finally, Release the Resource Lock.
+	noir_release_reslock(noir_vm_list_lock);
+}
+#endif
+
 noir_status nvc_build_hypervisor()
 {
 	hvm_p=noir_alloc_nonpg_memory(sizeof(noir_hypervisor));
@@ -141,6 +286,7 @@ noir_status nvc_build_hypervisor()
 				return noir_unknown_processor;
 			}
 vmx_subversion:
+			hvm_p->selected_core=use_vt_core;
 			if(nvc_is_vt_supported())
 			{
 				nv_dprintf("Starting subversion with VMX Engine!\n");
@@ -152,6 +298,7 @@ vmx_subversion:
 				return noir_vmx_not_supported;
 			}
 svm_subversion:
+			hvm_p->selected_core=use_svm_core;
 			if(nvc_is_svm_supported())
 			{
 				nv_dprintf("Starting subversion with SVM Engine!\n");

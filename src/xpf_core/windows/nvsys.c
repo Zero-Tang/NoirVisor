@@ -264,6 +264,36 @@ ULONG32 noir_get_instruction_length(IN PVOID code,IN BOOLEAN LongMode)
 	return NoirGetInstructionLength32(code,0);
 }
 
+ULONG32 noir_get_instruction_length_ex(IN PVOID Code,IN BYTE Bits)
+{
+	switch(Bits)
+	{
+	case 16:
+		return NoirGetInstructionLength16(Code,0);
+	case 32:
+		return NoirGetInstructionLength32(Code,0);
+	case 64:
+		return NoirGetInstructionLength64(Code,0);
+	default:
+		return 0;
+	}
+}
+
+ULONG32 noir_disasm_instruction(IN PVOID Code,OUT PSTR Mnemonic,IN SIZE_T MnemonicLength,IN BYTE Bits,IN ULONG64 VirtualAddress)
+{
+	switch(Bits)
+	{
+	case 16:
+		return NoirDisasmCode16(Mnemonic,MnemonicLength,Code,15,VirtualAddress);
+	case 32:
+		return NoirDisasmCode32(Mnemonic,MnemonicLength,Code,15,VirtualAddress);
+	case 64:
+		return NoirDisasmCode64(Mnemonic,MnemonicLength,Code,15,VirtualAddress);
+	default:
+		return 0;
+	}
+}
+
 void NoirReportMemoryIntrospectionCounter()
 {
 	NoirDebugPrint("============NoirVisor Memory Introspection Report Start============\n");
@@ -325,15 +355,15 @@ void NoirFreeContiguousMemory(PVOID VirtualAddress)
 #endif
 }
 
-void NoirFreeNonPagedMemory(void* VirtualAddress)
+void NoirFreeNonPagedMemory(IN PVOID VirtualAddress)
 {
 	ExFreePoolWithTag(VirtualAddress,'pNvN');
 	InterlockedDecrement(&NoirAllocatedNonPagedPools);
 }
 
-void NoirFreePagedMemory(void* virtual_address)
+void NoirFreePagedMemory(IN PVOID VirtualAddress)
 {
-	ExFreePoolWithTag(virtual_address,'gPvN');
+	ExFreePoolWithTag(VirtualAddress,'gPvN');
 	InterlockedDecrement(&NoirAllocatedPagedPools);
 }
 
@@ -506,13 +536,13 @@ void noir_sleep(IN ULONG64 ms)
 // Resource Lock (R/W Lock)
 PERESOURCE noir_initialize_reslock()
 {
-	PERESOURCE Res=ExAllocatePool(NonPagedPool,sizeof(ERESOURCE));
+	PERESOURCE Res=NoirAllocateNonPagedMemory(sizeof(ERESOURCE));
 	if(Res)
 	{
 		NTSTATUS st=ExInitializeResourceLite(Res);
 		if(NT_ERROR(st))
 		{
-			ExFreePool(Res);
+			NoirFreeNonPagedMemory(Res);
 			Res=NULL;
 		}
 	}
@@ -524,7 +554,7 @@ void noir_finalize_reslock(IN PERESOURCE Resource)
 	if(Resource)
 	{
 		ExDeleteResourceLite(Resource);
-		ExFreePool(Resource);
+		NoirFreeNonPagedMemory(Resource);
 	}
 }
 

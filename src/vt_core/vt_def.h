@@ -82,7 +82,8 @@ typedef union _ia32_vmx_priproc_controls
 		u32 reserved3:2;					// bits	13-14
 		u32 cr3_load_exiting:1;				// bit	15
 		u32 cr3_store_exiting:1;			// bit	16
-		u32 reserved4:2;					// bits	17-18
+		u32 activate_tertiary_controls:1;	// bit	17
+		u32 reserved4:1;					// bit	18
 		u32 cr8_load_exiting:1;				// bit	19
 		u32 cr8_store_exiting:1;			// bit	20
 		u32 use_tpr_shadow:1;				// bit	21
@@ -158,6 +159,26 @@ typedef union _ia32_vmx_2ndproc_ctrl_msr
 	u64 value;
 }ia32_vmx_2ndproc_ctrl_msr,*ia32_vmx_2ndproc_ctrl_msr_p;
 
+typedef union _ia32_vmx_3rdproc_controls
+{
+	struct
+	{
+		u32 loadiwkey_exiting:1;				// bit	0
+		u32 reserved:31;						// bits	1-31
+	};
+	u32 value;
+}ia32_vmx_3rdproc_controls,*ia32_vmx_3rdproc_controls_p;
+
+typedef union _ia32_vmx_3rdproc_ctrl_msr
+{
+	struct
+	{
+		ia32_vmx_3rdproc_controls allowed0_settings;
+		ia32_vmx_3rdproc_controls allowed1_settings;
+	};
+	u64 value;
+}ia32_vmx_3rdproc_ctrl_msr,*ia32_vmx_3rdproc_ctrl_msr_p;
+
 typedef union _ia32_vmx_exit_controls
 {
 	struct
@@ -181,7 +202,8 @@ typedef union _ia32_vmx_exit_controls
 		u32 clear_ia32_rtit_ctrl:1;				// bit	25
 		u32 reserved5:2;						// bits	26-27
 		u32 load_cet_state:1;					// bit	28
-		u32 reserved6:3;						// bits	29-31
+		u32 load_pkrs:1;						// bit	29
+		u32 reserved6:2;						// bits	30-31
 	};
 	u32 value;
 }ia32_vmx_exit_controls,*ia32_vmx_exit_controls_p;
@@ -215,7 +237,9 @@ typedef union _ia32_vmx_entry_controls
 		u32 load_ia32_rtit_ctrl:1;			// bit	18
 		u32 reserved3:1;					// bit	19
 		u32 load_cet_state:1;				// bit	20
-		u32 reserved4:11;					// bits	21-31
+		u32 reserved4:1;					// bit	21
+		u32 load_pkrs:1;					// bit	22
+		u32 reserved5:9;					// bits	23-31
 	};
 	u32 value;
 }ia32_vmx_entry_controls,*ia32_vmx_entry_controls_p;

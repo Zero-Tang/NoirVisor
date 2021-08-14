@@ -75,6 +75,7 @@
 #define ia32_vmx_true_exit_ctrl			0x48F
 #define ia32_vmx_true_entry_ctrl		0x490
 #define ia32_vmx_vmfunc					0x491
+#define ia32_vmx_3rdproc_ctrl			0x492
 #define ia32_efer						0xC0000080
 #define ia32_star						0xC0000081
 #define ia32_lstar						0xC0000082

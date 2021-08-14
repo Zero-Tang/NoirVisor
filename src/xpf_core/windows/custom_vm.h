@@ -15,6 +15,17 @@
 #include <ntddk.h>
 #include <windef.h>
 
+// Definitions of Status Codes of NoirVisor.
+#define NOIR_SUCCESS					0
+#define NOIR_UNSUCCESSFUL				0xC0000000
+#define NOIR_INSUFFICIENT_RESOURCES		0xC0000001
+#define NOIR_NOT_IMPLEMENTED			0xC0000002
+#define NOIR_UNKNOWN_PROCESSOR			0xC0000003
+#define NOIR_INVALID_PARAMETER			0xC0000004
+#define NOIR_HYPERVISION_ABSENT			0xC0000005
+
+typedef ULONG32 NOIR_STATUS;
+
 typedef union _NOIR_XMM_REGISTER
 {
 	float f[4];
@@ -51,6 +62,8 @@ typedef struct _NOIR_GPR_STATE
 	ULONG64 R13;
 	ULONG64 R14;
 	ULONG64 R15;
+	ULONG64 Rflags;
+	ULONG64 Rip;
 }NOIR_GPR_STATE,*PNOIR_GPR_STATE;
 
 typedef struct _NOIR_FXSAVE_STATE
@@ -156,22 +169,50 @@ typedef struct _NOIR_ADDRESS_MAPPING
 	}Attributes;
 }NOIR_ADDRESS_MAPPING,*PNOIR_ADDRESS_MAPPING;
 
-typedef struct _NOIR_CUSTOM_VIRTUAL_PROCESSOR
-{
-	NOIR_GPR_STATE GprState;
-	NOIR_FXSAVE_STATE FprState;
-	NOIR_CR_STATE CrState;
-	NOIR_DR_STATE DrState;
-	NOIR_MSR_STATE MsrState;
-	PVOID Core;		// The vCPU Structure for NoirVisor's VT/SVM Core.
-	ULONG64 Rip;
-	NOIR_CUSTOM_VCPU_OPTIONS VcpuOptions;
-}NOIR_CUSTOM_VIRTUAL_PROCESSOR,*PNOIR_CUSTOM_VIRTUAL_PROCESSOR;
+/*
+  NoirVisor chooses the similar data structure to Windows' handle table.
 
-typedef struct _NOIR_CUSTOM_VIRTUAL_MACHINE
+  Multi-level table is supported. Each table has a size of a page.
+  Therefore, there are 512 entries for 64-bit, and 1024 entries for 32-bit.
+  In this regard, 9 bits per level for 64-bit, and 10 bits per level for 32 bit.
+  Two levels for table should have covered all Intel VT-x VPIDs since there would
+  be 18 bits for 64-bit and 20 bits for 32-bit, whereas VPID is a 16-bit field.
+
+  To be honest, multi-level table is actually a multi-branching tree.
+  This design supports 4096 levels of tree depth at most, though 7 levels should
+  have covered all possible values of 64-bit handles.
+*/
+
+#if defined(_WIN64)
+#define HandleTableCapacity		512
+#define HandleTableShiftBits	9
+#else
+#define HandleTableCapacity		1024
+#define HandleTableShitBits		10
+#endif
+
+typedef ULONG_PTR CVM_HANDLE;
+typedef PULONG_PTR PCVM_HANDLE;
+
+typedef struct _NOIR_CVM_HANDLE_TABLE
 {
-	ULONG32 NumberOfVirtualProcessors;
-	ULONG32 NumberOfMappings;
-	PNOIR_CUSTOM_VIRTUAL_PROCESSOR VirtualProcessors;
-	NOIR_ADDRESS_MAPPING Mappings[1];
-}NOIR_CUSTOM_VIRTUAL_MACHINE,*PNOIR_CUSTOM_VIRTUAL_MACHINE;
+	ULONG_PTR TableCode;
+	ERESOURCE HandleTableLock;
+	CVM_HANDLE MaximumHandleValue;
+	ULONG32 HandleCount;
+}NOIR_CVM_HANDLE_TABLE,*PNOIR_CVM_HANDLE_TABLE;
+
+PVOID NoirAllocateNonPagedMemory(IN SIZE_T Length);
+PVOID NoirAllocatePagedMemory(IN SIZE_T Length);
+void NoirFreeNonPagedMemory(IN PVOID VirtualAddress);
+void NoirFreePagedMemory(IN PVOID VirtualAddress);
+void __cdecl NoirDebugPrint(const char* Format,...);
+
+// Functions from NoirVisor XPF-Core for CVM.
+ULONG32 nvc_query_physical_asid_limit(IN PSTR vendor_string);
+void noir_get_vendor_string(OUT PSTR vendor_string);
+NOIR_STATUS nvc_create_vm(OUT PVOID *VirtualMachine,HANDLE ProcessId);
+NOIR_STATUS nvc_release_vm(IN PVOID VirtualMachine);
+HANDLE nvc_get_vm_pid(IN PVOID VirtualMachine);
+
+NOIR_CVM_HANDLE_TABLE NoirCvmHandleTable={0};

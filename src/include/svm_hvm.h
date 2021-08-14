@@ -15,10 +15,11 @@
 #include <nvdef.h>
 
 // Definition of vmmcall Codes
-#define noir_svm_callexit				1
-#define noir_svm_create_custom_vcpu		2
-#define noir_svm_delete_custom_vcpu		3
-#define noir_svm_run_custom_vcpu		4
+#define noir_svm_callexit					0x1
+#define noir_svm_disasm_length				0x2
+#define noir_svm_disasm_mnemonic			0x3
+#define noir_svm_init_custom_vmcb			0x10000
+#define noir_svm_run_custom_vcpu			0x10001
 
 // Definition of Enabled features
 #define noir_svm_vmcb_caching		1		// Bit 0
@@ -58,8 +59,9 @@ typedef struct _noir_svm_nested_vcpu
 	{
 		u64 svme:1;
 		u64 gif:1;
-		u64 smm_status:1;	// 0 for outside SMM. 1 for inside SMM.
-		u64 reserved:61;
+		u64 vgif_accel:1;
+		u64 r_init:1;
+		u64 reserved:60;
 	};
 }noir_svm_nested_vcpu,*noir_svm_nested_vcpu_p;
 
@@ -91,13 +93,13 @@ struct _noir_svm_custom_vm;
 struct _noir_npt_pdpte_descriptor;
 struct _noir_npt_pde_descriptor;
 struct _noir_npt_pte_descriptor;
-struct _amd64_npt_pml4e;
+union _amd64_npt_pml4e;
 
 typedef struct _noir_svm_custom_npt_manager
 {
 	struct
 	{
-		struct _amd64_npt_pml4e *virt;	// There are only 512 possible PML4Es in principle.
+		union _amd64_npt_pml4e *virt;	// There are only 512 possible PML4Es in principle.
 		u64 phys;
 	}ncr3;
 	struct
@@ -121,16 +123,17 @@ typedef struct _noir_svm_custom_npt_manager
 // Use Linked List so that vCPU can be dynamically added in CVM Runtime.
 typedef struct _noir_svm_custom_vcpu
 {
+	noir_cvm_virtual_cpu header;
 	struct _noir_svm_custom_vm *vm;
 	struct _noir_svm_custom_vcpu *next;
 	memory_descriptor vmcb;
-	noir_cvm_virtual_cpu cvm_state;
 	u64 lasted_tsc;
 	u32 proc_id;
 }noir_svm_custom_vcpu,*noir_svm_custom_vcpu_p;
 
 typedef struct _noir_svm_custom_vm
 {
+	noir_cvm_virtual_machine header;
 	struct
 	{
 		noir_svm_custom_vcpu_p head;
@@ -138,6 +141,8 @@ typedef struct _noir_svm_custom_vm
 	}vcpu;
 	u32 vcpu_count;
 	u32 asid;
+	memory_descriptor iopm;
+	memory_descriptor msrpm;
 	struct _noir_svm_custom_npt_manager nptm;
 }noir_svm_custom_vm,*noir_svm_custom_vm_p;
 
@@ -151,6 +156,12 @@ typedef struct _noir_svm_initial_stack
 	u32 proc_id;
 }noir_svm_initial_stack,*noir_svm_initial_stack_p;
 
+#if defined(_svm_exit)
+noir_svm_custom_vcpu nvc_svm_idle_cvcpu={0};
+#else
+extern noir_svm_custom_vcpu nvc_svm_idle_cvcpu;
+#endif
+
 u8 fastcall nvc_svm_subvert_processor_a(noir_svm_initial_stack_p host_rsp);
 void nvc_svm_return(noir_gpr_state_p stack);
 void fastcall nvc_svm_reserved_cpuid_handler(u32* info);
@@ -159,3 +170,8 @@ bool nvc_svm_build_cpuid_handler();
 void nvc_svm_teardown_cpuid_handler();
 bool nvc_svm_build_exit_handler();
 void nvc_svm_teardown_exit_handler();
+void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vmcb);
+void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+noir_status nvc_svmc_initialize_cvm_module();
+void nvc_svmc_finalize_cvm_module();

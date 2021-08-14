@@ -69,7 +69,7 @@ typedef enum _svm_vmcb_offset
 	tsc_offset=0x50,
 	guest_asid=0x58,
 	tlb_control=0x5C,
-	avid_control=0x60,
+	avic_control=0x60,
 	guest_interrupt=0x68,
 	exit_code=0x70,
 	exit_info1=0x78,
@@ -170,11 +170,12 @@ typedef enum _svm_vmcb_offset
 	guest_last_branch_from=0x678,
 	guest_last_branch_to=0x680,
 	guest_last_exception_from=0x688,
-	guest_last_exception_to=0x690
+	guest_last_exception_to=0x690,
+	guest_spec_ctrl=0x6E0
 }svm_vmcb_offset,*svm_vmcb_offset_p;
 
-//Following definitions is for State Save Area with SEV-ES Enabled
-//You may notice the offset is 0x400 different from corresponding fields.
+// Following definitions is for State Save Area with SEV-ES Enabled
+// You may notice the offset is 0x400 different from corresponding fields.
 typedef enum _svm_vmsa_offset
 {
 	guest_sev_es_segment=0x0,

@@ -164,7 +164,11 @@ ULONG NoirBuildHypervisor()
 	if(NoirHypervisorStarted==FALSE)
 	{
 		ULONG r=nvc_build_hypervisor();
-		if(r==0)NoirHypervisorStarted=TRUE;
+		if(r==0)
+		{
+			NoirHypervisorStarted=TRUE;
+			NoirDebugPrint("NoirVisor CVM Initialization Status: 0x%X\n",NoirInitializeCvmModule());
+		}
 		return r;
 	}
 	return 0;
@@ -174,6 +178,7 @@ void NoirTeardownHypervisor()
 {
 	if(NoirHypervisorStarted)
 	{
+		NoirFinalizeCvmModule();
 		nvc_teardown_hypervisor();
 		NoirHypervisorStarted=FALSE;
 	}

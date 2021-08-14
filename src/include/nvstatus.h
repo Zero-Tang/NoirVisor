@@ -37,7 +37,12 @@
   +-----+-----------+-----------------------------------------------+
 */
 
-typedef unsigned int noir_status;
+typedef u32 noir_status;
+
+// Macros for defining status.
+#define noir_status_severity(st)		(st>>30)
+#define noir_status_facility(st)		((st>>24)&0x3f)
+#define noir_status_code(st)			(st&0xffffff)
 
 /*
   Status Indicator: noir_success
@@ -99,6 +104,15 @@ typedef unsigned int noir_status;
 */
 
 #define noir_invalid_parameter			0xC0000004
+
+/*
+  Status Indicator: noir_hypervision_absent
+  If the function requires hypervisor to be present
+  in the system and hypervisor is actually absent,
+  then this value is supposed to be returned.
+*/
+
+#define noir_hypervision_absent			0xC0000005
 
 /*
   Status Indicator: noir_not_intel

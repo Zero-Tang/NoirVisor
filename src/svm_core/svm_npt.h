@@ -212,10 +212,14 @@ typedef union _amd64_npt_fault_code
 		u64 user:1;			// Bit	2
 		u64 rsv_b:1;		// Bit	3
 		u64 execute:1;		// Bit	4
-		u64 reserved1:27;	// Bits	5-31
+		u64 reserved1:1;	// Bit	5
+		u64 shadow_stk:1;	// Bit	6
+		u64 reserved2:25;	// Bits	7-31
 		u64 npf_addr:1;		// Bit	32
 		u64 npf_table:1;	// Bit	33
-		u64 reserved2:30;	// Bits	34-63
+		u64 reserved3:3;	// Bits	34-36
+		u64 sss:1;			// Bit	37
+		u64 reserved4:26;	// Bits 38-63
 	};
 	u64 value;
 }amd64_npt_fault_code,*amd64_npt_fault_code_p;

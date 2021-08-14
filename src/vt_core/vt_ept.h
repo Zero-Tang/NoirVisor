@@ -32,11 +32,11 @@ typedef union _ia32_ept_pointer
 {
 	struct
 	{
-		u64 memory_type:3;		//bits	0-2
-		u64 walk_length:3;		//bits	3-5
-		u64 dirty_flag:1;		//bit	6
-		u64 reserved:5;			//bits	7-11
-		u64 pml4e_offset:52;	//bits	12-63
+		u64 memory_type:3;		// bits	0-2
+		u64 walk_length:3;		// bits	3-5
+		u64 dirty_flag:1;		// bit	6
+		u64 reserved:5;			// bits	7-11
+		u64 pml4e_offset:52;	// bits	12-63
 	};
 	u64 value;
 }ia32_ept_pointer,*ia32_ept_pointer_p;
@@ -68,14 +68,16 @@ typedef union _ia32_ept_huge_pdpte
 		u64 execute:1;
 		u64 memory_type:3;
 		u64 ignore_pat:1;
-		u64 huge_pdpte:1;		//This bit must be set.
+		u64 huge_pdpte:1;		// This bit must be set.
 		u64 accessed:1;
 		u64 dirty:1;
 		u64 umx:1;
 		u64 ignored0:1;
 		u64 reserved:18;
 		u64 page_offset:22;
-		u64 ignored1:11;
+		u64 ignored1:8;
+		u64 s_shadow_stack:1;
+		u64 ignored2:2;
 		u64 suppress_ve:1;
 	};
 	u64 value;
@@ -89,7 +91,7 @@ typedef union _ia32_ept_pdpte
 		u64 write:1;
 		u64 execute:1;
 		u64 reserved0:4;
-		u64 huge_pdpte:1;		//This bit must be reset.
+		u64 huge_pdpte:1;		// This bit must be reset.
 		u64 accessed:1;
 		u64 ignored0:1;
 		u64 umx:1;
@@ -109,14 +111,16 @@ typedef union _ia32_ept_large_pde
 		u64 execute:1;
 		u64 memory_type:3;
 		u64 ignore_pat:1;
-		u64 large_pde:1;		//This bit must be set.
+		u64 large_pde:1;		// This bit must be set.
 		u64 accessed:1;
 		u64 dirty:1;
 		u64 umx:1;
 		u64 ignored0:1;
 		u64 reserved:9;
 		u64 page_offset:31;
-		u64 ignored1:11;
+		u64 ignored1:8;
+		u64 s_shadow_stack:1;
+		u64 ignored:2;
 		u64 suppress_ve:1;
 	};
 	u64 value;
@@ -130,7 +134,7 @@ typedef union _ia32_ept_pde
 		u64 write:1;
 		u64 execute:1;
 		u64 reserved0:4;
-		u64 large_pde:1;		//This bit must be reset.
+		u64 large_pde:1;		// This bit must be reset.
 		u64 accessed:1;
 		u64 ignored0:1;
 		u64 umx:1;
@@ -145,18 +149,21 @@ typedef union _ia32_ept_pte
 {
 	struct
 	{
-		u64 read:1;			//Bit	0
-		u64 write:1;		//Bit	1
-		u64 execute:1;		//Bit	2
-		u64 memory_type:3;	//Bits	3-5
-		u64 ignore_pat:1;	//Bit	6
-		u64 ignored0:1;		//Bit	7
-		u64 accessed:1;		//Bit	8
-		u64 dirty:1;		//Bit	9
-		u64 umx:1;			//Bit	10
-		u64 ignored1:1;		//Bit	11
+		u64 read:1;			// Bit	0
+		u64 write:1;		// Bit	1
+		u64 execute:1;		// Bit	2
+		u64 memory_type:3;	// Bits	3-5
+		u64 ignore_pat:1;	// Bit	6
+		u64 ignored0:1;		// Bit	7
+		u64 accessed:1;		// Bit	8
+		u64 dirty:1;		// Bit	9
+		u64 umx:1;			// Bit	10
+		u64 ignored1:1;		// Bit	11
 		u64 page_offset:40;
-		u64 ignored2:11;
+		u64 ignored2:8;
+		u64 s_shadow_stack:1;
+		u64 subpage_write:1;
+		u64 ignored3:1;
 		u64 suppress_ve:1;
 	};
 	u64 value;

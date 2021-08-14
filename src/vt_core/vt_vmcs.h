@@ -69,6 +69,7 @@ typedef enum _vmx_vmcs_encoding
 	encls_exiting_bitmap=0x202E,
 	sub_page_permission_table=0x2030,
 	tsc_multiplier=0x2032,
+	tertiary_processor_based_vm_execution_controls=0x2034,
 	enclv_exiting_bitmap=0x2036,
 	// 64-Bit Read-Only Fields
 	guest_physical_address=0x2400,

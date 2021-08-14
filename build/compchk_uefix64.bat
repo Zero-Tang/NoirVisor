@@ -39,6 +39,8 @@ clang-cl ..\src\xpf_core\noirhvm.c /I"..\src\include" /Zi /W3 /WX /Od /Oi /D"_ll
 
 clang-cl ..\src\xpf_core\ci.c /I"..\src\include" /Zi /W3 /WX /Od /Oi /D"_llvm" /D"_amd64" /D"_code_integrity" /Fa"%objpath%\ci.cod" /Fo"%objpath%\ci.obj" /GS- /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign
 
+clang-cl ..\src\xpf_core\devkits.c /I"..\src\include" /Zi /W3 /WX /Od /Oi /D"_llvm" /D"_amd64" /D"_devkits" /Fa"%objpath%\devkits.cod" /Fo"%objpath%\devkits.obj" /GS- /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign
+
 echo ============Start Linking============
 echo Linking NoirVisor EFI Loader Application...
 lld-link "%objpath%\efimain.obj" "%objpath%\debug.obj" /NODEFAULTLIB /LIBPATH:"%libpath%\compchk_uefix64" "BaseLib.lib" "BaseDebugPrintErrorLevelLib.lib" "BaseMemoryLib.lib" "BasePrintLib.lib" "UefiLib.lib" "UefiDebugLibConOut.lib" "UefiMemoryAllocationLib.lib" "UefiDevicePathLib.Lib" "UefiBootServicesTableLib.Lib" "UefiRuntimeServicesTableLib.Lib" /OUT:"%binpath%\bootx64.efi" /SUBSYSTEM:EFI_APPLICATION /ENTRY:"NoirEfiEntry" /DEBUG /PDB:"%objpath%\bootx64.pdb" /Machine:X64

@@ -14,7 +14,11 @@
 
 #include <nvdef.h>
 
-#define svm_attrib(a)		(u16)(((a&0xFF)|((a&0xF000)>>4))&0xfff)
+#define svm_attrib(a)			(u16)(((a&0xFF)|((a&0xF000)>>4))&0xfff)
+#define svm_attrib_inverse(a)	(u16)(((a&0xF00)<<4)|(a&0xFF))
+
+#define noir_svm_iopm_size		0x2001
+#define noir_svm_msrpm_size		0x1800
 
 typedef union _nvc_svm_cr_intercept
 {
@@ -270,3 +274,42 @@ typedef union _nvc_svm_avic_physical_table
 #define noir_svm_clean_lbr				10
 #define noir_svm_clean_avic				11
 #define noir_svm_clean_cet				12
+
+// Exit Info - Decode Assists.
+typedef union _nvc_svm_cr_access_exit_info
+{
+	struct
+	{
+		u64 gpr:4;
+		u64 reserved:59;
+		u64 mov:1;
+	};
+	u64 value;
+}nvc_svm_cr_access_exit_info,*nvc_svm_cr_access_exit_info_p;
+
+typedef union _nvc_svm_dr_access_exit_info
+{
+	struct
+	{
+		u64 gpr:4;
+		u64 reserved:60;
+	};
+	u64 value;
+}nvc_svm_dr_access_exit_info,*nvc_svm_dr_access_exit_info_p;
+
+typedef union _nvc_svm_io_exit_info
+{
+	struct
+	{
+		u32 type:1;
+		u32 reserved0:1;
+		u32 string:1;
+		u32 repeat:1;
+		u32 op_size:3;
+		u32 addr_size:3;
+		u32 segment:3;
+		u32 reserved1:3;
+		u32 port:16;
+	};
+	u32 value;
+}nvc_svm_io_exit_info,*nvc_svm_io_exit_info_p;

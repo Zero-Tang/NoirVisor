@@ -59,7 +59,7 @@ In future, NoirVisor has following plans:
 - Implement SVM-Nesting (This will be a long term project.)
 - Implement NPT-based Stealth Inline Hook
 
-# SVM-Nesting Algorithm (Incomplete Version)
+# SVM-Nesting Algorithm (Incomplete Version) for Global Hypervision
 To nest another working hypervisor is the highest focus of Project NoirVisor. However, starting from the repository creation, this goal has not been satisfied yet. Here, I will state down the algorithm and it will be updated in future as problems arises. <br>
 We will divide the problem into several sub-problems, as stated below:
 
@@ -82,15 +82,15 @@ L2: This term refers to the Nested Guest Context.
 ## Host SVM-Related MSR and CPUID Virtualization
 For this sub-problem, we intercept the rdmsr/wrmsr and cpuid instructions. <br>
 The Guest enables and disables SVM by setting EFER.SVME bit. <br>
-Also, we should intercept access to SVM_HSAVE_PA MSR. <br>
+Also, we should intercept access to all SVM-Related MSRs. <br>
 
 ## Virtualize SVM Instructions
-There are eight SVM instructions: vmrun, vmload, vmsave, vmmcall, clgi, stgi, invlpga, skinit. Instructions should be virtualized accordingly. <br>
-In essence, vmrun instruction takes the place of VM-Entry and VM-Exit. We will leave this to special chapters - Virtualize VM-Entry and Virtualize VM-Exit. <br>
-For vmload and vmsave instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Utilize Accelerated Nested Virtualization. <br>
-For clgi and stgi instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Utilize Accelerated Nested Virtualization. <br>
-For invlpga instruction, we pass parameters to invalidate specific TLB entry in Nested Guest. <br>
-For skinit instruction, this is somewhat optional since it is rarely used.
+There are eight SVM instructions: `vmrun`, `vmload`, `vmsave`, `vmmcall`, `clgi`, `stgi`, `invlpga`, `skinit`. Instructions should be virtualized accordingly. <br>
+In essence, `vmrun` instruction takes the place of VM-Entry and VM-Exit. We will leave this to special chapters - Virtualize VM-Entry and Virtualize VM-Exit. <br>
+For `vmload` and `vmsave` instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Utilize Accelerated Nested Virtualization. <br>
+For `clgi` and `stgi` instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Utilize Accelerated Nested Virtualization. <br>
+For `invlpga` instruction, we pass parameters to invalidate specific TLB entry in Nested Guest. <br>
+For `skinit` instruction, this is somewhat optional since it is used only for security oriented virtualization. Even VMware's hypervisor does not emulate this.
 
 ## Virtualize VM-Entry
 Basically, this is intercepting the vmrun instructions. This instruction loads VMCB by address saved in rax register. <br>
@@ -120,28 +120,35 @@ In NoirVisor, the L0 context use ASID=0, and L1 context use ASID=1. To virtualiz
 ## Virtualize GIF
 GIF is quite a special feature in AMD-V. It is a global flag that controls the interrupt behavior of the processor. To virtualize GIF, we should identify two scenarios and do what should be done. <br>
 - The processor provides hardware support for virtualizing GIF. As far as I know, processors starting at Ryzen should be providing this feature.
-- No hardware support for virtualizing GIF. VMware Workstation 16.1.0 does not provide this feature.
+- No hardware support for virtualizing GIF. VMware Workstation 16.1.2 does not provide this feature.
 
-If there is hardware support, things are easy: we set `vGIF` bit in VMCB accordingly. <br>
-If there is no hardware support, we should intercept `stgi` and `clgi` instructions. When vGIF is cleared, we set interceptions on interrupts according to AMD-V specifications. If interrupt should be ignored and discarded, then simply return to guest. If interrupt should be pending, save it to vCPU, but do not write to VMCB. When vGIF is set, we clear interceptions on interrupts, and inject the pending interrupt into guest after VM-Entry for returning from interceptions of `stgi` or `vmrun`.
+### GIF Virtualization with Hardware Support
+When the guest `EFER.SVME` is clear, we should intercept `stgi` and `clgi` instructions, and inject `#UD` exception back to the guest. <br>
+When the guest `EFER.SVME` is set, we should stop intercepting `stgi` and `clgi` instructions, and enable the `vGIF` hardware support.
 
+### GIF Virtualization without Hardware Support
+If there is no hardware support to GIF Virtualization, even if we intercept interrupts subject to be held pending, the external interrupts will eventually be taken when we enter the nested hypervisor's context. This means the nested hypervisor is actually **interruptible** while `GIF=0` logically. **Only interrupts to be discarded can be emulated properly.** This is thereby a flaw in an otherwise perfect global hypervisor that supports nested virtualization. For the sake of accurate nested virtualization, nested virtualization is infeasible in case there is no hardware support for GIF virtualization. <br>
+Why is it feasible for hypervisors like VMware Workstation to implement Nested Virtualization on AMD-V without the hardware support of virtualizing GIF? The reason is simple: any external interrupts supposed to be delivered to the guest are injected by hypervisor, instead of being originated from real external hardwares, so VMM will delay the event injection until the virtual processor logically has the GIF set.
+
+### GIF Logics
 As defined by AMD, certain interrupts are controlled by GIF:
-| Interrupt Source                                      | Actions on `GIF=0` Scenario   | Actions on `GIF=1` Scenario   |
-|-------------------------------------------------------|-------------------------------|-------------------------------|
-| Debug Trace Trap due to breakpoint register match     | Discarded                     | Act as usual                  |
-| `INIT` Signal                                         | Held Pending                  | Act as usual                  |
-| `NMI` - Nonmaskable Interrupt                         | Held Pending                  | Act as usual                  |
-| External `SMI`                                        | Held Pending                  | Act as usual                  |
-| Internal `SMI`                                        | Discarded                     | Act as usual                  |
-| External Interrupts and Virtual Interrupts            | Held Pending                  | Act as usual                  |
-| Machine Check                                         | Held Pending                  | Act as usual                  |
+| Interrupt Source								| Actions on `GIF=0` Scenario	| Actions on `GIF=1` Scenario	|
+|-----------------------------------------------|-------------------------------|-------------------------------|
+| `#DB` Trap due to breakpoint register match   | Discarded						| Act as usual					|
+| `INIT` Signal									| Held Pending					| Act as usual					|
+| `NMI` - Non-Maskable Interrupt				| Held Pending					| Act as usual					|
+| External `SMI`								| Held Pending					| Act as usual					|
+| Internal `SMI`								| Discarded						| Act as usual					|
+| External Interrupts and Virtual Interrupts	| Held Pending					| Act as usual					|
+| `#MC` Exception								| Held Pending					| Act as usual					|
 
-Therefore, all interrupts listed above, when `GIF=0`, should be intercepted. If interrupts are overlapping, discard the lower prioritized. When `GIF=1`, clear interceptions on these interrupts.
-
-### SMI Injection
-Unlike other sorts of interrupts, SMIs are not injected as `Event Injection`. Instead, there is an `SMM Control` MSR.
-
-Duly note that `vmrun` instruction would set GIF and that VM-Exit would clear GIF. Therefore, GIF on this aspect should be emulated accordingly as well.
+Here is a table that lists the conditions that change the GIF.
+| Condition				| Result					|
+|-----------------------|---------------------------|
+| `stgi` Instruction	| Sets GIF					|
+| `clgi` Instruction	| Clears GIF				|
+| `vmrun` Instruction	| Depends on `vGIF` in VMCB	|
+| VM-Exit				| Clears GIF				|
 
 ## Virtualize Nested Paging
 To virtualize NPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the SVM-nesting feature in future NoirVisor may not support NPT unless I have one.
@@ -165,7 +172,7 @@ For basic implementation, each vCPU should have one L2T-VMCB. They behave in fol
 - On VM-Exit induced by vmrun instruction, we synchronize the L2C Guest State and Control Area to L2T-VMCB.
 - On VM-Exit induced by nested guest execution, we synchronize the L2T Guest State and Control Area to L2C-VMCB.
 
-### L2 VMCB Optimization: <b> State Caching </b>
+### L2 VMCB Optimization: State Caching
 AMD64 Architecture Manual stated a processor feature: VMCB State Caching. <br>
 In essence, it specifies following processor states that can be cached:
 
@@ -195,6 +202,87 @@ This is a suggestion for Nested Virtualization in NoirVisor. By now, algorithm d
 
 ## Roadmap of Nested Virtualization
 Nested Virtualization in NoirVisor will be developped in three stages:
-- Simple (No NPT, single VMCB): Like [SimpleSvm](https://github.com/tandasat/SimpleSvm)
-- Intermediate (with NPT, single VMCB): Like [SimpleSvmHook](https://github.com/tandasat/SimpleSvmHook) or [NoirVisor](https://github.com/Zero-Tang/NoirVisor)
-- Advanced (with NPT, multiple VMCBs): Like [VMware Workstation](https://www.vmware.com/products/workstation-pro/workstation-pro-evaluation.html), [VirtualBox](https://www.virtualbox.org/), or Hyper-V.
+- Simple (No NPT, single VMCB): Like [SimpleSvm](https://github.com/tandasat/SimpleSvm) with removal of NPT.
+- Intermediate (with NPT, single VMCB): Like [SimpleSvmHook](https://github.com/tandasat/SimpleSvmHook)
+- Advanced (with NPT, multiple VMCBs): Like [VMware Workstation](https://www.vmware.com/products/workstation-pro/workstation-pro-evaluation.html), [VirtualBox](https://www.virtualbox.org/), [NoirVisor](https://github.com/Zero-Tang/NoirVisor) or Hyper-V.
+
+# Customizable VM Scheduler Algorithm
+This chapter describes the CVM scheduler algorithm for SVM-Core.
+
+## World Switch - Host to Guest
+The only condition to switch the processor context from the host to the guest is the host's hypercall to request runnning a guest vCPU. This hypercall specifies the target vCPU so that NoirVisor would switch to a correct vCPU. <br>
+Prior to running a vCPU, NoirVisor should save the processor states. The states subject to be manually saved by NoirVisor includes:
+- General-Purpose Registers. (Excludes `rax`,`rsp`,`rip`,`rflags` because they are saved in VMCB)
+- Debug Registers. (Excludes `dr6` and `dr7` because they are saved in VMCB)
+- x87 Floating-Point Registers. (We might use `fxsave` instruction to save x87 state)
+- SSE/AVX Multimedia Registers. (Includes `xmm0`-`xmm15`,`ymm0`-`ymm15`,etc.)
+
+To run a vCPU, NoirVisor should load the processor states for the Guest. In addition to the registers mentioned above, NoirVisor should load the following registers to VMCB:
+- Control Registers. (Includes `cr0`,`cr2`,`cr3`,`cr4`,`cr8`)
+- Debug Registers. (Includes `dr6`,`dr7`)
+- General-Purpose Registers. (Includes `rax`,`rsp`,`rip`,`rflags`)
+- Segment Registers.
+- Model-Specific Registers. (Includes `efer`, etc.)
+
+All states other than General-Purpose Registers are subject to be cached so that we won't have to frequently load them into VMCB. The following union defines the states to be cached by NoirVisor:
+
+```C
+typedef union _noir_cvm_vcpu_state_cache
+{
+	struct
+	{
+		u32 cr_valid:1;		// Includes cr0,cr3,cr4,efer.
+		u32 cr2valid:1;		// Includes cr2.
+		u32 dr_valid:1;		// Includes dr6,dr7.
+		u32 sr_valid:1;		// Includes cs,ds,es,ss.
+		u32 fg_valid:1;		// Includes fs,gs,kgsbase.
+		u32 dt_valid:1;		// Includes idtr,gdtr.
+		u32 lt_valid:1;		// Includes tr,ldtr.
+		u32 sc_valid:1;		// Includes star,lstar,cstar,sfmask.
+		u32 se_valid:1;		// Includes esp,eip,cs for sysenter.
+		u32 xc_valid:1;		// Includes xcr0.
+		u32 tp_valid:1;		// Includes cr8.tpr.
+		u32 reserved:21;
+	};
+	u32 value;
+}noir_cvm_vcpu_state_cache,*noir_cvm_vcpu_state_cache_p;
+```
+
+If the host changed some of the state of vCPU, its corresponding bit should be cleared so that NoirVisor would copy these content to the VMCB.
+
+## World Switch - Guest to Host
+The condition to switch the processor context from the guest to the host is certain VM-Exits from the guest. Not all VM-Exits require a world switch. VM-Exits that require a world switch includes:
+- External Interrupts. (Includes `physical INTR`, `NMI`, and `SMI`)
+- I/O Instruction. (Includes `in`, `rep outsb` instructions, etc.)
+- Processor Halt. (The `hlt` instruction)
+- Shutdown Condition. (Includes Triple-Fault, etc.)
+
+Only vCPU states not saved into VMCB should be saved for Guest and loaded for Host.
+
+## Interception Settings
+Certain interceptions must be set to ensure correct functionality of NoirVisor CVM.
+
+### Interrupt Interception
+In that Guests of CVM are not supposed to handle external interrupts from real hardwares, any external interrupts must be intercepted. We may set interceptions upon `physical INTR`, `NMI` and `SMI`. We do not have to intercept `virtual INTR` because they are subject to be injected by hypervisor. Interceptions upon `virtual INTR` may induce dead loop. <br>
+Upon interception, perform a world switch. Specify the reason of interception to be the scheduler's exit. For such reason of exit, because `GIF` becomes set when NoirVisor executes `vmrun` instruction in order to switch to host, interrupts will be handled by the Host.
+
+### CPUID Interception
+The `cpuid` instruction must be intercepted by NoirVisor, even though host may choose not to intercept it. If the host chooses not to intercept `cpuid` instruction, NoirVisor would handle the `cpuid` instruction itself. Otherwise, switch the world to the host so that host will be handling Guest's `cpuid` instruction.
+
+### I/O Interception
+I/O Interceptions are mandatory in that I/O operations in Guest are not supposed to go to real hardwares. Instead, they should go to virtual appliances, which Host is supposed to emulate. Switch the world to the host so that host will be handling Guest's I/O.
+
+### MSR Interception
+Like the `cpuid` instruction, Host can choose whether to intercept this instruction or not. If the host does not intercept MSR-Related instructions, NoirVisor would handle them and masking certain operations (e.g: accessing the `EFER` MSR). Otherwise, NoirVisor would switch to the Host to handle the instructions.
+
+### Shutdown Interception
+Usually, shutdown is induced by triple-fault. NoirVisor won't handle this interception itself. Switch to the host so the interception is transfered to the Host.
+
+### SVM Interception
+Currently, NoirVisor does not support a hypervisor to be nested inside a CVM. Simply inject a `#UD` exception to guest if SVM instructions are intercepted. Do not switch to the host to indicate the guest is attempting to execute SVM instructions.
+
+### Exception Interception
+Exception interception is optional: it is only intercepted if the host specifies so. The `#SX` is an exception to this rule: it must be intercepted in that this means an `INIT` signal has arrived. Unless the guest sets `R_INIT` bit in `VM_CR` MSR, `#SX` should neither be injected to guest nor be transfered to the host.
+
+### Nested Page Fault
+Nested Page Fault, usually abbreviated as `#NPF`, indicates that a wrong physical address is accessed. NoirVisor would not handle `#NPF` itself, but transfer the interception to the host. In addition, information like fetched instruction bytes, access information, etc., would be recorded.

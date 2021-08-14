@@ -48,6 +48,8 @@ typedef union _HV_MSR_PROPRIETARY_GUEST_OS_ID
 	ULONG64 Value;
 }HV_MSR_PROPRIETARY_GUEST_OS_ID,*PHV_MSR_PROPRIETARY_GUEST_OS_ID;
 
+NTSTATUS NoirInitializeCvmModule();
+NTSTATUS NoirFinalizeCvmModule();
 void NoirBuildHookedPages();
 void NoirTeardownHookedPages();
 void __cdecl NoirDebugPrint(const char* Format,...);

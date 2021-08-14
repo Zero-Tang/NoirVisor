@@ -14,8 +14,8 @@
 
 #include <nvdef.h>
 #include <nvbdk.h>
-#include <noirhvm.h>
 #include <nvstatus.h>
+#include <noirhvm.h>
 #include <svm_intrin.h>
 #include <nv_intrin.h>
 #include <amd64.h>
@@ -23,6 +23,11 @@
 #include "svm_vmcb.h"
 #include "svm_def.h"
 #include "svm_npt.h"
+
+u64 nvc_gva_to_gpa(noir_npt_manager_p nptm,void* gva)
+{
+	return 0;
+}
 
 void nvc_npt_cleanup(noir_npt_manager_p nptm)
 {

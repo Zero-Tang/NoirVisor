@@ -31,13 +31,15 @@ echo Compiling Core Engine of Microsoft Hypervisor (MSHV)...
 for %%1 in (..\src\mshv_core\*.c) do (clang-cl %%1 /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_hv_type1" /D"_mshv_core" /D"_%%~n1" /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign)
 
 echo Compiling Core of Cross-Platform Framework (XPF)...
-for %%1 in (..\src\xpf_core\uefi\*.c) do (clang-cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /Od /Oi /D"_efi_boot" /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /GS- /Gr /TC /c)
+for %%1 in (..\src\xpf_core\uefi\*.c) do (clang-cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /Od /Oi /D"_efi_boot" /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /GS- /Gy /Gr /TC /c)
 
 for %%1 in (..\src\xpf_core\uefi\*.asm) do (nasm -o "%objpath%\%%~n1.obj" -i "..\src\xpf_core\uefi" -l "%objpath%\%%~n1.cod" -fwin64 -g -d"_amd64" %%1)
 
-clang-cl ..\src\xpf_core\noirhvm.c /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_central_hvm" /Fa"%objpath%\noirhvm.cod" /Fo"%objpath%\noirhvm.obj" /GS- /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign
+clang-cl ..\src\xpf_core\noirhvm.c /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_central_hvm" /Fa"%objpath%\noirhvm.cod" /Fo"%objpath%\noirhvm.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign
 
-clang-cl ..\src\xpf_core\ci.c /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_code_integrity" /Fa"%objpath%\ci.cod" /Fo"%objpath%\ci.obj" /GS- /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign
+clang-cl ..\src\xpf_core\ci.c /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_code_integrity" /Fa"%objpath%\ci.cod" /Fo"%objpath%\ci.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign
+
+clang-cl ..\src\xpf_core\devkits.c /I"..\src\include" /Zi /W3 /WX /O2 /Oi /D"_llvm" /D"_amd64" /D"_devkits" /Fa"%objpath%\devkits.cod" /Fo"%objpath%\devkits.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign
 
 echo ============Start Linking============
 echo Linking NoirVisor EFI Loader Application...

@@ -40,6 +40,12 @@
 #define vortex_processor		13		// Vortex Processor (N/A)
 #define unknown_processor		0xff
 
+// Determine which core to use.
+#define use_nothing				0
+#define use_vt_core				1
+#define use_svm_core			2
+#define use_unknown_core		0xff
+
 // Processor State of Virtualization
 #define noir_virt_off			0
 #define noir_virt_on			1
@@ -49,6 +55,8 @@
 // Stack Size = 16KB
 #define nvc_stack_size			0x4000
 #define nvc_stack_pages			4
+
+struct _noir_cvm_virtual_machine;
 
 typedef struct _noir_hypervisor
 {
@@ -62,16 +70,45 @@ typedef struct _noir_hypervisor
 	void* virtual_cpu;
 	void* relative_hvm;
 #endif
+#if !defined(_hv_type1)
+	// Only Type-II (Layered) HyperVisor can schedule CVM.
+	struct _noir_cvm_virtual_machine *idle_vm;
 	struct
 	{
-		noir_cvm_virtual_machine_p head;
-		noir_cvm_virtual_machine_p tail;
-	}vm;
+		union
+		{
+			void* asid_pool;
+			void* vpid_pool;
+		};
+		union
+		{
+			noir_reslock asid_pool_lock;
+			noir_reslock vpid_pool_lock;
+		};
+		u32 limit;
+	}tlb_tagging;
+#endif
+#if defined(_hv_type1)
+	// In Type-I Hypervisor model (i.e: NoirVisor is loaded as an RT driver in UEFI),
+	// Layered hypervisor is to be loaded in the guest and subject to register.
 	struct
+#else
+	// In Type-II Hypervisor model (i.e: NoirVisor is loaded as a KM driver in OS),
+	// Layered hypervisor is the hypervisor which subverted the system itself.
+	union
+#endif
 	{
-		ulong_ptr base;
-		u32 size;
-	}hv_image;
+		struct
+		{
+			ulong_ptr base;
+			u32 size;
+		}hv_image;
+		struct
+		{
+			ulong_ptr base;
+			u32 size;
+		}layered_hv_image;
+	};
 	union
 	{
 		struct
@@ -87,6 +124,7 @@ typedef struct _noir_hypervisor
 	u32 cpu_count;
 	char vendor_string[13];
 	u8 cpu_manuf;
+	u8 selected_core;
 	// Use a 64-bit notation for an 8-byte alignment.
 	u64 reserved[0x10];	// Reserve 128 bytes for Relative HVM.
 }noir_hypervisor,*noir_hypervisor_p;
@@ -109,6 +147,7 @@ bool nvc_is_vt_supported();
 bool nvc_is_ept_supported();
 bool nvc_is_vmcs_shadowing_supported();
 bool nvc_is_vt_enabled();
+u32 nvc_vt_get_avail_vpid();
 bool nvc_vt_subvert_system(noir_hypervisor_p hvm);
 void nvc_vt_restore_system(noir_hypervisor_p hvm);
 // Functions from SVM Core.
@@ -116,6 +155,7 @@ bool nvc_is_svm_supported();
 bool nvc_is_npt_supported();
 bool nvc_is_acnested_svm_supported();
 bool nvc_is_svm_disabled();
+u32 nvc_svm_get_avail_asid();
 bool nvc_svm_subvert_system(noir_hypervisor_p hvm);
 void nvc_svm_restore_system(noir_hypervisor_p hvm);
 // Central Hypervisor Structure.

@@ -15,6 +15,8 @@
 
 #include <nvdef.h>
 
+#pragma once
+
 #define page_size				0x1000
 #define page_4kb_size			0x1000
 #define page_2mb_size			0x200000
@@ -64,6 +66,12 @@ typedef union _large_integer
 	};
 	u64 value;
 }large_integer,*large_integer_p;
+
+typedef struct _list_entry
+{
+	struct _list_entry *next;
+	struct _list_entry *prev;
+}list_entry,*list_entry_p;
 
 // Processor Facility
 typedef struct _segment_register
@@ -247,6 +255,19 @@ typedef struct _noir_cpuid_general_info
 	u32 edx;
 }noir_cpuid_general_info,*noir_cpuid_general_info_p;
 
+typedef struct _noir_disasm_request
+{
+	// Input
+	u64 va;
+	u32 mnemonic_limit;
+	u8 bits;
+	u8 limit;
+	u8 buffer[15];
+	// Output
+	u8 instruction_length;
+	char mnemonic[1];
+}noir_disasm_request,*noir_disasm_request_p;
+
 typedef void (*noir_broadcast_worker)(void* context,u32 processor_id);
 typedef i32(cdecl *noir_sorting_comparator)(const void* a,const void*b);
 
@@ -255,11 +276,25 @@ void noir_generic_call(noir_broadcast_worker worker,void* context);
 u32 noir_get_processor_count();
 u32 noir_get_current_processor();
 u32 noir_get_instruction_length(void* code,bool long_mode);
+u32 noir_get_instruction_length_ex(void* code,u8 bits);
+u32 noir_disasm_instruction(void* code,char* mnemonic,size_t mnemonic_length,u8 bits,u64 virtual_address);
+
+// Doubly-Linked List Facility
+void noir_initialize_list_entry(list_entry_p entry);
+void noir_insert_to_prev(list_entry_p inserter,list_entry_p insertee);
+void noir_insert_to_next(list_entry_p inserter,list_entry_p insertee);
+void noir_remove_list_entry(list_entry_p entry);
+
+// Bitmap Facility
+u32 noir_find_clear_bit(void* bitmap,u32 limit);
+u32 noir_find_set_bit(void* bitmap,u32 limit);
 
 // Processor Extension Register Context Instructions
 // Use when switching from/to customizable VMs.
 void noir_fxsave(noir_fx_state_p state);
 void noir_fxrestore(noir_fx_state_p state);
+void noir_ffxsave(noir_fx_state_p state);		// Ignore the XMM registers.
+void noir_ffxrestore(noir_fx_state_p state);	// Ignore the XMM registers.
 void noir_xmmsave(noir_xmm_state_p state);
 void noir_xmmrestore(noir_xmm_state_p state);
 void noir_ymmsave(noir_ymm_state_p state);

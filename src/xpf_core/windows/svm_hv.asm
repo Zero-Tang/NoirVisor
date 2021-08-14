@@ -56,7 +56,6 @@ nvc_svm_exit_handler_a proc
 	; Save all GPRs, and pass to Exit Handler
 	pushaq
 	; Save processor's hidden state for Guest.
-	mov rax,qword ptr[rsp+80h]
 	vmsave rax
 	; Load processor's hidden state for Host.
 	mov rax,qword ptr[rsp+88h]
@@ -73,6 +72,7 @@ nvc_svm_exit_handler_a proc
 	popaq
 	; After popaq, rax stores the physical
 	; address of VMCB again.
+	vmload rax
 	vmrun rax
 	; VM-Exit occured again, jump back.
 	jmp nvc_svm_exit_handler_a
@@ -81,6 +81,7 @@ nvc_svm_exit_handler_a endp
 
 nvc_svm_subvert_processor_a proc
 
+	clgi		; Enter Atomic Execution State.
 	pushfq
 	pushaq
 	mov rdx,rsp
@@ -104,7 +105,7 @@ nvc_svm_subvert_processor_a proc
 	; At this moment, the vmrun instruction
 	; behaves like vmlaunch in Intel VT-x.
 	vmrun rax
-	; As we goes here, VM-Exit occurs.
+	; As the code goes here, VM-Exit occurs.
 	; Jump to VM-Exit Handler.
 	jmp nvc_svm_exit_handler_a
 svm_launched:

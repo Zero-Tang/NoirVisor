@@ -100,6 +100,14 @@ bool nvc_is_vt_enabled()
 	return false;
 }
 
+u32 nvc_vt_get_avail_vpid()
+{
+	// Please note that in Intel VT-x, the VPID is a 16-bit field.
+	// Plus, there is no direct MSR reporting this limit.
+	// Therefore, let's say it implies a VPID limit of 65536.
+	return 0x10000;
+}
+
 void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 {
 	if(hvm)
@@ -417,9 +425,10 @@ void static nvc_vt_setup_procbased_controls(bool true_msr)
 		proc_ctrl2_msr.value=noir_rdmsr(ia32_vmx_2ndproc_ctrl);
 		// Setup Secondary Processor-Based VM-Execution Controls
 		proc_ctrl2.value=0;
-		proc_ctrl2.enable_ept=1;		// Use Intel EPT.
+		proc_ctrl2.enable_ept=1;			// Use Intel EPT.
 		proc_ctrl2.enable_rdtscp=1;
-		proc_ctrl2.enable_vpid=1;		// Avoid unnecessary TLB flushing with VPID
+		proc_ctrl2.enable_vpid=1;			// Avoid unnecessary TLB flushing with VPID
+		proc_ctrl2.unrestricted_guest=1;	// Allows the guest to enter unpaged mode.
 		proc_ctrl2.enable_invpcid=1;
 		proc_ctrl2.enable_xsaves_xrstors=1;
 		// Filter unsupported fields.
