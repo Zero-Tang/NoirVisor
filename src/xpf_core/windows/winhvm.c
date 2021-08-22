@@ -52,6 +52,69 @@ NTSTATUS NoirReportWindowsVersion()
 	return st;
 }
 
+NTSTATUS NoirGetUefiHypervisionStatus()
+{
+	NTSTATUS st;
+	PVOID HalBase=NoirLocateImageBaseByName(L"hal.dll");
+	if(HalBase)
+	{
+		HalGetEnvironmentVariableEx=NoirLocateExportedProcedureByName(HalBase,"HalGetEnvironmentVariableEx");
+		if(HalGetEnvironmentVariableEx)
+		{
+			HYPERVISOR_SYSTEM_IDENTITY HvSysId;
+			SIZE_T Size=sizeof(HvSysId);
+			st=HalGetEnvironmentVariableEx(L"Version",&EfiNoirVisorVendorGuid,&HvSysId,&Size,EFI_VARIABLE_RUNTIME_ACCESS);
+			if(NT_SUCCESS(st))
+			{
+				HYPERVISOR_LAYERING_PASSCODE PassCode;
+				NoirDebugPrint("NoirVisor is present in UEFI!\n");
+				Size=sizeof(PassCode);
+				st=HalGetEnvironmentVariableEx(L"Passcode",&EfiNoirVisorVendorGuid,&PassCode,&Size,EFI_VARIABLE_RUNTIME_ACCESS);
+				if(NT_SUCCESS(st))
+					NoirDebugPrint("NoirVisor UEFI Layering Hypervisor Passcode: %.*s\n",PassCode.Length,PassCode.Text);
+				else
+					NoirDebugPrint("Failed to obtain NoirVisor UEFI Layering Hypervisor Passcode! Status=0x%X\n",st);
+				NoirDebugPrint("NoirVisor UEFI Version is %u.%u Service Pack %u Build %u.\n",HvSysId.MajorVersion,HvSysId.MinorVersion,HvSysId.ServicePack,HvSysId.BuildNumber);
+				NoirDebugPrint("NoirVisor UEFI Service Branch is %u, Service Number is %u.\n",HvSysId.ServiceBranch,HvSysId.ServiceNumber);
+			}
+			else
+			{
+				NoirDebugPrint("Failed to confirm NoirVisor's presence in UEFI! Status=0x%X\n",st);
+				// The following code explains the return value of HalGetEnvironmentVariableEx.
+				switch(st)
+				{
+					case STATUS_NOT_IMPLEMENTED:
+					{
+						NoirDebugPrint("System is booted with BIOS instead of UEFI!\n");
+						break;
+					}
+					case STATUS_VARIABLE_NOT_FOUND:
+					{
+						NoirDebugPrint("System is booted with UEFI. However, NoirVisor was not loaded during UEFI Boot Stage!\n");
+						break;
+					}
+					default:
+					{
+						NoirDebugPrint("Unknown Error while querying NoirVisor UEFI Variables! NTSTATUS=0x%X\n",st);
+						break;
+					}
+				}
+			}
+		}
+		else
+		{
+			NoirDebugPrint("Failed to locate HalGetEnvironmentVariableEx! This system does not support UEFI!\n");
+			st=STATUS_NOT_IMPLEMENTED;
+		}
+	}
+	else
+	{
+		NoirDebugPrint("Failed to locate hal.dll module!\n");
+		st=STATUS_UNSUCCESSFUL;
+	}
+	return st;
+}
+
 void NoirPrintCompilerVersion()
 {
 	ULONG Build=_MSC_FULL_VER%100000;

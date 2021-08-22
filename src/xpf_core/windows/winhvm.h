@@ -48,6 +48,57 @@ typedef union _HV_MSR_PROPRIETARY_GUEST_OS_ID
 	ULONG64 Value;
 }HV_MSR_PROPRIETARY_GUEST_OS_ID,*PHV_MSR_PROPRIETARY_GUEST_OS_ID;
 
+#define EFI_VARIABLE_NON_VOLATILE			0x01
+#define EFI_VARIABLE_BOOTSERVICE_ACCESS		0x02
+#define EFI_VARIABLE_RUNTIME_ACCESS			0x04
+
+typedef struct _HYPERVISOR_SYSTEM_IDENTITY
+{
+	ULONG32 BuildNumber;
+	union
+	{
+		struct
+		{
+			ULONG32 MinorVersion:16;
+			ULONG32 MajorVersion:16;
+		};
+		ULONG32 Version;
+	};
+	ULONG32 ServicePack;
+	union
+	{
+		struct
+		{
+			ULONG32 ServiceNumber:24;
+			ULONG32 ServiceBranch:8;
+		};
+		ULONG32 Service;
+	};
+}HYPERVISOR_SYSTEM_IDENTITY,*PHYPERVISOR_SYSTEM_IDENTITY;
+
+typedef struct _HYPERVISOR_LAYERING_PASSCODE
+{
+	BYTE Length;
+	CHAR Text[255];
+}HYPERVISOR_LAYERING_PASSCODE,*PHYPERVISOR_LAYERING_PASSCODE;
+
+// Albeit the HalGetEnvironmentVariableEx is undocumented in MSDN, this function
+// actually follows the prototype definition of RuntimeServices->GetVariable in UEFI.
+// HAL will do some BIOS/UEFI checks and EFI_STATUS to NTSTATUS mappings in this function.
+typedef NTSTATUS (*HALGETENVIRONMENTVARIABLEEX)
+(
+ IN PWSTR VariableName,
+ IN CONST GUID *VendorGuid,
+ OUT PVOID Data,
+ OUT PSIZE_T Size,
+ IN ULONG32 Attributes
+);
+
+HALGETENVIRONMENTVARIABLEEX HalGetEnvironmentVariableEx=NULL;
+
+PVOID NoirLocateImageBaseByName(IN PWSTR ImageName);
+PVOID NoirLocateExportedProcedureByName(IN PVOID ImageBase,IN PSTR ProcedureName);
+
 NTSTATUS NoirInitializeCvmModule();
 NTSTATUS NoirFinalizeCvmModule();
 void NoirBuildHookedPages();
@@ -62,6 +113,8 @@ ULONG noir_get_virtualization_supportability();
 BOOLEAN noir_is_virtualization_enabled();
 BOOLEAN noir_initialize_ci(PVOID section,ULONG size,BOOLEAN soft_ci,BOOLEAN hard_ci);
 void noir_finalize_ci();
+
+GUID EfiNoirVisorVendorGuid={0x2B1F2A1E,0xDBDF,0x44AC,0xDA,0xBC,0xC7,0xA1,0x30,0xE2,0xE7,0x1E};
 
 BOOLEAN NoirHypervisorStarted=FALSE;
 PVOID NoirPowerCallbackObject=NULL;

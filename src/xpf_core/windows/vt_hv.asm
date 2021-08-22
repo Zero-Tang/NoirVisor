@@ -21,6 +21,7 @@ include noirhv.inc
 
 extern nvc_vt_subvert_processor_i:proc
 extern nvc_vt_exit_handler:proc
+extern nvc_vt_resume_failure:proc
 
 ifdef _amd64
 
@@ -71,20 +72,41 @@ nvc_vt_resume_without_entry proc
 
 nvc_vt_resume_without_entry endp
 
-nvc_vt_exit_handler_a proc
+nvc_vt_exit_handler_a proc frame
 
-	; pushax
-	pushaq
+	; eb NoirVisor!nvc_vt_exit_handler_a cc
+	nop			; Change to int 3 in order to debug-break.
+	; Add a trap frame so WinDbg may display stack trace in Guest.
+	.pushframe
+	sub rsp,ktrap_frame_size-mach_frame_size+gpr_stack_size+20h
+	.allocstack ktrap_frame_size-mach_frame_size+108h
+	; Save all GPRs
+	pushaq_fast 20h
 	; Load the Guest GPR State to the first parameter.
-	mov rcx,rsp
+	lea rcx,[rsp+20h]
 	; Load vcpu to second parameter.
-	mov rdx,qword ptr [rsp+80h]
-	sub rsp,20h
+	mov rdx,qword ptr [rsp+ktrap_frame_size-mach_frame_size+gpr_stack_size+20h]
+	; End of Prologue...
+	.endprolog
 	call nvc_vt_exit_handler
-	add rsp,20h
-	popaq
-	; popax
+	; Restore GPR state.
+	popaq_fast 20h
+	; We don't have to increment stack here in
+	; that the host rsp is already set in VMCS.
 	vmresume
+	; Usually we won't be here, unless the VM-Entry fails.
+	; We will call the special procedure to handle this situation.
+	; First Parameter: the GPR state of the guest.
+	lea rcx,[rsp+20h]
+	; Second Parameter: the vCPU.
+	mov rdx,qword ptr [rsp+ktrap_frame_size-mach_frame_size+gpr_stack_size+20h]
+	; Third Parameter: the VMX instruction status.
+	setz r8b
+	setc al
+	adc r8b,al
+	call nvc_vt_resume_failure
+	; The "ret" here is to let the WinDbg stop disassembling for the uf command.
+	ret
 
 nvc_vt_exit_handler_a endp
 

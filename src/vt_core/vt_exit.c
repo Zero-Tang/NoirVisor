@@ -308,22 +308,23 @@ void static fastcall nvc_vt_invd_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu
 // This is VM-Exit of obligation.
 void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	ulong_ptr gip;
+	ulong_ptr gip,gcr3;
+	bool valid_call=false;
+	u32 index=(u32)gpr_state->rcx;
 	noir_vt_vmread(guest_rip,&gip);
-	// We should verify that the vmcall is inside the NoirVisor's image.
-	if(gip>=hvm_p->hv_image.base && gip<hvm_p->hv_image.base+hvm_p->hv_image.size)
+	noir_vt_vmread(guest_cr3,&gcr3);
+	switch(index)
 	{
-		u32 index=(u32)gpr_state->rcx;
-		switch(index)
+		case noir_vt_callexit:
 		{
-			case noir_vt_callexit:
+			// We should verify that the vmcall is inside the NoirVisor's image before unloading.
+			if(gip>=hvm_p->hv_image.base && gip<hvm_p->hv_image.base+hvm_p->hv_image.size)
 			{
 				noir_gpr_state_p saved_state=(noir_gpr_state_p)vcpu->hv_stack;
-				ulong_ptr gsp,gflags,gcr3;
+				ulong_ptr gsp,gflags;
 				u32 inslen=3;		// By default, vmcall uses 3 bytes.
 				noir_vt_vmread(guest_rsp,&gsp);
 				noir_vt_vmread(guest_rflags,&gflags);
-				noir_vt_vmread(guest_cr3,&gcr3);
 				noir_vt_vmread(vmexit_instruction_length,&inslen);
 				// We may allocate space from unused HV-Stack
 				noir_movsp(saved_state,gpr_state,sizeof(void*)*2);
@@ -352,15 +353,49 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 				vcpu->status=noir_virt_trans;
 				nv_dprintf("Restoration completed!\n");
 				nvc_vt_resume_without_entry(saved_state);
-				break;
+				// The code won't reach here.
+				valid_call=true;
 			}
-			default:
-			{
-				nv_dprintf("Unknown vmcall index!\n");
-				break;
-			}
+			break;
+		}
+		case noir_vt_disasm_length:
+		{
+#if defined(_hv_type1)
+#else
+			noir_disasm_request_p disasm=(noir_disasm_request_p)gpr_state->rdx;
+			// Get the page table base that maps both kernel mode address space
+			// and the user mode address space for the invoker's process.
+			// DO NOT USE THE GUEST CR3 FIELD IN VMCS!
+			u64 gcr3k=noir_get_current_process_cr3();
+			noir_writecr3(gcr3k);		// Switch to the Guest Address Space.
+			disasm->instruction_length=noir_get_instruction_length_ex(disasm->buffer,disasm->bits);
+#endif
+			valid_call=true;
+			break;
+		}
+		case noir_vt_disasm_mnemonic:
+		{
+#if defined(_hv_type1)
+#else
+			noir_disasm_request_p disasm=(noir_disasm_request_p)gpr_state->rdx;
+			// Get the page table base that maps both kernel mode address space
+			// and the user mode address space for the invoker's process.
+			// DO NOT USE THE GUEST CR3 FIELD IN VMCS!
+			u64 gcr3k=noir_get_current_process_cr3();
+			noir_writecr3(gcr3k);		// Switch to the Guest Address Space.
+			disasm->instruction_length=noir_disasm_instruction(disasm->buffer,disasm->mnemonic,disasm->mnemonic_limit,disasm->bits,disasm->va);
+#endif
+			valid_call=true;
+			break;
+		}
+		default:
+		{
+			nv_dprintf("Unknown vmcall index!\n");
+			break;
 		}
 	}
+	if(valid_call)
+		noir_vt_advance_rip();
 	else
 	{
 		// If vmcall is not inside the NoirVisor's image,
@@ -970,6 +1005,34 @@ void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu
 		nvc_vt_default_handler(gpr_state,vcpu);
 	// Guest RIP is supposed to be advanced in specific handlers, not here.
 	// Do not execute vmresume here. It will be done as this function returns.
+}
+
+void fastcall nvc_vt_resume_failure(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,u8 vmx_status)
+{
+	switch(vmx_status)
+	{
+		case vmx_fail_valid:
+		{
+			u32 err_code;
+			noir_vt_vmread(vm_instruction_error,&err_code);
+			nv_panicf("Failed to VM-Entry on Resume! Error Code: %d\n",err_code);
+			nv_panicf("Explanation to VM-Entry Failure: %s\n",vt_error_message[err_code]);
+			break;
+		}
+		case vmx_fail_invalid:
+		{
+			nv_panicf("Failed to VM-Entry on Resume because no active VMCS is loaded!\n");
+			break;
+		}
+		default:
+		{
+			nv_panicf("Unknown VM-Entry Failure status on Resume! Status=%d\n",vmx_status);
+			break;
+		}
+	}
+	// Break at last to let the debug personnel know the failure.
+	noir_int3();
+	// Call the panic function to stop the system.
 }
 
 void nvc_vt_set_mshv_handler(bool option)

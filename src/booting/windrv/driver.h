@@ -40,6 +40,7 @@ void NoirTeardownProtectedFile();
 void NoirSetProtectedFile(IN PWSTR FileName);
 void NoirPrintCompilerVersion();
 NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength);
+NTSTATUS NoirGetUefiHypervisionStatus();
 void NoirReportMemoryIntrospectionCounter();
 ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();

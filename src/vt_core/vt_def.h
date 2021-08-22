@@ -448,4 +448,6 @@ char* vt_error_message[0x20]=
 	"Invalid Error, Number=30!",									// Error=30
 	"Invalid Error, Number=31!"										// Error=31
 };
+#else
+extern char* vt_error_message[];
 #endif

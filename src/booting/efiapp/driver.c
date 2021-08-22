@@ -41,14 +41,44 @@ void NoirBlockUntilKeyStroke(IN CHAR16 Unicode)
 	}while(InKey.UnicodeChar!=Unicode);
 }
 
+EFI_STATUS EFIAPI NoirRegisterHypervisorVariables()
+{
+	EFI_STATUS st=gRT->SetVariable(L"Version",&gEfiNoirVisorVendorGuid,EFI_VARIABLE_BOOTSERVICE_ACCESS|EFI_VARIABLE_RUNTIME_ACCESS,sizeof(HvSysId),&HvSysId);
+	if(st==EFI_SUCCESS)
+	{
+		if(sizeof(LayeringPasscode)>255)
+		{
+			Print(L"Passcode for Layered Hypervisor is too long!\n");
+			st=EFI_BAD_BUFFER_SIZE;
+		}
+		else
+		{
+			Passcode.Length=sizeof(LayeringPasscode);
+			CopyMem(Passcode.Text,LayeringPasscode,sizeof(LayeringPasscode));
+			st=gRT->SetVariable(L"Passcode",&gEfiNoirVisorVendorGuid,EFI_VARIABLE_BOOTSERVICE_ACCESS|EFI_VARIABLE_RUNTIME_ACCESS,sizeof(Passcode),&Passcode);
+		}
+	}
+	return st;
+}
+
 EFI_STATUS EFIAPI NoirEfiInitialize(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable)
 {
+	// Constructors...
 	UefiBootServicesTableLibConstructor(ImageHandle,SystemTable);
 	UefiRuntimeServicesTableLibConstructor(ImageHandle,SystemTable);
 	UefiLibConstructor(ImageHandle,SystemTable);
 	DevicePathLibConstructor(ImageHandle,SystemTable);
+	// Standard I/O
 	StdIn=SystemTable->ConIn;
 	StdOut=SystemTable->ConOut;
+	// Hypervisor System Identity
+	HvSysId.BuildNumber=0;
+	HvSysId.MajorVersion=0;
+	HvSysId.MinorVersion=6;
+	HvSysId.ServicePack=0;
+	HvSysId.ServiceNumber=0;
+	HvSysId.ServiceBranch=0;
+	// Locate Protocols Required by NoirVisor.
 	return gBS->LocateProtocol(&gEfiMpServicesProtocolGuid,NULL,(VOID**)&MpServices);
 }
 
@@ -62,6 +92,8 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	gBS->CreateEvent(EVT_SIGNAL_EXIT_BOOT_SERVICES,TPL_NOTIFY,NoirNotifyExitBootServices,NULL,&NoirEfiExitBootServicesNotification);
 	st=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocolGuid,&ImageInfo);
 	if(st==EFI_SUCCESS)ImageInfo->Unload=NoirDriverUnload;
+	st=NoirRegisterHypervisorVariables();
+	Print(L"NoirVisor Variables Registration Status=0x%X\n",st);
 	st=NoirBuildHostEnvironment();
 	Print(L"NoirVisor Runtime Driver Initialization Status: 0x%X MpServices: 0x%p\r\n",st,MpServices);
 	return EFI_SUCCESS;

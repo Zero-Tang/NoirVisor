@@ -593,10 +593,13 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 #if defined(_hv_type1)
 #else
 			noir_disasm_request_p disasm=(noir_disasm_request_p)context;
-			u64 hcr3=noir_readcr3();
-			noir_writecr3(gcr3);		// Switch to the Guest Address Space.
+			// Get the page table base that maps both kernel mode address space
+			// and the user mode address space for the invoker's process.
+			// DO NOT USE THE GUEST CR3 FIELD IN VMCB!
+			u64 gcr3k=noir_get_current_process_cr3();
+			noir_writecr3(gcr3k);			// Switch to the Guest Address Space.
 			disasm->instruction_length=noir_get_instruction_length_ex(disasm->buffer,disasm->bits);
-			noir_writecr3(hcr3);		// Switch back to Host Address Space.
+			noir_writecr3(system_cr3);		// Switch back to Host Address Space.
 #endif
 			break;
 		}
@@ -605,10 +608,13 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 #if defined(_hv_type1)
 #else
 			noir_disasm_request_p disasm=(noir_disasm_request_p)context;
-			u64 hcr3=noir_readcr3();
-			noir_writecr3(gcr3);		// Switch to the Guest Address Space.
+			// Get the page table base that maps both kernel mode address space
+			// and the user mode address space for the invoker's process.
+			// DO NOT USE THE GUEST CR3 FIELD IN VMCB!
+			u64 gcr3k=noir_get_current_process_cr3();
+			noir_writecr3(gcr3k);			// Switch to the Guest Address Space.
 			disasm->instruction_length=noir_disasm_instruction(disasm->buffer,disasm->mnemonic,disasm->mnemonic_limit,disasm->bits,disasm->va);
-			noir_writecr3(hcr3);		// Switch back to Host Address Space.
+			noir_writecr3(system_cr3);		// Switch back to Host Address Space.
 #endif
 			break;
 		}

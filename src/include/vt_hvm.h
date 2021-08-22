@@ -14,7 +14,9 @@
 
 #include <nvdef.h>
 
-#define noir_vt_callexit		1
+#define noir_vt_callexit				0x1
+#define noir_vt_disasm_length			0x2
+#define noir_vt_disasm_mnemonic			0x3
 
 #define noir_nvt_vmxe			0
 #define noir_nvt_vmxon			1

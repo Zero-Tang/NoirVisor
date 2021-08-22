@@ -78,7 +78,8 @@ Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a par
 Those two files are EFI Application and Runtime Driver respectively. <br>
 Copy EFI Application to `\EFI\BOOT\bootx64.efi` <br>
 Copy EFI Runtime Driver to `\NoirVisor.efi` <br>
-As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system. Disable Secure Boot feature unless you can sign the executable.
+As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system. Disable Secure Boot feature unless you can sign the executable. <br>
+NoirVisor has defined its own vendor GUID `{2B1F2A1E-DBDF-44AC-DABCC7A130E2E71E}`. Developments regarding Layered Hypervisor would require accessing NoirVisor's UEFI variables.
 
 # Detection of NoirVisor
 As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]` indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors defines leaf 0x40000000 is used to identify hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is `VMwareVMware`. In NoirVisor, hypervisor vendor string is defined as `NoirVisor ZT`.
@@ -99,6 +100,10 @@ Customizable VM is the true explanation of "complex functions and purposes". As 
 Customizable VM is the feature that Zero researches about Virtualization: to run an arbitrary guest, instead of to just subvert the host system. In a word, it is aimed to be a competitor of the Windows Hypervisor Platform (WHP). <br>
 For CVM Algorithm on AMD-V, visit [here](src/svm_core/readme.md#customizable-vm-scheduler-algorithm)
 
+# UMIP Emulation / NPIEP
+This feature is equivalent (or, at least, similar) to the `NPIEP` (Non-Privileged Instruction Execution Prevention) Feature in Microsoft Virtualization-based Security. <br>
+The `UMIP Emulation` feature, evident from its name, emulates the `UMIP` feature of recent x86 processors. To be more specfic, the `sgdt`, `sidt`, `sldt`, `str`, `smsw` instructions will be intercepted. If `CPL>0`, inject a `#GP(0)` exception for these instructions. <br>
+
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. <br>
 Currently, NoirVisor supports the Windows Operating System newer than or same as Windows XP, running as a kernel-mode driver. <br>
@@ -106,10 +111,11 @@ Porting to Unified Extensible Firmware Interface (UEFI) is in progress. <br>
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has five future development plans: <br>
+Project NoirVisor has six future development plans: <br>
 - Develop Customizable VM engine for complex purposes.
 - Develop Nested Virtualization.
 - Develop IOMMU Core.
+- Develop UMIP (User Mode Instruction Prevention) Emulation.
 - Port NoirVisor to 32-bit Windows platform.
 - Port NoirVisor to UEFI and corresponding layered hypervisor.
 

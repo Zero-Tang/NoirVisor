@@ -310,6 +310,7 @@ void noir_free_nonpg_memory(void* virtual_address);
 void noir_free_paged_memory(void* virtual_address);
 void noir_free_2mb_page(void* virtual_address);
 u64 noir_get_physical_address(void* virtual_address);
+u64 noir_get_current_process_cr3();
 void* noir_map_physical_memory(u64 physical_address,size_t length);
 void noir_unmap_physical_memory(void* virtual_address,size_t length);
 void* noir_find_virt_by_phys(u64 physical_address);

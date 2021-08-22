@@ -486,6 +486,18 @@ void noir_free_2mb_page(void* virtual_address)
 	MmFreeContiguousMemorySpecifyCache(virtual_address,0x200000,MmCached);
 }
 
+ULONG64 noir_get_current_process_cr3()
+{
+	PEPROCESS Process=PsGetCurrentProcess();
+#if defined(_WIN64)
+	// Note that KPROCESS+0x110 also points to a paging base, but it
+	// does not map kernel mode address space except syscall handler.
+	return *(PULONG64)((ULONG_PTR)Process+0x28);
+#else
+	return *(PULONG64)((ULONG_PTR)Process+0x18);
+#endif
+}
+
 // Some Additional repetitive functions
 ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress)
 {

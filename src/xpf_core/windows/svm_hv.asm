@@ -50,28 +50,36 @@ nvc_svm_return proc
 
 nvc_svm_return endp
 
-nvc_svm_exit_handler_a proc
+nvc_svm_exit_handler_a proc frame
 
 	; At this moment, VM-Exit occured.
+	; eb NoirVisor!nvc_svm_exit_handler_a cc
+	nop			; Change to int 3 in order to debug-break.
+	; Add a trap frame so WinDbg may display stack trace in Guest.
+	.pushframe
+	sub rsp,ktrap_frame_size+gpr_stack_size+20h
+	.allocstack ktrap_frame_size-mach_frame_size+100h
 	; Save all GPRs, and pass to Exit Handler
-	pushaq
+	pushaq_fast 20h
 	; Save processor's hidden state for Guest.
 	vmsave rax
 	; Load processor's hidden state for Host.
-	mov rax,qword ptr[rsp+88h]
+	mov rax,qword ptr[rsp+ktrap_frame_size+gpr_stack_size+28h]
 	vmload rax
-	mov rcx,rsp		; First Parameter - Guest GPRs
+	lea rcx,[rsp+20h]		; First Parameter - Guest GPRs
 	; Second Parameter - vCPU
-	mov rdx,qword ptr[rsp+90h]
-	sub rsp,20h
+	mov rdx,qword ptr[rsp+ktrap_frame_size+gpr_stack_size+30h]
+	; End of Prologue...
+	.endprolog
 	; Call Exit Handler
 	call nvc_svm_exit_handler
-	add rsp,20h
 	; Restore all the GPRs.
 	; Certain context should be revised by VMM.
-	popaq
+	popaq_fast 20h
 	; After popaq, rax stores the physical
 	; address of VMCB again.
+	; Don't forget to pop the frame on the stack.
+	add rsp,ktrap_frame_size+gpr_stack_size+20h
 	vmload rax
 	vmrun rax
 	; VM-Exit occured again, jump back.

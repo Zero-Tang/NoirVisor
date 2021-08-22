@@ -136,12 +136,12 @@ bool nvc_ept_update_pde(noir_ept_manager_p eptm,u64 hpa,bool r,bool w,bool x)
 bool nvc_ept_update_pte(noir_ept_manager_p eptm,u64 hpa,u64 gpa,bool r,bool w,bool x)
 {
 	ia32_addr_translator hat,gat;
-	noir_ept_pte_descriptor_p pte_p;
+	noir_ept_pte_descriptor_p pte_p=eptm->pte.head;
 	hat.value=hpa;
 	gat.value=gpa;
 	// We cannot accept address higher than 512GB here.
 	if(hat.pml4e_offset || gat.pml4e_offset)return false;
-	for(pte_p=eptm->pte.head;pte_p->next;pte_p=pte_p->next)
+	while(pte_p)
 	{
 		if(hpa>=pte_p->gpa_start && hpa<pte_p->gpa_start+page_2mb_size)
 		{
@@ -152,6 +152,7 @@ bool nvc_ept_update_pte(noir_ept_manager_p eptm,u64 hpa,u64 gpa,bool r,bool w,bo
 			pte_p->virt[hat.pte_offset].page_offset=gpa>>12;
 			return true;
 		}
+		pte_p=pte_p->next;
 	}
 	// The 2MB page was not described as PTE yet.
 	pte_p=noir_alloc_nonpg_memory(sizeof(noir_ept_pte_descriptor));
@@ -185,8 +186,13 @@ bool nvc_ept_update_pte(noir_ept_manager_p eptm,u64 hpa,u64 gpa,bool r,bool w,bo
 			pde_p->large_pde=0;
 			pde_p->pte_offset=pte_p->phys>>12;
 			// Update the linked list.
-			eptm->pte.tail->next=pte_p;
-			eptm->pte.tail=pte_p;
+			if(unlikely(eptm->pte.head==null))
+				eptm->pte.head=eptm->pte.tail=pte_p;
+			else
+			{
+				eptm->pte.tail->next=pte_p;
+				eptm->pte.tail=pte_p;
+			}
 			return true;
 		}
 		noir_free_nonpg_memory(pte_p);

@@ -113,6 +113,9 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 #define noir_store_fence	_mm_sfence
 #define noir_memory_fence	_mm_mfence
 
+// Invalidate TLBs
+#define noir_invlpg	__invlpg
+
 // Clear/Set RFlags.IF
 #define noir_cli	_disable
 #define noir_sti	_enable
