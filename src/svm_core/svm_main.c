@@ -126,7 +126,7 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	void* bitmap1=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0);
 	void* bitmap2=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0x800);
 	void* bitmap3=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0x1000);
-	// Setup basic MSR-Intercepts that may interfere with SVM normal operations.
+	// Setup basic interceptions to MSRs that may interfere with SVM normal operations.
 	// This is also for nested virtualization.
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,0));
 	noir_set_bitmap(bitmap2,svm_msrpm_bit(2,amd64_efer,1));
@@ -134,6 +134,9 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_vmcr,1));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,0));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,1));
+	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_svm_key,0));
+	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_svm_key,1));
+	/*
 	// Intercept Memory-Typing MSRs.
 	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base0,1));
 	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask0,1));
@@ -164,6 +167,7 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_f8000,1));
 	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_pat,1));
 	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_def_type,1));
+	*/
 	if(hvm_p->options.stealth_msr_hook)
 	{
 	// Setup custom MSR-Interception if enabled.
@@ -190,12 +194,14 @@ void static nvc_svm_setup_virtual_msr(noir_svm_vcpu_p vcpu)
 
 void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 {
+	nvc_svm_cra_intercept crx_intercept;
 	nvc_svm_instruction_intercept1 list1;
 	nvc_svm_instruction_intercept2 list2;
 	u32 listex=0;
 	u32 a,b,c,d;
-	noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
+	noir_cpuid(amd64_cpuid_ext_svm_features,0,&a,&b,&c,&d);
 	// Basic features...
+	crx_intercept.value=0;
 	list1.value=0;
 	list1.intercept_cpuid=1;
 	list1.intercept_invlpga=1;
@@ -209,6 +215,16 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	list2.intercept_stgi=1;
 	list2.intercept_clgi=1;
 	list2.intercept_skinit=1;
+	// Extended Feature: NPIEP
+	if(hvm_p->options.cpuid_hv_presence)
+	{
+		u32 c7;
+		// If NPIEP is enabled, it is necessary to observe the supportability of UMIP.
+		noir_cpuid(amd64_cpuid_std_struct_extid,0,null,null,&c7,null);
+		// Bit 2 of ECX indicates UMIP support. Intercept writes to CR4 to optimize NPIEP.
+		if(noir_bt(&c7,2))crx_intercept.write.cr4=1;
+		// If there is no UMIP support, don't intercept writes to CR4 in that no optimizations can be made.
+	}
 	noir_bts(&listex,amd64_security_exception);			// Intercept Security Exceptions...
 	// Policy: Enable as most features as possible.
 	// Save them to vCPU.
@@ -235,6 +251,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 		noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
 	}
 	// Write to VMCB.
+	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_access_cr,crx_intercept.value);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction1,list1.value);
 	noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
 }
@@ -349,15 +366,17 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 	if(vcpu->status==noir_virt_trans)
 	{
 		noir_svm_initial_stack_p stack=(noir_svm_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack));
+		// Initialize Hypervisor Context Stack.
 		stack->guest_vmcb_pa=vcpu->vmcb.phys;
 		stack->host_vmcb_pa=vcpu->hvmcb.phys;
 		stack->proc_id=vcpu->proc_id;
 		stack->vcpu=vcpu;
+		stack->custom_vcpu=&nvc_svm_idle_cvcpu;
 		noir_wrmsr(amd64_hsave_pa,vcpu->hsave.phys);
 		nvc_svm_setup_virtual_msr(vcpu);
+		vcpu->mshvcpu.root_vcpu=(void*)vcpu;
 		// Cache the Family-Model-Stepping Information for INIT Signal Emulation.
 		noir_cpuid(amd64_cpuid_std_proc_feature,0,&vcpu->cpuid_fms,null,null,null);
-		vcpu->asid=1;		// Subverted host always has ASID=0.
 		vcpu->status=nvc_svm_subvert_processor_a(stack);
 		nv_dprintf("Processor %d Subversion Status: %d\n",vcpu->proc_id,vcpu->status);
 	}
@@ -385,6 +404,8 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 				noir_free_contd_memory(vcpu->hvmcb.virt);
 			if(vcpu->hv_stack)
 				noir_free_nonpg_memory(vcpu->hv_stack);
+			if(vcpu->cvm_state.xsave_area)
+				noir_free_nonpg_memory(vcpu->cvm_state.xsave_area);
 			if(vcpu->primary_nptm)
 				nvc_npt_cleanup(vcpu->primary_nptm);
 #if !defined(_hv_type1)
@@ -412,6 +433,8 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 {
 	hvm_p->cpu_count=noir_get_processor_count();
 	hvm_p->virtual_cpu=noir_alloc_nonpg_memory(hvm_p->cpu_count*sizeof(noir_svm_vcpu));
+	// Query Extended State Enumeration - Useful for xsetbv handler, CVM scheduler, etc.
+	noir_cpuid(amd64_cpuid_std_pestate_enum,0,&hvm_p->xfeat.support_mask.low,&hvm_p->xfeat.enabled_size_max,&hvm_p->xfeat.supported_size_max,&hvm_p->xfeat.support_mask.high);
 	// Implementation of Generic Call might differ.
 	// In subversion routine, it might not be allowed to allocate memory.
 	// Thus allocate everything at this moment, even if it costs more on single processor core.
@@ -436,7 +459,9 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			else
 				goto alloc_failure;
 			vcpu->hv_stack=noir_alloc_nonpg_memory(nvc_stack_size);
-			if(vcpu->hv_stack==null)return noir_insufficient_resources;
+			if(vcpu->hv_stack==null)goto alloc_failure;
+			vcpu->cvm_state.xsave_area=noir_alloc_nonpg_memory(hvm_p->xfeat.supported_size_max);
+			if(vcpu->cvm_state.xsave_area==null)goto alloc_failure;
 			vcpu->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
 			vcpu->primary_nptm=nvc_npt_build_identity_map();
 			if(vcpu->primary_nptm==null)goto alloc_failure;

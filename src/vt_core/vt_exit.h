@@ -169,7 +169,8 @@ typedef union _ia32_vmexit_instruction_information
 		u32 index_invalid:1;		// Bit	22
 		u32 base:4;					// Bits	23-26
 		u32 base_invalid:1;			// Bit	27
-		u32 instruction_id:2;		// Bits	28-29
+		u32 is_idtr_access:1;		// Bit	28
+		u32 is_loading:1;			// Bit	29
 		u32 reserved4:2;			// Bits	30-31
 	}f2;
 	// lldt, ltr, sldt, str instructions use this field.
@@ -186,7 +187,8 @@ typedef union _ia32_vmexit_instruction_information
 		u32 index_invalid:1;		// Bit	22
 		u32 base:4;					// Bits	23-26
 		u32 base_invalid:1;			// Bit	27
-		u32 instruction_id:2;		// Bits	28-29
+		u32 is_tr_access:1;			// Bit	28
+		u32 is_loading:1;			// Bit	29
 		u32 reserved3:2;			// Bits	30-31
 	}f3;
 	// rdrand, rdseed, tpause, umwait instructions use this field.

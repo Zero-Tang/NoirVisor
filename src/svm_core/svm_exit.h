@@ -126,7 +126,12 @@ typedef union _amd64_event_injection
 #if defined(_svm_exit)
 void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_cr4_write_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_sidt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_sgdt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_sldt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_str_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_invlpga_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
@@ -149,7 +154,7 @@ noir_svm_exit_handler_routine svm_exit_handler_group1[noir_svm_maximum_code1]=
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	// 16 Control-Register Write Exit Handler...
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
-	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
+	nvc_svm_cr4_write_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	// 16 Debug-Register Read Exit Handler...
@@ -180,10 +185,10 @@ noir_svm_exit_handler_routine svm_exit_handler_group1[noir_svm_maximum_code1]=
 	nvc_svm_default_handler,		// Physical INIT Signal
 	nvc_svm_default_handler,		// Virtual Interrupt
 	nvc_svm_default_handler,		// CR0 Selective Write
-	nvc_svm_default_handler,		// sidt Instruction
-	nvc_svm_default_handler,		// sgdt Instruction
-	nvc_svm_default_handler,		// sldt Instruction
-	nvc_svm_default_handler,		// str Instruction
+	nvc_svm_sidt_handler,			// sidt Instruction
+	nvc_svm_sgdt_handler,			// sgdt Instruction
+	nvc_svm_sldt_handler,			// sldt Instruction
+	nvc_svm_str_handler,			// str Instruction
 	nvc_svm_default_handler,		// lidt Instruction
 	nvc_svm_default_handler,		// lgdt Instruction
 	nvc_svm_default_handler,		// lldt Instruction

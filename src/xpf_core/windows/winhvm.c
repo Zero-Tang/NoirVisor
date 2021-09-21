@@ -130,6 +130,7 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 	ULONG32 CpuidPresence=1;		// Enable CPUID Presence at default.
 	ULONG32 StealthMsrHook=0;		// Disable Stealth MSR Hook at default.
 	ULONG32 StealthInlineHook=0;	// Disable Stealth Inline Hook at default.
+	ULONG32 UmipEmulation=1;		// Enable UMIP Emulation at default.
 	// Initialize.
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
 	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=ExAllocatePool(PagedPool,PAGE_SIZE);
@@ -159,14 +160,15 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 			if(NT_SUCCESS(st))StealthInlineHook=*(PULONG32)KvPartInf->Data;
 			NoirDebugPrint("Stealth Inline Hook is %s!\n",StealthInlineHook?"enabled":"disabled");
+			// Close the registry key handle.
 			ZwClose(hKey);
 		}
 		ExFreePool(KvPartInf);
 	}
 	// Summarize
-	*Features|=CpuidPresence<<NOIR_HVM_FEATURE_CPUID_PRESENCE_BIT;
-	*Features|=StealthMsrHook<<NOIR_HVM_FEATURE_STEALTH_MSR_HOOK_BIT;
-	*Features|=StealthInlineHook<<NOIR_HVM_FEATURE_STEALTH_INLINE_HOOK_BIT;
+	*Features|=(CpuidPresence!=0)<<NOIR_HVM_FEATURE_CPUID_PRESENCE_BIT;
+	*Features|=(StealthMsrHook!=0)<<NOIR_HVM_FEATURE_STEALTH_MSR_HOOK_BIT;
+	*Features|=(StealthInlineHook!=0)<<NOIR_HVM_FEATURE_STEALTH_INLINE_HOOK_BIT;
 	return st;
 }
 

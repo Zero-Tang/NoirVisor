@@ -19,6 +19,20 @@ endif
 
 ifdef _amd64
 
+noir_xsave proc
+
+	xsave [rcx]
+	ret
+
+noir_xsave endp
+
+noir_xrestore proc
+
+	xrstor [rcx]
+	ret
+
+noir_xrestore endp
+
 noir_xmmsave proc
 
 	movaps xmmword ptr [rcx],xmm0

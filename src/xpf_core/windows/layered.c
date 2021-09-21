@@ -165,7 +165,10 @@ NOIR_STATUS NoirCreateVirtualMachine(OUT PCVM_HANDLE VirtualMachine)
 			}
 		}
 		if(st==NOIR_SUCCESS)	// Increment the handle counter if success.
+		{
 			NoirCvmHandleTable.HandleCount++;
+			NoirCvmTracePrint("New VM is created successfully! Handle=0x%p\t Object=0x%p\n",VirtualMachine,VM);
+		}
 		if(*VirtualMachine>NoirCvmHandleTable.MaximumHandleValue)
 			NoirCvmHandleTable.MaximumHandleValue=*VirtualMachine;
 		// Release the resource lock for other accesses.

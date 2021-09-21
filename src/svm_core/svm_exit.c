@@ -64,7 +64,7 @@ void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm
 // Expected Intercept Code: -1
 void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	const void* vmcb=vcpu->vmcb.virt;
+	void* vmcb=vcpu->vmcb.virt;
 	u64 efer;
 	ulong_ptr cr0,cr3,cr4;
 	ulong_ptr dr6,dr7;
@@ -89,6 +89,43 @@ void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir
 	nv_dprintf("Control 1: 0x%X\t Control 2: 0x%X\n",list1,list2);
 	// Generate a debug-break.
 	noir_int3();
+}
+
+// Expected Intercept Code: 0x14
+void static fastcall nvc_svm_cr4_write_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	ulong_ptr *gpr_array=(ulong_ptr*)gpr_state;
+	nvc_svm_cr_access_exit_info info;
+	ulong_ptr old_cr4=noir_svm_vmread(vmcb,guest_cr4);
+	ulong_ptr new_cr4;
+	info.value=noir_svm_vmread64(vmcb,exit_info1);
+	// Filter CR4.UMIP bit.
+	new_cr4=gpr_array[info.gpr];
+	// Avoid unnecessary VMCB caching / TLB invalidations.
+	if(new_cr4!=old_cr4)
+	{
+		noir_svm_vmwrite(vmcb,guest_cr4,new_cr4);
+		// Check if UMIP is to be switched.
+		if(noir_bt((u32*)&old_cr4,amd64_cr4_umip)!=noir_bt((u32*)&new_cr4,amd64_cr4_umip))
+			nvc_svm_reconfigure_npiep_interceptions(vcpu);	// Reconfigure NPIEP interceptions.
+		// CR4 is to be written. Invalidate the VMCB Cache State.
+		noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_control_reg);
+		// Writing to CR4 could induce TLB invalidation. Emulate this behavior in VM-Exit handler.
+		// Condition #1: Modifying CR4.PAE/PSE/PGE could invalidate all TLB entries.
+		if(noir_bt((u32*)&new_cr4,amd64_cr4_pae)!=noir_bt((u32*)&old_cr4,amd64_cr4_pae))goto cr4_flush;
+		if(noir_bt((u32*)&new_cr4,amd64_cr4_pse)!=noir_bt((u32*)&old_cr4,amd64_cr4_pse))goto cr4_flush;
+		if(noir_bt((u32*)&new_cr4,amd64_cr4_pge)!=noir_bt((u32*)&old_cr4,amd64_cr4_pge))goto cr4_flush;
+		// Condition #2: Setting CR4.PKE to 1 could invalidate all TLB entries.
+		if(noir_bt((u32*)&new_cr4,amd64_cr4_pke) && !noir_bt((u32*)&old_cr4,amd64_cr4_pke))goto cr4_flush;
+		// Condition #3: Clearing CR4.PCIDE to 0 could invalidate all TLB entries.
+		if(!noir_bt((u32*)&new_cr4,amd64_cr4_pcide) && noir_bt((u32*)&old_cr4,amd64_cr4_pcide))goto cr4_flush;
+		goto cr4_handler_over;
+cr4_flush:
+		noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_guest);
+	}
+cr4_handler_over:
+	noir_svm_advance_rip(vmcb);
 }
 
 // Expected Intercept Code: 0x5E
@@ -205,6 +242,302 @@ void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noi
 	}
 }
 
+bool static fastcall nvc_svm_parse_npiep_operand(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,ulong_ptr *result)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	u64 grip=noir_svm_vmread64(vmcb,guest_rip),nrip=noir_svm_vmread64(vmcb,next_rip);
+	svm_segment_access_rights cs_attrib;
+	noir_basic_operand opr_info;
+#if defined(_hv_type1)
+	u8 instruction[15];
+#else
+	// It is assumed that NoirVisor is now in the same address space with the guest.
+	u8 *instruction=(u8*)grip;
+#endif
+	cs_attrib.value=noir_svm_vmread16(vmcb,guest_cs_attrib);
+	// Determine the mode of guest then decode the instruction.
+	// Save the decode information to the bottom of the hypervisor stack.
+	if(likely(cs_attrib.long_mode))
+		noir_decode_instruction64(instruction,nrip-grip,vcpu->hv_stack);
+	else if(noir_svm_vmcb_bt32(vmcb,guest_cr0,amd64_cr0_pe))
+		noir_decode_instruction32(instruction,nrip-grip,vcpu->hv_stack);
+	else
+		noir_decode_instruction16(instruction,nrip-grip,vcpu->hv_stack);
+	// Extract needed decoded information for NPIEP.
+	noir_decode_basic_operand(vcpu->hv_stack,&opr_info);
+	if(opr_info.complex.mem_valid)
+	{
+		ulong_ptr *gpr_array=(ulong_ptr*)gpr_state;
+		ulong_ptr pointer=0;
+		i32 disp=(i32)opr_info.complex.displacement;
+		// If the base register is rsp, load the register from VMCB.
+		if(opr_info.complex.base_valid)
+			pointer+=opr_info.complex.base==4?noir_svm_vmread(vmcb,guest_rsp):gpr_array[opr_info.complex.base];
+		if(opr_info.complex.si_valid)
+			pointer+=(gpr_array[opr_info.complex.index]<<opr_info.complex.scale);
+		// Apply displacement to the pointer.
+		pointer+=disp;
+		// Apply segment base to the pointer.
+		// Check if the guest is under protected mode or real mode.
+		// Let branch predictor prefer protected mode (and long mode).
+		if(likely(noir_svm_vmcb_bt32(vmcb,guest_cr0,amd64_cr0_pe)))
+			pointer+=noir_svm_vmread(vmcb,guest_es_base+(opr_info.complex.segment<<4));
+		else
+			pointer+=(noir_svm_vmread16(vmcb,guest_es_selector+(opr_info.complex.segment<<4))<<4);
+		// Check the size of address width of the operand. Truncate the pointer if needed.
+		if(opr_info.complex.address_size==1)
+			pointer&=0xffffffff;
+		else if(opr_info.complex.address_size==0)
+			pointer&=0xffff;
+		*result=pointer;
+	}
+	else if(opr_info.complex.reg_valid)
+	{
+		// Save the operand size and the register index.
+		*result=opr_info.complex.reg1;
+		*result|=(opr_info.complex.operand_size<<30);
+	}
+	return opr_info.complex.mem_valid;
+}
+
+// Expected Intercept Code: 0x66
+void static fastcall nvc_svm_sidt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	bool superv_instruction=(noir_svm_vmread8(vmcb,guest_cpl)==0);
+	ulong_ptr decode_result=0;
+	// AMD-V does not provide further decoding assistance regarding operands.
+	// We must decode the instruction on our own.
+#if !defined(_hv_type1)
+	// Step 0. Switch to the guest address space.
+	if(!superv_instruction)
+	{
+		// If NPIEP is taking duty of this instruction, we should switch
+		// the page table so that we can gain access in order to decode
+		// the instruction and also write the result.
+		u64 gcr3=noir_get_current_process_cr3();
+		noir_writecr3(gcr3);
+	}
+#endif
+	// Step 1. Invoke disassembler to decode the instruction.
+	if(nvc_svm_parse_npiep_operand(gpr_state,vcpu,&decode_result))
+	{
+		// Construct the pointer.
+		ulong_ptr pointer=decode_result;
+#if defined(_hv_type1)
+#else
+		// FIXME: Check if the page is present and writable.
+		// If the page is absent/readonly, throw #PF to the guest.
+		if(superv_instruction)
+		{
+			*(u16*)pointer=noir_svm_vmread16(vmcb,guest_idtr_limit);
+			*(ulong_ptr*)(pointer+2)=noir_svm_vmread(vmcb,guest_idtr_base);
+		}
+		else if(noir_bt((u32*)&vcpu->mshvcpu.npiep_config,noir_mshv_npiep_prevent_sidt))
+		{
+			// Change the value to be returned if you would like to.
+			*(u16*)pointer=0x2333;
+			*(ulong_ptr*)(pointer+2)=0x66666666;
+			noir_writecr3(system_cr3);
+		}
+#endif
+	}
+	noir_svm_advance_rip(vmcb);
+}
+
+// Expected Intercept Code: 0x67
+void static fastcall nvc_svm_sgdt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	bool superv_instruction=(noir_svm_vmread8(vmcb,guest_cpl)==0);
+	ulong_ptr decode_result=0;
+	// AMD-V does not provide further decoding assistance regarding operands.
+	// We must decode the instruction on our own.
+#if !defined(_hv_type1)
+	// Step 0. Switch to the guest address space.
+	if(!superv_instruction)
+	{
+		// If NPIEP is taking duty of this instruction, we should switch
+		// the page table so that we can gain access in order to decode
+		// the instruction and also write the result.
+		u64 gcr3=noir_get_current_process_cr3();
+		noir_writecr3(gcr3);
+	}
+#endif
+	// Step 1. Invoke disassembler to decode the instruction.
+	if(nvc_svm_parse_npiep_operand(gpr_state,vcpu,&decode_result))
+	{
+		// Construct the pointer.
+		ulong_ptr pointer=decode_result;
+#if defined(_hv_type1)
+#else
+		// FIXME: Check if the page is present and writable.
+		// If the page is absent/readonly, throw #PF to the guest.
+		if(superv_instruction)
+		{
+			*(u16*)pointer=noir_svm_vmread16(vmcb,guest_gdtr_limit);
+			*(ulong_ptr*)(pointer+2)=noir_svm_vmread(vmcb,guest_gdtr_base);
+		}
+		else if(noir_bt((u32*)&vcpu->mshvcpu.npiep_config,noir_mshv_npiep_prevent_sgdt))
+		{
+			// Change the value to be returned if you would like to.
+			*(u16*)pointer=0x2333;
+			*(ulong_ptr*)(pointer+2)=0x66666666;
+			noir_writecr3(system_cr3);
+		}
+#endif
+	}
+	noir_svm_advance_rip(vmcb);
+}
+
+// Expected Intercept Code: 0x68
+void static fastcall nvc_svm_sldt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	bool superv_instruction=(noir_svm_vmread8(vmcb,guest_cpl)==0);
+	ulong_ptr decode_result=0;
+	// AMD-V does not provide further decoding assistance regarding operands.
+	// We must decode the instruction on our own.
+#if !defined(_hv_type1)
+	// Step 0. Switch to the guest address space.
+	if(!superv_instruction)
+	{
+		// If NPIEP is taking duty of this instruction, we should switch
+		// the page table so that we can gain access in order to decode
+		// the instruction and also write the result.
+		u64 gcr3=noir_get_current_process_cr3();
+		noir_writecr3(gcr3);
+	}
+#endif
+	// Step 1. Invoke disassembler to decode the instruction.
+	if(nvc_svm_parse_npiep_operand(gpr_state,vcpu,&decode_result))
+	{
+		// Construct the pointer.
+		ulong_ptr pointer=decode_result;
+#if defined(_hv_type1)
+#else
+		// FIXME: Check if the page is present and writable.
+		// If the page is absent/readonly, throw #PF to the guest.
+		if(superv_instruction)
+			*(u16*)pointer=noir_svm_vmread16(vmcb,guest_ldtr_selector);
+		else if(noir_bt((u32*)&vcpu->mshvcpu.npiep_config,noir_mshv_npiep_prevent_sgdt))
+		{
+			// Change the value to be returned if you would like to.
+			*(u16*)pointer=0x2333;
+			noir_writecr3(system_cr3);
+		}
+#endif
+	}
+	else
+	{
+		ulong_ptr* gpr_array=(ulong_ptr*)gpr_state;
+		u16 ldtr=noir_svm_vmread16(vmcb,guest_ldtr_selector);
+		u8 operand_size=(u8)(decode_result>>30);
+		u8 register_index=(u8)(decode_result&0xf);
+		if(register_index==4)
+		{
+			if(operand_size==1)
+				noir_svm_vmwrite16(vmcb,guest_rsp,ldtr);
+			else if(operand_size==2)
+				noir_svm_vmwrite32(vmcb,guest_rsp,ldtr);
+			else
+				noir_svm_vmwrite64(vmcb,guest_rsp,ldtr);
+		}
+		else
+		{
+			if(operand_size==2)
+				*(u32*)&gpr_array[register_index]=0;
+			else if(operand_size==3)
+				*(u64*)&gpr_array[register_index]=0;
+			*(u16*)&gpr_array[register_index]=ldtr;
+		}
+	}
+	noir_svm_advance_rip(vmcb);
+}
+
+// Expected Intercept Code: 0x69
+void static fastcall nvc_svm_str_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	bool superv_instruction=(noir_svm_vmread8(vmcb,guest_cpl)==0);
+	ulong_ptr decode_result=0;
+	// AMD-V does not provide further decoding assistance regarding operands.
+	// We must decode the instruction on our own.
+#if !defined(_hv_type1)
+	// Step 0. Switch to the guest address space.
+	if(!superv_instruction)
+	{
+		// If NPIEP is taking duty of this instruction, we should switch
+		// the page table so that we can gain access in order to decode
+		// the instruction and also write the result.
+		u64 gcr3=noir_get_current_process_cr3();
+		noir_writecr3(gcr3);
+	}
+#endif
+	// Step 1. Invoke disassembler to decode the instruction.
+	if(nvc_svm_parse_npiep_operand(gpr_state,vcpu,&decode_result))
+	{
+		// Construct the pointer.
+		ulong_ptr pointer=decode_result;
+#if defined(_hv_type1)
+#else
+		// FIXME: Check if the page is present and writable.
+		// If the page is absent/readonly, throw #PF to the guest.
+		if(superv_instruction)
+			*(u16*)pointer=noir_svm_vmread16(vmcb,guest_ldtr_selector);
+		else if(noir_bt((u32*)&vcpu->mshvcpu.npiep_config,noir_mshv_npiep_prevent_sgdt))
+		{
+			// Change the value to be returned if you would like to.
+			*(u16*)pointer=0x2333;
+			noir_writecr3(system_cr3);
+		}
+#endif
+	}
+	else
+	{
+		ulong_ptr* gpr_array=(ulong_ptr*)gpr_state;
+		u16 tr=noir_svm_vmread16(vmcb,guest_tr_selector);
+		u8 operand_size=(u8)(decode_result>>30);
+		u8 register_index=(u8)(decode_result&0xf);
+		if(register_index==4)
+		{
+			if(operand_size==1)
+				noir_svm_vmwrite16(vmcb,guest_rsp,tr);
+			else if(operand_size==2)
+				noir_svm_vmwrite32(vmcb,guest_rsp,tr);
+			else
+				noir_svm_vmwrite64(vmcb,guest_rsp,tr);
+		}
+		else
+		{
+			if(operand_size==2)
+				*(u32*)&gpr_array[register_index]=0;
+			else if(operand_size==3)
+				*(u64*)&gpr_array[register_index]=0;
+			*(u16*)&gpr_array[register_index]=tr;
+		}
+	}
+	noir_svm_advance_rip(vmcb);
+}
+
+// Special CPUID Handler for Nested Virtualization Feature Identification
+void static fastcall nvc_svm_cpuid_nested_virtualization_handler(noir_cpuid_general_info_p info)
+{
+	info->eax=0;		// Let Revision ID=0
+	info->ebx=hvm_p->tlb_tagging.limit-1;	// ASID Limit for Nested VMM.
+	// ECX is reserved by AMD. Leave it be.
+	info->edx=0;		// Make sure that only bits corresponding to supported features are set.
+	// Set the bits that NoirVisor supports.
+	noir_bts(&info->edx,amd64_cpuid_npt);
+	noir_bts(&info->edx,amd64_cpuid_svm_lock);
+	noir_bts(&info->edx,amd64_cpuid_nrips);
+	noir_bts(&info->edx,amd64_cpuid_vmcb_clean);
+	noir_bts(&info->edx,amd64_cpuid_flush_asid);
+	noir_bts(&info->edx,amd64_cpuid_decoder);
+	noir_bts(&info->edx,amd64_cpuid_vmlsvirt);
+	noir_bts(&info->edx,amd64_cpuid_vgif);
+}
+
 // Hypervisor-Present CPUID Handler
 void static fastcall nvc_svm_cpuid_hvp_handler(u32 leaf,u32 subleaf,noir_cpuid_general_info_p info)
 {
@@ -230,12 +563,12 @@ void static fastcall nvc_svm_cpuid_hvp_handler(u32 leaf,u32 subleaf,noir_cpuid_g
 			}
 			case amd64_cpuid_ext_proc_feature:
 			{
-				noir_btr(&info->ecx,amd64_cpuid_svm);
+				// noir_btr(&info->ecx,amd64_cpuid_svm);
 				break;
 			}
 			case amd64_cpuid_ext_svm_features:
 			{
-				noir_stosd((u32*)info,0,4);
+				nvc_svm_cpuid_nested_virtualization_handler(info);
 				break;
 			}
 			case amd64_cpuid_ext_mem_crypting:
@@ -255,12 +588,12 @@ void static fastcall nvc_svm_cpuid_hvs_handler(u32 leaf,u32 subleaf,noir_cpuid_g
 	{
 		case amd64_cpuid_ext_proc_feature:
 		{
-			noir_btr(&info->ecx,amd64_cpuid_svm);
+			// noir_btr(&info->ecx,amd64_cpuid_svm);
 			break;
 		}
 		case amd64_cpuid_ext_svm_features:
 		{
-			noir_stosd((u32*)&info,0,4);
+			nvc_svm_cpuid_nested_virtualization_handler(info);
 			break;
 		}
 		case amd64_cpuid_ext_mem_crypting:
@@ -318,7 +651,7 @@ void static fastcall nvc_svm_rdmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	if(noir_is_synthetic_msr(index))
 	{
 		if(hvm_p->options.cpuid_hv_presence)
-			val.value=nvc_mshv_rdmsr_handler(index);
+			val.value=nvc_mshv_rdmsr_handler(&vcpu->mshvcpu,index);
 		else
 			// Synthetic MSR is not allowed, inject #GP to Guest.
 			noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
@@ -375,7 +708,7 @@ void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	if(noir_is_synthetic_msr(index))
 	{
 		if(hvm_p->options.cpuid_hv_presence)
-			nvc_mshv_wrmsr_handler(index,val.value);
+			nvc_mshv_wrmsr_handler(&vcpu->mshvcpu,index,val.value);
 		else
 			// Synthetic MSR is not allowed, inject #GP to Guest.
 			noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
@@ -943,4 +1276,32 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 void nvc_svm_set_mshv_handler(bool option)
 {
 	nvcp_svm_cpuid_handler=option?nvc_svm_cpuid_hvp_handler:nvc_svm_cpuid_hvs_handler;
+}
+
+// Prior to calling this function, it is required to setup guest state fields.
+void nvc_svm_reconfigure_npiep_interceptions(noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	ulong_ptr gcr4=noir_svm_vmread(vmcb,guest_cr4);
+	nvc_svm_instruction_intercept1 list1;
+	list1.value=noir_svm_vmread32(vmcb,intercept_instruction1);
+	if(noir_bt(&gcr4,amd64_cr4_umip))
+	{
+		// If UMIP is to be enabled, stop any NPIEP-related interceptions.
+		list1.intercept_sidt=0;
+		list1.intercept_sgdt=0;
+		list1.intercept_sldt=0;
+		list1.intercept_str=0;
+	}
+	else
+	{
+		// Otherwise, configure the interception according to NPIEP configuration.
+		list1.intercept_sidt=noir_bt64(&vcpu->mshvcpu.npiep_config,noir_mshv_npiep_prevent_sidt);
+		list1.intercept_sgdt=noir_bt64(&vcpu->mshvcpu.npiep_config,noir_mshv_npiep_prevent_sgdt);
+		list1.intercept_sldt=noir_bt64(&vcpu->mshvcpu.npiep_config,noir_mshv_npiep_prevent_sldt);
+		list1.intercept_str=noir_bt64(&vcpu->mshvcpu.npiep_config,noir_mshv_npiep_prevent_str);
+	}
+	noir_svm_vmwrite32(vmcb,intercept_instruction1,list1.value);
+	// Finally, invalidate VMCB Cache regarding interceptions.
+	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_interception);
 }

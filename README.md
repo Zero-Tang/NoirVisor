@@ -37,12 +37,13 @@ Contributing Guidelines are available in repository. For details, see the markdo
 
 # Build
 To build NoirVisor, using batch is essential. <br>
-Note that you should execute the `build_prep.bat` to make directories for first-time compilation. 
+Note that you should execute the `build_prep.bat` to make directories for first-time compilation. <br>
+Once NoirVisor is updated, it is recommended to execute `cleanup.bat` script before building.
 
 ## Windows Driver
-To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 10 (Visual Studio Build Tools 16.9.2) ISO file to T disk. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. <br>
+To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 11 (Visual Studio Build Tools 16.9.2) ISO file to T disk. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. <br>
 Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. If you use WinCDEmu, however, you may order the system to mount EWDK10 and specify its drive letter during startup. <br>
-You may download the EWDK10 (with VS Build Tools 16.9.2) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019 <br>
+You may download the EWDK11 (with VS Build Tools 16.9.2) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019-New <br>
 Make sure you have downloaded the correct version. NoirVisor would continue updating. If not using correct version, you might fail to compile the latest version of NoirVisor. <br>
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
@@ -98,11 +99,16 @@ By virtue of this unexpected and unpleasant side-effect, this feature is now obs
 # Customizable VM
 Customizable VM is the true explanation of "complex functions and purposes". As the project creator and director, Zero's true intention to create this project is for studying Hardware-Acclerated Virtualization Technology. Therefore, any features which is related to virtualization and which Zero has ideas to implement will be added in the project. <br>
 Customizable VM is the feature that Zero researches about Virtualization: to run an arbitrary guest, instead of to just subvert the host system. In a word, it is aimed to be a competitor of the Windows Hypervisor Platform (WHP). <br>
-For CVM Algorithm on AMD-V, visit [here](src/svm_core/readme.md#customizable-vm-scheduler-algorithm)
+For CVM Algorithm on AMD-V, visit [here](src/svm_core/readme.md#customizable-vm-scheduler-algorithm).
 
-# UMIP Emulation / NPIEP
-This feature is equivalent (or, at least, similar) to the `NPIEP` (Non-Privileged Instruction Execution Prevention) Feature in Microsoft Virtualization-based Security. <br>
-The `UMIP Emulation` feature, evident from its name, emulates the `UMIP` feature of recent x86 processors. To be more specfic, the `sgdt`, `sidt`, `sldt`, `str`, `smsw` instructions will be intercepted. If `CPL>0`, inject a `#GP(0)` exception for these instructions. <br>
+# NPIEP
+NPIEP (a.k.a Non-Privileged Instruction Execution Prevention) is an important security feature in Microsoft Virtualization-based Security. As a hypervisor project in conformance to Microsoft `Hv#1` interface, NoirVisor would provide this feature to the guest. This feature is similar to `UMIP` provided by later models of x86 processors. The differences are:
+
+- NPIEP does not raise an exception even if the instruction is executed in user mode.
+- NPIEP would prevent the guest from reading the real values of descriptor tables.
+- NPIEP does not intercept `smsw` instruction, probably in that Intel VT-x does not support intercepting this instruction.
+
+For further details of NPIEP, visit [here](src/mshv_core/readme.md#non-privileged-instruction-execution-prevention).
 
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. <br>
@@ -114,8 +120,8 @@ If there is already a hypervisor running in the system, make sure it supports na
 Project NoirVisor has six future development plans: <br>
 - Develop Customizable VM engine for complex purposes.
 - Develop Nested Virtualization.
-- Develop IOMMU Core.
-- Develop UMIP (User Mode Instruction Prevention) Emulation.
+- Develop IOMMU Core on Intel VT-d and AMD-Vi.
+- Develop NPIEP (Non-Privileged Instruction Execution Prevention) Emulation on Intel VT-x.
 - Port NoirVisor to 32-bit Windows platform.
 - Port NoirVisor to UEFI and corresponding layered hypervisor.
 
@@ -125,6 +131,7 @@ For more information, check out the [NoirVisor 2020+](https://github.com/Zero-Ta
 - Minimal Microsoft `Hv#1` Hypervisor Functionalities.
 - Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V. (**Incompatible** with the `KiErrata704Present` mitigation.)
 - Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, both Intel VT-x/EPT and AMD-V/NPT.
+- Non-Privileged Instruction Execution Prevention (NPIEP) on AMD-V.
 - Tagged Translation Lookaside Buffer by ASID/VPID feature.
 - Critical Hypervisor Protection.
 - Software-Level Code Integrity Enforcement.

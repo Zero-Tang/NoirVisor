@@ -217,7 +217,8 @@ typedef union _noir_cvm_vcpu_options
 		u32 intercept_cr4:1;
 		u32 intercept_drx:1;
 		u32 intercept_pause:1;
-		u32 reserved:22;
+		u32 emulate_umip:1;
+		u32 reserved:21;
 	};
 	u32 value;
 }noir_cvm_vcpu_options,*noir_cvm_vcpu_options_p;
@@ -246,12 +247,11 @@ typedef struct _noir_cvm_virtual_cpu
 {
 	noir_gpr_state gpr;
 	noir_seg_state seg;
-	noir_fx_state fxs;
 	noir_cr_state crs;
 	noir_dr_state drs;
 	noir_msr_state msrs;
 	noir_xcr_state xcrs;
-	noir_ymm_state avxs;
+	void* xsave_area;
 	u64 rflags;
 	u64 rip;
 	noir_cvm_exit_context exit_context;

@@ -14,6 +14,7 @@
 
 #include "nvdef.h"
 
+#include "mshv_hvm.h"
 #include "cvm_hvm.h"
 #if defined(_vt_core)
 #include "vt_hvm.h"
@@ -121,6 +122,12 @@ typedef struct _noir_hypervisor
 		};
 		u64 value;
 	}options;		// Enable certain features.
+	struct
+	{
+		large_integer support_mask;
+		u32 supported_size_max;
+		u32 enabled_size_max;
+	}xfeat;
 	u32 cpu_count;
 	char vendor_string[13];
 	u8 cpu_manuf;
@@ -170,11 +177,17 @@ extern noir_hypervisor_p hvm_p;
 extern ulong_ptr system_cr3;
 extern ulong_ptr orig_system_call;
 #endif
+#if defined(_mshv_core)
+void nvc_svm_reconfigure_npiep_interceptions(void* vcpu);
+#elif defined(_vt_core)
+#elif defined(_svm_core)
+void nvc_svm_reconfigure_npiep_interceptions(noir_svm_vcpu_p vcpu);
+#endif
 // Functions from MSHV Core.
 u32 fastcall nvc_mshv_build_cpuid_handlers();
 void fastcall nvc_mshv_teardown_cpuid_handlers();
-u64 fastcall nvc_mshv_rdmsr_handler(u32 index);
-void fastcall nvc_mshv_wrmsr_handler(u32 index,u64 val);
+u64 fastcall nvc_mshv_rdmsr_handler(noir_mshv_vcpu_p vcpu,u32 index);
+void fastcall nvc_mshv_wrmsr_handler(noir_mshv_vcpu_p vcpu,u32 index,u64 val);
 
 // Miscellaneous
 u64 noir_query_enabled_features_in_system();

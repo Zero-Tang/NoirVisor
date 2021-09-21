@@ -33,6 +33,9 @@ u32 inline svm_msrpm_bit(u8 bitmap,u32 index,u8 operation)
 #define noir_svm_clgi		__svm_clgi
 #define noir_svm_invlpga	__svm_invlpga
 #elif defined(_llvm) || defined(_gcc)
+// I really don't know why clang is compiling these intrinsics into
+// instructions like "call __svm_invlpga", "call __svm_stgi", etc.
+// If anyone has an account on LLVM bugzilla, please report this issue for me.
 #define noir_svm_vmrun(v)		__asm__ __volatile__("vmrun %%rax" : : "a"(v))
 #define noir_svm_vmload(v)		__asm__ __volatile__("vmload %%rax" : : "a"(v))
 #define noir_svm_vmsave(v)		__asm__ __volatile__("vmsave %%rax" : : "a"(v))

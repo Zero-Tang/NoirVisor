@@ -188,7 +188,7 @@ typedef struct _NOIR_ADDRESS_MAPPING
 #define HandleTableShiftBits	9
 #else
 #define HandleTableCapacity		1024
-#define HandleTableShitBits		10
+#define HandleTableShiftBits	10
 #endif
 
 typedef ULONG_PTR CVM_HANDLE;

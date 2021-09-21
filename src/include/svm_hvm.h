@@ -18,6 +18,7 @@
 #define noir_svm_callexit					0x1
 #define noir_svm_disasm_length				0x2
 #define noir_svm_disasm_mnemonic			0x3
+#define noir_svm_disasm_full				0x4
 #define noir_svm_init_custom_vmcb			0x10000
 #define noir_svm_run_custom_vcpu			0x10001
 
@@ -77,8 +78,8 @@ typedef struct _noir_svm_vcpu
 #if !defined(_hv_type1)
 	struct _noir_npt_manager* secondary_nptm;
 #endif
+	noir_mshv_vcpu mshvcpu;
 	u32 proc_id;
-	u32 asid;
 	noir_svm_virtual_msr virtual_msr;
 	noir_svm_nested_vcpu nested_hvm;
 	noir_cvm_virtual_cpu cvm_state;

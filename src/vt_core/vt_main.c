@@ -549,8 +549,8 @@ void static nvc_vt_setup_control_area(bool true_msr)
 	nvc_vt_setup_procbased_controls(true_msr);
 	nvc_vt_setup_vmexit_controls(true_msr);
 	nvc_vt_setup_vmentry_controls(true_msr);
-	noir_vt_vmwrite(cr0_guest_host_mask,0x80000021);		// Monitor PE, NE and PG flags
-	noir_vt_vmwrite(cr4_guest_host_mask,0x2000);			// Monitor VMXE flags
+	noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_pe|ia32_cr0_ne|ia32_cr0_pg);		// Monitor PE, NE and PG flags
+	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_umip|ia32_cr4_vmxe);				// Monitor UMIP and VMXE flags
 }
 
 u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,ulong_ptr gip)
@@ -559,7 +559,6 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	u8 vst=0;
 	noir_processor_state state;
 	noir_save_processor_state(&state);
-	vcpu->enabled_feature|=noir_vt_syscall_hook;
 	// Issue a sequence of vmwrite instructions to setup VMCS.
 	vt_basic.value=noir_rdmsr(ia32_vmx_basic);
 	nvc_vt_setup_available_features(vcpu);
@@ -690,6 +689,7 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 			if(vcpu->ept_manager==null)
 				goto alloc_failure;
 			vcpu->relative_hvm=(noir_vt_hvm_p)hvm->reserved;
+			vcpu->mshvcpu.root_vcpu=(void*)vcpu;
 		}
 	}
 	hvm->relative_hvm=(noir_vt_hvm_p)hvm->reserved;
@@ -711,7 +711,8 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 		hvm->relative_hvm->msr_auto_list.phys=noir_get_physical_address(hvm->relative_hvm->msr_auto_list.virt);
 	else
 		goto alloc_failure;
-
+	// Query Extended State Enumeration - Useful for xsetbv handler, CVM scheduler, etc.
+	noir_cpuid(ia32_cpuid_std_pestate_enum,0,&hvm_p->xfeat.support_mask.low,&hvm_p->xfeat.enabled_size_max,&hvm_p->xfeat.supported_size_max,&hvm_p->xfeat.support_mask.high);
 	// if(nvc_vt_build_exit_handlers()==noir_insufficient_resources)goto alloc_failure;
 	nvc_vt_set_mshv_handler(hvm_p->options.cpuid_hv_presence);
 	hvm->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();

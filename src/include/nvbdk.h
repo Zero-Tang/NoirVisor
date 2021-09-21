@@ -37,6 +37,12 @@
 #define page_2mb_mult(x)		(x<<21)
 #define page_1gb_mult(x)		(x<<30)
 
+#if defined(_amd64)
+#define page_base(x)			(x&0xfffffffffffff000)
+#else
+#define page_base(x)			(x&0xfffff000)
+#endif
+
 #define selector_rplti_mask		0xfff8
 
 // Classification of CPUID Leaf
@@ -268,16 +274,108 @@ typedef struct _noir_disasm_request
 	char mnemonic[1];
 }noir_disasm_request,*noir_disasm_request_p;
 
+typedef struct _noir_basic_operand
+{
+	union
+	{
+		struct
+		{
+			u64 displacement:32;	// Bits 0-31
+			u64 si_valid:1;			// Bit	32
+			u64 scale:2;			// Bits	33-34
+			u64 index:4;			// Bits	35-38
+			u64 base:4;				// Bits	39-42
+			u64 segment:3;			// Bits	43-45
+			u64 address_size:2;		// Bits	46-47
+			u64 reg1:4;				// Bits	48-51
+			u64 reg2:4;				// Bits	52-55
+			u64 operand_size:2;		// Bits	56-57
+			u64 base_valid:1;		// Bit	58
+			u64 reserved:1;			// Bit	59
+			u64 mem_valid:1;		// Bit	60
+			u64 reg_valid:2;		// Bits	61-62
+			u64 imm_valid:1;		// Bit	63
+		};
+		u64 value;
+	}complex;
+	union
+	{
+		u64 s;
+		u64 u;
+	}immediate;
+}noir_basic_operand,*noir_basic_operand_p;
+
+typedef union _noir_addr64_translator_l4
+{
+	struct
+	{
+		u64 offset:12;
+		u64 pte:9;
+		u64 pde:9;
+		u64 pdpte:9;
+		u64 pml4e:9;
+		u64 pml5e:9;
+		u64 sign_extend:7;
+	};
+	u64 pointer;
+}noir_addr64_translator,*noir_addr64_translator_p;
+
+typedef union _noir_paging64_general_entry
+{
+	struct
+	{
+		u64 present:1;
+		u64 write:1;
+		u64 user:1;
+		u64 pwt:1;
+		u64 pcd:1;
+		u64 accessed:1;
+		u64 dirty:1;
+		u64 psize:1;
+		u64 global:1;
+		u64 available1:1;
+		u64 base:40;
+		u64 available2:7;
+		u64 page_key:4;
+		u64 no_execute:1;
+	};
+	u64 value;
+}noir_paging64_general_entry,*noir_paging64_general_entry_p;
+
+typedef union _noir_paging32_general_entry
+{
+	struct
+	{
+		u32 present:1;
+		u32 write:1;
+		u32 user:1;
+		u32 pwt:1;
+		u32 pcd:1;
+		u32 accessed:1;
+		u32 dirty:1;
+		u32 pat:1;
+		u32 global:1;
+		u32 available:1;
+		u32 base:20;
+	};
+	u32 value;
+}noir_paging32_general_entry,*noir_paging32_general_entry_p;
+
 typedef void (*noir_broadcast_worker)(void* context,u32 processor_id);
 typedef i32(cdecl *noir_sorting_comparator)(const void* a,const void*b);
 
 void noir_save_processor_state(noir_processor_state_p);
+u16 noir_get_segment_attributes(ulong_ptr gdt_base,u16 selector);
 void noir_generic_call(noir_broadcast_worker worker,void* context);
 u32 noir_get_processor_count();
 u32 noir_get_current_processor();
 u32 noir_get_instruction_length(void* code,bool long_mode);
 u32 noir_get_instruction_length_ex(void* code,u8 bits);
 u32 noir_disasm_instruction(void* code,char* mnemonic,size_t mnemonic_length,u8 bits,u64 virtual_address);
+void noir_decode_instruction16(u8* code,size_t code_length,void* decode_result);
+void noir_decode_instruction32(u8* code,size_t code_length,void* decode_result);
+void noir_decode_instruction64(u8* code,size_t code_length,void* decode_result);
+void noir_decode_basic_operand(void* decode_result,noir_basic_operand_p basic_operand);
 
 // Doubly-Linked List Facility
 void noir_initialize_list_entry(list_entry_p entry);
@@ -299,6 +397,8 @@ void noir_xmmsave(noir_xmm_state_p state);
 void noir_xmmrestore(noir_xmm_state_p state);
 void noir_ymmsave(noir_ymm_state_p state);
 void noir_ymmrestore(noir_ymm_state_p state);
+void noir_xsave(void* state);
+void noir_xrestore(void* state);
 
 // Memory Facility
 void* noir_alloc_contd_memory(size_t length);

@@ -73,6 +73,7 @@ typedef struct _noir_vt_vcpu
 	void* ept_manager;
 	noir_vt_virtual_msr virtual_msr;
 	noir_vt_nested_vcpu nested_vcpu;
+	noir_mshv_vcpu mshvcpu;
 	u32 family_ext;		// Cached info of Extended Family.
 	u8 status;
 	u8 enabled_feature;

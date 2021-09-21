@@ -20,6 +20,23 @@
 #define noir_svm_iopm_size		0x2001
 #define noir_svm_msrpm_size		0x1800
 
+typedef union _svm_segment_access_rights
+{
+	struct
+	{
+		u16 segment_type:4;		// Bits	0-3
+		u16 descriptor_type:1;	// Bit	4
+		u16 dpl:2;				// Bits	5-6
+		u16 present:1;			// Bit	7
+		u16 available:1;		// Bit	8
+		u16 long_mode:1;		// Bit	9
+		u16 default_size:1;		// Bit	10
+		u16 granularity:1;		// Bit	11
+		u16 reserved:4;			// Bits	12-15
+	};
+	u16 value;
+}svm_segment_access_rights,*svm_segment_access_rights_p;
+
 typedef union _nvc_svm_cr_intercept
 {
 	struct

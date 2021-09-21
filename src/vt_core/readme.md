@@ -44,7 +44,9 @@ Real-Time CI is now implemented by Intel EPT.
 # Future Feature (Roadmap)
 In future, NoirVisor has following plans:
 
-- Implement VMX-Nesting.
+- Implement VMX-Nesting. (This will be a long term project)
+- Implement Customizable VM for VT-Core.
+- Implement NPIEP. (Non-Privileged Instruction Execution Prevention)
 
 # VMX-Nesting Algorithm (Incomplete Version)
 To nest another working hypervisor is the highest focus of Project NoirVisor. However, starting from the repository creation, this goal has not been satisfied yet. Here, I will state down the algorithm and it will be updated in future as problems arises. <br>
@@ -128,11 +130,12 @@ In case that guest disabled VPID, we should also enable VPID in L2 VMCS. Set L2'
 Exactly, what we should do is to redirect the VPID (increment by 1).
 
 ## Virtualize EPT
-To virtualize EPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the VMX-nesting feature in future NoirVisor may not support EPT unless I have one.
+To virtualize EPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the VMX-nesting feature in future NoirVisor may not support EPT unless I have one. <br>
+An easier, and high-performance, but protection-degraded approach to achieve this goal is to simply pass the EPT Pointer from the guest to the processor. This approach is fine for virtual machine monitors like VMware Workstation, VirtualBox, etc. because the physical memories to be virtualized do not conflict with NoirVisor's EPT Protection. However, this approach is indeed unsuitable to global hypervisors like NoirVisor itself.
 
 ## Utilize VMCS-Shadowing
 This feature could be a hard-point for me because my lab does not own a processor that supports this feature. The newest Intel CPU I have is the Intel Core i7-7500U, where the VMCS-Shadowing feature is unsupported. <br>
-In addition, VMware WorkStation (by now, version 15.5.6) does not emulate VMCS shadowing, even if the host machine supports it. (Tested on Intel i5-6400 CPU, a machine that does not belong to my lab) <br>
+In addition, VMware WorkStation (by now, version 16.1.2) does not emulate VMCS shadowing, even if the host machine supports it. (Tested on Intel i5-6400 CPU, a machine that does not belong to my lab) <br>
 With VMCS-Shadowing, we can reduce the VM-Exits induced by vmread and vmwrite instructions.
 
 ## L2 Virtual Machine Control Structure
@@ -166,7 +169,7 @@ On VM-Exit induced by nested VM-Entry, traverse all fields in L2C. If one field 
 On VM-Exit induced by nested VM-Exit, traverse host state fields in L2C. If one field during traversal is determined to be "dirty", then synchronize it from L2C to L1, and mark it as "clean" field.
 
 ### L2 VMCS Optimization: <b> Selective Synchronization </b>
-State Caching mechanism optimizes the synchronization from L2C-VMCS to L2T/L1, but cannot optimize synchronization from L2T-VMCS to L2C. To optimization such synchronization, we implement the Select Synchronization mechanism. <br>
+State Caching mechanism optimizes the synchronization from L2C-VMCS to L2T/L1, but cannot optimize synchronization from L2T-VMCS to L2C. To optimize such synchronization, we implement the Select Synchronization mechanism. <br>
 The key point is to select sufficient data to synchronize as little as possible. We do not have to read all data from L2T VMCS and synchronize them to L2C in every nested VM-Exit. <br>
 There are "Selective Conditions" that help reducing the performance consumption induced by synchronization.
 

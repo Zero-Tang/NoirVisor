@@ -57,7 +57,7 @@ Real-Time CI is now implemented by AMD Nested Paging.
 In future, NoirVisor has following plans:
 
 - Implement SVM-Nesting (This will be a long term project.)
-- Implement NPT-based Stealth Inline Hook
+- Implement Customizable VM based on SVM-Core.
 
 # SVM-Nesting Algorithm (Incomplete Version) for Global Hypervision
 To nest another working hypervisor is the highest focus of Project NoirVisor. However, starting from the repository creation, this goal has not been satisfied yet. Here, I will state down the algorithm and it will be updated in future as problems arises. <br>
@@ -87,8 +87,8 @@ Also, we should intercept access to all SVM-Related MSRs. <br>
 ## Virtualize SVM Instructions
 There are eight SVM instructions: `vmrun`, `vmload`, `vmsave`, `vmmcall`, `clgi`, `stgi`, `invlpga`, `skinit`. Instructions should be virtualized accordingly. <br>
 In essence, `vmrun` instruction takes the place of VM-Entry and VM-Exit. We will leave this to special chapters - Virtualize VM-Entry and Virtualize VM-Exit. <br>
-For `vmload` and `vmsave` instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Utilize Accelerated Nested Virtualization. <br>
-For `clgi` and `stgi` instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Utilize Accelerated Nested Virtualization. <br>
+For `vmload` and `vmsave` instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Virtualize `vmload` and `vmsave`. <br>
+For `clgi` and `stgi` instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Virtualize GIF. <br>
 For `invlpga` instruction, we pass parameters to invalidate specific TLB entry in Nested Guest. <br>
 For `skinit` instruction, this is somewhat optional since it is used only for security oriented virtualization. Even VMware's hypervisor does not emulate this.
 
@@ -110,7 +110,7 @@ Steps are given in the following:
 - On interceptions, we copy guest state to the VMCB given by the Nested Hypervisor.
 - Load the address of VMCB as rax register to L1 VMCB.
 - Load L1 Host State as Guest State to L1 VMCB.
-- Load Control State. Due to Decode Assist and Next-RIP-Saving features, we need to set something in VMCB Control State, such as Exit Reason, Information, Next RIP, etc.
+- Load Control State. Due to Decode Assist and Next-RIP-Saving features, we need to set something in L2 VMCB Control State, such as Exit Reason, Information, Next RIP, etc.
 - Virtualize GIF. We emulate that vGIF is cleared.
 - Finally, execute vmrun instruction with address of L1 VMCB, concluding the VM-Exit.
 
@@ -151,10 +151,15 @@ Here is a table that lists the conditions that change the GIF.
 | VM-Exit				| Clears GIF				|
 
 ## Virtualize Nested Paging
-To virtualize NPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the SVM-nesting feature in future NoirVisor may not support NPT unless I have one.
+To virtualize NPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the SVM-nesting feature in future NoirVisor may not support NPT unless I have one. <br>
+An easier, and high-performance, but protection-degraded approach to achieve this goal is to simply pass the Nested CR3 from the guest to the processor. This approach is fine for regular virtual machine monitors like VMware Workstation, VirtualBox, etc. because the physical memories to be virtualized do not conflict with NoirVisor's NPT Protection. However, this approach is indeed unsuitable to global hypervisors like NoirVisor itself.
 
-## Utilize Accelerated Nested Virtualization
-AMD64 architecture manual specifies Nested Virtualization Acceleration. To improve performance, we may utilize nested virtualization acceleration feature. The processor may help us to accelerate vmload and vmsave instructions and Nested GIF.
+## Virtualize `vmload` and `vmsave`
+Newer models of processors that supports AMD-V allows automatic virtualization of `vmload` and `vmsave` instructions. This feature would automatically translate the input of these two instructions and load / store the processor state into VMCB so that these two instructions could behave correctly without triggerring VM-Exits. However, some details are worth mentioning while we utilize this feature.
+
+- The `EFER.SVME` bit must be monitored.
+- If the `EFER.SVME` bit of Guest is reset, intercept the `vmload` and `vmsave` instructions (and throw `#UD` when executed).
+- If the `EFER.SVME` bit of Guest is set, stop intercepting the `vmload` and `vmsave` instructions so that acceleration is ensured.
 
 ## L2 Virtual Machine Control Block
 Here, I re-emphasize framework of how nested virtualization works:
@@ -199,6 +204,16 @@ We may assume that uncached state is always dirty. If certain state is not marke
 ## Devirtualize on-the-fly
 Since NoirVisor is possible to be unloaded before the nested hypervisor ends, it is necessary to put nested hypervisor directly onto the processor - that is, L1 becomes L0 and L2 becomes L1. <br>
 This is a suggestion for Nested Virtualization in NoirVisor. By now, algorithm design will not be made. After the Nested Virtualization feature completes, NoirVisor may refuse unloading as long as the nested hypervisor did not leave. <br>
+
+## Nesting VMware's Hypervisor
+In order to nest VMware's hypervisor, NoirVisor has to support features that VMware's hypervisor also supports. It is observed that:
+
+- Nested Paging is supported by VMware Workstation.
+- SVM Lock is supported by VMware Workstation. (It is unlikely that nesting VMware's Hypervisor requires this feature)
+- Next-RIP Saving is supported by VMware Workstation.
+- VMCB Clean Bits is supported by VMware Workstation.
+- Flush TLB by ASID is supported by VMware Workstation.
+- Decode Assists is supported by VMware Workstation.
 
 ## Roadmap of Nested Virtualization
 Nested Virtualization in NoirVisor will be developped in three stages:

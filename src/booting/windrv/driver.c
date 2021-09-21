@@ -145,6 +145,48 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			*(PBOOLEAN)OutputBuffer=NoirIsVirtualizationEnabled();
 			break;
 		}
+		case IOCTL_CvmCreateVm:
+		{
+			PCVM_HANDLE VmHandle=(PCVM_HANDLE)((ULONG_PTR)OutputBuffer+8);
+			*(PULONG32)OutputBuffer=NoirCreateVirtualMachine(VmHandle);
+			st=STATUS_SUCCESS;
+			break;
+		}
+		case IOCTL_CvmDeleteVm:
+		{
+			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
+			*(PULONG32)OutputBuffer=NoirReleaseVirtualMachine(VmHandle);
+			st=STATUS_SUCCESS;
+			break;
+		}
+		case IOCTL_CvmSetMapping:
+		{
+			break;
+		}
+		case IOCTL_CvmQueryHvStatus:
+		{
+			break;
+		}
+		case IOCTL_CvmCreateVcpu:
+		{
+			break;
+		}
+		case IOCTL_CvmDeleteVcpu:
+		{
+			break;
+		}
+		case IOCTL_CvmRunVcpu:
+		{
+			break;
+		}
+		case IOCTL_CvmViewVcpuReg:
+		{
+			break;
+		}
+		case IOCTL_CvmEditVcpuReg:
+		{
+			break;
+		}
 		default:
 		{
 			break;

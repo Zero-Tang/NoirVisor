@@ -14,9 +14,79 @@
 
 #include <nvdef.h>
 
-//
-#define ia32_cr4_vmxe			13
-#define ia32_cr4_vmxe_bit		0x2000
+// CR0 Bit Fields
+#define ia32_cr0_pe		0
+#define ia32_cr0_mp		1
+#define ia32_cr0_em		2
+#define ia32_cr0_ts		3
+#define ia32_cr0_et		4
+#define ia32_cr0_ne		5
+#define ia32_cr0_wp		16
+#define ia32_cr0_am		18
+#define ia32_cr0_nw		29
+#define ia32_cr0_cd		30
+#define ia32_cr0_pg		31
+#define ia32_cr0_pe_bit	0x1
+#define ia32_cr0_mp_bit	0x2
+#define ia32_cr0_em_bit	0x4
+#define ia32_cr0_ts_bit	0x8
+#define ia32_cr0_et_bit	0x10
+#define ia32_cr0_ne_bit	0x20
+#define ia32_cr0_wp_bit	0x10000
+#define ia32_cr0_am_bit	0x40000
+#define ia32_cr0_nw_bit	0x20000000
+#define ia32_cr0_cd_bit	0x40000000
+#define ia32_cr0_pg_bit	0x80000000
+
+// CR4 Bit Fields
+#define ia32_cr4_vme				0
+#define ia32_cr4_pvi				1
+#define ia32_cr4_tsd				2
+#define ia32_cr4_de					3
+#define ia32_cr4_pse				4
+#define ia32_cr4_pae				5
+#define ia32_cr4_mce				6
+#define ia32_cr4_pge				7
+#define ia32_cr4_pce				8
+#define ia32_cr4_osfxsr				9
+#define ia32_cr4_osxmmexcept		10
+#define ia32_cr4_umip				11
+#define ia32_cr4_la57				12
+#define ia32_cr4_vmxe				13
+#define ia32_cr4_smxe				14
+#define ia32_cr4_fsgsbase			16
+#define ia32_cr4_pcide				17
+#define ia32_cr4_osxsave			18
+#define ia32_cr4_kl					19
+#define ia32_cr4_smep				20
+#define ia32_cr4_smap				21
+#define ia32_cr4_pke				22
+#define ia32_cr4_cet				23
+#define ia32_cr4_pks				24
+#define ia32_cr4_vme_bit			0x1
+#define ia32_cr4_pvi_bit			0x2
+#define ia32_cr4_tsd_bit			0x4
+#define ia32_cr4_de_bit				0x8
+#define ia32_cr4_pse_bit			0x10
+#define ia32_cr4_pae_bit			0x20
+#define ia32_cr4_mce_bit			0x40
+#define ia32_cr4_pge_bit			0x80
+#define ia32_cr4_pce_bit			0x100
+#define ia32_cr4_osfxsr_bit			0x200
+#define ia32_cr4_osxmmexcept_bit	0x400
+#define ia32_cr4_umip_bit			0x800
+#define ia32_cr4_la57_bit			0x1000
+#define ia32_cr4_vmxe_bit			0x2000
+#define ia32_cr4_smxe_bit			0x4000
+#define ia32_cr4_fsgsbase_bit		0x10000
+#define ia32_cr4_pcide_bit			0x20000
+#define ia32_cr4_osxsave_bit		0x40000
+#define ia32_cr4_kl_bit				0x80000
+#define ia32_cr4_smep_bit			0x100000
+#define ia32_cr4_smap_bit			0x200000
+#define ia32_cr4_pke_bit			0x400000
+#define ia32_cr4_cet_bit			0x800000
+#define ia32_cr4_pks_bit			0x1000000
 
 // This is used for defining MSRs.
 #define ia32_feature_control			0x3A

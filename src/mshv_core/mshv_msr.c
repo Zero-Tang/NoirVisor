@@ -34,13 +34,13 @@ u8 nvc_mshv_hypercall_code32[8]=
 	0xC3						// ret
 };
 
-u64 static fastcall nvc_mshv_msr_r40000000_handler(bool write,u64 val)
+u64 static fastcall nvc_mshv_msr_r40000000_handler(noir_mshv_vcpu_p vcpu,bool write,u64 val)
 {
 	if(write)noir_locked_xchg64(&noir_mshv_guest_os_id,val);
 	return noir_mshv_guest_os_id;
 }
 
-u64 static fastcall nvc_mshv_msr_r40000001_handler(bool write,u64 val)
+u64 static fastcall nvc_mshv_msr_r40000001_handler(noir_mshv_vcpu_p vcpu,bool write,u64 val)
 {
 	if(write && noir_mshv_guest_os_id)
 	{
@@ -63,37 +63,53 @@ u64 static fastcall nvc_mshv_msr_r40000001_handler(bool write,u64 val)
 	return noir_mshv_hypercall_ctrl;
 }
 
-u64 static fastcall nvc_mshv_msr_r40000002_handler(bool write,u64 val)
+u64 static fastcall nvc_mshv_msr_r40000002_handler(noir_mshv_vcpu_p vcpu,bool write,u64 val)
 {
 	return noir_get_current_processor();
 }
 
-u64 fastcall nvc_mshv_rdmsr_handler(u32 index)
+u64 static fastcall nvc_mshv_msr_r40000040_handler(noir_mshv_vcpu_p vcpu,bool write,u64 val)
+{
+	if(write)
+	{
+		vcpu->npiep_config=val;
+		// Reconfigure the Interceptions.
+		if(hvm_p->selected_core==use_svm_core)nvc_svm_reconfigure_npiep_interceptions(vcpu->root_vcpu);
+	}
+	return vcpu->npiep_config;
+}
+
+u64 fastcall nvc_mshv_rdmsr_handler(noir_mshv_vcpu_p vcpu,u32 index)
 {
 	switch(index)
 	{
 		case hv_x64_msr_guest_os_id:
-			return nvc_mshv_msr_r40000000_handler(false,0);
+			return nvc_mshv_msr_r40000000_handler(vcpu,false,0);
 		case hv_x64_msr_hypercall:
-			return nvc_mshv_msr_r40000001_handler(false,0);
+			return nvc_mshv_msr_r40000001_handler(vcpu,false,0);
 		case hv_x64_msr_vp_index:
-			return nvc_mshv_msr_r40000002_handler(false,0);
+			return nvc_mshv_msr_r40000002_handler(vcpu,false,0);
+		case hv_x64_msr_npiep_config:
+			return nvc_mshv_msr_r40000040_handler(vcpu,false,0);
 	}
 	return 0;
 }
 
-void fastcall nvc_mshv_wrmsr_handler(u32 index,u64 val)
+void fastcall nvc_mshv_wrmsr_handler(noir_mshv_vcpu_p vcpu,u32 index,u64 val)
 {
 	switch(index)
 	{
 		case hv_x64_msr_guest_os_id:
-			nvc_mshv_msr_r40000000_handler(true,val);
+			nvc_mshv_msr_r40000000_handler(vcpu,true,val);
 			break;
 		case hv_x64_msr_hypercall:
-			nvc_mshv_msr_r40000001_handler(true,val);
+			nvc_mshv_msr_r40000001_handler(vcpu,true,val);
 			break;
 		case hv_x64_msr_vp_index:
-			nvc_mshv_msr_r40000002_handler(true,val);
+			nvc_mshv_msr_r40000002_handler(vcpu,true,val);
+			break;
+		case hv_x64_msr_npiep_config:
+			nvc_mshv_msr_r40000040_handler(vcpu,true,val);
 			break;
 	}
 }

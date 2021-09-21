@@ -76,15 +76,13 @@ u32 noir_find_clear_bit(void* bitmap,u32 limit)
 		if(noir_bsf64(&result,~bmp[i]))
 		{
 			result+=(i<<6);
-			break;
-		}
 #else
 		if(noir_bsf(&result,~bmp[i]))
 		{
 			result+=(i<<5);
+#endif
 			break;
 		}
-#endif
 	}
 	return result;
 }
@@ -110,15 +108,13 @@ u32 noir_find_set_bit(void* bitmap,u32 limit)
 		if(noir_bsf64(&result,bmp[i]))
 		{
 			result+=(i<<6);
-			break;
-		}
 #else
 		if(noir_bsf(&result,bmp[i]))
 		{
 			result+=(i<<5);
+#endif
 			break;
 		}
-#endif
 	}
 	return result;
 }

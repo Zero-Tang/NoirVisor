@@ -18,6 +18,18 @@
 #define DEVICE_NAME			L"\\Device\\NoirVisor"
 #define LINK_NAME			L"\\DosDevices\\NoirVisor"
 
+// Definitions of Status Codes of NoirVisor.
+#define NOIR_SUCCESS					0
+#define NOIR_UNSUCCESSFUL				0xC0000000
+#define NOIR_INSUFFICIENT_RESOURCES		0xC0000001
+#define NOIR_NOT_IMPLEMENTED			0xC0000002
+#define NOIR_UNKNOWN_PROCESSOR			0xC0000003
+#define NOIR_INVALID_PARAMETER			0xC0000004
+#define NOIR_HYPERVISION_ABSENT			0xC0000005
+
+typedef ULONG32 NOIR_STATUS;
+
+// Definitions of I/O Control Codes of NoirVisor Driver.
 #define CTL_CODE_GEN(i)		CTL_CODE(FILE_DEVICE_UNKNOWN,i,METHOD_BUFFERED,FILE_ANY_ACCESS)
 
 #define IOCTL_Subvert		CTL_CODE_GEN(0x801)
@@ -32,6 +44,24 @@
 #define IOCTL_OsVer			CTL_CODE_GEN(0x813)
 #define IOCTL_VirtCap		CTL_CODE_GEN(0x814)
 #define IOCTL_VirtEn		CTL_CODE_GEN(0x815)
+
+// Following definitions are intended for CVM use.
+#define IOCTL_CvmCreateVm		CTL_CODE_GEN(0x880)
+#define IOCTL_CvmDeleteVm		CTL_CODE_GEN(0x881)
+#define IOCTL_CvmSetMapping		CTL_CODE_GEN(0x882)
+#define IOCTL_CvmQueryHvStatus	CTL_CODE_GEN(0x88F)
+#define IOCTL_CvmCreateVcpu		CTL_CODE_GEN(0x890)
+#define IOCTL_CvmDeleteVcpu		CTL_CODE_GEN(0x891)
+#define IOCTL_CvmRunVcpu		CTL_CODE_GEN(0x892)
+#define IOCTL_CvmViewVcpuReg	CTL_CODE_GEN(0x893)
+#define IOCTL_CvmEditVcpuReg	CTL_CODE_GEN(0x894)
+
+// Layered Hypervisor Functions
+typedef ULONG_PTR CVM_HANDLE;
+typedef PULONG_PTR PCVM_HANDLE;
+
+NOIR_STATUS NoirCreateVirtualMachine(OUT PCVM_HANDLE VirtualMachine);
+NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine);
 
 void NoirInitializeDisassembler();
 NTSTATUS NoirReportWindowsVersion();

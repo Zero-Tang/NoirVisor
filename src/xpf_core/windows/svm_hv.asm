@@ -53,8 +53,9 @@ nvc_svm_return endp
 nvc_svm_exit_handler_a proc frame
 
 	; At this moment, VM-Exit occured.
-	; eb NoirVisor!nvc_svm_exit_handler_a cc
-	nop			; Change to int 3 in order to debug-break.
+	; To add a debug-break, enter following command to WinDbg.
+	; ed NoirVisor!nvc_svm_exit_handler_a ccdc010f
+	nop dword ptr [rax+20h]		; This is a purposeful four-byte nop instruction.
 	; Add a trap frame so WinDbg may display stack trace in Guest.
 	.pushframe
 	sub rsp,ktrap_frame_size+gpr_stack_size+20h

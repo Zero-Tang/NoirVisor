@@ -38,6 +38,27 @@
 #define amd64_cr0_cd_bit	0x40000000
 #define amd64_cr0_pg_bit	0x80000000
 
+// CR4 Bit Fields
+#define amd64_cr4_vme				0
+#define amd64_cr4_pvi				1
+#define amd64_cr4_tsd				2
+#define amd64_cr4_de				3
+#define amd64_cr4_pse				4
+#define amd64_cr4_pae				5
+#define amd64_cr4_mce				6
+#define amd64_cr4_pge				7
+#define amd64_cr4_pce				8
+#define amd64_cr4_osfxsr			9
+#define amd64_cr4_osxmmexcept		10
+#define amd64_cr4_umip				11
+#define amd64_cr4_fsgsbase			16
+#define amd64_cr4_pcide				17
+#define amd64_cr4_osxsave			18
+#define amd64_cr4_smep				20
+#define amd64_cr4_smap				21
+#define amd64_cr4_pke				22
+#define amd64_cr4_cet				23
+
 // EFER Bit Fields
 #define amd64_efer_sce			0
 #define amd64_efer_lme			8

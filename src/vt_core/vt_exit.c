@@ -702,8 +702,8 @@ void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,noir_vt
 		}
 		case 2:
 		{
-			// Clts instruction is intercepted!
-			// By default setting of VMCS, we won't go here.
+			// The clts instruction is intercepted!
+			// By NoirVisor's default setting of VMCS, we won't go here.
 			nv_dprintf("Check your CR0 Guest-Host Mask!\n");
 			break;
 		}
@@ -737,7 +737,7 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 	if(noir_is_synthetic_msr(index))
 	{
 		if(hvm_p->options.cpuid_hv_presence)
-			val.value=nvc_mshv_rdmsr_handler(index);
+			val.value=nvc_mshv_rdmsr_handler(&vcpu->mshvcpu,index);
 		else
 			noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
 	}
@@ -774,7 +774,7 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 				noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
 				advance=false;	// For exception, rip does not advance.
 			}
-		// Expected Case: Check MSR Hook.
+			// Expected Case: Check MSR Hook.
 #if defined(_amd64)
 			case ia32_lstar:
 			{
@@ -812,7 +812,7 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 	if(noir_is_synthetic_msr(index))
 	{
 		if(hvm_p->options.cpuid_hv_presence)
-			nvc_mshv_wrmsr_handler(index,val.value);
+			nvc_mshv_wrmsr_handler(&vcpu->mshvcpu,index,val.value);
 		else
 			noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
 	}
@@ -832,6 +832,7 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 				// there is nothing really should be going on here,
 				// in that we may simply throw the value to MSR.
 #endif
+				noir_wrmsr(ia32_bios_updt_trig,val.value);
 				break;
 			}
 #if defined(_amd64)
@@ -873,6 +874,137 @@ void static fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr_state,noir_
 void static fastcall nvc_vt_invalid_msr_loading(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	nv_dprintf("VM-Entry failed! Check the MSR-Auto list in VMCS!\n");
+}
+
+// Expected Exit Reason: 46
+void static fastcall nvc_vt_access_gdtr_idtr_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
+{
+	ia32_vmexit_instruction_information exit_info;
+	long_ptr displacement;
+	ulong_ptr *gpr_array=(ulong_ptr*)gpr_state;
+	ulong_ptr pointer=0,seg_base=0,gcr0;
+	vmx_segment_access_right cs_attrib;
+	noir_vt_vmread(guest_cs_access_rights,&cs_attrib.value);
+	noir_vt_vmread(vmexit_instruction_information,&exit_info.value);
+	// Forge the pointer.
+	noir_vt_vmread(vmexit_qualification,&displacement);
+	if(!exit_info.f2.base_invalid)
+	{
+		ulong_ptr base;
+		// Note: The rsp register is saved in VMCS.
+		if(exit_info.f2.base==4)
+			noir_vt_vmread(guest_rsp,&base);
+		else
+			base=gpr_array[exit_info.f2.base];
+		pointer+=base;
+	}
+	// Note: The rsp register is impossible to be the index register of a memory operand.
+	if(!exit_info.f2.index_invalid)
+		pointer+=gpr_array[exit_info.f2.index]<<gpr_array[exit_info.f2.scaling];
+	// Apply the segment base.
+	noir_vt_vmread(guest_cr0,&gcr0);
+#if defined(_hv_type1)
+	if(gcr0 & noir_cr0_pe)
+#endif
+		noir_vt_vmread(guest_es_base+(exit_info.f2.segment<<1),&seg_base);
+#if defined(_hv_type1)
+	else
+	{
+		// In Real-Mode, segment base is selector being shifted left for four bits.
+		noir_vt_vmread(guest_es_selector+(exit_info.f2.segment<<1),&seg_base);
+		seg_base<<=4;
+	}
+#endif
+	pointer+=seg_base;
+	// Truncate the pointer if needed.
+	if(exit_info.f2.address_size==1)
+		pointer&=0xffffffff;
+	else if(exit_info.f2.address_size==0)
+		pointer&=0xffff;
+	// FIXME: Check if the forged memory address is valid.
+	// Pointer is completely forged. Perform emulation.
+	if(exit_info.f2.is_loading)
+	{
+		// This is a load access.
+		u16 limit=*(u16*)pointer;
+		ulong_ptr base;
+		if(cs_attrib.long_mode)
+			base=(ulong_ptr)(*(u64*)(pointer+2));
+		else
+			base=(ulong_ptr)(*(u32*)(pointer+2));
+		if(exit_info.f2.is_idtr_access)
+		{
+			noir_vt_vmwrite(guest_idtr_limit,limit);
+			noir_vt_vmwrite(guest_idtr_base,base);
+		}
+		else
+		{
+			noir_vt_vmwrite(guest_gdtr_limit,limit);
+			noir_vt_vmwrite(guest_gdtr_base,base);
+		}
+	}
+	else
+	{
+		// This is a store access. Validate the exiting CPL.
+		// According to Intel SDM, SS.DPL must be the CPL.
+		u16 limit;
+		u64 base;
+		bool prevention=false;
+		vmx_segment_access_right ss_attrib;
+		u64 gcr3k=noir_get_current_process_cr3();
+		// Unlike AMD-V, interception does not mean prevention is active.
+		if(exit_info.f2.is_idtr_access)
+			prevention|=noir_bt((u32*)&vcpu->mshvcpu.npiep_config,noir_mshv_npiep_prevent_sidt);
+		else
+			prevention|=noir_bt((u32*)&vcpu->mshvcpu.npiep_config,noir_mshv_npiep_prevent_sgdt);
+		noir_vt_vmread(guest_ss_access_rights,&ss_attrib.value);
+		if(ss_attrib.dpl>0 && prevention)
+		{
+			limit=0x2333;
+			base=0x6666666666666666;
+		}
+		else
+		{
+			if(exit_info.f2.is_idtr_access)
+			{
+				noir_vt_vmread(guest_idtr_limit,&limit);
+				noir_vt_vmread(guest_idtr_base,&base);
+			}
+			else
+			{
+				noir_vt_vmread(guest_gdtr_limit,&limit);
+				noir_vt_vmread(guest_gdtr_base,&base);
+			}
+		}
+		noir_writecr3(gcr3k);
+		if(cs_attrib.long_mode)
+			*(u64*)(pointer+2)=base;
+		else
+			*(u32*)(pointer+2)=(u32)base;
+		*(u16*)pointer=limit;
+	}
+	noir_vt_advance_rip();
+}
+
+// Expected Exit Reason: 47
+void static fastcall nvc_vt_access_ldtr_tr_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
+{
+	ia32_vmexit_instruction_information exit_info;
+	long_ptr displacement;
+	ulong_ptr *gpr_array=(ulong_ptr*)gpr_state;
+	ulong_ptr pointer=0,seg_base=0,gdt_base,gcr0;
+	vmx_segment_access_right cs_attrib;
+	noir_vt_vmread(guest_cs_access_rights,&cs_attrib.value);
+	noir_vt_vmread(vmexit_instruction_information,&exit_info.value);
+	noir_vt_vmread(vmexit_qualification,&displacement);
+	noir_vt_vmread(guest_cr0,&gcr0);
+	noir_vt_vmread(guest_gdtr_base,&gdt_base);
+	// Accessing LDTR and TR does not necessarily reference memory.
+	if(!exit_info.f3.use_register)
+	{
+		;
+	}
+	noir_vt_advance_rip();
 }
 
 // Expected Exit Reason: 48
@@ -958,14 +1090,14 @@ void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 		case 0:
 		{
 			ia32_xcr0 xcr0;
-			u32 a,d;
+			u32 a=hvm_p->xfeat.support_mask.low;
+			u32 d=hvm_p->xfeat.support_mask.high;
 			xcr0.lo=(u32)gpr_state->rax;
 			xcr0.hi=(u32)gpr_state->rdx;
 			// IA-32 architecture bans x87 being disabled.
 			if(xcr0.x87==0)gp_exception=true;
-			// AVX is sufficient condition of SSE.
-			if(xcr0.sse==0 && xcr0.avx==0)gp_exception=true;
-			noir_cpuid(7,0,&a,null,null,&d);
+			// SSE is necessary condition of AVX.
+			if(xcr0.sse==0 && xcr0.avx!=0)gp_exception=true;
 			if((xcr0.lo&a)!=a)gp_exception=true;
 			if((xcr0.hi&d)!=d)gp_exception=true;
 			value=xcr0.value;
@@ -1033,6 +1165,22 @@ void fastcall nvc_vt_resume_failure(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vc
 	// Break at last to let the debug personnel know the failure.
 	noir_int3();
 	// Call the panic function to stop the system.
+}
+
+void nvc_vt_reconfigure_npiep_interceptions(noir_vt_vcpu_p vcpu)
+{
+	ulong_ptr gcr4;
+	ia32_vmx_2ndproc_controls proc_ctrl2;
+	noir_vt_vmread(guest_cr4,&gcr4);
+	noir_vt_vmread(secondary_processor_based_vm_execution_controls,&proc_ctrl2.value);
+	// If the UMIP is to be enabled, disable descriptor-table exiting.
+	// If no NPIEP preventions are set, disable descriptor-table exiting.
+	// Otherwise, enable descriptor-table exiting.
+	if(noir_bt((u32*)&gcr4,ia32_cr4_umip) || ((vcpu->mshvcpu.npiep_config & noir_mshv_npiep_prevent_all)==0))
+		proc_ctrl2.descriptor_table_exiting=0;
+	else
+		proc_ctrl2.descriptor_table_exiting=1;
+	noir_vt_vmwrite(secondary_processor_based_vm_execution_controls,proc_ctrl2.value);
 }
 
 void nvc_vt_set_mshv_handler(bool option)
