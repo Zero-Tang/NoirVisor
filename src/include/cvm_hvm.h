@@ -135,7 +135,7 @@ typedef struct _noir_cvm_exit_context
 		noir_cvm_dr_access_context dr_access;
 		noir_cvm_exception_context exception;
 		noir_cvm_io_context io;
-		noir_cvm_io_context msr;
+		noir_cvm_msr_context msr;
 		noir_cvm_memory_access_context memory_access;
 		noir_cvm_cpuid_context cpuid;
 	};
@@ -203,6 +203,8 @@ typedef struct _noir_xcr_state
 	u64 xcr0;
 }noir_xcr_state,*noir_xcr_state_p;
 
+#define noir_cvm_vcpu_cancellation	31
+
 typedef union _noir_cvm_vcpu_options
 {
 	struct
@@ -217,8 +219,9 @@ typedef union _noir_cvm_vcpu_options
 		u32 intercept_cr4:1;
 		u32 intercept_drx:1;
 		u32 intercept_pause:1;
-		u32 emulate_umip:1;
-		u32 reserved:21;
+		u32 npiep:1;
+		u32 reserved:20;
+		u32 cancel_execution:1;
 	};
 	u32 value;
 }noir_cvm_vcpu_options,*noir_cvm_vcpu_options_p;
@@ -258,28 +261,29 @@ typedef struct _noir_cvm_virtual_cpu
 	noir_cvm_vcpu_options vcpu_options;
 	noir_cvm_vcpu_state_cache state_cache;
 	u32 exception_bitmap;
-	u32 proc_id;
 }noir_cvm_virtual_cpu,*noir_cvm_virtual_cpu_p;
+
+typedef union _noir_cvm_mapping_attributes
+{
+	struct
+	{
+		u32 present:1;
+		u32 write:1;
+		u32 execute:1;
+		u32 user:1;
+		u32 caching:3;
+		u32 psize:2;
+		u32 reserved:23;
+	};
+	u32 value;
+}noir_cvm_mapping_attributes,*noir_cvm_mapping_attributes_p;
 
 typedef struct _noir_cvm_address_mapping
 {
 	u64 gpa;
-	u64 hpa;
+	u64 hva;
 	u32 pages;
-	union
-	{
-		struct
-		{
-			u32 present:1;
-			u32 write:1;
-			u32 execute:1;
-			u32 user:1;
-			u32 caching:3;
-			u32 psize:2;
-			u32 reserved:23;
-		};
-		u32 value;
-	}attributes;
+	noir_cvm_mapping_attributes attributes;
 }noir_cvm_address_mapping,*noir_cvm_address_mapping_p;
 
 typedef struct _noir_cvm_virtual_machine
@@ -289,15 +293,15 @@ typedef struct _noir_cvm_virtual_machine
 	u32 mappings_count;
 	u32 pid;
 	noir_reslock vcpu_list_lock;
-	noir_cvm_virtual_cpu_p vcpu;
-	noir_cvm_address_mapping mappings[1];
 }noir_cvm_virtual_machine,*noir_cvm_virtual_machine_p;
 
 #if defined(_central_hvm)
 noir_status nvc_svmc_create_vm(noir_cvm_virtual_machine_p* virtual_machine);
 void nvc_svmc_release_vm(noir_cvm_virtual_machine_p vm);
-noir_status nvc_svmc_create_vcpu(noir_cvm_virtual_cpu_p* virtual_cpu,noir_cvm_virtual_machine_p virtual_machine);
+noir_status nvc_svmc_create_vcpu(noir_cvm_virtual_cpu_p* virtual_cpu,noir_cvm_virtual_machine_p virtual_machine,u32 vcpu_id);
 void nvc_svmc_release_vcpu(noir_cvm_virtual_cpu_p vcpu);
+noir_cvm_virtual_cpu_p nvc_svmc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id);
+noir_status nvc_svmc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info);
 u32 nvc_svmc_get_vm_asid(noir_cvm_virtual_machine_p vm);
 
 // Idle VM is to be considered as the List Head.

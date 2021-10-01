@@ -405,7 +405,7 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 			if(vcpu->hv_stack)
 				noir_free_nonpg_memory(vcpu->hv_stack);
 			if(vcpu->cvm_state.xsave_area)
-				noir_free_nonpg_memory(vcpu->cvm_state.xsave_area);
+				noir_free_contd_memory(vcpu->cvm_state.xsave_area);
 			if(vcpu->primary_nptm)
 				nvc_npt_cleanup(vcpu->primary_nptm);
 #if !defined(_hv_type1)
@@ -460,7 +460,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 				goto alloc_failure;
 			vcpu->hv_stack=noir_alloc_nonpg_memory(nvc_stack_size);
 			if(vcpu->hv_stack==null)goto alloc_failure;
-			vcpu->cvm_state.xsave_area=noir_alloc_nonpg_memory(hvm_p->xfeat.supported_size_max);
+			vcpu->cvm_state.xsave_area=noir_alloc_contd_memory(hvm_p->xfeat.supported_size_max);
 			if(vcpu->cvm_state.xsave_area==null)goto alloc_failure;
 			vcpu->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
 			vcpu->primary_nptm=nvc_npt_build_identity_map();
@@ -477,6 +477,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			if(hvm_p->options.stealth_inline_hook)vcpu->enabled_feature|=noir_svm_npt_with_hooks;
 		}
 	}
+	hvm_p->host_pat.value=noir_rdmsr(amd64_pat);
 	hvm_p->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
 	hvm_p->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();
 	if(hvm_p->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;

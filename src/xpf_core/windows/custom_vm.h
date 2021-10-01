@@ -169,6 +169,27 @@ typedef struct _NOIR_ADDRESS_MAPPING
 	}Attributes;
 }NOIR_ADDRESS_MAPPING,*PNOIR_ADDRESS_MAPPING;
 
+#define MemoryWorkingSetExInformation		4
+
+typedef NTSTATUS (*ZWQUERYVIRTUALMEMORY)
+(
+ IN HANDLE ProcessHandle,
+ IN PVOID BaseAddress,
+ IN ULONG MemoryInformationClass,
+ OUT PVOID MemoryInformation,
+ IN SIZE_T MemoryInformationLength,
+ OUT PSIZE_T ReturnLength
+);
+
+typedef struct _MEMORY_WORKING_SET_EX_INFORMATION
+{
+	union
+	{
+		ULONG_PTR BaseAddress;
+		ULONG_PTR NumberOfEntries;
+	};
+}MEMORY_WORKING_SET_EX_INFORMATION,*PMEMORY_WORKING_SET_EX_INFORMATION;
+
 /*
   NoirVisor chooses the similar data structure to Windows' handle table.
 
@@ -199,7 +220,7 @@ typedef struct _NOIR_CVM_HANDLE_TABLE
 	ULONG_PTR TableCode;
 	ERESOURCE HandleTableLock;
 	CVM_HANDLE MaximumHandleValue;
-	ULONG32 HandleCount;
+	SIZE_T HandleCount;
 }NOIR_CVM_HANDLE_TABLE,*PNOIR_CVM_HANDLE_TABLE;
 
 PVOID NoirAllocateNonPagedMemory(IN SIZE_T Length);
@@ -208,11 +229,18 @@ void NoirFreeNonPagedMemory(IN PVOID VirtualAddress);
 void NoirFreePagedMemory(IN PVOID VirtualAddress);
 void __cdecl NoirDebugPrint(const char* Format,...);
 
+PVOID NoirLocateImageBaseByName(IN PWSTR ImageName);
+PVOID NoirLocateExportedProcedureByName(IN PVOID ImageBase,IN PSTR ProcedureName);
+
 // Functions from NoirVisor XPF-Core for CVM.
 ULONG32 nvc_query_physical_asid_limit(IN PSTR vendor_string);
 void noir_get_vendor_string(OUT PSTR vendor_string);
 NOIR_STATUS nvc_create_vm(OUT PVOID *VirtualMachine,HANDLE ProcessId);
 NOIR_STATUS nvc_release_vm(IN PVOID VirtualMachine);
+NOIR_STATUS nvc_set_mapping(IN PVOID VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation);
+NOIR_STATUS nvc_create_vcpu(IN PVOID VirtualMachine,OUT PVOID *VirtualProcessor,IN ULONG32 VpIndex);
+NOIR_STATUS nvc_release_vcpu(IN PVOID VirtualProcessor);
+PVOID nvc_reference_vcpu(IN PVOID VirtualMachine,IN ULONG32 VpIndex);
 HANDLE nvc_get_vm_pid(IN PVOID VirtualMachine);
 
 NOIR_CVM_HANDLE_TABLE NoirCvmHandleTable={0};

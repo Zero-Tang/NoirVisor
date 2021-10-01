@@ -54,6 +54,14 @@ void nvc_npt_cleanup(noir_npt_manager_p nptm)
 	}
 }
 
+u8 nvc_npt_get_host_pat_index(u8 type)
+{
+	for(u8 i=0;i<8;i++)
+		if(hvm_p->host_pat.list[i]==type)
+			return i;
+	return 0xff;
+}
+
 u8 nvc_npt_convert_pat_type(u64 pat,u8 type)
 {
 	u8* pat_array=(u8*)&pat;

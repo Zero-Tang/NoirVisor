@@ -167,7 +167,7 @@ NOIR_STATUS NoirCreateVirtualMachine(OUT PCVM_HANDLE VirtualMachine)
 		if(st==NOIR_SUCCESS)	// Increment the handle counter if success.
 		{
 			NoirCvmHandleTable.HandleCount++;
-			NoirCvmTracePrint("New VM is created successfully! Handle=0x%p\t Object=0x%p\n",VirtualMachine,VM);
+			NoirCvmTracePrint("New VM is created successfully! Handle=0x%p\t Object=0x%p\n",*VirtualMachine,VM);
 		}
 		if(*VirtualMachine>NoirCvmHandleTable.MaximumHandleValue)
 			NoirCvmHandleTable.MaximumHandleValue=*VirtualMachine;
@@ -193,6 +193,61 @@ NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine)
 			NoirCvmHandleTable.HandleCount--;
 			NoirDeleteHandle(VirtualMachine,NoirCvmHandleTable.TableCode);
 		}
+	}
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return st;
+}
+
+NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	if(VM)
+	{
+		st=nvc_set_mapping(VM,MappingInformation);
+		NoirCvmTracePrint("Mapping Status: 0x%X\n",st);
+	}
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return st;
+}
+
+NOIR_STATUS NoirCreateVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	if(VM)
+	{
+		PVOID VP=NULL;
+		st=nvc_create_vcpu(VM,&VP,VpIndex);
+		NoirCvmTracePrint("vCPU Creation Status: 0x%X\t vCPU: 0x%p\n",st,VP);
+	}
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return st;
+}
+
+NOIR_STATUS NoirReleaseVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		if(VP)
+			st=nvc_create_vcpu(VM,&VP,VpIndex);
+		else
+			NoirCvmTracePrint("[VM=0x%p] vCPU %d does not exist!\n",VM,VpIndex);
 	}
 	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
 	KeLeaveCriticalRegion();

@@ -77,6 +77,36 @@ UINT16 NoirAllocateSegmentSelector(IN PNHGDTENTRY64 GdtBase,IN UINT16 Limit)
 	return 0;
 }
 
+void NoirPrepareHostProcedureAp(IN VOID *ProcedureArgument)
+{
+	PNHPCR Pcr=(PNHPCR)ProcedureArgument;
+	VOID* NewGdt=NULL;
+	VOID* NewIdt=NULL;
+	UINTN CurProc=0;
+	AsmReadGdtr(&Pcr[CurProc].GdtR);
+	AsmReadIdtr(&Pcr[CurProc].IdtR);
+	NewGdt=AllocateRuntimePool(Pcr[CurProc].GdtR.Limit+1);
+	NewIdt=AllocateRuntimePool(Pcr[CurProc].IdtR.Limit+1);
+	if(MpServices)MpServices->WhoAmI(MpServices,&CurProc);
+	Pcr[CurProc].ProcessorNumber=CurProc;
+	if(NewGdt && NewIdt)
+	{
+		CopyMem(NewGdt,(VOID*)Pcr[CurProc].GdtR.Base,Pcr[CurProc].GdtR.Limit+1);
+		CopyMem(NewIdt,(VOID*)Pcr[CurProc].IdtR.Base,Pcr[CurProc].IdtR.Limit+1);
+	}
+	else
+	{
+		if(!NewGdt)
+			Print(L"Failed to allocate new GDT for Processor %d!\n",CurProc);
+		else
+			FreePool(NewGdt);
+		if(!NewIdt)
+			Print(L"Failed to allocate new IDT for Processor %d!\n",CurProc);
+		else
+			FreePool(NewIdt);
+	}
+}
+
 // This function is invoked by Center HVM Core prior to subverting system,
 // but do not load host's special processor state
 EFI_STATUS NoirBuildHostEnvironment()
@@ -118,9 +148,9 @@ EFI_STATUS NoirBuildHostEnvironment()
 				Host.PdptBase[i].PageSize=1;
 			}
 			Print(L"NoirVisor starts initialization per processor...\n");
-			// Initialize Per-Processor Blocks.
-			for(UINTN i=0;i<Host.NumberOfProcessors;i++)
-				Host.ProcessorBlocks[i].ProcessorNumber=i;
+			// Initialize Per-Processor Blocks by broadcasting.
+			NoirPrepareHostProcedureAp(Host.ProcessorBlocks);
+			if(MpServices)MpServices->StartupAllAPs(MpServices,NoirPrepareHostProcedureAp,TRUE,NULL,0,Host.ProcessorBlocks,NULL);
 			// If it reaches here, the initialization is successful.
 			Print(L"NoirVisor Host Context is initialized successfully! Host System=0x%p\n",&Host);
 			st=EFI_SUCCESS;
@@ -132,6 +162,18 @@ EFI_STATUS NoirBuildHostEnvironment()
 		}
 	}
 	return st;
+}
+
+void noir_load_host_processor_state()
+{
+	// Locate processor block.
+	UINTN CurProc=0;
+	if(MpServices)MpServices->WhoAmI(MpServices,&CurProc);
+	// Load Descriptor Tables...
+	AsmWriteGdtr(&Host.ProcessorBlocks[CurProc].GdtR);
+	AsmWriteIdtr(&Host.ProcessorBlocks[CurProc].IdtR);
+	// Load Paging Tables...
+	AsmWriteCr3((UINTN)Host.Pml4Base);
 }
 
 void* noir_alloc_nonpg_memory(IN UINTN Length)

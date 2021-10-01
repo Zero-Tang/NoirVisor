@@ -299,7 +299,7 @@ void NoirReportMemoryIntrospectionCounter()
 	NoirDebugPrint("============NoirVisor Memory Introspection Report Start============\n");
 	NoirDebugPrint("Unreleased NonPaged Pools: %d\n",NoirAllocatedNonPagedPools);
 	NoirDebugPrint("Unreleased Paged Pools: %d\n",NoirAllocatedPagedPools);
-	NoirDebugPrint("Unreleased Contiguous Memory Couunt: %d\n",NoirAllocatedContiguousMemoryCount);
+	NoirDebugPrint("Unreleased Contiguous Memory Count: %d\n",NoirAllocatedContiguousMemoryCount);
 	if(NoirAllocatedNonPagedPools || NoirAllocatedPagedPools || NoirAllocatedContiguousMemoryCount)
 		NoirDebugPrint("Memory Leak is detected!\n");
 	else
@@ -434,6 +434,33 @@ ULONG64 noir_get_physical_address(void* virtual_address)
 {
 	PHYSICAL_ADDRESS pa;
 	pa=MmGetPhysicalAddress(virtual_address);
+	return pa.QuadPart;
+}
+
+ULONG64 noir_get_user_physical_address(void* virtual_address)
+{
+	PHYSICAL_ADDRESS pa={0};
+	PMDL pMdl=IoAllocateMdl(virtual_address,1,FALSE,FALSE,NULL);
+	if(pMdl)
+	{
+		__try
+		{
+			PVOID Buffer;
+			MmProbeAndLockPages(pMdl,KernelMode,IoWriteAccess);
+			Buffer=MmMapLockedPagesSpecifyCache(pMdl,KernelMode,MmCached,NULL,FALSE,HighPagePriority);
+			if(Buffer)
+			{
+				pa=MmGetPhysicalAddress(Buffer);
+				MmUnmapLockedPages(Buffer,pMdl);
+			}
+			MmUnlockPages(pMdl);
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			;
+		}
+		IoFreeMdl(pMdl);
+	}
 	return pa.QuadPart;
 }
 

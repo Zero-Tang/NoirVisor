@@ -370,6 +370,17 @@ noir_svm_cvexit_handler_routine svm_cvexit_handler_group1[noir_svm_maximum_code1
 	nvc_svm_default_cvexit_handler,		// rdpru Instruction
 	nvc_svm_default_cvexit_handler,		// xsetbv Instruction
 	nvc_svm_default_cvexit_handler,		// Post EFER MSR Write Trap
+	// 16 Control-Register Post-Write Exit Handler
+	nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,
+	nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,
+	nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,
+	nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,nvc_svm_default_cvexit_handler,
+	// 5 Interception Handlers from Vector 3
+	nvc_svm_default_cvexit_handler,		// invlpgb Instruction
+	nvc_svm_default_cvexit_handler,		// Illegal invlpgb Instruction
+	nvc_svm_default_cvexit_handler,		// invpcid Instruction
+	nvc_svm_default_cvexit_handler,		// mcommit Instruction
+	nvc_svm_default_cvexit_handler		// tlbsync Instruction
 };
 
 noir_svm_cvexit_handler_routine svm_cvexit_handler_group2[noir_svm_maximum_code2]=
@@ -409,11 +420,10 @@ void inline noir_svm_inject_event(void* vmcb,u8 vector,u8 type,u8 ev,u8 v,u32 ec
 void inline noir_svm_advance_rip(void* vmcb)
 {
 	ulong_ptr nrip=noir_svm_vmread(vmcb,next_rip);
-	ulong_ptr gflags=noir_svm_vmread(vmcb,guest_rflags);
 	// In case the guest is single-step debugging, we should inject debug trace trap so that
 	// the next instruction won't be skipped in debugger, confusing the debugging personnel.
 	// If guest is single-step debugging, slight penalty due to branch predictor is acceptable.
-	if(unlikely(noir_bt((u32*)&gflags,amd64_rflags_tf)))
+	if(unlikely(noir_svm_vmcb_bt32(vmcb,guest_rflags,amd64_rflags_tf)))
 		noir_svm_inject_event(vmcb,amd64_debug_exception,amd64_fault_trap_exception,false,true,0);
 	// FIXME: Check Debug Registers. If condition matches, inject #DB exception.
 	if(nrip)noir_svm_vmwrite(vmcb,guest_rip,nrip);

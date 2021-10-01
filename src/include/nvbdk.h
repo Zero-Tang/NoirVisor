@@ -21,24 +21,38 @@
 #define page_4kb_size			0x1000
 #define page_2mb_size			0x200000
 #define page_1gb_size			0x40000000
+#define page_512gb_size			0x8000000000
+
+#define page_shift				12
+#define page_4kb_shift			12
+#define page_2mb_shift			21
+#define page_1gb_shift			30
+#define page_512gb_shift		39
 
 #define page_offset(x)			(x&0xfff)
 #define page_4kb_offset(x)		(x&0xfff)
 #define page_2mb_offset(x)		(x&0x1fffff)
 #define page_1gb_offset(x)		(x&0x3fffffff)
+#define page_512gb_offset(x)	(x&0x7fffffffff)
 
 #define page_count(x)			(x>>12)
 #define page_4kb_count(x)		(x>>12)
 #define page_2mb_count(x)		(x>>21)
 #define page_1gb_count(x)		(x>>30)
+#define page_512gb_count(x)		(x>>39)
 
 #define page_mult(x)			(x<<12)
 #define page_4kb_mult(x)		(x<<12)
 #define page_2mb_mult(x)		(x<<21)
 #define page_1gb_mult(x)		(x<<30)
+#define page_512gb_mult(x)		(x<<39)
 
 #if defined(_amd64)
 #define page_base(x)			(x&0xfffffffffffff000)
+#define page_4kb_base(x)		(x&0xffffffffffe00000)
+#define page_2mb_base(x)		(x&0xffffffffc0000000)
+#define page_1gb_base(x)		(x&0xffffff8000000000)
+#define page_512gb_base(x)		(x&0xffff000000000000)
 #else
 #define page_base(x)			(x&0xfffff000)
 #endif
@@ -409,6 +423,7 @@ void noir_free_contd_memory(void* virtual_address);
 void noir_free_nonpg_memory(void* virtual_address);
 void noir_free_paged_memory(void* virtual_address);
 void noir_free_2mb_page(void* virtual_address);
+u64 noir_get_user_physical_address(void* virtual_address);
 u64 noir_get_physical_address(void* virtual_address);
 u64 noir_get_current_process_cr3();
 void* noir_map_physical_memory(u64 physical_address,size_t length);

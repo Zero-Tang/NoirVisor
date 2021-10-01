@@ -126,6 +126,19 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu)
 	return noir_not_implemented;
 }
 
+noir_cvm_virtual_cpu_p nvc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id)
+{
+	noir_cvm_virtual_cpu_p vcpu=null;
+	if(hvm_p)
+	{
+		noir_acquire_reslock_shared(vm->vcpu_list_lock);
+		if(hvm_p->selected_core==use_svm_core)
+			vcpu=nvc_svmc_reference_vcpu(vm,vcpu_id);
+		noir_release_reslock(vm->vcpu_list_lock);
+	}
+	return vcpu;
+}
+
 noir_status nvc_release_vcpu(noir_cvm_virtual_cpu_p vcpu)
 {
 	noir_status st=noir_hypervision_absent;
@@ -142,7 +155,7 @@ noir_status nvc_release_vcpu(noir_cvm_virtual_cpu_p vcpu)
 	return st;
 }
 
-noir_status nvc_create_vcpu(noir_cvm_virtual_machine_p vm,noir_cvm_virtual_cpu_p* vcpu)
+noir_status nvc_create_vcpu(noir_cvm_virtual_machine_p vm,noir_cvm_virtual_cpu_p* vcpu,u32 vcpu_id)
 {
 	noir_status st=noir_hypervision_absent;
 	if(hvm_p)
@@ -151,9 +164,27 @@ noir_status nvc_create_vcpu(noir_cvm_virtual_machine_p vm,noir_cvm_virtual_cpu_p
 		if(hvm_p->selected_core==use_vt_core)
 			st=noir_not_implemented;
 		else if(hvm_p->selected_core==use_svm_core)
-			st=nvc_svmc_create_vcpu(vcpu,vm);
+			st=nvc_svmc_create_vcpu(vcpu,vm,vcpu_id);
 		else
 			st=noir_unknown_processor;
+	}
+	return st;
+}
+
+noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		st=noir_success;
+		noir_acquire_reslock_exclusive(virtual_machine->vcpu_list_lock);
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			st=nvc_svmc_set_mapping(virtual_machine,mapping_info);
+		else
+			st=noir_unknown_processor;
+		noir_release_reslock(virtual_machine->vcpu_list_lock);
 	}
 	return st;
 }
@@ -167,15 +198,15 @@ noir_status nvc_release_vm(noir_cvm_virtual_machine_p vm)
 		// Remove the VM from the list.
 		noir_acquire_reslock_exclusive(noir_vm_list_lock);
 		noir_remove_list_entry(&vm->active_vm_list);
-		// Remove the vCPU list Resource Lock.
-		if(vm->vcpu_list_lock)noir_finalize_reslock(vm->vcpu_list_lock);
-		// Finally, release the VM structure.
+		// Release the VM structure.
 		if(hvm_p->selected_core==use_vt_core)
 			st=noir_not_implemented;
 		else if(hvm_p->selected_core==use_svm_core)
 			nvc_svmc_release_vm(vm);
 		else
 			st=noir_unknown_processor;
+		// Remove the vCPU list Resource Lock.
+		if(vm->vcpu_list_lock)noir_finalize_reslock(vm->vcpu_list_lock);
 		noir_release_reslock(noir_vm_list_lock);
 	}
 	return st;

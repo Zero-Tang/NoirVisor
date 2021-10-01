@@ -90,8 +90,8 @@ typedef struct _NHTSS64
 	UINT64 Rsp2;		// Offset=0x14
 	UINT64 Ist[8];		// Offset=0x1C
 	UINT64 Reserved2;	// Offset=0x5C
-	UINT32 Reserved3;	// Offset=0x64
-	UINT32 IoMapBase;	// Offset=0x68
+	UINT16 Reserved3;	// Offset=0x64
+	UINT16 IoMapBase;	// Offset=0x66
 }NHTSS64,*PNHTSS64;
 #pragma pack()
 
@@ -271,6 +271,8 @@ typedef struct _NHPCR
 {
 	struct _NHPCR* Self;		// Point to this structure (Base of FS&GS)
 	UINTN ProcessorNumber;		// Current Processor Number
+	IA32_DESCRIPTOR GdtR;		// Global Descriptor Table
+	IA32_DESCRIPTOR IdtR;		// Interrupt Descriptor Table
 	PNHGDTENTRY64 Gdt;			// Global Descriptor Table
 	PNHIDTENTRY64 Idt;			// Interrupt Descriptor Table
 	PNHTSS64 Tss;				// Task Segment State

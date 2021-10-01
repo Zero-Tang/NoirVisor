@@ -26,7 +26,7 @@
 	00 - Cross-Platform or General Facility (xpf_core)
 	01 - Intel VT-x Specific Facility (vt_core)
 	02 - AMD-V Specific Facility (svm_core)
-	Other values are reserved for future usage.
+	Other values (03-63) are reserved for future usage.
 
   C - Detailed Code (24 bits, bits 0-24)
 
@@ -113,6 +113,15 @@ typedef u32 noir_status;
 */
 
 #define noir_hypervision_absent			0xC0000005
+
+/*
+  Status Indicator: noir_vcpu_already_created
+  If an attempt to create a vCPU with identifier
+  that is already created within a Customizable VM,
+  then this value is supposed to be returned.
+*/
+
+#define noir_vcpu_already_created		0xC0000006
 
 /*
   Status Indicator: noir_not_intel

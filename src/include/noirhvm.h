@@ -128,6 +128,11 @@ typedef struct _noir_hypervisor
 		u32 supported_size_max;
 		u32 enabled_size_max;
 	}xfeat;
+	union
+	{
+		u64 value;
+		u8 list[8];
+	}host_pat;
 	u32 cpu_count;
 	char vendor_string[13];
 	u8 cpu_manuf;

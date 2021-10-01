@@ -203,7 +203,6 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		cvcpu->header.state_cache.dt_valid=true;
 	}
 	// Step 3. Switch vCPU to Guest.
-	if(cvcpu->proc_id!=loader_stack->proc_id)
 	loader_stack->custom_vcpu=cvcpu;
 	loader_stack->guest_vmcb_pa=cvcpu->vmcb.phys;
 }
@@ -216,6 +215,8 @@ void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	nvc_svm_instruction_intercept2 vector2;
 	nvc_svm_npt_control npt_ctrl;
 	// Initialize Interceptions
+	// INIT Signal must be intercepted.
+	noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_security_exception);
 	vector1.value=0;
 	// All external interrupts must be intercepted for scheduler's sake.
 	vector1.intercept_intr=1;
@@ -266,43 +267,314 @@ u32 nvc_svmc_get_vm_asid(noir_svm_custom_vm_p vm)
 	return vm->asid;
 }
 
+noir_svm_custom_vcpu_p nvc_svmc_reference_vcpu(noir_svm_custom_vm_p vm,u32 vcpu_id)
+{
+	return vm->vcpu[vcpu_id];
+}
+
 void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 {
 	if(vcpu)
 	{
 		if(vcpu->vmcb.virt)noir_free_contd_memory(vcpu->vmcb.virt);
+		if(vcpu->header.xsave_area)noir_free_contd_memory(vcpu->header.xsave_area);
+		if(vcpu->vm)vcpu->vm->vcpu[vcpu->proc_id]=null;
 		noir_free_nonpg_memory(vcpu);
 	}
 }
 
-noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_custom_vm_p virtual_machine)
+noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_custom_vm_p virtual_machine,u32 vcpu_id)
 {
-	noir_svm_custom_vcpu_p vcpu=noir_alloc_nonpg_memory(sizeof(noir_svm_custom_vcpu));
-	if(vcpu)
+	if(virtual_machine->vcpu[vcpu_id]==null)
 	{
-		// Allocate VMCB
-		vcpu->vmcb.virt=noir_alloc_contd_memory(page_size);
-		if(vcpu->vmcb.virt)
-			vcpu->vmcb.phys=noir_get_physical_address(vcpu->vmcb.virt);
-		else
-			goto alloc_failure;
-		// Insert the vCPU into the VM.
-		if(virtual_machine->vcpu.head)
-			virtual_machine->vcpu.head=virtual_machine->vcpu.tail=vcpu;
+		noir_svm_custom_vcpu_p vcpu=noir_alloc_nonpg_memory(sizeof(noir_svm_custom_vcpu));
+		if(vcpu)
+		{
+			// Allocate VMCB
+			vcpu->vmcb.virt=noir_alloc_contd_memory(page_size);
+			if(vcpu->vmcb.virt)
+				vcpu->vmcb.phys=noir_get_physical_address(vcpu->vmcb.virt);
+			else
+				goto alloc_failure;
+			// Allocate XSAVE State Area
+			vcpu->header.xsave_area=noir_alloc_contd_memory(hvm_p->xfeat.supported_size_max);
+			// Insert the vCPU into the VM.
+			virtual_machine->vcpu[vcpu_id]=vcpu;
+			// Mark the owner VM of vCPU.
+			vcpu->vm=virtual_machine;
+			vcpu->proc_id=vcpu_id;
+			// Initialize the VMCB via hypercall. It is supposed that only hypervisor can operate VMCB.
+			noir_svm_vmmcall(noir_svm_init_custom_vmcb,(ulong_ptr)vcpu);
+		}
+		*virtual_cpu=vcpu;
+		return noir_success;
+alloc_failure:
+		return noir_insufficient_resources;
+	}
+	return noir_vcpu_already_created;
+}
+
+void static nvc_svmc_set_pte_entry(amd64_npt_pte_p entry,u64 hpa,noir_cvm_mapping_attributes map_attrib)
+{
+	u64 pat_index=(u64)nvc_npt_get_host_pat_index(map_attrib.caching);
+	entry->value=0;
+	// Protection attributes...
+	entry->present=map_attrib.present;
+	entry->write=map_attrib.write;
+	entry->user=map_attrib.user;
+	entry->no_execute=!map_attrib.execute;
+	// Caching attributes...
+	entry->pwt=noir_bt(&pat_index,0);
+	entry->pcd=noir_bt(&pat_index,1);
+	entry->pat=noir_bt(&pat_index,2);
+	// Address translation...
+	entry->page_base=page_4kb_count(hpa);
+}
+
+void static nvc_svmc_set_pde_entry(amd64_npt_pde_p entry,u64 hpa,noir_cvm_mapping_attributes map_attrib)
+{
+	entry->value=0;
+	if(map_attrib.psize!=1)
+	{
+		entry->present=entry->write=entry->user=1;
+		entry->pte_base=page_4kb_count(hpa);
+	}
+	else
+	{
+		u64 pat_index=(u64)nvc_npt_get_host_pat_index(map_attrib.caching);
+		amd64_npt_large_pde_p large_pde=(amd64_npt_large_pde_p)entry;
+		// Protection attributes...
+		large_pde->present=map_attrib.present;
+		large_pde->write=map_attrib.write;
+		large_pde->user=map_attrib.user;
+		large_pde->no_execute=!map_attrib.execute;
+		// Caching attributes...
+		large_pde->pwt=noir_bt(&pat_index,0);
+		large_pde->pcd=noir_bt(&pat_index,1);
+		large_pde->pat=noir_bt(&pat_index,2);
+		// Address translation...
+		large_pde->page_base=page_2mb_count(hpa);
+		large_pde->large_pde=1;
+	}
+}
+
+void static nvc_svmc_set_pdpte_entry(amd64_npt_pdpte_p entry,u64 hpa,noir_cvm_mapping_attributes map_attrib)
+{
+	entry->value=0;
+	if(map_attrib.psize!=2)
+	{
+		entry->present=entry->write=entry->user=1;
+		entry->pde_base=page_4kb_count(hpa);
+	}
+	else
+	{
+		u64 pat_index=(u64)nvc_npt_get_host_pat_index(map_attrib.caching);
+		amd64_npt_huge_pdpte_p huge_pdpte=(amd64_npt_huge_pdpte_p)entry;
+		// Protection attributes...
+		huge_pdpte->present=map_attrib.present;
+		huge_pdpte->write=map_attrib.write;
+		huge_pdpte->user=map_attrib.user;
+		huge_pdpte->no_execute=!map_attrib.execute;
+		// Caching attributes...
+		huge_pdpte->pwt=noir_bt(&pat_index,0);
+		huge_pdpte->pcd=noir_bt(&pat_index,1);
+		huge_pdpte->pat=noir_bt(&pat_index,2);
+		// Address translation...
+		huge_pdpte->page_base=page_1gb_count(hpa);
+		huge_pdpte->huge_pdpte=1;
+	}
+}
+
+void static nvc_svmc_set_pml4e_entry(amd64_npt_pml4e_p entry,u64 hpa)
+{
+	entry->value=0;
+	entry->present=entry->write=entry->user=1;
+	entry->pdpte_base=page_4kb_count(hpa);
+}
+
+noir_status static nvc_svmc_create_1gb_page_map(noir_svm_custom_npt_manager_p npt_manager,u64 gpa,u64 hpa,noir_cvm_mapping_attributes map_attrib)
+{
+	noir_status st=noir_insufficient_resources;
+	noir_npt_pdpte_descriptor_p pdpte_p=noir_alloc_nonpg_memory(sizeof(noir_npt_pdpte_descriptor));
+	if(pdpte_p)
+	{
+		pdpte_p->virt=noir_alloc_contd_memory(page_size);
+		if(pdpte_p->virt==null)
+			noir_free_nonpg_memory(pdpte_p);
 		else
 		{
-			virtual_machine->vcpu.tail->next=vcpu;
-			virtual_machine->vcpu.tail=vcpu;
+			amd64_addr_translator gpa_t;
+			gpa_t.value=gpa;
+			// Setup PDPTE descriptor.
+			pdpte_p->phys=noir_get_physical_address(pdpte_p->virt);
+			pdpte_p->gpa_start=page_512gb_base(gpa);
+			// Do mapping - this level.
+			nvc_svmc_set_pdpte_entry(&pdpte_p->virt[gpa_t.pdpte_offset],hpa,map_attrib);
+			// Do mapping - prior level.
+			// Note that PML4E is already described.
+			nvc_svmc_set_pml4e_entry(&npt_manager->ncr3.virt[gpa_t.pml4e_offset],pdpte_p->phys);
+			// Add to the linked list.
+			if(npt_manager->pdpte.head)
+				npt_manager->pdpte.tail->next=pdpte_p;
+			else
+				npt_manager->pdpte.head=pdpte_p;
+			npt_manager->pdpte.tail=pdpte_p;
+			st=noir_success;
 		}
-		// Mark the owner VM of vCPU.
-		vcpu->vm=virtual_machine;
-		// Initialize the VMCB via hypercall. It is supposed that only hypervisor can operate VMCB.
-		noir_svm_vmmcall(noir_svm_init_custom_vmcb,(ulong_ptr)&vcpu->vmcb);
 	}
-	*virtual_cpu=vcpu;
-	return noir_success;
-alloc_failure:
-	return noir_insufficient_resources;
+	return st;
+}
+
+noir_status static nvc_svmc_create_2mb_page_map(noir_svm_custom_npt_manager_p npt_manager,u64 gpa,u64 hpa,noir_cvm_mapping_attributes map_attrib)
+{
+	noir_status st=noir_insufficient_resources;
+	noir_npt_pde_descriptor_p pde_p=noir_alloc_nonpg_memory(sizeof(noir_npt_pde_descriptor));
+	if(pde_p)
+	{
+		pde_p->virt=noir_alloc_contd_memory(page_size);
+		if(pde_p->virt==null)
+			noir_free_nonpg_memory(pde_p);
+		else
+		{
+			noir_npt_pdpte_descriptor_p cur=npt_manager->pdpte.head;
+			amd64_addr_translator gpa_t;
+			gpa_t.value=gpa;
+			// Setup PDE descriptor
+			pde_p->phys=noir_get_physical_address(pde_p->virt);
+			pde_p->gpa_start=page_1gb_base(gpa);
+			// Do mapping
+			nvc_svmc_set_pde_entry(&pde_p->virt[gpa_t.pte_offset],hpa,map_attrib);
+			// Add to the linked list.
+			if(npt_manager->pde.head)
+				npt_manager->pde.tail->next=pde_p;
+			else
+				npt_manager->pde.head=pde_p;
+			npt_manager->pde.tail=pde_p;
+			// Search for existing PDPTEs and set up upper-level mapping.
+			while(cur)
+			{
+				if(gpa>=cur->gpa_start && gpa<cur->gpa_start+page_512gb_size)break;
+				cur=cur->next;
+			}
+			if(!cur)
+			{
+				noir_cvm_mapping_attributes null_map={0};
+				// This 512GiB page is not yet described yet.
+				st=nvc_svmc_create_1gb_page_map(npt_manager,gpa,0,null_map);
+				if(st==noir_success)cur=npt_manager->pdpte.tail;
+			}
+			if(cur)
+			{
+				nvc_svmc_set_pdpte_entry(&cur->virt[gpa_t.pde_offset],pde_p->phys,map_attrib);
+				st=noir_success;
+			}
+		}
+	}
+	return st;
+}
+
+noir_status static nvc_svmc_create_4kb_page_map(noir_svm_custom_npt_manager_p npt_manager,u64 gpa,u64 hpa,noir_cvm_mapping_attributes map_attrib)
+{
+	noir_status st=noir_insufficient_resources;
+	noir_npt_pte_descriptor_p pte_p=noir_alloc_nonpg_memory(sizeof(noir_npt_pte_descriptor));
+	if(pte_p)
+	{
+		pte_p->virt=noir_alloc_contd_memory(page_size);
+		if(pte_p->virt==null)
+			noir_free_nonpg_memory(pte_p);
+		else
+		{
+			noir_npt_pde_descriptor_p cur=npt_manager->pde.head;
+			amd64_addr_translator gpa_t;
+			gpa_t.value=gpa;
+			// Setup PTE descriptor
+			pte_p->phys=noir_get_physical_address(pte_p->virt);
+			pte_p->gpa_start=page_2mb_base(gpa);
+			// Do mapping
+			nvc_svmc_set_pte_entry(&pte_p->virt[gpa_t.pte_offset],0,map_attrib);
+			// Add to the linked list
+			if(npt_manager->pte.head)
+				npt_manager->pte.tail->next=pte_p;
+			else
+				npt_manager->pte.head=pte_p;
+			npt_manager->pte.tail=pte_p;
+			// Search for existing PDEs and set up upper-level mapping.
+			while(cur)
+			{
+				if(gpa>=cur->gpa_start && gpa<cur->gpa_start+page_1gb_size)break;
+				cur=cur->next;
+			}
+			if(!cur)
+			{
+				noir_cvm_mapping_attributes null_map={0};
+				// This 1GiB page is not yet described yet.
+				st=nvc_svmc_create_2mb_page_map(npt_manager,gpa,0,null_map);
+				if(st==noir_success)cur=npt_manager->pde.tail;
+			}
+			if(cur)
+			{
+				nvc_svmc_set_pde_entry(&cur->virt[gpa_t.pde_offset],pte_p->phys,map_attrib);
+				st=noir_success;
+			}
+		}
+	}
+	return st;
+}
+
+noir_status static nvc_svmc_set_page_map(noir_svm_custom_npt_manager_p npt_manager,u64 gpa,u64 hpa,noir_cvm_mapping_attributes map_attrib)
+{
+	noir_status st=noir_unsuccessful;
+	amd64_addr_translator gpa_t;
+	gpa_t.value=gpa;
+	switch(map_attrib.psize)
+	{
+		case 0:
+		{
+			// Search for existing PTEs.
+			noir_npt_pte_descriptor_p cur=npt_manager->pte.head;
+			while(cur)
+			{
+				if(gpa>=cur->gpa_start && gpa<cur->gpa_start+page_2mb_size)break;
+				cur=cur->next;
+			}
+			if(!cur)
+			{
+				noir_cvm_mapping_attributes null_map={0};
+				// This 2MiB page is not described yet.
+				st=nvc_svmc_create_4kb_page_map(npt_manager,gpa,0,null_map);
+				if(st==noir_success)cur=npt_manager->pte.tail;
+			}
+			if(cur)
+			{
+				nvc_svmc_set_pte_entry(&cur->virt[gpa_t.pte_offset],hpa,map_attrib);
+				st=noir_success;
+			}
+			break;
+		}
+		default:
+		{
+			st=noir_not_implemented;
+			break;
+		}
+	}
+	return st;
+}
+
+noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_address_mapping_p mapping_info)
+{
+	noir_status st=noir_unsuccessful;
+	amd64_addr_translator gpa;
+	u32 increment[4]={page_4kb_shift,page_2mb_shift,page_1gb_shift,page_512gb_shift};
+	gpa.value=mapping_info->gpa;
+	for(u32 i=0;i<mapping_info->pages;i++)
+	{
+		u64 gpa=mapping_info->gpa+(i<<increment[mapping_info->attributes.psize]);
+		u64 hva=mapping_info->hva+(i<<increment[mapping_info->attributes.psize]);
+		u64 hpa=noir_get_user_physical_address((void*)hva);
+		st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,hpa,mapping_info->attributes);
+		if(st!=noir_success)break;
+	}
+	return st;
 }
 
 u32 nvc_svmc_alloc_asid()
@@ -323,14 +595,61 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 {
 	if(vm)
 	{
+		// Release vCPUs and list. Make sure no vCPU is running as we release the structure.
+		noir_acquire_reslock_exclusive(vm->header.vcpu_list_lock);
+		// In that scheduling a vCPU requires acquiring the vCPU list lock with shared access,
+		// acquiring the lock with exclusive access will rule all vCPUs out of any scheduling.
+		if(vm->vcpu)
+		{
+			for(u32 i=0;i<255;i++)
+				if(vm->vcpu[i])
+					nvc_svmc_release_vcpu(vm->vcpu[i]);
+			noir_free_nonpg_memory(vm->vcpu);
+			vm->vcpu=null;
+		}
+		noir_release_reslock(vm->header.vcpu_list_lock);
 		// Release NPT Paging Structure.
 		if(vm->nptm.ncr3.virt)
 			noir_free_contd_memory(vm->nptm.ncr3.virt);
-		for(noir_npt_pdpte_descriptor_p pdpte_d=vm->nptm.pdpte.head;pdpte_d;pdpte_d=pdpte_d->next)
+		// Release PDPTE descriptors and paging structures...
+		if(vm->nptm.pdpte.head)
 		{
-			noir_free_contd_memory(pdpte_d->virt);
-			noir_free_nonpg_memory(pdpte_d);
+			noir_npt_pdpte_descriptor_p cur=vm->nptm.pdpte.head;
+			while(cur)
+			{
+				noir_npt_pdpte_descriptor_p next=cur->next;
+				if(cur->virt)noir_free_contd_memory(cur->virt);
+				noir_free_nonpg_memory(cur);
+				cur=next;
+			}
 		}
+		// Release PDE descriptors and paging structures...
+		if(vm->nptm.pde.head)
+		{
+			noir_npt_pde_descriptor_p cur=vm->nptm.pde.head;
+			while(cur)
+			{
+				noir_npt_pde_descriptor_p next=cur->next;
+				if(cur->virt)noir_free_contd_memory(cur->virt);
+				noir_free_nonpg_memory(cur);
+				cur=next;
+			}
+		}
+		// Release PTE descriptors and paging structures...
+		if(vm->nptm.pte.head)
+		{
+			noir_npt_pte_descriptor_p cur=vm->nptm.pte.head;
+			while(cur)
+			{
+				noir_npt_pte_descriptor_p next=cur->next;
+				if(cur->virt)noir_free_contd_memory(cur->virt);
+				noir_free_nonpg_memory(cur);
+				cur=next;
+			}
+		}
+		// Release MSRPM & IOPM
+		if(vm->msrpm.virt)noir_free_contd_memory(vm->msrpm.virt);
+		if(vm->iopm.virt)noir_free_contd_memory(vm->iopm.virt);
 		// Release ASID.
 		noir_acquire_reslock_exclusive(hvm_p->tlb_tagging.asid_pool_lock);
 		noir_reset_bitmap(hvm_p->tlb_tagging.asid_pool_lock,vm->asid-hvm_p->tlb_tagging.limit);
@@ -373,6 +692,10 @@ noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine)
 				vm->msrpm.phys=noir_get_physical_address(vm->msrpm.virt);
 			else
 				goto alloc_failure;
+			// Allocate vCPU pointer list.
+			// According to AVIC, 255 physical cores are permitted.
+			vm->vcpu=noir_alloc_nonpg_memory(sizeof(void*)*256);
+			if(vm->vcpu==null)goto alloc_failure;
 			// Setup MSR & I/O Interceptions.
 			// We want unconditional exits.
 			noir_stosb(vm->msrpm.virt,0xff,noir_svm_msrpm_size);

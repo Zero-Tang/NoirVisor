@@ -60,8 +60,32 @@ typedef ULONG32 NOIR_STATUS;
 typedef ULONG_PTR CVM_HANDLE;
 typedef PULONG_PTR PCVM_HANDLE;
 
+typedef struct _NOIR_ADDRESS_MAPPING
+{
+	ULONG64 GPA;
+	ULONG64 HVA;
+	ULONG32 NumberOfPages;
+	union
+	{
+		struct
+		{
+			ULONG32 Present:1;
+			ULONG32 Write:1;
+			ULONG32 Execute:1;
+			ULONG32 User:1;
+			ULONG32 Caching:3;
+			ULONG32 PageSize:2;
+			ULONG32 Reserved:23;
+		};
+		ULONG32 Value;
+	}Attributes;
+}NOIR_ADDRESS_MAPPING,*PNOIR_ADDRESS_MAPPING;
+
 NOIR_STATUS NoirCreateVirtualMachine(OUT PCVM_HANDLE VirtualMachine);
 NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine);
+NOIR_STATUS NoirCreateVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
+NOIR_STATUS NoirReleaseVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
+NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation);
 
 void NoirInitializeDisassembler();
 NTSTATUS NoirReportWindowsVersion();

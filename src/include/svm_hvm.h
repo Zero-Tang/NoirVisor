@@ -126,7 +126,6 @@ typedef struct _noir_svm_custom_vcpu
 {
 	noir_cvm_virtual_cpu header;
 	struct _noir_svm_custom_vm *vm;
-	struct _noir_svm_custom_vcpu *next;
 	memory_descriptor vmcb;
 	u64 lasted_tsc;
 	u32 proc_id;
@@ -135,11 +134,7 @@ typedef struct _noir_svm_custom_vcpu
 typedef struct _noir_svm_custom_vm
 {
 	noir_cvm_virtual_machine header;
-	struct
-	{
-		noir_svm_custom_vcpu_p head;
-		noir_svm_custom_vcpu_p tail;
-	}vcpu;
+	noir_svm_custom_vcpu_p* vcpu;
 	u32 vcpu_count;
 	u32 asid;
 	memory_descriptor iopm;
@@ -174,5 +169,6 @@ void nvc_svm_teardown_exit_handler();
 void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vmcb);
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+u8 nvc_npt_get_host_pat_index(u8 type);
 noir_status nvc_svmc_initialize_cvm_module();
 void nvc_svmc_finalize_cvm_module();

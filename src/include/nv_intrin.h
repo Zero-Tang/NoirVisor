@@ -113,6 +113,10 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 #define noir_store_fence	_mm_sfence
 #define noir_memory_fence	_mm_mfence
 
+// NOP instructions
+#define noir_nop		__nop
+#define noir_pause		_mm_pause
+
 // Invalidate TLBs
 #define noir_invlpg	__invlpg
 
@@ -136,6 +140,8 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 #define noir_locked_xor			_InterlockedXor
 #define noir_locked_xchg		_InterlockedExchange
 #define noir_locked_cmpxchg		_InterlockedCompareExchange
+#define noir_locked_bts			_interlockedbittestandset
+#define noir_locked_btr			_interlockedbittestandreset
 
 // 64-Bit Atomic Operations
 #if defined(_amd64)
@@ -147,6 +153,8 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 #define noir_locked_xor64		_InterlockedXor64
 #define noir_locked_xchg64		_InterlockedExchange64
 #define noir_locked_cmpxchg64	_InterlockedCompareExchange64
+#define noir_locked_bts64		_interlockedbittestandset64
+#define noir_locked_btr64		_interlockedbittestandreset64
 #endif
 #endif
 

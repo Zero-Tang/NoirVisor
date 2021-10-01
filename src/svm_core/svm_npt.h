@@ -26,7 +26,7 @@ typedef union _amd64_addr_translator
 		u64 canonical:16;
 	};
 	u64 value;
-}amd64_addr_translator,*amd_addr_translator_p;
+}amd64_addr_translator,*amd64_addr_translator_p;
 
 typedef union _amd64_npt_pml4e
 {
@@ -149,7 +149,7 @@ typedef union _amd64_npt_pte
 	u64 value;
 }amd64_npt_pte,*amd64_npt_pte_p;
 
-// Notice that NPT PDE Descriptor is describing
+// Notice that NPT PDPTE Descriptor is describing
 // 512 1GiB-Pages in a 512GiB Page.
 typedef struct _noir_npt_pdpte_descriptor
 {

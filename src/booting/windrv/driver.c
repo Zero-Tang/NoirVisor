@@ -147,7 +147,7 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		}
 		case IOCTL_CvmCreateVm:
 		{
-			PCVM_HANDLE VmHandle=(PCVM_HANDLE)((ULONG_PTR)OutputBuffer+8);
+			PCVM_HANDLE VmHandle=(PCVM_HANDLE)((ULONG_PTR)OutputBuffer+sizeof(CVM_HANDLE));
 			*(PULONG32)OutputBuffer=NoirCreateVirtualMachine(VmHandle);
 			st=STATUS_SUCCESS;
 			break;
@@ -161,6 +161,10 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		}
 		case IOCTL_CvmSetMapping:
 		{
+			PNOIR_ADDRESS_MAPPING MapInfo=(PNOIR_ADDRESS_MAPPING)InputBuffer;
+			CVM_HANDLE VmHandle=*(PCVM_HANDLE)((ULONG_PTR)InputBuffer+sizeof(NOIR_ADDRESS_MAPPING));
+			*(PULONG32)OutputBuffer=NoirSetMapping(VmHandle,MapInfo);
+			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmQueryHvStatus:
@@ -169,10 +173,18 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		}
 		case IOCTL_CvmCreateVcpu:
 		{
+			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
+			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
+			*(PULONG32)OutputBuffer=NoirCreateVirtualProcessor(VmHandle,VpIndex);
+			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmDeleteVcpu:
 		{
+			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
+			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
+			*(PULONG32)OutputBuffer=NoirReleaseVirtualProcessor(VmHandle,VpIndex);
+			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmRunVcpu:
@@ -192,10 +204,7 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			break;
 		}
 	}
-	if(st==STATUS_SUCCESS)
-		Irp->IoStatus.Information=OutputSize;
-	else
-		Irp->IoStatus.Information=0;
+	Irp->IoStatus.Information=st==STATUS_SUCCESS?OutputSize:0;
 	Irp->IoStatus.Status=st;
 	IoCompleteRequest(Irp,IO_NO_INCREMENT);
 	return st;
