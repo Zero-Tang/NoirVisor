@@ -47,5 +47,16 @@ Here, in the following, lists some points of the interception logics of the NPIE
 - If `CR4.UMIP` is to be cleared, resume the NPIEP if it was previously running. Reconfigure the interception according to the content in the MSR `HV_X64_MSR_NPIEP_CONFIG`.
 - If writes to the `HV_X64_MSR_NPIEP_CONFIG` are intercepted, save the written value to vCPU. However, `CR4.UMIP` bit must be checked before reconfiguring the interceptions.
 
+### Toggle NPIEP Manually
+The idea to toggle NPIEP is actually very simple: write to the `HV_X64_MSR_NPIEP_CONFIG` Synthetic MSR (`MSR[0x40000000]`). If your system is being debug with WinDbg, type the following command to enable NPIEP:
+```
+wrmsr 40000040 f
+```
+Similarly, type the following command to disable NPIEP:
+```
+wrmsr 40000040 0
+```
+You may write your own kernel-mode program to toggle them by executing the `wrmsr` instruction.
+
 # Roadmap
 Implement full support to `Hv#1` interface.

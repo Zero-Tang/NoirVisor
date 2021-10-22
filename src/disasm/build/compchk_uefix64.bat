@@ -7,7 +7,7 @@ echo Project: Zydis Disassembler Library
 echo Platform: 64-Bit Unified Extensible Firmware Interface
 echo Preset: Debug/Checked Build
 echo Source Powered by zyantific. Script Powered by zero.tangptr@gmail.com.
-echo Copyright (c) 2014-2020, zyantific. All Rights Reserved.
+echo Copyright (c) 2014-2021, zyantific. All Rights Reserved.
 pause
 
 echo ============Start Compiling============

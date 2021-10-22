@@ -15,6 +15,7 @@
 #include <ntddk.h>
 #include <windef.h>
 #include <stdlib.h>
+#include <ntimage.h>
 #include <ntstrsafe.h>
 #include "hooks.h"
 
@@ -280,4 +281,83 @@ void NoirSetProtectedPID(IN ULONG NewPID)
 {
 	// Use atomic operation for thread-safe consideration.
 	InterlockedExchange(&ProtPID,NewPID&0xFFFFFFFC);
+}
+
+void NoirSwapToUnshadowedPageTable()
+{
+	PEPROCESS Process=PsGetCurrentProcess();
+#if defined(_WIN64)
+	// Note that KPROCESS+0x110 also points to a paging base, but it
+	// does not map kernel mode address space except syscall handler.
+	ULONG64 NewCr3=*(PULONG64)((ULONG_PTR)Process+0x28);
+#else
+	ULONG64 NewCr3=*(PULONG64)((ULONG_PTR)Process+0x18);
+#endif
+	__writecr3(NewCr3);
+}
+
+// Warning: this function is invoked in hypervisor's context.
+BOOLEAN NoirDoSystemCallHook(IN OUT PNOIR_BASIC_GPR_STATE GprState)
+{
+	ULONG32 SysCallIndex=(ULONG32)GprState->Rax;
+	if(SysCallIndex==IndexOf_NtOpenProcess)
+	{
+#if defined(_WIN64)
+		PCLIENT_ID ClientId=(PCLIENT_ID)GprState->R9;
+		if(ClientId)
+		{
+			ULONG ProcId=(ULONG)ClientId->UniqueProcess&0xFFFFFFFC;
+			if(ProcId==ProtPID)GprState->Rdx=0;
+		}
+#endif
+	}
+	return FALSE;
+}
+
+// The detection algorithm is very simple: is the syscall handler located in KVASCODE section?
+BOOLEAN NoirDetectKvaShadow()
+{
+	PIMAGE_DOS_HEADER DosHead=NoirLocateImageBaseByName(L"ntoskrnl.exe");
+	if(DosHead)
+	{
+		PIMAGE_NT_HEADERS NtHead=(PIMAGE_NT_HEADERS)((ULONG_PTR)DosHead+DosHead->e_lfanew);
+		if(DosHead->e_magic==IMAGE_DOS_SIGNATURE && NtHead->Signature==IMAGE_NT_SIGNATURE)
+		{
+			PIMAGE_SECTION_HEADER SectionTable=(PIMAGE_SECTION_HEADER)((ULONG_PTR)NtHead+sizeof(IMAGE_NT_HEADERS));
+			ULONG_PTR KvaShadowCodeStart=0;
+			ULONG_PTR KvaShadowCodeSize=0;
+			for(USHORT i=0;i<NtHead->FileHeader.NumberOfSections;i++)
+			{
+				ULONG_PTR SectionBase=(ULONG_PTR)DosHead+SectionTable[i].VirtualAddress;
+				if(_strnicmp(SectionTable[i].Name,"KVASCODE",IMAGE_SIZEOF_SHORT_NAME)==0)
+				{
+					KvaShadowCodeStart=SectionBase;
+					KvaShadowCodeSize=SectionTable[i].SizeOfRawData;
+				}
+			}
+			if(KvaShadowCodeStart)
+			{
+#if defined(_WIN64)
+				ULONG64 SysCallHandler=__readmsr(MSR_LSTAR);
+#else
+				ULONG32 SysCallHandler=(ULONG32)__readmsr(MSR_SYSENTER_EIP);
+#endif
+				NoirDebugPrint("KVA Shadow Code Base=0x%p\t Size=0x%X\n",KvaShadowCodeStart,KvaShadowCodeSize);
+				if(SysCallHandler>=KvaShadowCodeStart && SysCallHandler<KvaShadowCodeStart+KvaShadowCodeSize)
+				{
+					NoirDebugPrint("The system call handler is located in KVA Shadow Code Section!\n");
+					return TRUE;
+				}
+				NoirDebugPrint("The system call handler is not located in KVA Shadow Code Section!\n");
+				return FALSE;
+			}
+			else
+			{
+				NoirDebugPrint("KVA Shadow Code Section is not present! Your system is not Meltdown-mitigated!\n");
+				return FALSE;
+			}
+		}
+	}
+	NoirDebugPrint("Failed to locate NT Kernel-Mode Image!\n");
+	return FALSE;
 }

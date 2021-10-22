@@ -30,13 +30,13 @@
 #define noir_vt_vmcs_shadowing		4		// Bit	2
 #define noir_vt_ept_with_hooks		8		// Bit	3
 #define noir_vt_syscall_hook		16		// Bit	4
+#define noir_vt_kva_shadow_presence	32		// Bit	5
 
 typedef struct _noir_vt_hvm
 {
 	memory_descriptor msr_bitmap;
 	memory_descriptor io_bitmap_a;
 	memory_descriptor io_bitmap_b;
-	memory_descriptor msr_auto_list;
 	u32 hvm_cpuid_leaf_max;
 }noir_vt_hvm,*noir_vt_hvm_p;
 
@@ -68,6 +68,7 @@ typedef struct _noir_vt_vcpu
 {
 	memory_descriptor vmxon;
 	memory_descriptor vmcs;
+	memory_descriptor msr_auto;
 	void* hv_stack;
 	noir_vt_hvm_p relative_hvm;
 	void* ept_manager;

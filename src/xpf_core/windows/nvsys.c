@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <ntstrsafe.h>
+#include <intrin.h>
 #include "nvsys.h"
 
 // Synchronous Debug-Printer
@@ -93,8 +94,10 @@ void __cdecl nv_panicf(const char* format,...)
 	va_end(arg_list);
 }
 
-// Asynchronous Debug-Printer
-// For Hypervisor
+// Asynchronous Debug-Printer Implementation...
+// In the context of VM-Exit, debug-printing is not permitted.
+// FIXME: Some debug log messages are missing.
+
 PVOID NoirAllocateLoggerBuffer(IN ULONG Size)
 {
 	PVOID p=ExAllocatePoolWithTag(NonPagedPool,Size,'gLvN');
@@ -109,36 +112,42 @@ void NoirFreeLoggerBuffer(IN PVOID Buffer)
 
 void NoirAsyncDebugLogThreadWorker(IN PVOID StartContext)
 {
-	PSTR Level[4]={"Error","Warning","Trace","Info"};
 	PNOIR_ASYNC_DEBUG_LOG_MONITOR LogMonitor=(PNOIR_ASYNC_DEBUG_LOG_MONITOR)StartContext;
+	PSTR Level[4]={"Error","Warning","Trace","Info"};
+	KAFFINITY Affinity=(KAFFINITY)(1<<LogMonitor->ProcessorId);
 	LARGE_INTEGER Delay;
 	Delay.QuadPart=NOIR_DEBUG_PRINT_DELAY*(-10000);
-	KeSetSystemAffinityThread(1i64<<LogMonitor->ProcessorNumber);
-	while(InterlockedCompareExchange(&LogMonitor->Signal,1,1)==0)
+	KeSetSystemAffinityThread(Affinity);
+	NoirDebugPrint("Asynchronous Logger Thread is listening on Processor Core %03u!\n",LogMonitor->ProcessorId);
+	while(InterlockedCompareExchange(&LogMonitor->TerminationSignal,1,1)==0)
 	{
 		ULONG i=0;
+		// Turn off interrupts to prevent the worker thread from being scheduled out.
+		_disable();
+		// Traverse the log records then print them.
 		while(i<LogMonitor->RecordCount)
 		{
+			PNOIR_DEBUG_LOG_RECORD LogRecord=LogMonitor->LogInfo;
 			UCHAR Log[512];
 			LARGE_INTEGER Time;
 			TIME_FIELDS TimeFields;
-			ExSystemTimeToLocalTime(&LogMonitor->LogInfo[i].LogTime,&Time);
+			ExSystemTimeToLocalTime(&LogRecord->LogTime,&Time);
 			RtlTimeToTimeFields(&Time,&TimeFields);
-			RtlStringCchPrintfA(Log,sizeof(Log),"[NoirVisor Async Log %s - Core %d]\t|%04d-%02d-%02d %02d:%02d:%02d.%03d| %s",
-				Level[LogMonitor->LogInfo[i].Level],LogMonitor->ProcessorNumber,
-				TimeFields.Year,TimeFields.Month,TimeFields.Day,
-				TimeFields.Hour,TimeFields.Minute,TimeFields.Second,
-				TimeFields.Milliseconds,LogMonitor->LogInfo[i].LogInfo);
-			DbgPrintEx(DPFLTR_IHVDRIVER_ID,LogMonitor->LogInfo[i].Level,Log);
+			RtlStringCchPrintfA(Log,sizeof(Log),"[NoirVisor - Async Log | Core %03u | %s]\t | %04u-%02u-%02u %02u:%02u:%02u.%03u | %s",
+				LogMonitor->ProcessorId,Level[LogRecord->Level],TimeFields.Year,TimeFields.Month,TimeFields.Day,
+				TimeFields.Hour,TimeFields.Minute,TimeFields.Second,TimeFields.Milliseconds,LogRecord->Message);
+			DbgPrintEx(DPFLTR_IHVDRIVER_ID,LogRecord->Level,Log);
 			if(++i==NOIR_DEBUG_LOG_RECORD_LIMIT)break;
 		}
 		if(LogMonitor->RecordCount>=NOIR_DEBUG_LOG_RECORD_LIMIT)
 		{
-			ULONG DroppedCount=LogMonitor->RecordCount-NOIR_DEBUG_LOG_RECORD_LIMIT-1;
-			nv_panicf("[Core %d] There are %d debug log record dropped!\n",LogMonitor->ProcessorNumber,DroppedCount);
+			ULONG DroppedCount=LogMonitor->RecordCount-NOIR_DEBUG_LOG_RECORD_LIMIT+1;
+			DbgPrintEx(DPFLTR_IHVDRIVER_ID,DPFLTR_ERROR_LEVEL,"[NoirVisor - Async Log | Core %03u | Panic] There are %u debug log record dropped!\n",LogMonitor->ProcessorId,DroppedCount);
 		}
-		RtlZeroMemory(LogMonitor->LogInfo,sizeof(NOIR_DEBUG_LOG_RECORD)*NOIR_DEBUG_LOG_RECORD_LIMIT);
 		LogMonitor->RecordCount=0;
+		// Turn on interrupts to sleep properly.
+		_enable();
+		// Sleep.
 		KeDelayExecutionThread(KernelMode,TRUE,&Delay);
 	}
 	KeRevertToUserAffinityThread();
@@ -149,61 +158,68 @@ void NoirFinalizeAsyncDebugPrinter()
 {
 	if(NoirAsyncDebugLogger)
 	{
-		ULONG i=0;
-		PNOIR_ASYNC_DEBUG_LOG_MONITOR LogMon=NoirAsyncDebugLogger->LogMonitor;
-		for(;i<NoirAsyncDebugLogger->NumberOfProcessors;LogMon=&NoirAsyncDebugLogger->LogMonitor[++i])
+		ULONG NumberOfProcessors=KeQueryActiveProcessorCount(NULL);
+		// Join the threads so freeing the buffer does not encounter race conditions.
+		for(ULONG32 i=0;i<NumberOfProcessors;i++)
 		{
-			InterlockedIncrement(&LogMon->Signal);	// Signal the monitor thread.
-			ZwAlertThread(LogMon->ThreadHandle);	// Alerting the thread will automatically flush the log.
-			// Join the thread.
-			ZwWaitForSingleObject(LogMon->ThreadHandle,FALSE,NULL);
-			ZwClose(LogMon->ThreadHandle);
-			// Free log info.
-			NoirFreeLoggerBuffer(LogMon->LogInfo);
+			if(NoirAsyncDebugLogger[i].ThreadHandle)
+			{
+				// Signal the monitor thread to be ready for termination.
+				InterlockedIncrement(&NoirAsyncDebugLogger[i].TerminationSignal);
+				// Wake the thread from timer-sleeping.
+				ZwAlertThread(NoirAsyncDebugLogger[i].ThreadHandle);
+				// Join the thread.
+				ZwWaitForSingleObject(NoirAsyncDebugLogger[i].ThreadHandle,FALSE,NULL);
+				ZwClose(NoirAsyncDebugLogger[i].ThreadHandle);
+			}
+			if(NoirAsyncDebugLogger[i].LogInfo)NoirFreeLoggerBuffer(NoirAsyncDebugLogger[i].LogInfo);
 		}
 		NoirFreeLoggerBuffer(NoirAsyncDebugLogger);
 	}
 }
 
-NTSTATUS NoirInitializeAsyncDebugPrinter(IN BOOLEAN EnableFileLogging)
+NTSTATUS NoirInitializeAsyncDebugPrinter()
 {
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
-	KAFFINITY af;
-	ULONG Count=KeQueryActiveProcessorCount(&af);
-	NoirAsyncDebugLogger=NoirAllocateLoggerBuffer(Count*sizeof(NOIR_ASYNC_DEBUG_LOG_MONITOR)+sizeof(NOIR_ASYNC_DEBUG_LOG_SYSTEM));
+	ULONG NumberOfProcessors=KeQueryActiveProcessorCount(NULL);
+	NoirAsyncDebugLogger=NoirAllocateLoggerBuffer(sizeof(NOIR_ASYNC_DEBUG_LOG_MONITOR)*NumberOfProcessors);
 	if(NoirAsyncDebugLogger)
 	{
 		OBJECT_ATTRIBUTES oa;
-		ULONG i=0;
-		PNOIR_ASYNC_DEBUG_LOG_MONITOR LogMon=NoirAsyncDebugLogger->LogMonitor;
 		InitializeObjectAttributes(&oa,NULL,OBJ_KERNEL_HANDLE,NULL,NULL);
-		NoirAsyncDebugLogger->NumberOfProcessors=Count;
-		NoirAsyncDebugLogger->LogLimit=NOIR_DEBUG_LOG_RECORD_LIMIT;		// Number of logs within 100 milliseconds.
-		for(;i<Count;LogMon=&NoirAsyncDebugLogger->LogMonitor[++i])
+		for(ULONG32 i=0;i<NumberOfProcessors;i++)
 		{
-			LogMon->ProcessorNumber=i;
-			st=STATUS_INSUFFICIENT_RESOURCES;
-			LogMon->LogInfo=NoirAllocateLoggerBuffer(sizeof(NOIR_DEBUG_LOG_RECORD)*NOIR_DEBUG_LOG_RECORD_LIMIT);
-			if(LogMon)st=PsCreateSystemThread(&LogMon->ThreadHandle,SYNCHRONIZE,&oa,NULL,NULL,NoirAsyncDebugLogThreadWorker,LogMon);
+			NoirAsyncDebugLogger[i].LogInfo=NoirAllocateLoggerBuffer(sizeof(NOIR_DEBUG_LOG_RECORD)*NOIR_DEBUG_LOG_RECORD_LIMIT);
+			if(NoirAsyncDebugLogger[i].LogInfo==NULL)
+			{
+				st=STATUS_INSUFFICIENT_RESOURCES;
+				NoirFinalizeAsyncDebugPrinter();
+				return st;
+			}
+			NoirAsyncDebugLogger[i].ProcessorId=i;
+			NoirAsyncDebugLogger[i].RecordCount=0;
+			NoirAsyncDebugLogger[i].TerminationSignal=0;
+			st=PsCreateSystemThread(&NoirAsyncDebugLogger[i].ThreadHandle,SYNCHRONIZE,&oa,NULL,NULL,NoirAsyncDebugLogThreadWorker,&NoirAsyncDebugLogger[i]);
 			if(NT_ERROR(st))
 			{
 				NoirFinalizeAsyncDebugPrinter();
-				break;
+				return st;
 			}
 		}
 	}
-	NoirDebugPrint("Async Debug Printer Initialization Status: 0x%X\n",st);
 	return st;
 }
 
 void __cdecl NoirAsyncDebugVPrint(ULONG FilterLevel,const char* Format,va_list ArgList)
 {
-	ULONG PN=KeGetCurrentProcessorNumber();
-	PNOIR_ASYNC_DEBUG_LOG_MONITOR LogMon=&NoirAsyncDebugLogger->LogMonitor[PN];
-	ULONG Index=++LogMon->RecordCount;
-	KeQuerySystemTime(&LogMon->LogInfo[Index].LogTime);
-	LogMon->LogInfo[Index].Level=FilterLevel;
-	RtlStringCchVPrintfA(LogMon->LogInfo[Index].LogInfo,500,Format,ArgList);
+	ULONG ProcNum=KeGetCurrentProcessorNumber();
+	ULONG Index=NoirAsyncDebugLogger[ProcNum].RecordCount++;
+	PNOIR_DEBUG_LOG_RECORD LogRecord=&NoirAsyncDebugLogger[ProcNum].LogInfo[Index%NOIR_DEBUG_LOG_RECORD_LIMIT];
+	// Record the debug logging messages.
+	KeQuerySystemTime(&LogRecord->LogTime);
+	LogRecord->Level=FilterLevel;
+	// Format the logging message string.
+	RtlStringCchVPrintfA(LogRecord->Message,sizeof(LogRecord->Message),Format,ArgList);
 }
 
 void __cdecl nv_async_dprintf(const char* format,...)
@@ -477,6 +493,21 @@ void noir_unmap_physical_memory(void* virtual_address,size_t length)
 	MmUnmapIoSpace(virtual_address,length);
 }
 
+// Query Page information
+BOOL noir_query_page_attributes(IN PVOID virtual_address,OUT PBOOLEAN valid,OUT PBOOLEAN locked,OUT PBOOLEAN large_page)
+{
+	MEMORY_WORKING_SET_EX_BLOCK Info;
+	NTSTATUS st=NoirGetPageInformation(virtual_address,&Info);
+	if(NT_SUCCESS(st))
+	{
+		*valid=(BOOLEAN)Info.Valid;
+		*locked=(BOOLEAN)Info.Locked;
+		*large_page=(BOOLEAN)Info.LargePage;
+		return TRUE;
+	}
+	return FALSE;
+}
+
 void noir_copy_memory(void* dest,void* src,size_t cch)
 {
 	RtlCopyMemory(dest,src,cch);
@@ -625,4 +656,10 @@ void noir_release_reslock(IN PERESOURCE Resource)
 void noir_qsort(IN PVOID base,IN ULONG num,IN ULONG width,IN noir_sorting_comparator comparator)
 {
 	qsort(base,num,width,comparator);
+}
+
+// System Call Hook Function
+BOOLEAN noir_do_syscall_hook(IN OUT PVOID gpr_state)
+{
+	return NoirDoSystemCallHook(gpr_state);
 }

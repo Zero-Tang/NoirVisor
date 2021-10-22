@@ -128,6 +128,7 @@ void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm
 void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_cr4_write_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_sidt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_sgdt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_sldt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
@@ -171,7 +172,9 @@ noir_svm_exit_handler_routine svm_exit_handler_group1[noir_svm_maximum_code1]=
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
-	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
+	nvc_svm_default_handler,nvc_svm_default_handler,
+	nvc_svm_pf_exception_handler,	// Page-Fault Exception
+	nvc_svm_default_handler,		// Exception Vector 15
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
@@ -272,6 +275,7 @@ void static fastcall nvc_svm_invalid_state_cvexit_handler(noir_gpr_state_p gpr_s
 void static fastcall nvc_svm_cr_access_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_dr_access_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_exception_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static fastcall nvc_svm_db_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_sx_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_extint_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_nmi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
@@ -290,6 +294,8 @@ void static fastcall nvc_svm_stgi_cvexit_handler(noir_gpr_state_p gpr_state,noir
 void static fastcall nvc_svm_clgi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_skinit_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static fastcall nvc_svm_incomplete_ipi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static fastcall nvc_svm_unaccelerated_avic_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 
 noir_svm_cvexit_handler_routine svm_cvexit_handler_group1[noir_svm_maximum_code1]=
 {
@@ -385,10 +391,10 @@ noir_svm_cvexit_handler_routine svm_cvexit_handler_group1[noir_svm_maximum_code1
 
 noir_svm_cvexit_handler_routine svm_cvexit_handler_group2[noir_svm_maximum_code2]=
 {
-	nvc_svm_nested_pf_cvexit_handler,		// Nested Page Fault
-	nvc_svm_default_cvexit_handler,			// AVIC Incomplete Virtual IPI Delivery
-	nvc_svm_default_cvexit_handler,			// Virtual APIC Access Unhandled by AVIC Hardware
-	nvc_svm_default_cvexit_handler			// vmgexit Instruction
+	nvc_svm_nested_pf_cvexit_handler,				// Nested Page Fault
+	nvc_svm_incomplete_ipi_cvexit_handler,			// AVIC Incomplete Virtual IPI Delivery
+	nvc_svm_unaccelerated_avic_cvexit_handler,		// Virtual APIC Access Unhandled by AVIC Hardware
+	nvc_svm_default_cvexit_handler					// vmgexit Instruction
 };
 
 noir_svm_cvexit_handler_routine svm_cvexit_handler_negative[noir_svm_maximum_negative]=

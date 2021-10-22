@@ -41,6 +41,28 @@ typedef enum _noir_cvm_intercept_code
 	cv_scheduler_pause=0x80000001
 }noir_cvm_intercept_code,*noir_cvm_intercept_code_p;
 
+typedef enum _noir_cvm_register_type
+{
+	noir_cvm_general_purpose_register,
+	noir_cvm_flags_register,
+	noir_cvm_instruction_pointer,
+	noir_cvm_control_register,
+	noir_cvm_cr2_register,
+	noir_cvm_debug_register,
+	noir_cvm_dr67_register,
+	noir_cvm_segment_register,
+	noir_cvm_fgseg_register,
+	noir_cvm_descriptor_table,
+	noir_cvm_ldtr_task_register,
+	noir_cvm_syscall_msr_register,
+	noir_cvm_sysenter_msr_register,
+	noir_cvm_cr8_register,
+	noir_cvm_fxstate,
+	noir_cvm_xsave_area,
+	noir_cvm_xcr0_register,
+	noir_cvm_maximum_register_type
+}noir_cvm_register_type,*noir_cvm_register_type_p;
+
 typedef struct _noir_cvm_cr_access_context
 {
 	struct
@@ -139,6 +161,7 @@ typedef struct _noir_cvm_exit_context
 		noir_cvm_memory_access_context memory_access;
 		noir_cvm_cpuid_context cpuid;
 	};
+	segment_register cs;
 	u64 rip;
 	u64 rflags;
 	struct
@@ -241,7 +264,10 @@ typedef union _noir_cvm_vcpu_state_cache
 		u32 sc_valid:1;		// Includes star,lstar,cstar,sfmask.
 		u32 se_valid:1;		// Includes esp,eip,cs for sysenter.
 		u32 tp_valid:1;		// Includes cr8.tpr.
-		u32 reserved:22;
+		u32 reserved:21;
+		// This field indicates whether the state in VMCS/VMCB is
+		// updated to the state save area in the vCPU structure.
+		u32 synchronized:1;
 	};
 	u32 value;
 }noir_cvm_vcpu_state_cache,*noir_cvm_vcpu_state_cache_p;
@@ -289,8 +315,6 @@ typedef struct _noir_cvm_address_mapping
 typedef struct _noir_cvm_virtual_machine
 {
 	list_entry active_vm_list;
-	u32 vcpu_count;
-	u32 mappings_count;
 	u32 pid;
 	noir_reslock vcpu_list_lock;
 }noir_cvm_virtual_machine,*noir_cvm_virtual_machine_p;
@@ -300,6 +324,7 @@ noir_status nvc_svmc_create_vm(noir_cvm_virtual_machine_p* virtual_machine);
 void nvc_svmc_release_vm(noir_cvm_virtual_machine_p vm);
 noir_status nvc_svmc_create_vcpu(noir_cvm_virtual_cpu_p* virtual_cpu,noir_cvm_virtual_machine_p virtual_machine,u32 vcpu_id);
 void nvc_svmc_release_vcpu(noir_cvm_virtual_cpu_p vcpu);
+noir_status nvc_svmc_run_vcpu(noir_cvm_virtual_cpu_p virtual_cpu,void* exit_context);
 noir_cvm_virtual_cpu_p nvc_svmc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id);
 noir_status nvc_svmc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info);
 u32 nvc_svmc_get_vm_asid(noir_cvm_virtual_machine_p vm);
@@ -307,6 +332,28 @@ u32 nvc_svmc_get_vm_asid(noir_cvm_virtual_machine_p vm);
 // Idle VM is to be considered as the List Head.
 noir_cvm_virtual_machine noir_idle_vm={0};
 noir_reslock noir_vm_list_lock=null;
+
+u32 noir_cvm_exit_context_size=sizeof(noir_cvm_exit_context);
+
+u32 noir_cvm_register_buffer_limit[noir_cvm_maximum_register_type]=
+{
+	sizeof(noir_gpr_state),		// General-Purpose Register
+	sizeof(u64),				// rflags register
+	sizeof(u64),				// rip register
+	sizeof(u64*)*3,				// CR0,CR3,CR4 register
+	sizeof(u64),				// CR2 register
+	sizeof(u64)*4,				// DR0,DR1,DR2,DR3 register
+	sizeof(u64)*2,				// DR6,DR7 register
+	sizeof(segment_register)*4,	// cs,ds,es,ss register
+	sizeof(segment_register)*2,	// fs,gs register
+	sizeof(segment_register)*2,	// tr, ldtr register
+	sizeof(u64)*4,				// syscall MSRs.
+	sizeof(u64)*3,				// sysenter MSRs.
+	sizeof(u64),				// CR8 register
+	sizeof(noir_fx_state),		// x87 FPU and XMM state.
+	0,							// Extended State.
+	8,							// XCR0 Register
+};
 #else
 extern noir_cvm_virtual_machine noir_idle_vm;
 extern noir_reslock noir_vm_list_lock;

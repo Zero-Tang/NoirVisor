@@ -57,6 +57,10 @@
 #define nvc_stack_size			0x4000
 #define nvc_stack_pages			4
 
+// Define Generic Hypercall Codes for Customizable VM.
+#define noir_cvm_run_vcpu					0x10001
+#define noir_cvm_dump_vcpu_vmcb				0x10002
+
 struct _noir_cvm_virtual_machine;
 
 typedef struct _noir_hypervisor
@@ -86,6 +90,7 @@ typedef struct _noir_hypervisor
 			noir_reslock asid_pool_lock;
 			noir_reslock vpid_pool_lock;
 		};
+		u32 start;
 		u32 limit;
 	}tlb_tagging;
 #endif
@@ -118,7 +123,9 @@ typedef struct _noir_hypervisor
 			u64 stealth_inline_hook:1;
 			u64 cpuid_hv_presence:1;
 			u64 disable_patchguard:1;
-			u64 reserved:60;
+			u64 nested_virtualization:1;
+			u64 kva_shadow_presence:1;
+			u64 reserved:59;
 		};
 		u64 value;
 	}options;		// Enable certain features.
@@ -195,6 +202,7 @@ u64 fastcall nvc_mshv_rdmsr_handler(noir_mshv_vcpu_p vcpu,u32 index);
 void fastcall nvc_mshv_wrmsr_handler(noir_mshv_vcpu_p vcpu,u32 index,u64 val);
 
 // Miscellaneous
+bool noir_do_syscall_hook(noir_gpr_state_p gpr_state);
 u64 noir_query_enabled_features_in_system();
 void noir_system_call(void);
 

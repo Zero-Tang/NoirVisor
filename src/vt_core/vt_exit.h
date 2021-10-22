@@ -112,6 +112,20 @@ typedef union _ia32_vmentry_interruption_information_field
 	u32 value;
 }ia32_vmentry_interruption_information_field,*ia32_vmentry_interruption_information_field_p;
 
+typedef union _ia32_vmexit_interruption_information_field
+{
+	struct
+	{
+		u32 vector:8;					// Bits	0-7
+		u32 type:3;						// Bits	8-10
+		u32 err_code:1;					// Bit	11
+		u32 nmi_unblocking_iret:1;		// Bit	12
+		u32 reserved:18;				// Bits	13-30
+		u32 valid:1;					// Bit	31
+	};
+	u32 value;
+}ia32_vmexit_interruption_information_field,*ia32_vmexit_interruption_information_field_p;
+
 typedef union _ia32_cr_access_qualification
 {
 	struct
@@ -324,6 +338,7 @@ const char* vmx_exit_msg[vmx_maximum_exit_reason]=
 };
 
 void static fastcall nvc_vt_default_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_exception_nmi_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void static fastcall nvc_vt_trifault_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void static fastcall nvc_vt_init_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void static fastcall nvc_vt_sipi_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
@@ -348,7 +363,7 @@ void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 
 noir_vt_exit_handler_routine vt_exit_handlers[vmx_maximum_exit_reason]=
 {
-	nvc_vt_default_handler,			// Exception or NMI
+	nvc_vt_exception_nmi_handler,	// Exception or NMI
 	nvc_vt_default_handler,			// External Interrupt
 	nvc_vt_trifault_handler,		// Triple Fault
 	nvc_vt_init_handler,			// INIT Signal
@@ -422,6 +437,25 @@ noir_vt_exit_handler_routine vt_exit_handlers[vmx_maximum_exit_reason]=
 noir_vt_cpuid_exit_handler nvcp_vt_cpuid_handler=null;
 #endif
 
+void inline noir_vt_set_single_stepping(ulong_ptr gflags)
+{
+	// Don't inject an #DB exception since Intel has its own
+	// specific feature regarding pending debug exceptions.
+	ia32_vmx_pending_debug_exceptions pending_de;
+	ia32_vmx_interruptibility_state interruptibility;
+	// Read from VMCS.
+	noir_vt_vmread(guest_pending_debug_exceptions,&pending_de.value);
+	noir_vt_vmread(guest_interruptibility_state,&interruptibility.value);
+	// General Single-Step debug exceptions.
+	pending_de.bs=true;
+	noir_vt_vmwrite(guest_pending_debug_exceptions,pending_de.value);
+	// Special Blockings onto Single-Step debug exceptions.
+	interruptibility.blocking_by_sti=false;
+	interruptibility.blocking_by_mov_ss=false;
+	noir_vt_vmwrite(guest_interruptibility_state,interruptibility.value);
+}
+
+
 void inline noir_vt_advance_rip()
 {
 	ulong_ptr gip,gflags;
@@ -429,21 +463,7 @@ void inline noir_vt_advance_rip()
 	// Special treatings for Single-Step scenarios.
 	u8 vst=noir_vt_vmread(guest_rflags,&gflags);
 	if(vst==0 && noir_bt(&gflags,ia32_rflags_tf))
-	{
-		// Don't inject an #DB exception since Intel has its own
-		// specific feature regarding pending debug exceptions.
-		ia32_vmx_pending_debug_exceptions pending_de;
-		ia32_vmx_interruptibility_state interruptibility;
-		// General Single-Step debug exceptions.
-		noir_vt_vmread(guest_pending_debug_exceptions,&pending_de.value);
-		pending_de.bs=true;
-		noir_vt_vmwrite(guest_pending_debug_exceptions,pending_de.value);
-		// Special Blockings onto Single-Step debug exceptions.
-		noir_vt_vmread(guest_interruptibility_state,&interruptibility.value);
-		interruptibility.blocking_by_sti=false;
-		interruptibility.blocking_by_mov_ss=false;
-		noir_vt_vmwrite(guest_interruptibility_state,interruptibility.value);
-	}
+		noir_vt_set_single_stepping(gflags);
 	// Regular stuff...
 	noir_vt_vmread(guest_rip,&gip);
 	noir_vt_vmread(vmexit_instruction_length,&len);

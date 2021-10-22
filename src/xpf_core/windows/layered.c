@@ -36,6 +36,21 @@ void __cdecl NoirCvmTracePrint(const char* Format,...)
 	va_end(ArgList);
 }
 
+NTSTATUS NoirGetPageInformation(IN PVOID PageAddress,OUT PMEMORY_WORKING_SET_EX_BLOCK Information)
+{
+	NTSTATUS st;
+	SIZE_T RetLen;
+	MEMORY_WORKING_SET_EX_INFORMATION WorkSetExInfo;
+	WorkSetExInfo.VirtualAddress=PageAddress;
+	WorkSetExInfo.VirtualAttributes.Value=0;
+	st=ZwQueryVirtualMemory(ZwCurrentProcess(),NULL,MemoryWorkingSetExInformation,&WorkSetExInfo,sizeof(WorkSetExInfo),&RetLen);
+	if(NT_SUCCESS(st))
+		Information->Value=WorkSetExInfo.VirtualAttributes.Value;
+	else
+		NoirCvmTracePrint("Failed to query virtual memory for 0x%p! Status=0x%X!\n",PageAddress,st);
+	return st;
+}
+
 // Lock the table with at least Shared Access before invoking this function!
 PVOID NoirReferenceVirtualMachineByHandleUnsafe(IN CVM_HANDLE Handle,IN ULONG_PTR TableCode)
 {
@@ -216,6 +231,57 @@ NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING
 	return st;
 }
 
+NOIR_STATUS NoirViewVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_view_vcpu_registers(VP,RegisterType,Buffer,BufferSize);
+	}
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return st;
+}
+
+NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_edit_vcpu_registers(VP,RegisterType,Buffer,BufferSize);
+	}
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return st;
+}
+
+NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID ExitContext)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_run_vcpu(VP,ExitContext);
+	}
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return st;
+}
+
 NOIR_STATUS NoirCreateVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
@@ -244,10 +310,7 @@ NOIR_STATUS NoirReleaseVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 
 	if(VM)
 	{
 		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
-		if(VP)
-			st=nvc_create_vcpu(VM,&VP,VpIndex);
-		else
-			NoirCvmTracePrint("[VM=0x%p] vCPU %d does not exist!\n",VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_release_vcpu(VP);
 	}
 	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
 	KeLeaveCriticalRegion();
@@ -279,7 +342,6 @@ void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessI
 	// In this regard can we address the issue of resource leaks.
 	if(!Create)		// We have no interest in process creation event.
 	{
-		NoirCvmTracePrint("Process Id=%d is being terminated...\n",ProcessId);
 		KeEnterCriticalRegion();	// Acquire the table resource lock with Exclusive Access.
 		ExAcquireResourceExclusiveLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
 		for(CVM_HANDLE Handle=0;Handle<=NoirCvmHandleTable.MaximumHandleValue;Handle++)
@@ -290,14 +352,13 @@ void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessI
 				HANDLE Pid=NoirGetVirtualMachineProcessIdByPointer(VirtualMachine);
 				if(Pid==ProcessId)
 				{
-					NoirCvmTracePrint("PID=%d has created CVM Handle=%d! Terminating VM...\n",Pid,Handle);
+					NoirCvmTracePrint("[Handle Recycle] PID=%d has created CVM Handle=%d! Terminating VM...\n",Pid,Handle);
 					nvc_release_vm(VirtualMachine);
 					NoirCvmHandleTable.HandleCount--;
 					NoirDeleteHandle(Handle,NoirCvmHandleTable.TableCode);
 				}
 			}
 		}
-		NoirCvmTracePrint("Remaining CVM Handles: %d...\n",NoirCvmHandleTable.HandleCount);
 		ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
 		KeLeaveCriticalRegion();
 	}
@@ -317,6 +378,7 @@ NTSTATUS NoirFinalizeCvmModule()
 NTSTATUS NoirInitializeCvmModule()
 {
 	NTSTATUS st=ExInitializeResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	PVOID NtKernelBase=NoirLocateImageBaseByName(L"ntoskrnl.exe");
 	if(NT_SUCCESS(st))
 	{
 		PVOID TableBase=NoirAllocateNonPagedMemory(PAGE_SIZE);
@@ -339,216 +401,10 @@ NTSTATUS NoirInitializeCvmModule()
 			st=STATUS_INSUFFICIENT_RESOURCES;
 		}
 	}
-	return st;
-}
-
-/*
-NTSTATUS NoirGetReservedAsidCount()
-{
-	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
-	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=NoirAllocatePagedMemory(PAGE_SIZE);
-	if(KvPartInf)
+	if(NtKernelBase)
 	{
-		HANDLE hKey=NULL;
-		UNICODE_STRING uniKeyName=RTL_CONSTANT_STRING(L"\\Registry\\Machine\\Software\\Zero-Tang\\NoirVisor");
-		OBJECT_ATTRIBUTES oa;
-		InitializeObjectAttributes(&oa,&uniKeyName,OBJ_CASE_INSENSITIVE|OBJ_KERNEL_HANDLE,NULL,NULL);
-		st=ZwOpenKey(&hKey,GENERIC_READ,&oa);
-		if(NT_SUCCESS(st))
-		{
-			UNICODE_STRING uniKvName=RTL_CONSTANT_STRING(L"AsidCvmLimit");
-			ULONG RetLen=0;
-			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
-			if(NT_SUCCESS(st))NoirCvmReservedAsidCount=*(PULONG32)KvPartInf->Data;
-			if(NoirCvmReservedAsidCount>=NoirPhysicalAsidLimit-2)
-				NoirCvmReservedAsidCount=NoirPhysicalAsidLimit>>1;	// Divide by half if ASID limit is exceeded.
-			NoirCvmTracePrint("Reserved ASID Range for CVM: %d\n",NoirCvmReservedAsidCount);
-			ZwClose(hKey);
-		}
-		NoirFreePagedMemory(KvPartInf);
+		ZwQueryVirtualMemory=NoirLocateExportedProcedureByName(NtKernelBase,"ZwQueryVirtualMemory");
+		NoirCvmTracePrint("Location of ZwQueryVirtualMemory: 0x%p\n",ZwQueryVirtualMemory);
 	}
 	return st;
 }
-
-ULONG NoirAllocateAsid()
-{
-	BOOLEAN AcquireStatus=ExAcquireResourceExclusiveLite(&NoirCvmAsidBitmapResource,TRUE);
-	if(AcquireStatus)
-	{
-		ULONG Asid=RtlFindClearBitsAndSet(&NoirCvmAsidBitmap,1,0);
-		if(Asid==0xFFFFFFFF)Asid=0;		// Check if allocation failed.
-		ExReleaseResourceLite(&NoirCvmAsidBitmapResource);
-		return Asid;
-	}
-	return 0;
-}
-
-void NoirReleaseAsid(IN ULONG Asid)
-{
-	BOOLEAN AcquireStatus=ExAcquireResourceExclusiveLite(&NoirCvmAsidBitmapResource,TRUE);
-	if(AcquireStatus)
-	{
-		RtlClearBit(&NoirCvmAsidBitmap,Asid);
-		ExReleaseResourceLite(&NoirCvmAsidBitmapResource);
-	}
-}
-
-NTSTATUS NoirCreateVirtualMachine(OUT PNOIR_CUSTOM_VIRTUAL_MACHINE *VirtualMachine)
-{
-	// First, Acquire the resource lock for exclusive (write) access.
-	NTSTATUS st=STATUS_UNSUCCESSFUL;
-	BOOLEAN AcquireStatus=ExAcquireResourceExclusiveLite(&NoirCvmVirtualMachineListResource,TRUE);
-	if(AcquireStatus)
-	{
-		// Allocate Non-Paged Memory for storing VM structure.
-		PNOIR_CUSTOM_VIRTUAL_MACHINE VM=NoirAllocateNonPagedMemory(sizeof(NOIR_CUSTOM_VIRTUAL_MACHINE));
-		st=VM?STATUS_SUCCESS:STATUS_INSUFFICIENT_RESOURCES;
-		if(VM)
-		{
-			ULONG32 nst;
-			// Initialize the VM structure.
-			RtlZeroMemory(VM,sizeof(NOIR_CUSTOM_VIRTUAL_MACHINE));
-			// Initialize the Resource Lock for vCPUs.
-			st=ExInitializeResourceLite(&VM->VirtualProcessor.Lock);
-			if(NT_ERROR(st))goto CreationFailure;
-			VM->Asid=NoirAllocateAsid();	// Allocate ASID for the virtual machine.
-			if(VM->Asid==0)
-			{
-				// Out of ASIDs, VM will be unable to run with secluded TLBs.
-				NoirCvmTracePrint("Failed to assign ASID for VM Creation!\n");
-				st=STATUS_INSUFFICIENT_RESOURCES;
-				goto CreationFailure;
-			}
-			// Create the Core-Specific Structure for VM.
-			nst=nvc_create_vm(&VM->Core);
-			if(nst)
-			{
-				NoirCvmTracePrint("Failed to create Core Structure for VM! Noir-Status=0x%X\n",nst);
-				st=STATUS_UNSUCCESSFUL;
-				goto CreationFailure;
-			}
-			// VM Creation Information. Useful for debugging and tracing.
-			KeQuerySystemTime(&VM->CreationTime);
-			VM->Process=PsGetCurrentProcess();
-			// Finally, insert the VM structure to the list.
-			InsertTailList(&NoirCvmIdleVirtualMachine.ActiveVmList,&VM->ActiveVmList);
-			goto CreationEnd;
-CreationFailure:
-			if(VM->Asid)NoirReleaseAsid(VM->Asid);
-			NoirFreeNonPagedMemory(VM);
-		}
-CreationEnd:
-		// Creation Complete. Release the resource lock.
-		ExReleaseResourceLite(&NoirCvmVirtualMachineListResource);
-		*VirtualMachine=VM;
-	}
-	return st;
-}
-
-NTSTATUS NoirTerminateVirtualMachine(IN PNOIR_CUSTOM_VIRTUAL_MACHINE VirtualMachine)
-{
-	// First, Acquire the resource lock for exclusive (write) access.
-	NTSTATUS st=STATUS_UNSUCCESSFUL;
-	BOOLEAN AcquireStatus=ExAcquireResourceExclusiveLite(&NoirCvmVirtualMachineListResource,TRUE);
-	if(AcquireStatus)
-	{
-		// Remove the VM from the doubly-linked list.
-		RemoveEntryList(&VirtualMachine->ActiveVmList);
-		// Release the assigned ASID.
-		NoirReleaseAsid(VirtualMachine->Asid);
-		// Free the Core-Specific Structure for VM.
-		nvc_release_vm(VirtualMachine->Core);
-		// Terminate all vCPUs.
-		AcquireStatus=ExAcquireResourceExclusiveLite(&VirtualMachine->VirtualProcessor.Lock,TRUE);
-		if(AcquireStatus)
-		{
-			PNOIR_CUSTOM_VIRTUAL_PROCESSOR Vcpu=VirtualMachine->VirtualProcessor.Head;
-			while(Vcpu)
-			{
-				PNOIR_CUSTOM_VIRTUAL_PROCESSOR Tmp=Vcpu->Next;
-				NoirFreeNonPagedMemory(Vcpu);
-				Vcpu=Tmp;
-			}
-			ExReleaseResourceLite(&VirtualMachine->VirtualProcessor.Lock);
-			ExDeleteResourceLite(&VirtualMachine->VirtualProcessor.Lock);
-		}
-		// Free the VM structure.
-		NoirFreeNonPagedMemory(VirtualMachine);
-		// Release Complete. Release the resource lock.
-		ExReleaseResourceLite(&NoirCvmVirtualMachineListResource);
-		st=STATUS_SUCCESS;
-	}
-	return st;
-}
-
-NTSTATUS NoirCreateVirtualProcessor(IN PNOIR_CUSTOM_VIRTUAL_MACHINE VirtualMachine,OUT PNOIR_CUSTOM_VIRTUAL_PROCESSOR *CustomProcessor)
-{
-	NTSTATUS st=STATUS_UNSUCCESSFUL;
-	// Before creating virtual processor, ensure thread-safety.
-	BOOLEAN AcquireStatus=ExAcquireResourceExclusiveLite(&VirtualMachine->VirtualProcessor.Lock,TRUE);
-	if(AcquireStatus)
-	{
-		PNOIR_CUSTOM_VIRTUAL_PROCESSOR Vcpu=NoirAllocateNonPagedMemory(sizeof(NOIR_CUSTOM_VIRTUAL_PROCESSOR));
-		st=Vcpu?STATUS_SUCCESS:STATUS_INSUFFICIENT_RESOURCES;
-		if(Vcpu)
-		{
-			// Initialize the vCPU structure.
-			RtlZeroMemory(Vcpu,sizeof(NOIR_CUSTOM_VIRTUAL_PROCESSOR));
-			// Insert the vCPU to the VM's vCPU list.
-			if(VirtualMachine->VirtualProcessor.Head)
-				VirtualMachine->VirtualProcessor.Head=VirtualMachine->VirtualProcessor.Tail=Vcpu;
-			else
-			{
-				VirtualMachine->VirtualProcessor.Tail->Next=Vcpu;
-				VirtualMachine->VirtualProcessor.Tail=Vcpu;
-			}
-			VirtualMachine->NumberOfVirtualProcessors++;
-		}
-		ExReleaseResourceLite(&VirtualMachine->VirtualProcessor.Lock);
-	}
-	return st;
-}
-
-ULONG32 NoirGetAsidCountForNestedVirtualization()
-{
-	return NoirPhysicalAsidLimit-NoirCvmReservedAsidCount;
-}
-
-ULONG32 NoirQueryPhysicalAsidLimit()
-{
-	return nvc_query_physical_asid_limit(NoirProcessorVendorString);
-}
-
-void NoirGetProcessorVendorString(OUT PSTR VendorString)
-{
-	noir_get_vendor_string(VendorString);
-}
-
-NTSTATUS NoirInitializeCvmModule()
-{
-	NTSTATUS st=NoirGetReservedAsidCount();
-	NoirGetProcessorVendorString(NoirProcessorVendorString);
-	NoirPhysicalAsidLimit=NoirQueryPhysicalAsidLimit();
-	if(NT_ERROR(st))return st;
-	st=ExInitializeResourceLite(&NoirCvmVirtualMachineListResource);
-	if(NT_ERROR(st))return st;
-	st=ExInitializeResourceLite(&NoirCvmAsidBitmapResource);
-	if(NT_ERROR(st))return st;
-	st=STATUS_INSUFFICIENT_RESOURCES;
-	NoirCvmAsidBitmapBuffer=NoirAllocateNonPagedMemory((NoirCvmReservedAsidCount>>3)+1);
-	if(NoirCvmAsidBitmapBuffer)
-	{
-		RtlZeroMemory(NoirCvmAsidBitmapBuffer,(NoirCvmReservedAsidCount>>3)+1);
-		RtlInitializeBitMap(&NoirCvmAsidBitmap,NoirCvmAsidBitmapBuffer,NoirCvmReservedAsidCount);
-		st=STATUS_SUCCESS;
-	}
-	if(NT_ERROR(st))
-	{
-		if(NoirCvmAsidBitmapBuffer)NoirFreeNonPagedMemory(NoirCvmAsidBitmapBuffer);
-		ExDeleteResourceLite(&NoirCvmVirtualMachineListResource);
-		ExDeleteResourceLite(&NoirCvmAsidBitmapResource);
-	}
-	InitializeListHead(&NoirCvmIdleVirtualMachine.ActiveVmList);
-	return st;
-}
-*/

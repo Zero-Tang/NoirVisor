@@ -277,6 +277,31 @@ typedef union _nvc_svm_avic_physical_table
 	u64 value;
 }nvc_svm_avic_physical_table,*nvc_svm_avic_physical_table_p;
 
+typedef union _nvc_svm_avic_physical_apic_id_entry
+{
+	struct
+	{
+		u64 host_physical_apic_id:8;
+		u64 reserved1:4;
+		u64 backing_page_pointer:40;
+		u64 reserved2:10;
+		u64 is_running:1;
+		u64 valid:1;
+	};
+	u64 value;
+}nvc_svm_avic_physical_apic_id_entry,*nvc_svm_avic_physical_apic_id_entry_p;
+
+typedef union _nvc_svm_avic_logical_apic_id_entry
+{
+	struct
+	{
+		u32 guest_physical_apic_id:8;
+		u32 reserved:23;
+		u32 valid:1;
+	};
+	u32 value;
+}nvc_svm_avic_logical_apic_id_entry,*nvc_svm_avic_logical_apic_id_entry_p;
+
 // VMCB Clean Bits
 #define noir_svm_clean_interception		0
 #define noir_svm_clean_iomsrpm			1

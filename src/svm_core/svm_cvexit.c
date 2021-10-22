@@ -91,13 +91,9 @@ void static fastcall nvc_svm_exception_cvexit_handler(noir_gpr_state_p gpr_state
 	u64 vector=code&0x1f;
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 	int_info.value=noir_svm_vmread64(cvcpu->vmcb.virt,exit_interrupt_info);
-	// Some boring assertions...
-	if(int_info.vector!=vector)noir_int3();
-	if(int_info.error_valid && (int_info.error_code!=err_code))noir_int3();
-	if(!int_info.valid)noir_int3();
 	// Deliver Exception Context...
 	cvcpu->header.exit_context.intercept_code=cv_exception;
-	cvcpu->header.exit_context.exception.vector=(u32)int_info.vector;
+	cvcpu->header.exit_context.exception.vector=(u32)vector;
 	cvcpu->header.exit_context.exception.ev_valid=(u32)int_info.error_valid;
 	cvcpu->header.exit_context.exception.error_code=(u32)int_info.error_code;
 	if(vector==amd64_page_fault)cvcpu->header.exit_context.exception.pf_addr=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info2);
@@ -172,6 +168,8 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 		// Switch to subverted host in order to handle the cpuid instruction.
 		nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 		cvcpu->header.exit_context.intercept_code=cv_cpuid_instruction;
+		cvcpu->header.exit_context.cpuid.leaf.a=(u32)cvcpu->header.gpr.rax;
+		cvcpu->header.exit_context.cpuid.leaf.c=(u32)cvcpu->header.gpr.rcx;
 	}
 	else
 	{
@@ -187,7 +185,7 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 			{
 				case ncvm_cpuid_leaf_range_and_vendor_string:
 				{
-					info.eax=ncvm_cpuid_leaf_limit;				// NoirVisor CVM CPUID Leaf Limit.
+					info.eax=ncvm_cpuid_leaf_limit;					// NoirVisor CVM CPUID Leaf Limit.
 					noir_movsb(&info.ebx,"NoirVisor ZT",12);		// The Vendor String is "NoirVisor ZT"
 					break;
 				}
@@ -274,6 +272,10 @@ void static fastcall nvc_svm_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_s
 	cvcpu->header.exit_context.io.access.operand_size=(u16)info.op_size;
 	cvcpu->header.exit_context.io.access.address_width=(u16)info.addr_size<<1;
 	cvcpu->header.exit_context.io.port=(u16)info.port;
+	cvcpu->header.exit_context.io.rax=cvcpu->header.gpr.rax;
+	cvcpu->header.exit_context.io.rcx=cvcpu->header.gpr.rcx;
+	cvcpu->header.exit_context.io.rsi=cvcpu->header.gpr.rsi;
+	cvcpu->header.exit_context.io.rdi=cvcpu->header.gpr.rdi;
 	cvcpu->header.exit_context.io.ds.selector=noir_svm_vmread16(cvcpu->vmcb.virt,guest_ds_selector);
 	cvcpu->header.exit_context.io.ds.attrib=svm_attrib_inverse(noir_svm_vmread16(cvcpu->vmcb.virt,guest_ds_attrib));
 	cvcpu->header.exit_context.io.ds.limit=noir_svm_vmread32(cvcpu->vmcb.virt,guest_ds_limit);
@@ -294,6 +296,9 @@ void static fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 		// Switch to subverted host in order to handle the MSR instruction.
 		nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 		cvcpu->header.exit_context.intercept_code=op_write?cv_wrmsr_instruction:cv_rdmsr_instruction;
+		cvcpu->header.exit_context.msr.eax=(u32)cvcpu->header.gpr.rax;
+		cvcpu->header.exit_context.msr.edx=(u32)cvcpu->header.gpr.rdx;
+		cvcpu->header.exit_context.msr.ecx=(u32)cvcpu->header.gpr.rcx;
 	}
 	else
 	{
@@ -381,4 +386,16 @@ void static fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state_p gpr_state
 	cvcpu->header.exit_context.memory_access.access.user=(u8)fault.user;
 	cvcpu->header.exit_context.memory_access.access.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
 	noir_movsb(cvcpu->header.exit_context.memory_access.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
+}
+
+// Expected Intercept Code: 0x401
+void static fastcall nvc_svm_incomplete_ipi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+{
+	;
+}
+
+// Expected Intercept Code: 0x402
+void static fastcall nvc_svm_unaccelerated_avic_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+{
+	;
 }

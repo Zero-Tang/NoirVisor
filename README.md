@@ -64,7 +64,8 @@ Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should p
 There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://github.com/Zero-Tang/NoirVisorLoader <br>
 If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher. <br>
 If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine. <br>
-You may enable Stealth SSDT Hook by setting up registry: (If your system is updated with certain patches since 2018, you should, nonetheless, disable Stealth MSR Hook feature. Otherwise, your system could result in #DF failure.) Please note that since hooking is a very dangerous behavior, NoirVisor disables them on default.
+You may enable Stealth SSDT Hook by setting up registry: (If your system is updated with certain patches since 2018, you should, nonetheless, disable Stealth MSR Hook feature. Otherwise, your system could result in #DF failure.) Please note that since hooking is a very dangerous behavior, NoirVisor disables them on default. <br>
+**Caveat: The stealth hook functionalities are *deprecated* by virtue of Windows kernel-mode patch dections. They are disabled by default. Future updates of NoirVisor will rarely address issues from them. If you encountered issues from stealth hook features, expect no fixes will be applied. This project has no interest in fixing them.** 
 ```bat
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "StealthMsrHook" /t REG_DWORD /d 1 /f
 ```
@@ -101,6 +102,8 @@ Customizable VM is the true explanation of "complex functions and purposes". As 
 Customizable VM is the feature that Zero researches about Virtualization: to run an arbitrary guest, instead of to just subvert the host system. In a word, it is aimed to be a competitor of the Windows Hypervisor Platform (WHP). <br>
 For CVM Algorithm on AMD-V, visit [here](src/svm_core/readme.md#customizable-vm-scheduler-algorithm).
 
+APIs to invoke Customizable VMs are available in the [NoirCvmApi](https://github.com/Zero-Tang/NoirCvmApi) repository. The documentation of the APIs is available in the [wiki page](https://github.com/Zero-Tang/NoirCvmApi/wiki).
+
 # NPIEP
 NPIEP (a.k.a Non-Privileged Instruction Execution Prevention) is an important security feature in Microsoft Virtualization-based Security. As a hypervisor project in conformance to Microsoft `Hv#1` interface, NoirVisor would provide this feature to the guest. This feature is similar to `UMIP` provided by later models of x86 processors. The differences are:
 
@@ -128,10 +131,12 @@ Project NoirVisor has six future development plans: <br>
 For more information, check out the [NoirVisor 2020+](https://github.com/Zero-Tang/NoirVisor/projects/2) Project.
 
 # Completed Features
+
 - Minimal Microsoft `Hv#1` Hypervisor Functionalities.
-- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V. (**Incompatible** with the `KiErrata704Present` mitigation.)
+- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V. (**Compatible** with the `KiErrata420Present` mitigation and KVA Shadow mechanism.)
 - Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, both Intel VT-x/EPT and AMD-V/NPT.
 - Non-Privileged Instruction Execution Prevention (NPIEP) on AMD-V.
+- Customizable VM engine on AMD-V.
 - Tagged Translation Lookaside Buffer by ASID/VPID feature.
 - Critical Hypervisor Protection.
 - Software-Level Code Integrity Enforcement.

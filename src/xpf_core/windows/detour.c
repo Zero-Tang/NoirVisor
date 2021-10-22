@@ -24,9 +24,9 @@ ULONG GetPatchSize(IN PVOID Code,IN ULONG HookLength)
 	{
 		PVOID p=(PVOID)((ULONG_PTR)Code+s);
 #if defined(_WIN64)
-		s+=NoirGetInstructionLength64(Code,0);
+		s+=NoirGetInstructionLength64(p,0);
 #else
-		s+=NoirGetInstructionLength32(Code,0);
+		s+=NoirGetInstructionLength32(p,0);
 #endif
 	}
 	return s;
@@ -156,7 +156,7 @@ void static NoirLocatePsLoadedModuleList(IN PDRIVER_OBJECT DriverObject)
 
 void NoirLocatePsLoadedModule(IN PDRIVER_OBJECT DriverObject)
 {
-	// In Windows 10 Redstone, these two variables are exported.
+	// Since Windows 10 Redstone, these two variables are exported.
 	UNICODE_STRING uniVarName1=RTL_CONSTANT_STRING(L"PsLoadedModuleList");
 	UNICODE_STRING uniVarName2=RTL_CONSTANT_STRING(L"PsLoadedModuleResource");
 	PsLoadedModuleList=MmGetSystemRoutineAddress(&uniVarName1);

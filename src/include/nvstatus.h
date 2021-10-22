@@ -124,6 +124,31 @@ typedef u32 noir_status;
 #define noir_vcpu_already_created		0xC0000006
 
 /*
+  Status Indicator: noir_buffer_too_small
+  If the buffer passed to the function is too small,
+  then this value is supposed to be returned.
+*/
+
+#define noir_buffer_too_small			0xC0000007
+
+/*
+  Status Indicator: noir_vcpu_not_exist
+  If a specified vCPU does not exist, then
+  this value is supposed to be returned.
+*/
+
+#define noir_vcpu_not_exist				0xC0000008
+
+/*
+  Status Indicator: noir_user_page_violation
+  If the page specified for CVM address
+  mapping does not meet the requirements,
+  then this value is supposed to be returned.
+*/
+
+#define noir_user_page_violation		0xC0000009
+
+/*
   Status Indicator: noir_not_intel
   If a procedure is specific for Intel Processor,
   and the processor is not manufactured by Intel,

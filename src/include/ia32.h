@@ -317,3 +317,74 @@ typedef union _ia32_feature_control_msr
 	};
 	u64 value;
 }ia32_feature_control_msr,*ia32_feature_control_msr_p;
+
+// IA32 MTRR Capability MSR
+typedef union _ia32_mtrr_cap_msr
+{
+	struct
+	{
+		u64 variable_count:8;
+		u64 support_fixed:1;
+		u64 reserved1:1;
+		u64 support_wc:1;
+		u64 support_smrr:1;
+		u64 support_prmrr:1;
+		u64 reserved2:51;
+	};
+	u64 value;
+}ia32_mtrr_cap_msr,*ia32_mtrr_cap_msr_p;
+
+// IA32 MTRR Default-Type MSR
+typedef union _ia32_mtrr_def_type_msr
+{
+	struct
+	{
+		u64 type:8;
+		u64 reserved1:2;
+		u64 fix_enabled:1;
+		u64 enabled:1;
+		u64 reserved2:52;
+	};
+	u64 value;
+}ia32_mtrr_def_type_msr,*ia32_mtrr_def_type_msr_p;
+
+typedef union _ia32_mtrr_phys_base_msr
+{
+	struct
+	{
+		u64 type:8;
+		u64 reserved1:4;
+		u64 phys_base:52;
+	};
+	u64 value;
+}ia32_mtrr_phys_base_msr,*ia32_mtrr_phys_base_msr_p;
+
+typedef union _ia32_mtrr_phys_mask_msr
+{
+	struct
+	{
+		u64 reserved:11;
+		u64 valid:1;
+		u64 phys_mask:52;
+	};
+	u64 value;
+}ia32_mtrr_phys_mask_msr,*ia32_mtrr_phys_mask_msr_p;
+
+// IA32 Page Fault Error Code
+typedef union _ia32_page_fault_error_code
+{
+	struct
+	{
+		u32 present:1;			// Bit	0
+		u32 write:1;			// Bit	1
+		u32 user:1;				// Bit	2
+		u32 reserved:1;			// Bit	3
+		u32 execute:1;			// Bit	4
+		u32 protection_key:1;	// Bit	5
+		u32 shadow_stack:1;		// Bit	6
+		u32 reserved0:8;		// Bits	7-14
+		u32 sgx:1;				// Bit	15
+		u32 reserved1:16;		// Bits	16-31
+	};
+	u32 value;
+}ia32_page_fault_error_code,*ia32_page_fault_error_code_p;

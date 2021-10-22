@@ -81,6 +81,15 @@
 #define amd64_efer_mcommit_bit	0x20000
 #define amd64_efer_intwb_bit	0x40000
 
+// DR6 Bit Fields
+#define amd64_dr6_b0			0
+#define amd64_dr6_b1			1
+#define amd64_dr6_b2			2
+#define amd64_dr6_b3			3
+#define amd64_dr6_bd			13
+#define amd64_dr6_bs			14
+#define amd64_dr6_bt			15
+
 // This is used for SVM Control Register Flags
 #define amd64_vmcr_dpd				0
 #define amd64_vmcr_r_init			1
@@ -275,3 +284,20 @@
 #define amd64_cpuid_vmlsvirt_bit		0x8000
 #define amd64_cpuid_vgif				16
 #define amd64_cpuid_vgif_bit			0x10000
+
+typedef union _amd64_page_fault_error_code
+{
+	struct
+	{
+		u32 present:1;			// Bit	0
+		u32 write:1;			// Bit	1
+		u32 user:1;				// Bit	2
+		u32 reserved:1;			// Bit	3
+		u32 execution:1;		// Bit	4
+		u32 protection_key:1;	// Bit	5
+		u32 shadow_stack:1;		// Bit	6
+		u32 reserved0:24;		// Bits	7-30
+		u32 rmp_violation:1;	// Bit	31
+	};
+	u32 value;
+}amd64_page_fault_error_code,*amd64_page_fault_error_code_p;

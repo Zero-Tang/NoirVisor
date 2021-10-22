@@ -26,6 +26,10 @@
 #define NOIR_UNKNOWN_PROCESSOR			0xC0000003
 #define NOIR_INVALID_PARAMETER			0xC0000004
 #define NOIR_HYPERVISION_ABSENT			0xC0000005
+#define NOIR_VCPU_ALREADY_CREATED		0xC0000006
+#define NOIR_BUFFER_TOO_SMALL			0xC0000007
+#define NOIR_VCPU_NOT_EXIST				0xC0000008
+#define NOIR_USER_PAGE_VIOLATION		0xC0000009
 
 typedef ULONG32 NOIR_STATUS;
 
@@ -55,6 +59,7 @@ typedef ULONG32 NOIR_STATUS;
 #define IOCTL_CvmRunVcpu		CTL_CODE_GEN(0x892)
 #define IOCTL_CvmViewVcpuReg	CTL_CODE_GEN(0x893)
 #define IOCTL_CvmEditVcpuReg	CTL_CODE_GEN(0x894)
+#define IOCTL_CvmCancelRunVcpu	CTL_CODE_GEN(0x895)
 
 // Layered Hypervisor Functions
 typedef ULONG_PTR CVM_HANDLE;
@@ -81,11 +86,43 @@ typedef struct _NOIR_ADDRESS_MAPPING
 	}Attributes;
 }NOIR_ADDRESS_MAPPING,*PNOIR_ADDRESS_MAPPING;
 
+typedef enum _NOIR_CVM_REGISTER_TYPE
+{
+	NoirCvmGeneralPurposeRegister,
+	NoirCvmFlagsRegister,
+	NoirCvmInstructionPointer,
+	NoirCvmControlRegister,
+	NoirCvmCr2Register,
+	NoirCvmDebugRegister,
+	NoirCvmDr67Register,
+	NoirCvmSegmentRegister,
+	NoirCvmFsGsRegister,
+	NoirCvmDescriptorTable,
+	NoirCvmTrLdtrRegister,
+	NoirCvmSysCallMsrRegister,
+	NoirCvmSysEnterMsrRegister,
+	NoirCvmCr8Register,
+	NoirCvmFxState,
+	NoirCvmXsaveArea,
+	NoirCvmMaxmimumRegisterType
+}NOIR_CVM_REGISTER_TYPE,*PNOIR_CVM_REGISTER_TYPE;
+
+typedef struct _NOIR_VIEW_EDIT_REGISTER_CONTEXT
+{
+	CVM_HANDLE VirtualMachine;
+	ULONG32 VpIndex;
+	NOIR_CVM_REGISTER_TYPE RegisterType;
+	PVOID DummyBuffer;
+}NOIR_VIEW_EDIT_REGISTER_CONTEXT,*PNOIR_VIEW_EDIT_REGISTER_CONTEXT;
+
 NOIR_STATUS NoirCreateVirtualMachine(OUT PCVM_HANDLE VirtualMachine);
 NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine);
 NOIR_STATUS NoirCreateVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
 NOIR_STATUS NoirReleaseVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
 NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation);
+NOIR_STATUS NoirViewVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize);
+NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
+NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID ExitContext);
 
 void NoirInitializeDisassembler();
 NTSTATUS NoirReportWindowsVersion();
@@ -96,6 +133,8 @@ void NoirPrintCompilerVersion();
 NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength);
 NTSTATUS NoirGetUefiHypervisionStatus();
 void NoirReportMemoryIntrospectionCounter();
+NTSTATUS NoirInitializeAsyncDebugPrinter();
+void NoirFinalizeAsyncDebugPrinter();
 ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();
 ULONG NoirVisorVersion();
@@ -113,6 +152,7 @@ void NoirSaveImageInfo(IN PDRIVER_OBJECT DriverObject);
 void NoirSetProtectedPID(IN ULONG NewPID);
 void NoirBuildHookedPages();
 void NoirTeardownHookedPages();
+extern ULONG32 noir_cvm_exit_context_size;
 extern ULONG_PTR system_cr3;
 extern ULONG_PTR orig_system_call;
 extern PSTR virtual_vstr;

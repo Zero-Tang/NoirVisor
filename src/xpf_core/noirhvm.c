@@ -17,6 +17,8 @@
 #include <nvstatus.h>
 #include <noirhvm.h>
 #include <nv_intrin.h>
+#include <vt_intrin.h>
+#include <svm_intrin.h>
 
 u32 noir_visor_version()
 {
@@ -121,9 +123,303 @@ bool noir_is_under_hvm()
 }
 
 #if !defined(_hv_type1)
-noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu)
+noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_register_type register_type,void* buffer,u32 buffer_size)
 {
-	return noir_not_implemented;
+	noir_status st=noir_buffer_too_small;
+	if(buffer_size>=noir_cvm_register_buffer_limit[register_type])
+	{
+		st=noir_success;
+		// General Rule: If the state is to be cached, invalidate the cache.
+		switch(register_type)
+		{
+			case noir_cvm_general_purpose_register:
+			{
+				noir_movsp(&vcpu->gpr,buffer,sizeof(void*)*2);
+				vcpu->state_cache.gprvalid=0;
+				break;
+			}
+			case noir_cvm_flags_register:
+			{
+				vcpu->rflags=*(u64*)buffer;
+				vcpu->state_cache.gprvalid=0;
+				break;
+			}
+			case noir_cvm_instruction_pointer:
+			{
+				vcpu->rip=*(u64*)buffer;
+				vcpu->state_cache.gprvalid=0;
+				break;
+			}
+			case noir_cvm_control_register:
+			{
+				u64* cr_list=(u64*)buffer;
+				vcpu->crs.cr0=cr_list[0];
+				vcpu->crs.cr3=cr_list[1];
+				vcpu->crs.cr4=cr_list[2];
+				vcpu->state_cache.cr_valid=0;
+				break;
+			}
+			case noir_cvm_cr2_register:
+			{
+				vcpu->crs.cr2=*(u64*)buffer;
+				vcpu->state_cache.cr2valid=0;
+				break;
+			}
+			case noir_cvm_debug_register:
+			{
+				noir_copy_memory(&vcpu->drs,buffer,sizeof(u64)*4);
+				break;
+			}
+			case noir_cvm_dr67_register:
+			{
+				noir_copy_memory(&vcpu->drs.dr6,buffer,sizeof(u64)*2);
+				vcpu->state_cache.dr_valid=0;
+				break;
+			}
+			case noir_cvm_segment_register:
+			{
+				segment_register_p sr_list=(segment_register_p)buffer;
+				vcpu->seg.es=sr_list[0];
+				vcpu->seg.cs=sr_list[1];
+				vcpu->seg.ss=sr_list[2];
+				vcpu->seg.ds=sr_list[3];
+				vcpu->state_cache.sr_valid=0;
+				break;
+			}
+			case noir_cvm_fgseg_register:
+			{
+				segment_register_p sr_list=(segment_register_p)buffer;
+				vcpu->seg.fs=sr_list[0];
+				vcpu->seg.gs=sr_list[1];
+				vcpu->state_cache.fg_valid=0;
+				break;
+			}
+			case noir_cvm_descriptor_table:
+			{
+				segment_register_p dt_list=(segment_register_p)buffer;
+				vcpu->seg.gdtr.limit=dt_list[0].limit;
+				vcpu->seg.gdtr.base=dt_list[0].base;
+				vcpu->seg.idtr.limit=dt_list[1].limit;
+				vcpu->seg.idtr.base=dt_list[1].base;
+				vcpu->state_cache.dt_valid=0;
+				break;
+			}
+			case noir_cvm_ldtr_task_register:
+			{
+				segment_register_p sr_list=(segment_register_p)buffer;
+				vcpu->seg.tr=sr_list[0];
+				vcpu->seg.ldtr=sr_list[1];
+				vcpu->state_cache.lt_valid=0;
+				break;
+			}
+			case noir_cvm_syscall_msr_register:
+			{
+				noir_copy_memory(&vcpu->msrs.star,buffer,sizeof(u64*)*4);
+				vcpu->state_cache.sc_valid=0;
+				break;
+			}
+			case noir_cvm_sysenter_msr_register:
+			{
+				noir_copy_memory(&vcpu->msrs.sysenter_cs,buffer,sizeof(u64*)*3);
+				vcpu->state_cache.se_valid=0;
+				break;
+			}
+			case noir_cvm_cr8_register:
+			{
+				vcpu->crs.cr8=*(u64*)buffer;
+				vcpu->state_cache.tp_valid=0;
+				break;
+			}
+			case noir_cvm_fxstate:
+			{
+				noir_copy_memory(vcpu->xsave_area,buffer,sizeof(noir_fx_state));
+				break;
+			}
+			case noir_cvm_xsave_area:
+			{
+				if(buffer_size>=hvm_p->xfeat.supported_size_max)
+					noir_copy_memory(vcpu->xsave_area,buffer,hvm_p->xfeat.supported_size_max);
+				else
+					st=noir_buffer_too_small;
+				break;
+			}
+			case noir_cvm_xcr0_register:
+			{
+				vcpu->xcrs.xcr0=*(u64*)buffer;
+				break;
+			}
+			default:
+			{
+				st=noir_invalid_parameter;
+				break;
+			}
+		}
+	}
+	return st;
+}
+
+void nvc_synchronize_vcpu_state(noir_cvm_virtual_cpu_p vcpu)
+{
+	if(hvm_p->selected_core==use_svm_core)
+		noir_svm_vmmcall(noir_cvm_dump_vcpu_vmcb,(ulong_ptr)vcpu);
+}
+
+noir_status nvc_view_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_register_type register_type,void* buffer,u32 buffer_size)
+{
+	noir_status st=noir_invalid_parameter;
+	if(buffer_size>=noir_cvm_register_buffer_limit[register_type])
+	{
+		st=noir_success;
+		switch(register_type)
+		{
+			// If the state is saved in VMCB, check if the state cache is invalid and synchronized.
+			// Perform synchronization if the state cache is both valid and unsynchronized.
+			case noir_cvm_general_purpose_register:
+			{
+				noir_movsp(buffer,&vcpu->gpr,sizeof(void*)*2);
+				break;
+			}
+			case noir_cvm_flags_register:
+			{
+				*(u64*)buffer=vcpu->rflags;
+				break;
+			}
+			case noir_cvm_instruction_pointer:
+			{
+				*(u64*)buffer=vcpu->rip;
+				break;
+			}
+			case noir_cvm_control_register:
+			{
+				u64* cr_list=(u64*)buffer;
+				if(vcpu->state_cache.cr_valid && !vcpu->state_cache.synchronized)
+					nvc_synchronize_vcpu_state(vcpu);
+				cr_list[0]=vcpu->crs.cr0;
+				cr_list[1]=vcpu->crs.cr3;
+				cr_list[2]=vcpu->crs.cr4;
+				break;
+			}
+			case noir_cvm_cr2_register:
+			{
+				if(vcpu->state_cache.cr2valid && !vcpu->state_cache.synchronized)
+					nvc_synchronize_vcpu_state(vcpu);
+				*(u64*)buffer=vcpu->crs.cr2;
+				break;
+			}
+			case noir_cvm_debug_register:
+			{
+				noir_copy_memory(buffer,&vcpu->drs,sizeof(u64)*4);
+				break;
+			}
+			case noir_cvm_dr67_register:
+			{
+				if(vcpu->state_cache.dr_valid && !vcpu->state_cache.synchronized)
+					nvc_synchronize_vcpu_state(vcpu);
+				noir_copy_memory(buffer,&vcpu->drs.dr6,sizeof(u64)*2);
+				break;
+			}
+			case noir_cvm_segment_register:
+			{
+				segment_register_p sr_list=(segment_register_p)buffer;
+				if(vcpu->state_cache.sr_valid && !vcpu->state_cache.synchronized)
+					nvc_synchronize_vcpu_state(vcpu);
+				sr_list[0]=vcpu->seg.es;
+				sr_list[1]=vcpu->seg.cs;
+				sr_list[2]=vcpu->seg.ss;
+				sr_list[3]=vcpu->seg.ds;
+				break;
+			}
+			case noir_cvm_fgseg_register:
+			{
+				segment_register_p sr_list=(segment_register_p)buffer;
+				if(vcpu->state_cache.fg_valid && !vcpu->state_cache.synchronized)
+					nvc_synchronize_vcpu_state(vcpu);
+				sr_list[0]=vcpu->seg.fs;
+				sr_list[1]=vcpu->seg.gs;
+				break;
+			}
+			case noir_cvm_descriptor_table:
+			{
+				segment_register_p dt_list=(segment_register_p)buffer;
+				if(vcpu->state_cache.dt_valid && !vcpu->state_cache.synchronized)
+					nvc_synchronize_vcpu_state(vcpu);
+				dt_list[0].limit=vcpu->seg.gdtr.limit;
+				dt_list[0].base=vcpu->seg.gdtr.base;
+				dt_list[1].limit=vcpu->seg.idtr.limit;
+				dt_list[1].base=vcpu->seg.idtr.base;
+				break;
+			}
+			case noir_cvm_ldtr_task_register:
+			{
+				segment_register_p sr_list=(segment_register_p)buffer;
+				if(vcpu->state_cache.lt_valid && !vcpu->state_cache.synchronized)
+					nvc_synchronize_vcpu_state(vcpu);
+				sr_list[0]=vcpu->seg.tr;
+				sr_list[1]=vcpu->seg.ldtr;
+				break;
+			}
+			case noir_cvm_syscall_msr_register:
+			{
+				if(vcpu->state_cache.sc_valid && !vcpu->state_cache.synchronized)
+					nvc_synchronize_vcpu_state(vcpu);
+				noir_copy_memory(buffer,&vcpu->msrs.star,sizeof(u64*)*4);
+				break;
+			}
+			case noir_cvm_sysenter_msr_register:
+			{
+				if(vcpu->state_cache.se_valid && !vcpu->state_cache.synchronized)
+					nvc_synchronize_vcpu_state(vcpu);
+				noir_copy_memory(buffer,&vcpu->msrs.sysenter_cs,sizeof(u64*)*3);
+				break;
+			}
+			case noir_cvm_cr8_register:
+			{
+				if(vcpu->state_cache.tp_valid && !vcpu->state_cache.synchronized)
+					nvc_synchronize_vcpu_state(vcpu);
+				*(u64*)buffer=vcpu->crs.cr8;
+				break;
+			}
+			case noir_cvm_fxstate:
+			{
+				noir_copy_memory(buffer,vcpu->xsave_area,sizeof(noir_fx_state));
+				break;
+			}
+			case noir_cvm_xsave_area:
+			{
+				if(buffer_size>=hvm_p->xfeat.supported_size_max)
+					noir_copy_memory(buffer,vcpu->xsave_area,hvm_p->xfeat.supported_size_max);
+				else
+					st=noir_buffer_too_small;
+				break;
+			}
+			case noir_cvm_xcr0_register:
+			{
+				*(u64*)buffer=vcpu->xcrs.xcr0;
+				break;
+			}
+			default:
+			{
+				st=noir_invalid_parameter;
+				break;
+			}
+		}
+	}
+	return st;
+}
+
+noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		if(hvm_p->selected_core==use_svm_core)
+			st=nvc_svmc_run_vcpu(vcpu,exit_context);
+		else if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else
+			st=noir_unknown_processor;
+	}
+	return st;
 }
 
 noir_cvm_virtual_cpu_p nvc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id)

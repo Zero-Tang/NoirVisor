@@ -14,6 +14,11 @@
 
 #include <nvdef.h>
 
+// Specify the purpose of mapping.
+#define noir_ept_mapped_for_default			0
+#define noir_ept_mapped_for_variable_mtrr	1
+#define noir_ept_mapped_for_fixed_mtrr		2
+
 typedef union _ia32_addr_translator
 {
 	struct
@@ -202,6 +207,9 @@ typedef struct _noir_ept_manager
 		noir_ept_pte_descriptor_p tail;
 	}pte;
 	memory_descriptor blank_page;
+	ia32_mtrr_def_type_msr def_type;
+	u8 phys_addr_size;
+	u8 virt_addr_size;
 }noir_ept_manager,*noir_ept_manager_p;
 
 typedef union _ia32_ept_violation_qualification

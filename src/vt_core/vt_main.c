@@ -122,6 +122,8 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 					noir_free_contd_memory(vcpu->vmxon.virt);
 				if(vcpu->vmcs.virt)
 					noir_free_contd_memory(vcpu->vmcs.virt);
+				if(vcpu->msr_auto.virt)
+					noir_free_contd_memory(vcpu->msr_auto.virt);
 				if(vcpu->nested_vcpu.vmcs_t.virt)
 					noir_free_contd_memory(vcpu->nested_vcpu.vmcs_t.virt);
 				if(vcpu->hv_stack)
@@ -136,17 +138,15 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 			noir_free_contd_memory(rhvm->io_bitmap_a.virt);
 		if(rhvm->io_bitmap_b.virt)
 			noir_free_contd_memory(rhvm->io_bitmap_b.virt);
-		if(rhvm->msr_auto_list.virt)
-			noir_free_contd_memory(rhvm->msr_auto_list.virt);
 	}
 	// nvc_vt_teardown_exit_handlers();
 }
 
 void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
 {
-	u64 entry_load=vcpu->relative_hvm->msr_auto_list.phys;
-	u64 exit_load=vcpu->relative_hvm->msr_auto_list.phys+0x400;
-	u64 exit_store=vcpu->relative_hvm->msr_auto_list.phys+0x800;
+	u64 entry_load=vcpu->msr_auto.phys;
+	u64 exit_load=vcpu->msr_auto.phys+0x400;
+	u64 exit_store=vcpu->msr_auto.phys+0x800;
 	noir_vt_vmwrite64(vmentry_msr_load_address,entry_load);
 	noir_vt_vmwrite64(vmexit_msr_load_address,exit_load);
 	noir_vt_vmwrite64(vmexit_msr_store_address,exit_store);
@@ -161,11 +161,27 @@ void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
 		noir_vt_vmwrite(guest_msr_ia32_sysenter_eip,(ulong_ptr)noir_system_call);
 		noir_vt_vmwrite(host_msr_ia32_sysenter_eip,orig_system_call);
 #endif
+		if(vcpu->enabled_feature & noir_vt_kva_shadow_presence)
+		{
+			u32 excp_bitmap=1<<ia32_page_fault;
+			ia32_page_fault_error_code pfec_mask,pfec_match;
+			// If the syscall hook is enabled, #PF must be intercepted.
+			noir_vt_vmwrite(exception_bitmap,excp_bitmap);
+			// Setup Page-Fault Mask and Match to reduce VM-Exits.
+			// Intercept execution only.
+			pfec_mask.value=0;
+			pfec_mask.user=1;		// We want to filter if the #PF comes from user mode.
+			pfec_mask.execute=1;	// We want to filter if the #PF is due to execution.
+			pfec_match.value=0;
+			pfec_match.execute=1;
+			noir_vt_vmwrite(page_fault_error_code_mask,pfec_mask.value);
+			noir_vt_vmwrite(page_fault_error_code_match,pfec_match.value);
+		}
 	}
 #endif
 }
 
-void static nvc_vt_setup_msr_auto_list(noir_hypervisor_p hvm)
+void static nvc_vt_setup_msr_auto_list(noir_vt_vcpu_p vcpu)
 {
 	/*
 		For MSR-Auto list, we have following convention:
@@ -176,13 +192,13 @@ void static nvc_vt_setup_msr_auto_list(noir_hypervisor_p hvm)
 		4th 1KB is reserved and MBZ.
 		Note that this is not defined by Intel Architecture.
 	*/
-	ia32_vmx_msr_auto_p entry_load=(ia32_vmx_msr_auto_p)((ulong_ptr)hvm->relative_hvm->msr_auto_list.virt+0);
-	ia32_vmx_msr_auto_p exit_load=(ia32_vmx_msr_auto_p)((ulong_ptr)hvm->relative_hvm->msr_auto_list.virt+0x400);
-	ia32_vmx_msr_auto_p exit_store=(ia32_vmx_msr_auto_p)((ulong_ptr)hvm->relative_hvm->msr_auto_list.virt+0x800);
+	ia32_vmx_msr_auto_p entry_load=(ia32_vmx_msr_auto_p)((ulong_ptr)vcpu->msr_auto.virt+0);
+	ia32_vmx_msr_auto_p exit_load=(ia32_vmx_msr_auto_p)((ulong_ptr)vcpu->msr_auto.virt+0x400);
+	ia32_vmx_msr_auto_p exit_store=(ia32_vmx_msr_auto_p)((ulong_ptr)vcpu->msr_auto.virt+0x800);
 	unref_var(exit_store);
 	// Setup custom MSR-Auto list.
 #if !defined(_hv_type1)
-	if(hvm->options.stealth_msr_hook)
+	if(vcpu->enabled_feature & noir_vt_syscall_hook)
 	{
 #if defined(_amd64)
 		entry_load[0].index=ia32_lstar;
@@ -214,7 +230,7 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 		noir_set_bitmap(write_bitmap_high,ia32_lstar-0xC0000000);	// Mask MSR Hook
 #else
 		noir_set_bitmap(read_bitmap_low,ia32_sysenter_eip);			// Hide MSR Hook
-		noir_set_bitmap(write_bitmap_high,ia32_sysenter_eip);		// Mask MSR Hook
+		noir_set_bitmap(write_bitmap_low,ia32_sysenter_eip);		// Mask MSR Hook
 #endif
 	}
 #else
@@ -549,8 +565,8 @@ void static nvc_vt_setup_control_area(bool true_msr)
 	nvc_vt_setup_procbased_controls(true_msr);
 	nvc_vt_setup_vmexit_controls(true_msr);
 	nvc_vt_setup_vmentry_controls(true_msr);
-	noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_pe|ia32_cr0_ne|ia32_cr0_pg);		// Monitor PE, NE and PG flags
-	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_umip|ia32_cr4_vmxe);				// Monitor UMIP and VMXE flags
+	noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_pe_bit|ia32_cr0_ne_bit|ia32_cr0_pg_bit);	// Monitor PE, NE and PG flags
+	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_smap_bit|ia32_cr4_vmxe_bit);				// Monitor SMAP and VMXE flags
 }
 
 u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,ulong_ptr gip)
@@ -566,6 +582,7 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	nvc_vt_setup_guest_state_area(&state,gsp,gip);
 	nvc_vt_setup_host_state_area(vcpu,&state);
 	nvc_vt_setup_memory_virtualization(vcpu);
+	nvc_vt_setup_msr_auto_list(vcpu);
 	nvc_vt_setup_msr_hook_p(vcpu);
 	nvc_vt_setup_virtual_msr(vcpu);
 	vcpu->status=noir_virt_on;
@@ -677,6 +694,11 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 				vcpu->vmxon.phys=noir_get_physical_address(vcpu->vmxon.virt);
 			else
 				goto alloc_failure;
+			vcpu->msr_auto.virt=noir_alloc_contd_memory(page_size);
+			if(vcpu->msr_auto.virt)
+				vcpu->msr_auto.phys=noir_get_physical_address(vcpu->msr_auto.virt);
+			else
+				goto alloc_failure;
 			vcpu->nested_vcpu.vmcs_t.virt=noir_alloc_contd_memory(page_size);
 			if(vcpu->nested_vcpu.vmcs_t.virt)
 				vcpu->nested_vcpu.vmcs_t.phys=noir_get_physical_address(vcpu->nested_vcpu.vmcs_t.virt);
@@ -688,6 +710,15 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 			vcpu->ept_manager=(void*)nvc_ept_build_identity_map();
 			if(vcpu->ept_manager==null)
 				goto alloc_failure;
+			if(hvm_p->options.stealth_msr_hook)
+			{
+				if(hvm_p->options.kva_shadow_presence)
+				{
+					nv_dprintf("KVA Shadow is present in the system!\n");
+					vcpu->enabled_feature|=noir_vt_kva_shadow_presence;
+				}
+				vcpu->enabled_feature|=noir_vt_syscall_hook;
+			}
 			vcpu->relative_hvm=(noir_vt_hvm_p)hvm->reserved;
 			vcpu->mshvcpu.root_vcpu=(void*)vcpu;
 		}
@@ -706,11 +737,6 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 		hvm->relative_hvm->io_bitmap_a.phys=noir_get_physical_address(hvm->relative_hvm->io_bitmap_a.virt);
 		hvm->relative_hvm->io_bitmap_b.phys=noir_get_physical_address(hvm->relative_hvm->io_bitmap_b.virt);
 	}*/
-	hvm->relative_hvm->msr_auto_list.virt=noir_alloc_contd_memory(page_size);
-	if(hvm->relative_hvm->msr_auto_list.virt)
-		hvm->relative_hvm->msr_auto_list.phys=noir_get_physical_address(hvm->relative_hvm->msr_auto_list.virt);
-	else
-		goto alloc_failure;
 	// Query Extended State Enumeration - Useful for xsetbv handler, CVM scheduler, etc.
 	noir_cpuid(ia32_cpuid_std_pestate_enum,0,&hvm_p->xfeat.support_mask.low,&hvm_p->xfeat.enabled_size_max,&hvm_p->xfeat.supported_size_max,&hvm_p->xfeat.support_mask.high);
 	// if(nvc_vt_build_exit_handlers()==noir_insufficient_resources)goto alloc_failure;
@@ -719,7 +745,6 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 	if(hvm->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;
 	nvc_vt_setup_msr_hook(hvm);
-	nvc_vt_setup_msr_auto_list(hvm);
 	for(u32 i=0;i<hvm->cpu_count;i++)
 		if(nvc_ept_protect_hypervisor(hvm,(noir_ept_manager_p)hvm->virtual_cpu[i].ept_manager)==false)
 			goto alloc_failure;

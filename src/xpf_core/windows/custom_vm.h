@@ -23,8 +23,33 @@
 #define NOIR_UNKNOWN_PROCESSOR			0xC0000003
 #define NOIR_INVALID_PARAMETER			0xC0000004
 #define NOIR_HYPERVISION_ABSENT			0xC0000005
+#define NOIR_VCPU_ALREADY_CREATED		0xC0000006
+#define NOIR_BUFFER_TOO_SMALL			0xC0000007
+#define NOIR_VCPU_NOT_EXIST				0xC0000008
 
 typedef ULONG32 NOIR_STATUS;
+
+typedef enum _NOIR_CVM_REGISTER_TYPE
+{
+	NoirCvmGeneralPurposeRegister,
+	NoirCvmFlagsRegister,
+	NoirCvmInstructionPointer,
+	NoirCvmControlRegister,
+	NoirCvmCr2Register,
+	NoirCvmDebugRegister,
+	NoirCvmDr67Register,
+	NoirCvmSegmentRegister,
+	NoirCvmFsGsRegister,
+	NoirCvmDescriptorTable,
+	NoirCvmTrLdtrRegister,
+	NoirCvmSysCallMsrRegister,
+	NoirCvmSysEnterMsrRegister,
+	NoirCvmCr8Register,
+	NoirCvmFxState,
+	NoirCvmXsaveArea,
+	NoirCvmXcr0Register,
+	NoirCvmMaxmimumRegisterType
+}NOIR_CVM_REGISTER_TYPE,*PNOIR_CVM_REGISTER_TYPE;
 
 typedef union _NOIR_XMM_REGISTER
 {
@@ -181,13 +206,33 @@ typedef NTSTATUS (*ZWQUERYVIRTUALMEMORY)
  OUT PSIZE_T ReturnLength
 );
 
+typedef union _MEMORY_WORKING_SET_EX_BLOCK
+{
+	struct
+	{
+		ULONG_PTR Valid:1;				// Bit	0
+		ULONG_PTR ShareCount:3;			// Bits	1-3
+		ULONG_PTR Win32Protection:11;	// Bits	4-14
+		ULONG_PTR Shared:1;				// Bit	15
+		ULONG_PTR Node:6;				// Bits	16-21
+		ULONG_PTR Locked:1;				// Bit	22
+		ULONG_PTR LargePage:1;			// Bit	23
+		ULONG_PTR Priority:3;			// Bits	24-26
+		ULONG_PTR Reserved:3;			// Bits	27-29
+		ULONG_PTR SharedOriginal:1;		// Bit	30
+		ULONG_PTR Bad:1;				// Bit	31
+#if defined(_WIN64)
+		ULONG64 Win32GraphicsProtection:4;	// Bits	32-35
+		ULONG64 ReservedUlong:28;			// Bits	36-63
+#endif
+	};
+	ULONG_PTR Value;
+}MEMORY_WORKING_SET_EX_BLOCK,*PMEMORY_WORKING_SET_EX_BLOCK;
+
 typedef struct _MEMORY_WORKING_SET_EX_INFORMATION
 {
-	union
-	{
-		ULONG_PTR BaseAddress;
-		ULONG_PTR NumberOfEntries;
-	};
+	PVOID VirtualAddress;
+	MEMORY_WORKING_SET_EX_BLOCK VirtualAttributes;
 }MEMORY_WORKING_SET_EX_INFORMATION,*PMEMORY_WORKING_SET_EX_INFORMATION;
 
 /*
@@ -240,7 +285,12 @@ NOIR_STATUS nvc_release_vm(IN PVOID VirtualMachine);
 NOIR_STATUS nvc_set_mapping(IN PVOID VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation);
 NOIR_STATUS nvc_create_vcpu(IN PVOID VirtualMachine,OUT PVOID *VirtualProcessor,IN ULONG32 VpIndex);
 NOIR_STATUS nvc_release_vcpu(IN PVOID VirtualProcessor);
+NOIR_STATUS nvc_run_vcpu(IN PVOID VirtualProcessor,OUT PVOID ExitContext);
+NOIR_STATUS nvc_view_vcpu_registers(IN PVOID VirtualProcessor,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize);
+NOIR_STATUS nvc_edit_vcpu_registers(IN PVOID VirtualProcessor,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
 PVOID nvc_reference_vcpu(IN PVOID VirtualMachine,IN ULONG32 VpIndex);
 HANDLE nvc_get_vm_pid(IN PVOID VirtualMachine);
 
 NOIR_CVM_HANDLE_TABLE NoirCvmHandleTable={0};
+
+ZWQUERYVIRTUALMEMORY ZwQueryVirtualMemory=NULL;

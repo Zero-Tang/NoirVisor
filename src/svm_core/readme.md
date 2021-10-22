@@ -25,6 +25,13 @@ Set the bit in bitmap to intercept LSTAR or SYSENTER_EIP MSR-read. <br>
 On interception, edit the eax and edx register to represent the original value. <br>
 Don't forget to set the bit in interception list in VMCB.
 
+## The KVA-Shadow Problem upon MSR-Hook
+The detail of the problem is stated in the [readme document of VT-Core](../vt_core/readme.md#the-kva-shadow-problem-upon-msr-hook). However, it seems that Windows do not enable KVA-Shadow mechanism on AMD processors. <br>
+AMD-V does not support masking `#PF` exceptions according to the exception error-code. Therefore, there could be tons of unwanted `#PF` VM-Exits.
+
+## Supervisor-Mode Access Prevention Problem
+The detail of the problem and its solution is stated in the [readme document of VT-Core](../vt_core/readme.md#supervisor-mode-access-prevention-problem).
+
 # Stealth Inline Hook Algorithm
 This feature utilizes the Nested Paging feature of processor. <br>
 The difference between Intel and AMD is that AMD lacks the "execution-only page" feature. In this regard, algorithm that applied on Intel EPT cannot be applied to AMD NPT. <br>
@@ -115,7 +122,8 @@ Steps are given in the following:
 - Finally, execute vmrun instruction with address of L1 VMCB, concluding the VM-Exit.
 
 ## Virtualize ASID
-In NoirVisor, the L0 context use ASID=0, and L1 context use ASID=1. To virtualize ASID, we should use ASID>1 for any L2 context. For a simple algorithm, we increment ASID by 1 to virtualize it. If L2 ASID<2, then the VMCB is inconsistent. In CPUID, we decrement the ASID range by 1.
+In NoirVisor, the L0 context use ASID=0, and L1 context use ASID=1. To virtualize ASID, we should use ASID>1 for any L2 context. For a simple algorithm, we increment ASID by 1 to virtualize it. If L2 ASID<2, then the VMCB is inconsistent. In CPUID, we decrement the ASID range by 1. <br>
+If nested virtualization is disabled, all ASIDs are reserved for Customizable VMs.
 
 ## Virtualize GIF
 GIF is quite a special feature in AMD-V. It is a global flag that controls the interrupt behavior of the processor. To virtualize GIF, we should identify two scenarios and do what should be done. <br>
@@ -128,7 +136,8 @@ When the guest `EFER.SVME` is set, we should stop intercepting `stgi` and `clgi`
 
 ### GIF Virtualization without Hardware Support
 If there is no hardware support to GIF Virtualization, even if we intercept interrupts subject to be held pending, the external interrupts will eventually be taken when we enter the nested hypervisor's context. This means the nested hypervisor is actually **interruptible** while `GIF=0` logically. **Only interrupts to be discarded can be emulated properly.** This is thereby a flaw in an otherwise perfect global hypervisor that supports nested virtualization. For the sake of accurate nested virtualization, nested virtualization is infeasible in case there is no hardware support for GIF virtualization. <br>
-Why is it feasible for hypervisors like VMware Workstation to implement Nested Virtualization on AMD-V without the hardware support of virtualizing GIF? The reason is simple: any external interrupts supposed to be delivered to the guest are injected by hypervisor, instead of being originated from real external hardwares, so VMM will delay the event injection until the virtual processor logically has the GIF set.
+Why is it feasible for hypervisors like VMware Workstation to implement Nested Virtualization on AMD-V without the hardware support of virtualizing GIF? The reason is simple: any external interrupts supposed to be delivered to the guest are injected by hypervisor, instead of being originated from real external hardwares, so VMM will delay the event injection until the virtual processor logically has the GIF set. In other words, NoirVisor could support nested virtualization in Customizable VMs. <br>
+In a word, NoirVisor would disable nested virtualization on platforms that does not support hardware-assisted GIF virtualization.
 
 ### GIF Logics
 As defined by AMD, certain interrupts are controlled by GIF:
@@ -301,3 +310,38 @@ Exception interception is optional: it is only intercepted if the host specifies
 
 ### Nested Page Fault
 Nested Page Fault, usually abbreviated as `#NPF`, indicates that a wrong physical address is accessed. NoirVisor would not handle `#NPF` itself, but transfer the interception to the host. In addition, information like fetched instruction bytes, access information, etc., would be recorded.
+
+## APIC Virtualization
+APIC, acronym that stands for Advance Programmable Interrupt Controller, is a standard x86 component to utilize multi-core processing. Although Customizable VM does not necessarily need APIC to call other cores - hypercalls can be used instead - virtualization of APIC is favorable at best. <br>
+AMD-V supports a special feature called AVIC (Advanced Virtual Interrupt Controller) to accelerate APIC virtualization. NoirVisor may consult whether AVIC is supported.
+
+### APIC Virtualization with AVIC
+With AVIC, IPIs (Inter-Processor Interrupts) can be delivered without causing VM-Exits if target vCPU is already scheduled onto a physical core.
+
+#### Overall Architecture
+There are three special kinds of pages: the `AVIC Backing Page`, `Physical APIC ID Table`, `Logical APIC ID Table`. They must be mapped to Write-Back cacheable memory type, according to AMD64 architecture.
+
+- The `AVIC Backing Page` will reflect the writes from the Guest program to the APIC page. Each vCPU is given a unique page.
+- The `Physical APIC ID Table` is unique among different virtual machines. All vCPUs within a VM share the same page. This page indicates the status of all vCPUs in this VM: their backing page pointer, whether they are running or not, which vCPU were the vCPUs assigned to, etc.
+- The `Logical APIC ID Table` is unique among different virtual machines. All vCPUs within a VM share the same page. This page maps the logical APIC ID to the physical APIC ID in the VM.
+
+#### World-Switch
+AVIC won't automatically set and clear the `Is Running` bit in `Physical APIC ID Table` entry. NoirVisor should be setting this bit when scheduling vCPUs. <br>
+When NoirVisor schedules a vCPU onto the physical core, the `Is Running` bit and `Host Physical APIC ID` field in the corresponding `Physical APIC ID Table` entry should be set accordingly. <br>
+When NoirVisor schedules a vCPU out of the physical core, the `Is Running` bit should be cleared so AVIC will not deliver IPI to a wrong physical core but will trigger a VM-Exit instead.
+
+### APIC Virtualization without AVIC
+Without AVIC hardware, APIC can be virtualized via MSR interception and Nested Paging.
+
+#### MSR Interception and Nested Paging
+When write to the APIC Base Address Register `MSR[0x1B]` is intercepted, set the APIC page to be uncacheable and unwritable (read and execution are allowed) via nested paging mechanism. <br>
+In that paging structure is being revised, halt all vCPUs before revising the NPT to mitigate race conditions, and flush the guest TLB within all vCPUs.
+
+#### Nested Paging Interception
+When `#NPF` is intercepted, check the address being written. Something needs to be checked:
+
+- Is the address to be written 4-byte aligned?
+- Is the APIC register valid?
+
+If the address is unaligned, according to AMD64 architecture, it may cause undefined behavior. We may ignore it. <br>
+If the APIC register is invalid, transfer the VM-Exit to the guest, and indicate that an invalid APIC access is intercepted.

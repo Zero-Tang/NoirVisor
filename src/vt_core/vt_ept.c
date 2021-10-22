@@ -133,6 +133,70 @@ bool nvc_ept_update_pde(noir_ept_manager_p eptm,u64 hpa,bool r,bool w,bool x)
 	return false;
 }
 
+bool nvc_ept_update_pte_memory_type(noir_ept_manager_p eptm,u64 hpa,u8 memory_type,u32 purpose)
+{
+	ia32_addr_translator trans;
+	noir_ept_pte_descriptor_p pte_p=eptm->pte.head;
+	trans.value=hpa;
+	// Do not accept address higher than 512GB.
+	if(trans.pml4e_offset)return false;
+	while(pte_p)
+	{
+		if(hpa>=pte_p->gpa_start && hpa<pte_p->gpa_start+page_2mb_size)
+		{
+			if(purpose>pte_p->virt[trans.pte_offset].ignored2)
+			{
+				pte_p->virt[trans.pte_offset].memory_type=memory_type;
+				pte_p->virt[trans.pte_offset].ignored2=purpose;
+			}
+			return true;
+		}
+		pte_p=pte_p->next;
+	}
+	// The 2MB page was not described yet.
+	pte_p=noir_alloc_nonpg_memory(sizeof(noir_ept_pte_descriptor));
+	if(pte_p)
+	{
+		pte_p->virt=noir_alloc_contd_memory(page_size);
+		if(pte_p->virt)
+		{
+			u64 index=(trans.pdpte_offset<<9)+trans.pde_offset;
+			ia32_ept_pde_p pde_p=(ia32_ept_pde_p)&eptm->pde.virt[index];
+			// PTE Descriptor
+			pte_p->phys=noir_get_physical_address(pte_p->virt);
+			pte_p->gpa_start=index<<9;
+			for(u32 i=0;i<512;i++)
+			{
+				pte_p->virt[i].read=pde_p->read;
+				pte_p->virt[i].write=pde_p->write;
+				pte_p->virt[i].execute=pde_p->execute;
+				pte_p->virt[i].memory_type=pde_p->reserved0&7;
+				pte_p->virt[i].ignore_pat=1;
+				pte_p->virt[i].page_offset=pte_p->gpa_start+i;
+			}
+			pte_p->gpa_start<<=12;
+			// Set specific page memory type.
+			pte_p->virt[trans.pte_offset].memory_type=memory_type;
+			pte_p->virt[trans.pte_offset].ignored2=purpose;
+			// Update PDE
+			pde_p->reserved0=0;
+			pde_p->large_pde=0;
+			pde_p->pte_offset=pte_p->phys>>12;
+			// Update the linked list.
+			if(unlikely(eptm->pte.head==null))
+				eptm->pte.head=eptm->pte.tail=pte_p;
+			else
+			{
+				eptm->pte.tail->next=pte_p;
+				eptm->pte.tail=pte_p;
+			}
+			return true;
+		}
+		noir_free_nonpg_memory(pte_p);
+	}
+	return false;
+}
+
 bool nvc_ept_update_pte(noir_ept_manager_p eptm,u64 hpa,u64 gpa,bool r,bool w,bool x)
 {
 	ia32_addr_translator hat,gat;
@@ -161,18 +225,17 @@ bool nvc_ept_update_pte(noir_ept_manager_p eptm,u64 hpa,u64 gpa,bool r,bool w,bo
 		pte_p->virt=noir_alloc_contd_memory(page_size);
 		if(pte_p->virt)
 		{
-			u32 i=0;
 			u64 index=(hat.pdpte_offset<<9)+hat.pde_offset;
 			ia32_ept_pde_p pde_p=(ia32_ept_pde_p)&eptm->pde.virt[index];
 			// PTE Descriptor
 			pte_p->phys=noir_get_physical_address(pte_p->virt);
 			pte_p->gpa_start=index<<9;
-			for(;i<512;i++)
+			for(u32 i=0;i<512;i++)
 			{
 				pte_p->virt[i].read=1;
 				pte_p->virt[i].write=1;
 				pte_p->virt[i].execute=1;
-				pte_p->virt[i].memory_type=ia32_write_back;
+				pte_p->virt[i].memory_type=pde_p->reserved0&7;
 				pte_p->virt[i].page_offset=pte_p->gpa_start+i;
 			}
 			pte_p->gpa_start<<=12;
@@ -198,6 +261,112 @@ bool nvc_ept_update_pte(noir_ept_manager_p eptm,u64 hpa,u64 gpa,bool r,bool w,bo
 		noir_free_nonpg_memory(pte_p);
 	}
 	return false;
+}
+
+bool nvc_ept_update_by_mtrr(noir_ept_manager_p eptm)
+{
+	ia32_mtrr_cap_msr mtrr_cap;
+	mtrr_cap.value=noir_rdmsr(ia32_mtrr_cap);
+	// Traverse variable-range MTRRs.
+	for(u32 i=0;i<mtrr_cap.variable_count;i++)
+	{
+		// Read Variable Length MTRRs
+		ia32_mtrr_phys_mask_msr phys_mask;
+		phys_mask.value=noir_rdmsr(ia32_mtrr_phys_mask0+(i<<1));
+		if(phys_mask.valid)
+		{
+			ia32_mtrr_phys_base_msr phys_base;
+			phys_base.value=noir_rdmsr(ia32_mtrr_phys_base0+(i<<1));
+			// FIXME: Update EPT Paging Structure by MTRR.
+		}
+	}
+	if(eptm->def_type.fix_enabled)
+	{
+		u8* type;
+		// Read Fixed Range MTRRs.
+		// All Fixed Range MTRRs span the first MiB of system memory.
+		u64 fix64k_00000=noir_rdmsr(ia32_mtrr_fix64k_00000);
+		u64 fix16k_80000=noir_rdmsr(ia32_mtrr_fix16k_80000);
+		u64 fix16k_a0000=noir_rdmsr(ia32_mtrr_fix16k_a0000);
+		u64 fix4k_c0000=noir_rdmsr(ia32_mtrr_fix4k_c0000);
+		u64 fix4k_c8000=noir_rdmsr(ia32_mtrr_fix4k_c8000);
+		u64 fix4k_d0000=noir_rdmsr(ia32_mtrr_fix4k_d0000);
+		u64 fix4k_d8000=noir_rdmsr(ia32_mtrr_fix4k_d8000);
+		u64 fix4k_e0000=noir_rdmsr(ia32_mtrr_fix4k_e0000);
+		u64 fix4k_e8000=noir_rdmsr(ia32_mtrr_fix4k_e8000);
+		u64 fix4k_f0000=noir_rdmsr(ia32_mtrr_fix4k_f0000);
+		u64 fix4k_f8000=noir_rdmsr(ia32_mtrr_fix4k_f8000);
+		// MTRR Fixed64K 00000
+		// This register specifies eight 64KiB ranges, 512KiB in total.
+		type=(u8*)fix64k_00000;
+		for(u32 i=0;i<8;i++)
+			for(u32 j=0;j<16;j++)	// 64KiB is actually 16 pages.
+				if(nvc_ept_update_pte_memory_type(eptm,(i<<16)+(j<<12),type[i],noir_ept_mapped_for_fixed_mtrr)==false)
+					return false;
+		// MTRR Fixed16K_80000
+		// This register specifies eight 16KiB ranges, 128KiB in total.
+		type=(u8*)fix16k_80000;
+		for(u32 i=0;i<8;i++)
+			for(u32 j=0;j<4;j++)	// 16KiB is actually 4 pages.
+				if(nvc_ept_update_pte_memory_type(eptm,0x80000+(i<<14)+(j<<12),type[i],noir_ept_mapped_for_fixed_mtrr)==false)
+					return false;
+		// MTRR Fixed16K_a0000
+		// This register specifies eight 16KiB ranges, 128KiB in total.
+		type=(u8*)fix16k_a0000;
+		for(u32 i=0;i<8;i++)
+			for(u32 j=0;j<4;j++)	// 16KiB is actually 4 pages.
+				if(nvc_ept_update_pte_memory_type(eptm,0xa0000+(i<<14)+(j<<12),type[i],noir_ept_mapped_for_fixed_mtrr)==false)
+					return false;
+		// MTRR Fixed4K_c0000
+		// This register specifies eight 4KiB ranges, 32KiB in total
+		type=(u8*)fix4k_c0000;
+		for(u32 i=0;i<8;i++)
+			if(nvc_ept_update_pte_memory_type(eptm,0xc0000+(i<<12),type[i],noir_ept_mapped_for_fixed_mtrr)==false)
+				return false;
+		// MTRR Fixed4K_c8000
+		// This register specifies eight 4KiB ranges, 32KiB in total
+		type=(u8*)fix4k_c8000;
+		for(u32 i=0;i<8;i++)
+			if(nvc_ept_update_pte_memory_type(eptm,0xc8000+(i<<12),type[i],noir_ept_mapped_for_fixed_mtrr)==false)
+				return false;
+		// MTRR Fixed4K_d0000
+		// This register specifies eight 4KiB ranges, 32KiB in total
+		type=(u8*)fix4k_d0000;
+		for(u32 i=0;i<8;i++)
+			if(nvc_ept_update_pte_memory_type(eptm,0xd0000+(i<<12),type[i],noir_ept_mapped_for_fixed_mtrr)==false)
+				return false;
+		// MTRR Fixed4K_d8000
+		// This register specifies eight 4KiB ranges, 32KiB in total
+		type=(u8*)fix4k_d8000;
+		for(u32 i=0;i<8;i++)
+			if(nvc_ept_update_pte_memory_type(eptm,0xd8000+(i<<12),type[i],noir_ept_mapped_for_fixed_mtrr)==false)
+				return false;
+		// MTRR Fixed4K_e0000
+		// This register specifies eight 4KiB ranges, 32KiB in total
+		type=(u8*)fix4k_e0000;
+		for(u32 i=0;i<8;i++)
+			if(nvc_ept_update_pte_memory_type(eptm,0xe0000+(i<<12),type[i],noir_ept_mapped_for_fixed_mtrr)==false)
+				return false;
+		// MTRR Fixed4K_e8000
+		// This register specifies eight 4KiB ranges, 32KiB in total
+		type=(u8*)fix4k_e8000;
+		for(u32 i=0;i<8;i++)
+			if(nvc_ept_update_pte_memory_type(eptm,0xe8000+(i<<12),type[i],noir_ept_mapped_for_fixed_mtrr)==false)
+				return false;
+		// MTRR Fixed4K_f0000
+		// This register specifies eight 4KiB ranges, 32KiB in total
+		type=(u8*)fix4k_f0000;
+		for(u32 i=0;i<8;i++)
+			if(nvc_ept_update_pte_memory_type(eptm,0xf0000+(i<<12),type[i],noir_ept_mapped_for_fixed_mtrr)==false)
+				return false;
+		// MTRR Fixed4K_f8000
+		// This register specifies eight 4KiB ranges, 32KiB in total
+		type=(u8*)fix4k_f8000;
+		for(u32 i=0;i<8;i++)
+			if(nvc_ept_update_pte_memory_type(eptm,0xf8000+(i<<12),type[i],noir_ept_mapped_for_fixed_mtrr)==false)
+				return false;
+	}
+	return true;
 }
 
 bool nvc_ept_initialize_ci(noir_ept_manager_p eptm)
@@ -236,7 +405,6 @@ bool nvc_ept_protect_hypervisor(noir_hypervisor_p hvm,noir_ept_manager_p eptm)
 		result&=nvc_ept_update_pte(eptm,hvm->relative_hvm->msr_bitmap.phys,eptm->blank_page.phys,true,true,true);
 		// nvc_ept_update_pte(eptm,hvm->relative_hvm->io_bitmap_a.phys,eptm->blank_page.phys,true,true,true);
 		// nvc_ept_update_pte(eptm,hvm->relative_hvm->io_bitmap_b.phys,eptm->blank_page.phys,true,true,true);
-		result&=nvc_ept_update_pte(eptm,hvm->relative_hvm->msr_auto_list.phys,eptm->blank_page.phys,true,true,true);
 		for(u32 i=0;i<hvm->cpu_count;i++)
 		{
 			noir_vt_vcpu_p vcpu=&hvm->virtual_cpu[i];
@@ -245,6 +413,8 @@ bool nvc_ept_protect_hypervisor(noir_hypervisor_p hvm,noir_ept_manager_p eptm)
 			// Protect VMXON region and VMCS.
 			result&=nvc_ept_update_pte(eptm,vcpu->vmxon.phys,eptm->blank_page.phys,true,true,true);
 			result&=nvc_ept_update_pte(eptm,vcpu->vmcs.phys,eptm->blank_page.phys,true,true,true);
+			// Protect MSR Auto List.
+			result&=nvc_ept_update_pte(eptm,vcpu->msr_auto.phys,eptm->blank_page.phys,true,true,true);
 			// Protect EPT Paging Structure.
 			result&=nvc_ept_update_pte(eptm,eptmt->eptp.phys.value,eptm->blank_page.phys,true,true,true);
 			result&=nvc_ept_update_pte(eptm,eptmt->pdpt.phys,eptm->blank_page.phys,true,true,true);
@@ -299,6 +469,11 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 	}
 	if(alloc_success)
 	{
+		u32 a;
+		noir_cpuid(ia32_cpuid_ext_pcap_prm_eid,0,&a,null,null,null);
+		eptm->phys_addr_size=a&0xff;
+		eptm->virt_addr_size=(a<<8)&0xff;
+		eptm->def_type.value=noir_rdmsr(ia32_mtrr_def_type);
 		for(u32 i=0;i<512;i++)
 		{
 			for(u32 j=0;j<512;j++)
@@ -310,7 +485,7 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 				eptm->pde.virt[k].read=1;
 				eptm->pde.virt[k].write=1;
 				eptm->pde.virt[k].execute=1;
-				eptm->pde.virt[k].memory_type=ia32_write_back;
+				eptm->pde.virt[k].memory_type=eptm->def_type.type;
 				eptm->pde.virt[k].large_pde=1;
 			}
 			// Build Page-Directory-Pointer-Table Entries (PDPTEs)

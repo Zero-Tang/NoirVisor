@@ -128,6 +128,32 @@ cr4_handler_over:
 	noir_svm_advance_rip(vmcb);
 }
 
+// Expected Intercept Code: 0x4E
+void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	ulong_ptr fault_address=noir_svm_vmread(vmcb,exit_info2);
+	if(fault_address==(ulong_ptr)noir_system_call)
+	{
+		// The page fault occured at system call.
+		// Switch the page table.
+		u64 gcr3k=noir_get_current_process_cr3();
+		noir_svm_vmwrite64(vmcb,guest_cr3,gcr3k);
+		noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_control_reg);
+		// Flush the TLB.
+		noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_non_global);
+	}
+	else
+	{
+		// The page fault is supposed to be forwarded.
+		amd64_page_fault_error_code error_code;
+		error_code.value=noir_svm_vmread32(vmcb,exit_info1);
+		noir_svm_vmwrite(vmcb,guest_cr2,fault_address);
+		noir_svm_inject_event(vmcb,amd64_page_fault,amd64_fault_trap_exception,false,true,error_code.value);
+		noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_cr2);
+	}
+}
+
 // Expected Intercept Code: 0x5E
 void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
@@ -523,19 +549,26 @@ void static fastcall nvc_svm_str_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 // Special CPUID Handler for Nested Virtualization Feature Identification
 void static fastcall nvc_svm_cpuid_nested_virtualization_handler(noir_cpuid_general_info_p info)
 {
-	info->eax=0;		// Let Revision ID=0
-	info->ebx=hvm_p->tlb_tagging.limit-1;	// ASID Limit for Nested VMM.
-	// ECX is reserved by AMD. Leave it be.
-	info->edx=0;		// Make sure that only bits corresponding to supported features are set.
-	// Set the bits that NoirVisor supports.
-	noir_bts(&info->edx,amd64_cpuid_npt);
-	noir_bts(&info->edx,amd64_cpuid_svm_lock);
-	noir_bts(&info->edx,amd64_cpuid_nrips);
-	noir_bts(&info->edx,amd64_cpuid_vmcb_clean);
-	noir_bts(&info->edx,amd64_cpuid_flush_asid);
-	noir_bts(&info->edx,amd64_cpuid_decoder);
-	noir_bts(&info->edx,amd64_cpuid_vmlsvirt);
-	noir_bts(&info->edx,amd64_cpuid_vgif);
+	if(!hvm_p->options.nested_virtualization)
+		noir_stosd((u32*)info,0,4);
+	else
+	{
+		info->eax=0;		// Let Revision ID=0
+		// The ASIDs reserved for nested virtualization are between
+		// 2 to the start of ASIDs for Customizable VMs.
+		info->ebx=hvm_p->tlb_tagging.start-2;
+		// ECX is reserved by AMD. Leave it be.
+		info->edx=0;		// Make sure that only bits corresponding to supported features are set.
+		// Set the bits that NoirVisor supports.
+		noir_bts(&info->edx,amd64_cpuid_npt);
+		noir_bts(&info->edx,amd64_cpuid_svm_lock);
+		noir_bts(&info->edx,amd64_cpuid_nrips);
+		noir_bts(&info->edx,amd64_cpuid_vmcb_clean);
+		noir_bts(&info->edx,amd64_cpuid_flush_asid);
+		noir_bts(&info->edx,amd64_cpuid_decoder);
+		noir_bts(&info->edx,amd64_cpuid_vmlsvirt);
+		noir_bts(&info->edx,amd64_cpuid_vgif);
+	}
 }
 
 // Hypervisor-Present CPUID Handler
@@ -563,7 +596,7 @@ void static fastcall nvc_svm_cpuid_hvp_handler(u32 leaf,u32 subleaf,noir_cpuid_g
 			}
 			case amd64_cpuid_ext_proc_feature:
 			{
-				// noir_btr(&info->ecx,amd64_cpuid_svm);
+				if(!hvm_p->options.nested_virtualization)noir_btr(&info->ecx,amd64_cpuid_svm);
 				break;
 			}
 			case amd64_cpuid_ext_svm_features:
@@ -630,7 +663,7 @@ void static fastcall nvc_svm_invlpga_handler(noir_gpr_state_p gpr_state,noir_svm
 		u32 asid=(u32)gpr_state->rcx;
 		// Perform ASID Range Check then Invalidate the TLB.
 		// Beyond the range are the ASIDs reserved for Customizable VM.
-		if(asid>0 && asid<vcpu->nested_hvm.asid_max)
+		if(asid>0 && asid<hvm_p->tlb_tagging.start-2)
 			noir_svm_invlpga(addr,asid+1);
 		noir_svm_advance_rip(vmcb);
 	}
@@ -678,7 +711,11 @@ void static fastcall nvc_svm_rdmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 #if defined(_amd64)
 			case amd64_lstar:
 			{
-				val.value=vcpu->virtual_msr.lstar;
+				u64 lstar=noir_svm_vmread64(vmcb,guest_lstar);
+				if(lstar==(u64)noir_system_call)
+					val.value=orig_system_call;
+				else
+					val.value=lstar;
 				break;
 			}
 #else
@@ -719,80 +756,86 @@ void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 		{
 			case amd64_efer:
 			{
-				// This is for future feature of nested virtualization.
-				vcpu->nested_hvm.svme=noir_bt(&val.low,amd64_efer_svme);
-				val.value|=amd64_efer_svme_bit;
-				// Other bits can be ignored, but SVME should be always protected.
-				noir_svm_vmwrite64(vmcb,guest_efer,val.value);
-				// We updated EFER. Therefore, CRx fields should be invalidated.
-				noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_control_reg);
-				// Enable Acceleration of Virtualization if available.
-				if(vcpu->nested_hvm.svme)
-				{
-					nvc_svm_instruction_intercept2 list2;
-					list2.value=noir_svm_vmread16(vcpu->vmcb.virt,intercept_instruction2);
-					if(vcpu->enabled_feature & noir_svm_virtual_gif)
-					{
-						nvc_svm_avic_control avic_ctrl;
-						// Enable vGIF and set GIF for guest.
-						avic_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,avic_control);
-						avic_ctrl.virtual_gif=true;
-						avic_ctrl.enable_virtual_gif=true;
-						noir_svm_vmwrite64(vcpu->vmcb.virt,avic_control,avic_ctrl.value);
-						// We don't have to intercept stgi/clgi anymore.
-						list2.intercept_stgi=0;
-						list2.intercept_clgi=0;
-						// Because TPR-related field is changed in VMCB,
-						// Clear the cached state of VMCB.
-						noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_tpr);
-					}
-					if(vcpu->enabled_feature & noir_svm_virtualized_vmls)
-					{
-						nvc_svm_lbr_virtualization_control lbr_virt_ctrl;
-						// Enable Virtualization of vmload/vmsave instructions.
-						lbr_virt_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,lbr_virtualization_control);
-						lbr_virt_ctrl.virtualize_vmsave_vmload=true;
-						noir_svm_vmwrite64(vcpu->vmcb.virt,lbr_virtualization_control,lbr_virt_ctrl.value);
-						// We don't have to intercept vmload/vmsave anymore.
-						list2.intercept_vmload=0;
-						list2.intercept_vmsave=0;
-					}
-					noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
-					// Clear the cached state of Interceptions in VMCB.
-					noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
-				}
+				// If Nested Virtualization is disabled, attempts to set the SVME bit must be thrown exceptions.
+				bool svme=noir_bt(&val.low,amd64_efer_svme);
+				if(svme && !hvm_p->options.nested_virtualization)
+					noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
 				else
 				{
-					nvc_svm_instruction_intercept2 list2;
-					list2.value=noir_svm_vmread16(vcpu->vmcb.virt,intercept_instruction2);
-					if(vcpu->enabled_feature & noir_svm_virtual_gif)
+					// Other bits can be ignored, but SVME should be always protected.
+					val.value|=amd64_efer_svme_bit;
+					noir_svm_vmwrite64(vmcb,guest_efer,val.value);
+					// We have updated EFER. Therefore, CRx fields should be invalidated.
+					noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_control_reg);
+					vcpu->nested_hvm.svme=svme;
+					if(vcpu->nested_hvm.svme)
 					{
-						nvc_svm_avic_control avic_ctrl;
-						// Disable vGIF for guest.
-						avic_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,avic_control);
-						avic_ctrl.enable_virtual_gif=false;
-						noir_svm_vmwrite64(vcpu->vmcb.virt,avic_control,avic_ctrl.value);
-						// Because SVME is disabled, we have to intercept stgi/clgi.
-						list2.intercept_stgi=1;
-						list2.intercept_clgi=1;
-						// Because TPR-related field is changed in VMCB,
-						// Clear the cached state of VMCB.
-						noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_tpr);
+						// Enable Acceleration of Virtualization if available.
+						nvc_svm_instruction_intercept2 list2;
+						list2.value=noir_svm_vmread16(vcpu->vmcb.virt,intercept_instruction2);
+						if(vcpu->enabled_feature & noir_svm_virtual_gif)
+						{
+							nvc_svm_avic_control avic_ctrl;
+							// Enable vGIF and set GIF for guest.
+							avic_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,avic_control);
+							avic_ctrl.virtual_gif=true;
+							avic_ctrl.enable_virtual_gif=true;
+							noir_svm_vmwrite64(vcpu->vmcb.virt,avic_control,avic_ctrl.value);
+							// We don't have to intercept stgi/clgi anymore.
+							list2.intercept_stgi=0;
+							list2.intercept_clgi=0;
+							// Because TPR-related field is changed in VMCB,
+							// Clear the cached state of VMCB.
+							noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_tpr);
+						}
+						if(vcpu->enabled_feature & noir_svm_virtualized_vmls)
+						{
+							nvc_svm_lbr_virtualization_control lbr_virt_ctrl;
+							// Enable Virtualization of vmload/vmsave instructions.
+							lbr_virt_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,lbr_virtualization_control);
+							lbr_virt_ctrl.virtualize_vmsave_vmload=true;
+							noir_svm_vmwrite64(vcpu->vmcb.virt,lbr_virtualization_control,lbr_virt_ctrl.value);
+							// We don't have to intercept vmload/vmsave anymore.
+							list2.intercept_vmload=0;
+							list2.intercept_vmsave=0;
+						}
+						noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
+						// Clear the cached state of Interceptions in VMCB.
+						noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
 					}
-					if(vcpu->enabled_feature & noir_svm_virtualized_vmls)
+					else
 					{
-						nvc_svm_lbr_virtualization_control lbr_virt_ctrl;
-						// Disable Virtualization of vmload/vmsave instructions.
-						lbr_virt_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,lbr_virtualization_control);
-						lbr_virt_ctrl.virtualize_vmsave_vmload=false;
-						noir_svm_vmwrite64(vcpu->vmcb.virt,lbr_virtualization_control,lbr_virt_ctrl.value);
-						// We don't have to intercept vmload/vmsave anymore.
-						list2.intercept_vmload=1;
-						list2.intercept_vmsave=1;
+						nvc_svm_instruction_intercept2 list2;
+						list2.value=noir_svm_vmread16(vcpu->vmcb.virt,intercept_instruction2);
+						if(vcpu->enabled_feature & noir_svm_virtual_gif)
+						{
+							nvc_svm_avic_control avic_ctrl;
+							// Disable vGIF for guest.
+							avic_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,avic_control);
+							avic_ctrl.enable_virtual_gif=false;
+							noir_svm_vmwrite64(vcpu->vmcb.virt,avic_control,avic_ctrl.value);
+							// Because SVME is disabled, we have to intercept stgi/clgi.
+							list2.intercept_stgi=1;
+							list2.intercept_clgi=1;
+							// Because TPR-related field is changed in VMCB,
+							// Clear the cached state of VMCB.
+							noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_tpr);
+						}
+						if(vcpu->enabled_feature & noir_svm_virtualized_vmls)
+						{
+							nvc_svm_lbr_virtualization_control lbr_virt_ctrl;
+							// Disable Virtualization of vmload/vmsave instructions.
+							lbr_virt_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,lbr_virtualization_control);
+							lbr_virt_ctrl.virtualize_vmsave_vmload=false;
+							noir_svm_vmwrite64(vcpu->vmcb.virt,lbr_virtualization_control,lbr_virt_ctrl.value);
+							// We don't have to intercept vmload/vmsave anymore.
+							list2.intercept_vmload=1;
+							list2.intercept_vmsave=1;
+						}
+						noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
+						// Clear the cached state of Interceptions in VMCB.
+						noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
 					}
-					noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
-					// Clear the cached state of Interceptions in VMCB.
-					noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
 				}
 				break;
 			}
@@ -813,7 +856,10 @@ void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 #if defined(_amd64)
 			case amd64_lstar:
 			{
-				vcpu->virtual_msr.lstar=val.value;
+				if(val.value==orig_system_call)
+					noir_svm_vmwrite64(vmcb,guest_lstar,(u64)noir_system_call);
+				else
+					noir_svm_vmwrite64(vmcb,guest_lstar,val.value);
 				break;
 			}
 #else
@@ -981,6 +1027,23 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				noir_svm_custom_vcpu_p cvcpu=(noir_svm_custom_vcpu_p)context;
 #endif
 				nvc_svm_switch_to_guest_vcpu(gpr_state,vcpu,cvcpu);
+			}
+			else
+				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
+			break;
+		}
+		case noir_svm_dump_vcpu_vmcb:
+		{
+			// Validate the caller. Only Layered Hypervisor is authorized to invoke CVM hypercalls.
+			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
+			{
+#if defined(_hv_type1)
+				// FIXME: Translate GVAs in the structure .
+				noir_svm_custom_vcpu_p cvcpu=null;
+#else
+				noir_svm_custom_vcpu_p cvcpu=(noir_svm_custom_vcpu_p)context;
+#endif
+				nvc_svm_dump_guest_vcpu_state(cvcpu);
 			}
 			else
 				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
@@ -1251,6 +1314,16 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 		cvcpu->header.exit_context.vcpu_state.int_shadow=noir_svm_vmcb_bt32(vmcb_va,guest_interrupt,0);
 		cvcpu->header.exit_context.vcpu_state.pe=noir_svm_vmcb_bt32(vmcb_va,guest_cr0,amd64_cr0_pe);
 		cvcpu->header.exit_context.vcpu_state.lm=noir_svm_vmcb_bt32(vmcb_va,guest_efer,amd64_efer_lma);
+		// Save Code Segment...
+		cvcpu->header.exit_context.cs.selector=noir_svm_vmread16(cvcpu->vmcb.virt,guest_cs_selector);
+		cvcpu->header.exit_context.cs.attrib=svm_attrib_inverse(noir_svm_vmread16(cvcpu->vmcb.virt,guest_cs_attrib));
+		cvcpu->header.exit_context.cs.limit=noir_svm_vmread32(cvcpu->vmcb.virt,guest_cs_limit);
+		cvcpu->header.exit_context.cs.base=noir_svm_vmread64(cvcpu->vmcb.virt,guest_cs_base);
+		// Save some GPRs...
+		cvcpu->header.exit_context.rflags=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rflags);
+		cvcpu->header.exit_context.rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip);
+		// Mark the state as not synchronized.
+		cvcpu->header.state_cache.synchronized=0;
 		// Check if the interception is due to invalid guest state.
 		// Invoke the handler accordingly.
 		if(unlikely(intercept_code<0))		// Rare circumstance.

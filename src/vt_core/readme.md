@@ -20,9 +20,37 @@ Extended Page Table. This is also known as EPT. This feature enables the stealth
 
 # Stealth MSR-hook Algorithm
 This feature utilizes the processor ability to intercept rdmsr instruction. <br>
-Set the bit in bitmap to intercept the LSTAR or SYSENTER_EIP MSR-read. <br>
+Set the bit in bitmap to intercept the `LSTAR` or `SYSENTER_EIP` MSR-read. <br>
 On interception, edit the eax and edx register to represent the original value. <br>
 Don't forget to set the bit in primary processor-based execution control in VMCS.
+
+## The KVA-Shadow Problem upon MSR-Hook
+By virtue of the [meltdown attack](https://meltdownattack.com/) released in early 2018, the [KVA-shadow](https://msrc-blog.microsoft.com/2018/03/23/kva-shadow-mitigating-meltdown-on-windows/) mechanism is implemented as mitigation upon this attack. With this mitigation, program in user mode is loaded with a special page table that only a few critical pages that include transitions between user-mode and kernel-mode are present. Other kernel pages are absent in this page table and are only to be present when transition is completed. The `KiSystemCall64Shadow` routine is present in such page table. However, the proxy procedure that we used to hook the `syscall` handler are definitely absent in that page table. Therefore, if we hook into `syscall` handler with MSR without special handling, `#PF` exception would occur when the processor enters our proxy procedure. What is even worse is that the `KiPageFaultShadow` routine, which handles the `#PF` exception, is absent in that page table. Therefore, another `#PF` occurs during IDT delivery. Combining these two `#PF` exceptions, they result into `#DF` exception. It seems that the `KiDoubleFaultAbortShadow` routine, which handles the `#DF` exception, is present in that page table, or elsewise triple-fault is being triggered. Hence, Bug-Check `UNEXPECTED_KERNEL_MODE_TRAP` with first parameter `0x8` (double-fault) is issued eventually. <br>
+
+### Solution of KVA-Shadow Problem
+The most intuitive solution to solve the problem is to resolve the `#PF` exception when `syscall` handler is entered. This would of course require intercepting `#PF` exceptions. Upon interception, read the `Exit Qualification`, which refers to the faulting address during `#PF` exit, field from the VMCS. Compare the faulting address and the address of `syscall` proxy procedure. If they match, switch the guest `CR3` register so that the page table of the guest would include the proxy procedure. In addition to switching `CR3`, flush TLB via `invvpid` instruction if `VPID` feature is enabled. Otherwise, forward the exception into the guest. `CR2` register should be updated during the exception forwarding.
+
+### Optimize Interception
+As a rule of thumb, the less the VM-Exits, the better the performance of the hypervisor. Intel VT-x provides two 32-bit control fields to filter exceptions in VMCS: `Page-Fault Error-Code Mask` and `Page-Fault Error-Code Match`. When a page-fault occurs, the `Page-Fault Error-Code` (`pfec` in short) will be `logical-and`ed with `Page-Fault Error-Code Mask` (`pfec_mask` in short) then compare with `Page-Fault Error-Code Match` (`pfec_match` in short). The comparison can be expressed as the following C pseudo-code:
+```C
+bool intercept=bittest(exception_bitmap,ia32_page_fault);
+u32 pfec_cmp=pfec&pfec_mask;
+bool match=pfec_cmp==pfec_match;
+if(match ^ !intercept)vmexit(exception,ia32_page_fault);
+```
+For example, if `pfec_mask` and `pfec_match` are both 0 and page-fault interception is set, all page-fault exceptions will be intercepted because `pfec_cmp` will always be 0 so that `pfec_match` would be matched. Because `match` is `true` and `!intercept` is `false`, the `xor` operation will make the statement within the if condition being `true`. The exception will take place. <br>
+Therefore, we can set `pfec_match` to be "instruction-fetch only", and set `pfec_mask` to be masking both "user-mode access" and "instruction-fetch" so that user-mode instruction-fetch will be filtered out.
+
+## The New PatchGuard Mechanism
+Recently, there is a new PatchGuard Mechanism which detects LSTAR MSR-Hook. This mechanism would write a temporary address to the LSTAR MSR then execute `syscall` instruction to verify the result. This is a hypervisor-specific technique to detect hooks in that writing a temporary address to LSTAR could unhook LSTAR permanently. In order to mitigate this mechanism, we should intercept writes to LSTAR MSR. If the value to be written equal to the original `syscall` handler, set the MSR to be the proxy handler. Otherwise, set the MSR as is. On interception upon reads from LSTAR MSR, return the original `syscall` handler if current LSTAR is set to the proxy handler, and otherwise return the value previously written to LSTAR MSR.
+
+## Supervisor-Mode Access Prevention Problem
+SMAP, acronym that stands for Supervisor-Mode Access Prevention, is an (Should it be "an" or "a"? Do you pronounce "x" in "x86" as "eks" or "cross"?) x86 processor feature that prevents supervisor-mode code from accessing user-mode data. It should be noticed that SMAP does not aim to prevent malicious privileged program from stealing or tampering user-mode data. It, instead, prevents benevolent supervisor-mode code from accessing malevolent user-mode data. For example, the infamous [CVE-2018-8897 vulnerability](https://everdox.net/popss.pdf) deceives the OS `#DB` handler that the `fs`/`gs` segment is pointing to kernel-mode data (e.g: `KPCR` structure in Windows) while, in fact, the `fs`/`gs` segment is pointing to user-mode data (e.g: `TEB` structure in Windows). <br>
+The problem is that, if this feature is enabled, the proxy `syscall` handler will be forbidden from reading parameters in user-mode memory (e.g: user stack). 
+
+### Solution of the SMAP Problem
+The solution of the SMAP problem is actually simple: disable the `SMAP` feature in the beginning of the proxy `syscall` handler. <br>
+Duly note that Supervisor-Mode Access Prevention is a security feature, so expect the PatchGuard would protect this bit. As a matter of fact, PatchGuard watches this bit indeed. The solution is simple: restore the bit as long as the proxy handler is done. By virtue of the setting of `SFMASK` MSR, the `RFLAGS.IF` bit will be automatically reset upon `syscall` instruction, so the proxy `syscall` handler will not interrupted by PatchGuard. However, I am not sure if PatchGuard can send an inter-processor NMI to interrupt and do checks. <br>
 
 # Stealth Inline Hook Algorithm
 This feature utilizes the Intel EPT feature. <br>
@@ -40,6 +68,15 @@ This feature is an essential security feature. I found this feature missing in m
 
 # Real-Time Code Integrity
 Real-Time CI is now implemented by Intel EPT.
+
+# MTRR Emulation
+According to Intel 64 Architecture Manual, the MTRRs have no effect on the memory type used for an access to a guest physical address. If we map all memory as write-back with EPT, there could be conflicts in that not all memory are defined as write-back by OS. For example, OS could define MMIO region as uncacheable memory. Similarly, graphics buffer could be mapped as write-combined by OS. Failure to map these memory accordingly could cause certain issues. For example, it is observed that some processor could encounter an `#MC` exception due to L2 cache data-read error.
+
+## Algorithm
+There are two types of MTRRs: Fixed MTRRs and Variable MTRRs. The Fixed MTRRs map the first MiB of system memory. The Variable MTRRs map a variable range of system memory. <br>
+
+### Variable MTRR Range Calculation
+The Variable Range is described with a base and a mask. Since alignment is required, we may use `bsf` instruction to determine the alignment.
 
 # Future Feature (Roadmap)
 In future, NoirVisor has following plans:

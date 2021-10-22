@@ -15,6 +15,9 @@
 #include <ntddk.h>
 #include <windef.h>
 
+#define MSR_LSTAR			0xC0000082
+#define MSR_SYSENTER_EIP	0x176
+
 #if defined(_WIN64)
 #define NoirGetPageBase(va)		(PVOID)((ULONG64)va&0xfffffffffffff000)
 #define HookLength				16
@@ -31,7 +34,7 @@
 #define INDEX_OFFSET		0x1
 #endif
 
-#define NoirProtectedFileName	L"NoirVisor.sys"
+#define NoirProtectedFileName		L"NoirVisor.sys"
 #define NoirProtectedFileNameCch	13
 #define NoirProtectedFileNameCb		NoirProtectedFileNameCch*2
 
@@ -43,6 +46,28 @@ typedef NTSTATUS (*NTSETINFORMATIONFILE)
  IN ULONG Length,
  IN FILE_INFORMATION_CLASS FileInformationClass
 );
+
+typedef struct _NOIR_BASIC_GPR_STATE
+{
+	ULONG_PTR Rax;
+	ULONG_PTR Rcx;
+	ULONG_PTR Rdx;
+	ULONG_PTR Rbx;
+	ULONG_PTR Rsp;
+	ULONG_PTR Rbp;
+	ULONG_PTR Rsi;
+	ULONG_PTR Rdi;
+#if defined(_WIN64)
+	ULONG64 R8;
+	ULONG64 R9;
+	ULONG64 R10;
+	ULONG64 R11;
+	ULONG64 R12;
+	ULONG64 R13;
+	ULONG64 R14;
+	ULONG64 R15;
+#endif
+}NOIR_BASIC_GPR_STATE,*PNOIR_BASIC_GPR_STATE;
 
 typedef struct _MEMORY_DESCRIPTOR
 {

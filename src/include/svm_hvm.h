@@ -21,6 +21,7 @@
 #define noir_svm_disasm_full				0x4
 #define noir_svm_init_custom_vmcb			0x10000
 #define noir_svm_run_custom_vcpu			0x10001
+#define noir_svm_dump_vcpu_vmcb				0x10002
 
 // Definition of Enabled features
 #define noir_svm_vmcb_caching		1		// Bit 0
@@ -30,6 +31,7 @@
 #define noir_svm_virtualized_vmls	16		// Bit 4
 #define noir_svm_syscall_hook		32		// Bit 5
 #define noir_svm_npt_with_hooks		64		// Bit 6
+#define noir_svm_kva_shadow_present	128		// Bit 7
 
 struct _noir_npt_manager;
 
@@ -39,6 +41,11 @@ typedef struct _noir_svm_hvm
 	memory_descriptor msrpm;
 	memory_descriptor iopm;
 	memory_descriptor blank_page;
+	struct
+	{
+		u32 asid_limit;
+		u32 capabilities;
+	}virt_cap;
 	u32 hvm_cpuid_leaf_max;
 }noir_svm_hvm,*noir_svm_hvm_p;
 
@@ -55,7 +62,6 @@ typedef struct _noir_svm_nested_vcpu
 {
 	u64 hsave_gpa;
 	void* hsave_hva;
-	u32 asid_max;
 	struct
 	{
 		u64 svme:1;
@@ -84,10 +90,9 @@ typedef struct _noir_svm_vcpu
 	noir_svm_nested_vcpu nested_hvm;
 	noir_cvm_virtual_cpu cvm_state;
 	u32 cpuid_fms;
+	u16 enabled_feature;
 	u8 status;
-	u8 enabled_feature;
 	u8 vcpu_property;
-	u8 reserved;
 }noir_svm_vcpu,*noir_svm_vcpu_p;
 
 struct _noir_svm_custom_vm;
@@ -127,6 +132,7 @@ typedef struct _noir_svm_custom_vcpu
 	noir_cvm_virtual_cpu header;
 	struct _noir_svm_custom_vm *vm;
 	memory_descriptor vmcb;
+	memory_descriptor apic_backing;
 	u64 lasted_tsc;
 	u32 proc_id;
 }noir_svm_custom_vcpu,*noir_svm_custom_vcpu_p;
@@ -139,6 +145,8 @@ typedef struct _noir_svm_custom_vm
 	u32 asid;
 	memory_descriptor iopm;
 	memory_descriptor msrpm;
+	memory_descriptor avic_logical;
+	memory_descriptor avic_physical;
 	struct _noir_svm_custom_npt_manager nptm;
 }noir_svm_custom_vm,*noir_svm_custom_vm_p;
 
@@ -167,6 +175,7 @@ void nvc_svm_teardown_cpuid_handler();
 bool nvc_svm_build_exit_handler();
 void nvc_svm_teardown_exit_handler();
 void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vmcb);
+void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 u8 nvc_npt_get_host_pat_index(u8 type);

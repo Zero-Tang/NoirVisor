@@ -23,6 +23,11 @@
 #include "svm_def.h"
 #include "svm_npt.h"
 
+void nvc_query_svm_capability()
+{
+	noir_cpuid(amd64_cpuid_ext_svm_features,0,null,&hvm_p->relative_hvm->virt_cap.asid_limit,null,&hvm_p->relative_hvm->virt_cap.capabilities);
+}
+
 bool nvc_is_svm_supported()
 {
 	u32 a,b,c,d;
@@ -62,17 +67,17 @@ bool nvc_is_acnested_svm_supported()
 	return acnv_support;
 }
 
-bool nvc_is_svm_disabled()
-{
-	u64 vmcr=noir_rdmsr(amd64_vmcr);
-	return noir_bt(&vmcr,amd64_vmcr_svmdis);
-}
-
 u32 nvc_svm_get_avail_asid()
 {
 	u32 count;
 	noir_cpuid(amd64_cpuid_ext_svm_features,0,null,&count,null,null);
 	return count;
+}
+
+bool nvc_is_svm_disabled()
+{
+	u64 vmcr=noir_rdmsr(amd64_vmcr);
+	return noir_bt(&vmcr,amd64_vmcr_svmdis);
 }
 
 u8 nvc_svm_enable()
@@ -197,6 +202,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	nvc_svm_cra_intercept crx_intercept;
 	nvc_svm_instruction_intercept1 list1;
 	nvc_svm_instruction_intercept2 list2;
+	u32 exception_bitmap=0;
 	u32 listex=0;
 	u32 a,b,c,d;
 	noir_cpuid(amd64_cpuid_ext_svm_features,0,&a,&b,&c,&d);
@@ -250,8 +256,12 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 		// Write NPT CR3
 		noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
 	}
+	// Solution of MSR-Hook with KVA-shadow mechanism: Intercept #PF exceptions.
+	if((vcpu->enabled_feature & noir_svm_syscall_hook) && (vcpu->enabled_feature & noir_svm_kva_shadow_present))
+		noir_bts(&exception_bitmap,amd64_page_fault);
 	// Write to VMCB.
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_access_cr,crx_intercept.value);
+	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_exceptions,exception_bitmap);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_instruction1,list1.value);
 	noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
 }
@@ -335,7 +345,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	if(vcpu->enabled_feature & noir_svm_syscall_hook)
 		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,(u64)noir_system_call);
 	else
-		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,(u64)orig_system_call);
+		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,state.lstar);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_cstar,state.cstar);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_sfmask,state.sfmask);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_kernel_gs_base,state.gsswap);
@@ -343,7 +353,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	if(vcpu->enabled_feature & noir_svm_syscall_hook)
 		noir_svm_vmwrite32(vcpu->vmcb.virt,guest_sysenter_eip,(u32)noir_system_call);
 	else
-		noir_svm_vmwrite32(vcpu->vmcb.virt,guest_sysenter_eip,(u32)orig_system_call);
+		noir_svm_vmwrite32(vcpu->vmcb.virt,guest_sysenter_eip,state.sysenter_eip);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_sysenter_cs,state.sysenter_cs);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_sysenter_esp,state.sysenter_esp);
 #endif
@@ -432,9 +442,16 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 {
 	hvm_p->cpu_count=noir_get_processor_count();
-	hvm_p->virtual_cpu=noir_alloc_nonpg_memory(hvm_p->cpu_count*sizeof(noir_svm_vcpu));
+	hvm_p->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
+	// Query available virtualization capabilities.
+	nvc_query_svm_capability();
+	// If hardware support of virtualizing GIF is unavailable, disable nested virtualization.
+	if(!noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_vgif))
+		hvm_p->options.nested_virtualization=false;
 	// Query Extended State Enumeration - Useful for xsetbv handler, CVM scheduler, etc.
 	noir_cpuid(amd64_cpuid_std_pestate_enum,0,&hvm_p->xfeat.support_mask.low,&hvm_p->xfeat.enabled_size_max,&hvm_p->xfeat.supported_size_max,&hvm_p->xfeat.support_mask.high);
+	// Initialize vCPUs.
+	hvm_p->virtual_cpu=noir_alloc_nonpg_memory(hvm_p->cpu_count*sizeof(noir_svm_vcpu));
 	// Implementation of Generic Call might differ.
 	// In subversion routine, it might not be allowed to allocate memory.
 	// Thus allocate everything at this moment, even if it costs more on single processor core.
@@ -475,10 +492,14 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			if(nvc_npt_initialize_ci(vcpu->primary_nptm)==false)goto alloc_failure;
 			if(hvm_p->options.stealth_msr_hook)vcpu->enabled_feature|=noir_svm_syscall_hook;
 			if(hvm_p->options.stealth_inline_hook)vcpu->enabled_feature|=noir_svm_npt_with_hooks;
+			if(hvm_p->options.kva_shadow_presence)
+			{
+				vcpu->enabled_feature|=noir_svm_kva_shadow_present;
+				nv_dprintf("Warning: KVA-Shadow is present! Stealth MSR-Hook on AMD Processors is untested!\n");
+			}
 		}
 	}
 	hvm_p->host_pat.value=noir_rdmsr(amd64_pat);
-	hvm_p->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
 	hvm_p->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();
 	if(hvm_p->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;
 	hvm_p->relative_hvm->msrpm.virt=noir_alloc_contd_memory(2*page_size);
@@ -494,9 +515,27 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 #if !defined(_hv_type1)
 	// Initialize CVM Module.
 	if(nvc_svmc_initialize_cvm_module()!=noir_success)goto alloc_failure;
-	// Half of the available ASIDs are reserved for Customizable VMs. Others are reserved for Nested VMM.
-	hvm_p->tlb_tagging.limit=nvc_svm_get_avail_asid()>>1;
-	hvm_p->tlb_tagging.asid_pool=noir_alloc_nonpg_memory(hvm_p->tlb_tagging.limit>>3);
+	// If nested virtualization is disabled, reserved all available ASIDs to CVMs.
+	// Otherwise, reserve half of ASIDs to CVMs.
+	if(hvm_p->options.nested_virtualization)
+	{
+		u32 bitmap_size;
+		hvm_p->tlb_tagging.start=hvm_p->relative_hvm->virt_cap.asid_limit>>1;
+		hvm_p->tlb_tagging.limit=hvm_p->relative_hvm->virt_cap.asid_limit-hvm_p->tlb_tagging.start;
+		bitmap_size=hvm_p->tlb_tagging.limit>>3;
+		if(hvm_p->tlb_tagging.limit & 7)bitmap_size++;
+		hvm_p->tlb_tagging.asid_pool=noir_alloc_nonpg_memory(bitmap_size);
+	}
+	else
+	{
+		u32 bitmap_size;
+		hvm_p->tlb_tagging.start=2;
+		hvm_p->tlb_tagging.limit=hvm_p->relative_hvm->virt_cap.asid_limit-2;
+		bitmap_size=hvm_p->tlb_tagging.limit>>3;
+		if(hvm_p->tlb_tagging.limit & 7)bitmap_size++;
+		hvm_p->tlb_tagging.asid_pool=noir_alloc_nonpg_memory(bitmap_size);
+	}
+	nv_dprintf("Number of ASIDs reserved for Customizable VMs: %u\n",hvm_p->tlb_tagging.limit);
 	if(hvm_p->tlb_tagging.asid_pool==null)goto alloc_failure;
 	hvm_p->tlb_tagging.asid_pool_lock=noir_initialize_reslock();
 	if(hvm_p->tlb_tagging.asid_pool_lock==null)goto alloc_failure;

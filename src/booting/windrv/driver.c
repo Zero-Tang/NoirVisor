@@ -54,6 +54,7 @@ void NoirDriverUnload(IN PDRIVER_OBJECT DriverObject)
 	NoirFinalizeCodeIntegrity();
 	NoirFinalizePowerStateCallback();
 	NoirReportMemoryIntrospectionCounter();
+	NoirFinalizeAsyncDebugPrinter();
 	IoDeleteSymbolicLink(&uniLinkName);
 	IoDeleteDevice(DriverObject->DeviceObject);
 }
@@ -189,13 +190,43 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		}
 		case IOCTL_CvmRunVcpu:
 		{
+			st=STATUS_SUCCESS;
+			if(OutputSize<noir_cvm_exit_context_size)
+			{
+				if(OutputSize<sizeof(ULONG64))
+					st=STATUS_INSUFFICIENT_RESOURCES;
+				else
+				{
+					*(PULONG32)OutputBuffer=NOIR_INSUFFICIENT_RESOURCES;
+					*(PULONG32)((ULONG_PTR)OutputBuffer+4)=noir_cvm_exit_context_size;
+				}
+			}
+			else
+			{
+				CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
+				ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
+				PVOID ExitContext=(PVOID)((ULONG_PTR)OutputBuffer+sizeof(ULONG64));
+				*(PULONG32)OutputBuffer=NoirRunVirtualProcessor(VmHandle,VpIndex,ExitContext);
+			}
 			break;
 		}
 		case IOCTL_CvmViewVcpuReg:
 		{
+			PNOIR_VIEW_EDIT_REGISTER_CONTEXT Context=(PNOIR_VIEW_EDIT_REGISTER_CONTEXT)InputBuffer;
+			PVOID Buffer=(PVOID)((ULONG_PTR)OutputBuffer+8);
+			*(PULONG32)OutputBuffer=NoirViewVirtualProcessorRegisters(Context->VirtualMachine,Context->VpIndex,Context->RegisterType,Buffer,OutputSize-8);
+			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmEditVcpuReg:
+		{
+			PNOIR_VIEW_EDIT_REGISTER_CONTEXT Context=(PNOIR_VIEW_EDIT_REGISTER_CONTEXT)InputBuffer;
+			PVOID Buffer=(PVOID)&Context->DummyBuffer;
+			*(PULONG32)OutputBuffer=NoirEditVirtualProcessorRegisters(Context->VirtualMachine,Context->VpIndex,Context->RegisterType,Buffer,InputSize-sizeof(NOIR_VIEW_EDIT_REGISTER_CONTEXT)+sizeof(PVOID));
+			st=STATUS_SUCCESS;
+			break;
+		}
+		case IOCTL_CvmCancelRunVcpu:
 		{
 			break;
 		}
@@ -212,6 +243,7 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 
 void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Context OPTIONAL,IN ULONG Count)
 {
+	NTSTATUS st=NoirInitializeAsyncDebugPrinter();
 	NoirPrintCompilerVersion();
 	NoirInitializeDisassembler();
 	NoirInitializeCodeIntegrity(DriverObject->DriverStart);

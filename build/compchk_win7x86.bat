@@ -40,7 +40,7 @@ cl ..\src\xpf_core\devkits.c /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_
 for %%1 in (..\src\xpf_core\windows\*.asm) do (ml /W3 /WX /D"_ia32" /Zf /Zd /Fo"%objpath%\%%~n1.obj" /c /nologo %%1)
 
 echo ============Start Linking============
-link "%objpath%\*.obj" "%objpath%\version.res" /LIBPATH:"%libpath%\win7\km\x86" /NODEFAULTLIB "ntoskrnl.lib" "..\src\disasm\LDE32.lib" /NOLOGO /DEBUG /PDB:"%objpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X86 /ERRORREPORT:QUEUE
+link "%objpath%\*.obj" "%objpath%\version.res" /LIBPATH:"%libpath%\win7\km\x86" /NODEFAULTLIB "ntoskrnl.lib" "..\src\disasm\LDE32.lib" /NOLOGO /DEBUG /PDB:"%binpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X86 /ERRORREPORT:QUEUE
 
 echo ============Start Signing============
 signtool sign /v /fd SHA1 /f .\ztnxtest.pfx /t http://timestamp.globalsign.com/scripts/timestamp.dll %binpath%\NoirVisor.sys

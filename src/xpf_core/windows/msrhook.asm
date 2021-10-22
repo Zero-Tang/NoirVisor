@@ -33,20 +33,31 @@ noir_system_call endp
 
 AsmHook_NtOpenProcess proc
 
+	; Later versions of Windows could have CR4.SMAP enabled.
+	; Disable it so that we can get parameters from the user.
+	mov rax,cr4
+	btr rax,21						; Clear the CR4.SMAP bit.
+	mov cr4,rax
+	pushfq							; The RFlags.CF bit equals the previous CR4.SMAP bit.
 	; NtOpenProcess has four parameters:
 	; - ProcessHandle, stored in r10 register as pointer
 	; - DesiredAccess, stored in rdx register as data
 	; - ObjectAttributes, stored in r8 register as pointer
 	; - ClientId, stored in r9 register as pointer
-	push rax					; We will use this register, so save it
-	mov rax,qword ptr[r9]		; PID is stored in [r9]
-	and eax,0FFFFFFFCh			; Filter invalid fields of PID
-	cmp eax,ProtPID				; If the PID is not protected,
-	jne Final					; Then jump to final operation
-	xor rdx,rdx					; Clear DesiredAccess (No Access) if the PID is protected
+	mov rax,qword ptr[r9]			; PID is stored in [r9]
+	and eax,0FFFFFFFCh				; Filter invalid fields of PID
+	cmp eax,ProtPID					; If the PID is not protected,
+	jne RestoreSMAP					; Then jump to final operation.
+	xor rdx,rdx						; Clear DesiredAccess (No Access) if the PID is protected
+RestoreSMAP:
+	popfq							; Query if CR4.SMAP bit was previously set.
+	jnc Final						; Don't modify CR4 if it was not set.
+	mov rax,cr4
+	bts rax,21						; Set the CR4.SMAP bit.
+	mov cr4,rax
 Final:
-	pop rax						; Restore rax register
-	jmp orig_system_call		; Continue to KiSystemCall64
+	mov eax,IndexOf_NtOpenProcess	; Restore rax register
+	jmp orig_system_call			; Continue to KiSystemCall64(Shadow)
 
 AsmHook_NtOpenProcess endp
 

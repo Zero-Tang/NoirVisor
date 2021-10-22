@@ -43,14 +43,20 @@ void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu
 	cvcpu->header.drs.dr1=noir_readdr1();
 	cvcpu->header.drs.dr2=noir_readdr2();
 	cvcpu->header.drs.dr3=noir_readdr3();
+	// If AVIC is supported, set it to be not runnning so IPIs won't be delivered to a wrong processor.
+	if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
+	{
+		nvc_svm_avic_physical_apic_id_entry_p apic_physical=(nvc_svm_avic_physical_apic_id_entry_p)cvcpu->vm->avic_physical.virt;
+		apic_physical[cvcpu->proc_id].is_running=false;
+	}
 	// The rest of processor states are already saved in VMCB.
 	// Step 2: Load Host State.
 	// Load General-Purpose Registers...
 	noir_movsp(gpr_state,&vcpu->cvm_state.gpr,sizeof(void*)*2);
-	// Load x87 FPU and SSE/AVX State...
-	noir_xrestore(vcpu->cvm_state.xsave_area);
 	// Load Extended Control Registers...
 	noir_xsetbv(0,vcpu->cvm_state.xcrs.xcr0);
+	// Load x87 FPU and SSE/AVX State...
+	noir_xrestore(vcpu->cvm_state.xsave_area);
 	// Load Debug Registers...
 	noir_writedr0(vcpu->cvm_state.drs.dr0);
 	noir_writedr1(vcpu->cvm_state.drs.dr1);
@@ -59,13 +65,18 @@ void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu
 	// Step 3: Switch vCPU to Host.
 	loader_stack->custom_vcpu=&nvc_svm_idle_cvcpu;		// Indicate that CVM is not running.
 	loader_stack->guest_vmcb_pa=vcpu->vmcb.phys;
+	// The context will go to the host when vmrun is executed.
 }
 
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	noir_svm_initial_stack_p loader_stack=(noir_svm_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack));
 	// IMPORTANT: If vCPU is scheduled to a different processor, resetting the VMCB cache state is required.
-	if(cvcpu->proc_id!=loader_stack->proc_id)noir_svm_vmwrite32(cvcpu->vmcb.virt,vmcb_clean_bits,0);
+	if(cvcpu->proc_id!=loader_stack->proc_id)
+	{
+		cvcpu->proc_id=loader_stack->proc_id;
+		noir_svm_vmwrite32(cvcpu->vmcb.virt,vmcb_clean_bits,0);
+	}
 	// (FIXME) Step 0: Check Guest State Consistency not checked by vmrun instruction.
 	// Step 1: Save State of the Subverted Host.
 	// Please note that it is unnecessary to save states which are already saved in VMCB.
@@ -89,11 +100,12 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_rsp,gpr_state->rsp);
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_rip,cvcpu->header.rip);
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_rflags,cvcpu->header.rflags);
+		cvcpu->header.state_cache.gprvalid=true;
 	}
-	// Load Extended Control Registers...
-	noir_xsetbv(0,cvcpu->header.xcrs.xcr0);
 	// Load x87 FPU and SSE State...
 	noir_xrestore(cvcpu->header.xsave_area);
+	// Load Extended Control Registers...
+	noir_xsetbv(0,cvcpu->header.xcrs.xcr0);
 	// Load Debug Registers...
 	noir_writedr0(cvcpu->header.drs.dr0);
 	noir_writedr1(cvcpu->header.drs.dr1);
@@ -202,9 +214,106 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_idt_gdt);
 		cvcpu->header.state_cache.dt_valid=true;
 	}
+	// If AVIC is supported, set the Physical APIC ID Entry to be running.
+	if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
+	{
+		nvc_svm_avic_physical_apic_id_entry_p apic_physical=(nvc_svm_avic_physical_apic_id_entry_p)cvcpu->vm->avic_physical.virt;
+		apic_physical[cvcpu->proc_id].is_running=true;
+		apic_physical[cvcpu->proc_id].host_physical_apic_id=cvcpu->proc_id;
+	}
+	// Always enable EFER.SVME.
+	noir_svm_vmcb_bts32(cvcpu->vmcb.virt,guest_efer,amd64_efer_svme);
 	// Step 3. Switch vCPU to Guest.
 	loader_stack->custom_vcpu=cvcpu;
 	loader_stack->guest_vmcb_pa=cvcpu->vmcb.phys;
+	noir_sti();		// If both RFLAGS.IF in Host and Guest is cleared, physical interrupts might never be unblocked.
+	// The context will go to the guest when vmrun is executed.
+}
+
+// This function only dumps state saved in VMCB.
+void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	// If the state is marked invalid, do not dump from VMCB in that
+	// the state is changed by layered hypervisor.
+	if(vcpu->header.state_cache.cr_valid)
+	{
+		vcpu->header.crs.cr0=noir_svm_vmread64(vmcb,guest_cr0);
+		vcpu->header.crs.cr3=noir_svm_vmread64(vmcb,guest_cr3);
+		vcpu->header.crs.cr4=noir_svm_vmread64(vmcb,guest_cr4);
+	}
+	if(vcpu->header.state_cache.cr2valid)
+		vcpu->header.crs.cr2=noir_svm_vmread64(vmcb,guest_cr2);
+	if(vcpu->header.state_cache.dr_valid)
+	{
+		vcpu->header.drs.dr6=noir_svm_vmread64(vmcb,guest_dr6);
+		vcpu->header.drs.dr7=noir_svm_vmread64(vmcb,guest_dr7);
+	}
+	if(vcpu->header.state_cache.sr_valid)
+	{
+		vcpu->header.seg.cs.selector=noir_svm_vmread16(vmcb,guest_cs_selector);
+		vcpu->header.seg.ds.selector=noir_svm_vmread16(vmcb,guest_ds_selector);
+		vcpu->header.seg.es.selector=noir_svm_vmread16(vmcb,guest_es_selector);
+		vcpu->header.seg.ss.selector=noir_svm_vmread16(vmcb,guest_ss_selector);
+		vcpu->header.seg.cs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_cs_attrib));
+		vcpu->header.seg.ds.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_ds_attrib));
+		vcpu->header.seg.es.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_es_attrib));
+		vcpu->header.seg.ss.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_ss_attrib));
+		vcpu->header.seg.cs.limit=noir_svm_vmread32(vmcb,guest_cs_limit);
+		vcpu->header.seg.ds.limit=noir_svm_vmread32(vmcb,guest_ds_limit);
+		vcpu->header.seg.es.limit=noir_svm_vmread32(vmcb,guest_es_limit);
+		vcpu->header.seg.ss.limit=noir_svm_vmread32(vmcb,guest_ss_limit);
+		vcpu->header.seg.cs.base=noir_svm_vmread64(vmcb,guest_cs_base);
+		vcpu->header.seg.ds.base=noir_svm_vmread64(vmcb,guest_ds_base);
+		vcpu->header.seg.es.base=noir_svm_vmread64(vmcb,guest_es_base);
+		vcpu->header.seg.ss.base=noir_svm_vmread64(vmcb,guest_ss_base);
+	}
+	if(vcpu->header.state_cache.fg_valid)
+	{
+		vcpu->header.seg.fs.selector=noir_svm_vmread16(vmcb,guest_fs_selector);
+		vcpu->header.seg.gs.selector=noir_svm_vmread16(vmcb,guest_gs_selector);
+		vcpu->header.seg.fs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_fs_attrib));
+		vcpu->header.seg.gs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_gs_attrib));
+		vcpu->header.seg.fs.limit=noir_svm_vmread32(vmcb,guest_fs_limit);
+		vcpu->header.seg.gs.limit=noir_svm_vmread32(vmcb,guest_gs_limit);
+		vcpu->header.seg.fs.base=noir_svm_vmread64(vmcb,guest_fs_base);
+		vcpu->header.seg.gs.base=noir_svm_vmread64(vmcb,guest_gs_base);
+	}
+	if(vcpu->header.state_cache.dt_valid)
+	{
+		vcpu->header.seg.gdtr.limit=noir_svm_vmread32(vmcb,guest_gdtr_limit);
+		vcpu->header.seg.idtr.limit=noir_svm_vmread32(vmcb,guest_idtr_limit);
+		vcpu->header.seg.gdtr.base=noir_svm_vmread64(vmcb,guest_gdtr_base);
+		vcpu->header.seg.idtr.base=noir_svm_vmread64(vmcb,guest_idtr_base);
+	}
+	if(vcpu->header.state_cache.lt_valid)
+	{
+		vcpu->header.seg.ldtr.selector=noir_svm_vmread16(vmcb,guest_ldtr_selector);
+		vcpu->header.seg.ldtr.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_ldtr_attrib));
+		vcpu->header.seg.ldtr.limit=noir_svm_vmread32(vmcb,guest_ldtr_limit);
+		vcpu->header.seg.ldtr.base=noir_svm_vmread64(vmcb,guest_ldtr_base);
+		vcpu->header.seg.tr.selector=noir_svm_vmread16(vmcb,guest_tr_selector);
+		vcpu->header.seg.tr.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_tr_attrib));
+		vcpu->header.seg.tr.limit=noir_svm_vmread32(vmcb,guest_tr_limit);
+		vcpu->header.seg.tr.base=noir_svm_vmread64(vmcb,guest_tr_base);
+	}
+	if(vcpu->header.state_cache.sc_valid)
+	{
+		vcpu->header.msrs.star=noir_svm_vmread64(vmcb,guest_star);
+		vcpu->header.msrs.lstar=noir_svm_vmread64(vmcb,guest_lstar);
+		vcpu->header.msrs.cstar=noir_svm_vmread64(vmcb,guest_cstar);
+		vcpu->header.msrs.sfmask=noir_svm_vmread64(vmcb,guest_sfmask);
+	}
+	if(vcpu->header.state_cache.se_valid)
+	{
+		vcpu->header.msrs.sysenter_cs=noir_svm_vmread64(vmcb,guest_sysenter_cs);
+		vcpu->header.msrs.sysenter_esp=noir_svm_vmread64(vmcb,guest_sysenter_esp);
+		vcpu->header.msrs.sysenter_eip=noir_svm_vmread64(vmcb,guest_sysenter_eip);
+	}
+	if(vcpu->header.state_cache.tp_valid)
+		vcpu->header.crs.cr8=noir_svm_vmread8(vmcb,avic_control)&0xf;
+	// Tell the layered hypervisor that the vCPU state is already synchronized.
+	vcpu->header.state_cache.synchronized=1;
 }
 
 void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
@@ -213,9 +322,11 @@ void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	// Initialize the VMCB for vCPU.
 	nvc_svm_instruction_intercept1 vector1;
 	nvc_svm_instruction_intercept2 vector2;
+	nvc_svm_avic_control avic_ctrl;
 	nvc_svm_npt_control npt_ctrl;
 	// Initialize Interceptions
 	// INIT Signal must be intercepted.
+	noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_debug_exception);
 	noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_security_exception);
 	vector1.value=0;
 	// All external interrupts must be intercepted for scheduler's sake.
@@ -251,6 +362,11 @@ void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	// Flush all TLBs associated with this ASID before running it.
 	noir_svm_vmwrite32(vmcb,guest_asid,vcpu->vm->asid);
 	noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_guest);
+	// Initialize Interrupt Control.
+	avic_ctrl.value=0;
+	// Virtual interrupt masking must be enabled. Otherwise, the vCPU can be blocked forever.
+	avic_ctrl.virtual_interrupt_masking=1;
+	noir_svm_vmwrite64(vmcb,avic_control,avic_ctrl.value);
 	// Initialize Nested Paging.
 	npt_ctrl.value=0;
 	npt_ctrl.enable_npt=1;
@@ -262,6 +378,16 @@ void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 }
 
 #if !defined(_hv_type1)
+noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu,void* exit_context)
+{
+	noir_status st=noir_success;
+	noir_acquire_reslock_shared(vcpu->vm->header.vcpu_list_lock);
+	noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
+	noir_copy_memory(exit_context,&vcpu->header.exit_context,sizeof(noir_cvm_exit_context));
+	noir_release_reslock(vcpu->vm->header.vcpu_list_lock);
+	return st;
+}
+
 u32 nvc_svmc_get_vm_asid(noir_svm_custom_vm_p vm)
 {
 	return vm->asid;
@@ -276,9 +402,23 @@ void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 {
 	if(vcpu)
 	{
+		// Release VMCB.
 		if(vcpu->vmcb.virt)noir_free_contd_memory(vcpu->vmcb.virt);
+		// Release XSAVE State Area,
 		if(vcpu->header.xsave_area)noir_free_contd_memory(vcpu->header.xsave_area);
+		// Remove vCPU from VM.
 		if(vcpu->vm)vcpu->vm->vcpu[vcpu->proc_id]=null;
+		// In addition, remove the vCPU from AVIC.
+		if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
+		{
+			// Remove from AVIC Logical & Physical APIC ID Table.
+			nvc_svm_avic_physical_apic_id_entry_p avic_physical=(nvc_svm_avic_physical_apic_id_entry_p)vcpu->vm->avic_physical.virt;
+			nvc_svm_avic_logical_apic_id_entry_p avic_logical=(nvc_svm_avic_logical_apic_id_entry_p)vcpu->vm->avic_logical.virt;
+			avic_physical[vcpu->proc_id].value=0;
+			avic_logical[vcpu->proc_id].value=0;
+			// Release APIC Backing Page.
+			if(vcpu->apic_backing.virt)noir_free_contd_memory(vcpu->apic_backing.virt);
+		}
 		noir_free_nonpg_memory(vcpu);
 	}
 }
@@ -296,6 +436,22 @@ noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_cu
 				vcpu->vmcb.phys=noir_get_physical_address(vcpu->vmcb.virt);
 			else
 				goto alloc_failure;
+			if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
+			{
+				nvc_svm_avic_physical_apic_id_entry_p avic_physical=(nvc_svm_avic_physical_apic_id_entry_p)virtual_machine->avic_physical.virt;
+				nvc_svm_avic_logical_apic_id_entry_p avic_logical=(nvc_svm_avic_logical_apic_id_entry_p)virtual_machine->avic_logical.virt;
+				// Allocate APIC Backing Page
+				vcpu->apic_backing.virt=noir_alloc_contd_memory(page_size);
+				if(vcpu->apic_backing.virt)
+					vcpu->apic_backing.phys=noir_get_physical_address(vcpu->apic_backing.virt);
+				else
+					goto alloc_failure;
+				// Setup the AVIC Physical/Logical APIC ID Tables.
+				avic_physical[vcpu_id].backing_page_pointer=vcpu->apic_backing.phys>>12;
+				avic_physical[vcpu_id].valid=true;
+				avic_logical[vcpu_id].guest_physical_apic_id=vcpu_id;
+				avic_logical[vcpu_id].valid=true;
+			}
 			// Allocate XSAVE State Area
 			vcpu->header.xsave_area=noir_alloc_contd_memory(hvm_p->xfeat.supported_size_max);
 			// Insert the vCPU into the VM.
@@ -309,6 +465,9 @@ noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_cu
 		*virtual_cpu=vcpu;
 		return noir_success;
 alloc_failure:
+		if(vcpu->vmcb.virt)
+			noir_free_contd_memory(vcpu->vmcb.virt);
+		noir_free_nonpg_memory(vcpu);
 		return noir_insufficient_resources;
 	}
 	return noir_vcpu_already_created;
@@ -568,10 +727,18 @@ noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_a
 	gpa.value=mapping_info->gpa;
 	for(u32 i=0;i<mapping_info->pages;i++)
 	{
-		u64 gpa=mapping_info->gpa+(i<<increment[mapping_info->attributes.psize]);
 		u64 hva=mapping_info->hva+(i<<increment[mapping_info->attributes.psize]);
-		u64 hpa=noir_get_user_physical_address((void*)hva);
-		st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,hpa,mapping_info->attributes);
+		bool valid,locked,large_page;
+		if(noir_query_page_attributes((void*)hva,&valid,&locked,&large_page))
+		{
+			st=noir_user_page_violation;
+			if(valid && locked)
+			{
+				u64 gpa=mapping_info->gpa+(i<<increment[mapping_info->attributes.psize]);
+				u64 hpa=noir_get_user_physical_address((void*)hva);
+				st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,hpa,mapping_info->attributes);
+			}
+		}
 		if(st!=noir_success)break;
 	}
 	return st;
@@ -585,7 +752,7 @@ u32 nvc_svmc_alloc_asid()
 	if(asid!=0xffffffff)
 	{
 		noir_set_bitmap(hvm_p->tlb_tagging.asid_pool,asid);
-		asid+=hvm_p->tlb_tagging.limit;
+		asid+=hvm_p->tlb_tagging.start;
 	}
 	noir_release_reslock(hvm_p->tlb_tagging.asid_pool_lock);
 	return asid;
@@ -608,7 +775,7 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 			vm->vcpu=null;
 		}
 		noir_release_reslock(vm->header.vcpu_list_lock);
-		// Release NPT Paging Structure.
+		// Release Nested Paging Structure.
 		if(vm->nptm.ncr3.virt)
 			noir_free_contd_memory(vm->nptm.ncr3.virt);
 		// Release PDPTE descriptors and paging structures...
@@ -650,9 +817,15 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 		// Release MSRPM & IOPM
 		if(vm->msrpm.virt)noir_free_contd_memory(vm->msrpm.virt);
 		if(vm->iopm.virt)noir_free_contd_memory(vm->iopm.virt);
+		// Release AVIC Pages if AVIC is supported
+		if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
+		{
+			if(vm->avic_logical.virt)noir_free_contd_memory(vm->avic_logical.virt);
+			if(vm->avic_physical.virt)noir_free_contd_memory(vm->avic_physical.virt);
+		}
 		// Release ASID.
 		noir_acquire_reslock_exclusive(hvm_p->tlb_tagging.asid_pool_lock);
-		noir_reset_bitmap(hvm_p->tlb_tagging.asid_pool_lock,vm->asid-hvm_p->tlb_tagging.limit);
+		noir_reset_bitmap(hvm_p->tlb_tagging.asid_pool,vm->asid-hvm_p->tlb_tagging.start);
 		noir_release_reslock(hvm_p->tlb_tagging.asid_pool_lock);
 		// Release VM Structure.
 		noir_free_nonpg_memory(vm);
@@ -696,6 +869,22 @@ noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine)
 			// According to AVIC, 255 physical cores are permitted.
 			vm->vcpu=noir_alloc_nonpg_memory(sizeof(void*)*256);
 			if(vm->vcpu==null)goto alloc_failure;
+			// Allocate AVIC-related pages if AVIC is supported.
+			if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
+			{
+				// Allocate Logical APIC ID Table
+				vm->avic_logical.virt=noir_alloc_contd_memory(page_size);
+				if(vm->avic_logical.virt)
+					vm->avic_logical.phys=noir_get_physical_address(vm->avic_logical.virt);
+				else
+					goto alloc_failure;
+				// Allocate Physical APIC ID Table
+				vm->avic_physical.virt=noir_alloc_contd_memory(page_size);
+				if(vm->avic_physical.virt)
+					vm->avic_physical.phys=noir_get_physical_address(vm->avic_physical.virt);
+				else
+					goto alloc_failure;
+			}
 			// Setup MSR & I/O Interceptions.
 			// We want unconditional exits.
 			noir_stosb(vm->msrpm.virt,0xff,noir_svm_msrpm_size);

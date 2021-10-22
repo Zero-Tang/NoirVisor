@@ -95,6 +95,56 @@ void static fastcall nvc_vt_default_handler(noir_gpr_state_p gpr_state,noir_vt_v
 	nv_dprintf("Unhandled VM-Exit!, Exit Reason: %s\n",vmx_exit_msg[exit_reason&0xFFFF]);
 }
 
+// Expected Exit Reason: 0
+// If this handler is invoked, it should be #PF due to syscall.
+void static fastcall nvc_vt_exception_nmi_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
+{
+	ia32_vmexit_interruption_information_field exit_int_info;
+	noir_vt_vmread(vmexit_interruption_information,&exit_int_info.value);
+	if(exit_int_info.valid)
+	{
+		switch(exit_int_info.vector)
+		{
+			case ia32_page_fault:
+			{
+				ulong_ptr gcr2;
+				ia32_page_fault_error_code err_code;
+				noir_vt_vmread(vmexit_interruption_error_code,&err_code.value);
+				// Processor does not update CR2 on #PF Exit, but the faulting address is saved in Exit Qualification.
+				noir_vt_vmread(vmexit_qualification,&gcr2);
+				if(gcr2==(ulong_ptr)noir_system_call)
+				{
+					// ulong_ptr gcr4;
+					u64 gcr3k=noir_get_current_process_cr3();
+					// Switch to KVA-unshadowed CR3 of the process.
+					noir_vt_vmwrite(guest_cr3,gcr3k);
+					// noir_vt_vmread(guest_cr4,&gcr4);
+					// Flush Guest TLB because the Guest CR3 is changed.
+					if(vcpu->enabled_feature & noir_vt_vpid_tagged_tlb)
+					{
+						invvpid_descriptor ivd={0};
+						ivd.vpid=1;
+						noir_vt_invvpid(vpid_single_invd,&ivd);
+					}
+				}
+				else
+				{
+					// This page-fault is not expected. Forward to the guest.
+					noir_vt_inject_event(ia32_page_fault,ia32_hardware_exception,true,0,err_code.value);
+					// Update the CR2 for the Guest.
+					noir_writecr2(gcr2);
+				}
+				break;
+			}
+			default:
+			{
+				nv_panicf("Unexpected exception is intercepted!\n");
+				noir_int3();
+			}
+		}
+	}
+}
+
 // Expected Exit Reason: 2
 // If this handler is invoked, we should crash the system.
 // This is VM-Exit of obligation.
@@ -656,15 +706,16 @@ void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,noir_vt
 				case 4:
 				{
 					ulong_ptr data=((ulong_ptr*)gpr_state)[info.gpr_num];
+					ulong_ptr cr4_rs,gcr4;
+					noir_vt_vmread(guest_cr4,&gcr4);
+					noir_vt_vmread(cr4_read_shadow,&cr4_rs);
+					cr4_rs=data;
+					gcr4=data|ia32_cr4_vmxe_bit;	// Always set CR4.VMXE for the valid Guest State.
 					// If Guest attempts to write CR4.VMXE, mark vCPU as Nested-VMX-Enabled(Disabled).
-					u32 vmxe_mask=noir_bt((u32*)&data,ia32_cr4_vmxe);
-					if(vmxe_mask)
+					if(noir_bt((u32*)&data,ia32_cr4_vmxe))
 					{
 						// Enable VMX.
-						ulong_ptr cr4_rs;
-						noir_vt_vmread(cr4_read_shadow,&cr4_rs);
 						cr4_rs|=ia32_cr4_vmxe_bit;
-						noir_vt_vmwrite(cr4_read_shadow,cr4_rs);
 						noir_bts(&vcpu->nested_vcpu.status,noir_nvt_vmxe);
 					}
 					else
@@ -672,18 +723,18 @@ void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,noir_vt
 						// Disable VMX.
 						if(noir_bt(&vcpu->nested_vcpu.status,noir_nvt_vmxon))
 						{
-							ulong_ptr cr4_rs;
-							noir_vt_vmread(cr4_read_shadow,&cr4_rs);
-							cr4_rs&=~ia32_cr4_vmxe_bit;
-							noir_vt_vmwrite(cr4_read_shadow,cr4_rs);
-							noir_btr(&vcpu->nested_vcpu.status,noir_nvt_vmxe);
-						}
-						else
-						{
 							advance_ip=false;
 							noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
 						}
+						else
+						{
+							cr4_rs&=~ia32_cr4_vmxe_bit;
+							noir_btr(&vcpu->nested_vcpu.status,noir_nvt_vmxe);
+						}
 					}
+					// Finally, write to Guest CR4 field and CR4 Read-Shadow field.
+					noir_vt_vmwrite(guest_cr4,gcr4);
+					noir_vt_vmwrite(cr4_read_shadow,cr4_rs);
 					break;
 				}
 				default:
@@ -778,13 +829,17 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 #if defined(_amd64)
 			case ia32_lstar:
 			{
-				val.value=orig_system_call;
+				ia32_vmx_msr_auto_p entry_load=(ia32_vmx_msr_auto_p)((ulong_ptr)vcpu->msr_auto.virt+0);
+				if(entry_load->data==(u64)noir_system_call)
+					val.value=orig_system_call;
+				else
+					val.value=entry_load->data;
 				break;
 			}
 #else
 			case ia32_sysenter_eip:
 			{
-				val.value=orig_system_call;
+				val.value=vcpu->virtual_msr.sysenter_eip;
 				break;
 			}
 #endif
@@ -838,7 +893,13 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 #if defined(_amd64)
 			case ia32_lstar:
 			{
+				ia32_vmx_msr_auto_p entry_load=(ia32_vmx_msr_auto_p)((ulong_ptr)vcpu->msr_auto.virt+0);
+				nv_dprintf("Write to IA32-LSTAR MSR is intercepted!\n");
 				vcpu->virtual_msr.lstar=val.value;
+				if(val.value==orig_system_call)
+					entry_load->data=(u64)noir_system_call;
+				else
+					entry_load->data=val.value;
 				break;
 			}
 #else
@@ -1074,7 +1135,9 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noi
 // You may want to debug your code if this handler is invoked.
 void static fastcall nvc_vt_ept_misconfig_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	nv_panicf("EPT Misconfiguration Occured!\n");
+	u64 gpa;
+	noir_vt_vmread64(guest_physical_address,&gpa);
+	nv_panicf("EPT Misconfiguration Occured! GPA=0x%llX\n",gpa);
 	noir_int3();
 }
 
