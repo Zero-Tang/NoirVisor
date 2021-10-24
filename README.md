@@ -130,6 +130,11 @@ Project NoirVisor has six future development plans: <br>
 
 For more information, check out the [NoirVisor 2020+](https://github.com/Zero-Tang/NoirVisor/projects/2) Project.
 
+# Publications
+Here lists some informal publications (blogs) regarding hypervisor development:
+
+- Extending the Tradition Hypervisor's Approach of System Call Hooking in the Post-2018 Windows Operating Systems: https://tangptr.com/?p=149
+
 # Completed Features
 
 - Minimal Microsoft `Hv#1` Hypervisor Functionalities.

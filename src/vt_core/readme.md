@@ -39,7 +39,7 @@ bool match=pfec_cmp==pfec_match;
 if(match ^ !intercept)vmexit(exception,ia32_page_fault);
 ```
 For example, if `pfec_mask` and `pfec_match` are both 0 and page-fault interception is set, all page-fault exceptions will be intercepted because `pfec_cmp` will always be 0 so that `pfec_match` would be matched. Because `match` is `true` and `!intercept` is `false`, the `xor` operation will make the statement within the if condition being `true`. The exception will take place. <br>
-Therefore, we can set `pfec_match` to be "instruction-fetch only", and set `pfec_mask` to be masking both "user-mode access" and "instruction-fetch" so that user-mode instruction-fetch will be filtered out.
+Therefore, we can set `pfec_match` to be "instruction-fetch only", and set `pfec_mask` to be masking both "user-mode access" and "instruction-fetch" so that only kernel-mode instruction fetch faults will be intercepted.
 
 ## The New PatchGuard Mechanism
 Recently, there is a new PatchGuard Mechanism which detects LSTAR MSR-Hook. This mechanism would write a temporary address to the LSTAR MSR then execute `syscall` instruction to verify the result. This is a hypervisor-specific technique to detect hooks in that writing a temporary address to LSTAR could unhook LSTAR permanently. In order to mitigate this mechanism, we should intercept writes to LSTAR MSR. If the value to be written equal to the original `syscall` handler, set the MSR to be the proxy handler. Otherwise, set the MSR as is. On interception upon reads from LSTAR MSR, return the original `syscall` handler if current LSTAR is set to the proxy handler, and otherwise return the value previously written to LSTAR MSR.
@@ -49,8 +49,7 @@ SMAP, acronym that stands for Supervisor-Mode Access Prevention, is an (Should i
 The problem is that, if this feature is enabled, the proxy `syscall` handler will be forbidden from reading parameters in user-mode memory (e.g: user stack). 
 
 ### Solution of the SMAP Problem
-The solution of the SMAP problem is actually simple: disable the `SMAP` feature in the beginning of the proxy `syscall` handler. <br>
-Duly note that Supervisor-Mode Access Prevention is a security feature, so expect the PatchGuard would protect this bit. As a matter of fact, PatchGuard watches this bit indeed. The solution is simple: restore the bit as long as the proxy handler is done. By virtue of the setting of `SFMASK` MSR, the `RFLAGS.IF` bit will be automatically reset upon `syscall` instruction, so the proxy `syscall` handler will not interrupted by PatchGuard. However, I am not sure if PatchGuard can send an inter-processor NMI to interrupt and do checks. <br>
+The solution of the SMAP problem is actually simple: execute the `stac` instruction to set `RFlags.AC` bit so that supervisor-mode code can access user-mode memory freely. <br>
 
 # Stealth Inline Hook Algorithm
 This feature utilizes the Intel EPT feature. <br>

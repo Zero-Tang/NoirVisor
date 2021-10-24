@@ -35,7 +35,8 @@ The detail of the problem and its solution is stated in the [readme document of 
 # Stealth Inline Hook Algorithm
 This feature utilizes the Nested Paging feature of processor. <br>
 The difference between Intel and AMD is that AMD lacks the "execution-only page" feature. In this regard, algorithm that applied on Intel EPT cannot be applied to AMD NPT. <br>
-The idea originally comes from tandasat's repository SimpleSvmHook (https://github.com/tandasat/SimpleSvmHook), but with my additional optimizations regarding it.
+The idea originally comes from tandasat's repository SimpleSvmHook (https://github.com/tandasat/SimpleSvmHook), but with my additional optimizations regarding it. <br>
+Note: In that AMD-V lacks the "execution-only" page feature, it is unrecommended to use stealth inline hook feature on AMD machines.
 
 ## Algorithm Detail
 Setup two page tables. They are called Primary Page Table and Secondary Page Table. <br>
@@ -45,12 +46,16 @@ Load Primary Page Table into VMCB in the first time. On execution, VM-Exit due t
 
 ## Algorithm Issue
 When instruction pointer is inside the hooked page, code may recognize the patch since the read access is granted. This is special case. <br>
-There is performance problem as well. There will be no performance cost for reading the hooked page. But performance penalty on executing the hooked page may be significant due to:
+There is performance problem as well. There will be no performance cost for reading the hooked page. But performance penalty on executing the hooked page may be significant in that:
 
 1. When hooked function is called, #NPF occurs and swapped to the Secondary.
 2. The jump instruction is executed, #NPF occurs and swapped to the Primary.
 3. The proxy function may detour to function remainder, #NPF occurs and swapped to the Secondary.
 4. Hooked function execution completed, #NPF occurs and swapped to the Primary.
+5. The hooked function may invoke other functions in other pages.
+
+## Potential Optimization
+Since the hooked function may invoke other functions in other pages, we may grant execution permission to these pages in the Secondary Page Table. For example, `NtSetInformationFile` routine in Windows would call functions like `ObReferenceObjectByHandle`, `NtfsFsdSetInformation`, etc., and the proxy function, so unless these pages include code which detects hooks, it is a fairly good idea to permit executions for these pages on the Secondary Page Table. <br>
 
 In summary, there will be at least four #NPF occurring in a single execution of hooked function. In comparison, Intel EPT offers flexibility that intensive access can still have least performance penalty.
 

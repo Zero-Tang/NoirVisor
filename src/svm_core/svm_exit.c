@@ -140,7 +140,7 @@ void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noi
 		u64 gcr3k=noir_get_current_process_cr3();
 		noir_svm_vmwrite64(vmcb,guest_cr3,gcr3k);
 		noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_control_reg);
-		// Flush the TLB.
+		// Flush the TLB because we switched CR3. It is unnecessary to flush global TLB.
 		noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_non_global);
 	}
 	else
@@ -1241,7 +1241,7 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 		// We switched NPT. Thus we should clean VMCB cache state.
 		noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_npt);
 		// It is necessary to flush TLB.
-		noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_entire);
+		noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
 	}
 #endif
 	if(advance)
