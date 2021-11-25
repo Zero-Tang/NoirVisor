@@ -19,6 +19,9 @@
 #define noir_ept_mapped_for_variable_mtrr	1
 #define noir_ept_mapped_for_fixed_mtrr		2
 
+// Specify the top address of mapped GPA.
+#define noir_ept_top_address				0x7FFFFFFFFF
+
 typedef union _ia32_addr_translator
 {
 	struct
@@ -173,6 +176,26 @@ typedef union _ia32_ept_pte
 	};
 	u64 value;
 }ia32_ept_pte,*ia32_ept_pte_p;
+
+// Notice that EPT PDPTE Descriptor is describing
+// 512 1GiB-Pages in a 512GiB Page.
+typedef struct _noir_npt_pdpte_descriptor
+{
+	struct _noir_ept_pdpte_descriptor* next;
+	ia32_ept_pdpte_p virt;
+	u64 phys;
+	u64 gpa_start;
+}noir_npt_pdpte_descriptor,*noir_npt_pdpte_descriptor_p;
+
+// Notice that EPT PDE Descriptor is describing
+// 512 2MiB-Pages in a 1GiB Page.
+typedef struct _noir_npt_pde_descriptor
+{
+	struct _noir_ept_pde_descriptor* next;
+	ia32_ept_pde_p virt;
+	u64 phys;
+	u64 gpa_start;
+}noir_npt_pde_descriptor,*noir_npt_pde_descriptor_p;
 
 // Notice that EPT PTE Descriptor is describing
 // 512 4KB-Pages in a 2MB Page.

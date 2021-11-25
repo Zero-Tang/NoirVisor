@@ -295,6 +295,10 @@ Certain interceptions must be set to ensure correct functionality of NoirVisor C
 In that Guests of CVM are not supposed to handle external interrupts from real hardwares, any external interrupts must be intercepted. We may set interceptions upon `physical INTR`, `NMI` and `SMI`. We do not have to intercept `virtual INTR` because they are subject to be injected by hypervisor. Interceptions upon `virtual INTR` may induce dead loop. <br>
 Upon interception, perform a world switch. Specify the reason of interception to be the scheduler's exit. For such reason of exit, because `GIF` becomes set when NoirVisor executes `vmrun` instruction in order to switch to host, interrupts will be handled by the Host.
 
+### Interrupt Window Interception
+Interrupt Window means a specific opportunity that a vCPU can take interrupts. This feature is intended for User Hypervisors to forge an interrupt queue so that event injections are not lost if the Guest had not taken the previous interrupt yet. \
+Unlike Intel VT-x, AMD-V does not provide a dedicated control to intercept Interrupt Windows. However, AMD-V can intercept the `iret` instruction. Although such interception is taken before `iret` completes, where `RFlags.IF` would usually be reset, AMD-V's feature `Virtual IRQ` can delay the injection until the `RFlags.IF` bit is set. Therefore, interception of `iret` instruction is exactly interception of Interrupt Window in terms of AMD-V.
+
 ### CPUID Interception
 The `cpuid` instruction must be intercepted by NoirVisor, even though host may choose not to intercept it. If the host chooses not to intercept `cpuid` instruction, NoirVisor would handle the `cpuid` instruction itself. Otherwise, switch the world to the host so that host will be handling Guest's `cpuid` instruction.
 
@@ -302,7 +306,7 @@ The `cpuid` instruction must be intercepted by NoirVisor, even though host may c
 I/O Interceptions are mandatory in that I/O operations in Guest are not supposed to go to real hardwares. Instead, they should go to virtual appliances, which Host is supposed to emulate. Switch the world to the host so that host will be handling Guest's I/O.
 
 ### MSR Interception
-Like the `cpuid` instruction, Host can choose whether to intercept this instruction or not. If the host does not intercept MSR-Related instructions, NoirVisor would handle them and masking certain operations (e.g: accessing the `EFER` MSR). Otherwise, NoirVisor would switch to the Host to handle the instructions.
+Similar to the `cpuid` instruction, Host can choose whether to intercept this instruction or not. If the host does not intercept MSR-Related instructions, NoirVisor would handle them and masking certain operations (e.g: accessing the `EFER` MSR). Otherwise, NoirVisor would switch to the Host to handle the instructions.
 
 ### Shutdown Interception
 Usually, shutdown is induced by triple-fault. NoirVisor won't handle this interception itself. Switch to the host so the interception is transfered to the Host.
@@ -311,7 +315,7 @@ Usually, shutdown is induced by triple-fault. NoirVisor won't handle this interc
 Currently, NoirVisor does not support a hypervisor to be nested inside a CVM. Simply inject a `#UD` exception to guest if SVM instructions are intercepted. Do not switch to the host to indicate the guest is attempting to execute SVM instructions.
 
 ### Exception Interception
-Exception interception is optional: it is only intercepted if the host specifies so. The `#SX` is an exception to this rule: it must be intercepted in that this means an `INIT` signal has arrived. Unless the guest sets `R_INIT` bit in `VM_CR` MSR, `#SX` should neither be injected to guest nor be transfered to the host.
+Exception interception is optional: it is only intercepted if the User Hypervisor specifies so. The `#SX` and `#MC` are exceptions to this rule: `#SX` must be intercepted in that this means an `INIT` signal has arrived - unless the guest sets `R_INIT` bit in `VM_CR` MSR, `#SX` should neither be injected to guest nor be transfered to the host - and `#MC` must be intercepted in that this is a physical-hardware-issued exception, which must be taken by host interrupt handler.
 
 ### Nested Page Fault
 Nested Page Fault, usually abbreviated as `#NPF`, indicates that a wrong physical address is accessed. NoirVisor would not handle `#NPF` itself, but transfer the interception to the host. In addition, information like fetched instruction bytes, access information, etc., would be recorded.

@@ -341,7 +341,7 @@ void static fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 // This is VM-Exit of obligation.
 void static fastcall nvc_vt_getsec_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	nv_dprintf("SMX Virtualization is not supported!");
+	nv_dprintf("SMX Virtualization is not supported!\n");
 	noir_vt_advance_rip();
 }
 
@@ -350,6 +350,7 @@ void static fastcall nvc_vt_getsec_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 void static fastcall nvc_vt_invd_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	// In Hyper-V, it invoked wbinvd at invd exit.
+	nv_dprintf("The invd instruction is executed!\n");
 	noir_wbinvd();
 	noir_vt_advance_rip();
 }
@@ -1191,13 +1192,25 @@ void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 // It is important that this function uses fastcall convention.
 void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	u32 exit_reason;
-	noir_vt_vmread(vmexit_reason,&exit_reason);
-	exit_reason&=0xFFFF;
-	if(exit_reason<vmx_maximum_exit_reason)
-		vt_exit_handlers[exit_reason](gpr_state,vcpu);
-	else
-		nvc_vt_default_handler(gpr_state,vcpu);
+	noir_vt_initial_stack_p loader_stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
+	u64 vmcs_phys;
+	noir_vt_vmptrst(&vmcs_phys);
+	// Confirm which vCPU is exiting so that the correct handler is to be invoked...
+	if(likely(vmcs_phys==vcpu->vmcs.phys))
+	{
+		u32 exit_reason;
+		noir_vt_vmread(vmexit_reason,&exit_reason);
+		exit_reason&=0xFFFF;
+		if(exit_reason<vmx_maximum_exit_reason)
+			vt_exit_handlers[exit_reason](gpr_state,vcpu);
+		else
+			nvc_vt_default_handler(gpr_state,vcpu);
+	}
+	else if(vmcs_phys==loader_stack->custom_vcpu->vmcs.phys)
+	{
+		nv_dprintf("Customizable VM is exiting...\n");
+		noir_int3();
+	}
 	// Guest RIP is supposed to be advanced in specific handlers, not here.
 	// Do not execute vmresume here. It will be done as this function returns.
 }

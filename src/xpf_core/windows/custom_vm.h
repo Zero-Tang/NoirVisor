@@ -239,26 +239,19 @@ typedef struct _MEMORY_WORKING_SET_EX_INFORMATION
   NoirVisor chooses the similar data structure to Windows' handle table.
 
   Multi-level table is supported. Each table has a size of a page.
-  Therefore, there are 512 entries for 64-bit, and 1024 entries for 32-bit.
-  In this regard, 9 bits per level for 64-bit, and 10 bits per level for 32 bit.
-  Two levels for table should have covered all Intel VT-x VPIDs since there would
-  be 18 bits for 64-bit and 20 bits for 32-bit, whereas VPID is a 16-bit field.
+  Each handle of a VM is defined as 64-bit for any systems.
+  Therefore, there are 512 entries, 9 bits per level.
 
   To be honest, multi-level table is actually a multi-branching tree.
-  This design supports 4096 levels of tree depth at most, though 7 levels should
-  have covered all possible values of 64-bit handles.
+  This design supports 4096 levels of tree depth at most, though 7 levels
+  should have covered all possible values of 64-bit handles.
 */
 
-#if defined(_WIN64)
 #define HandleTableCapacity		512
 #define HandleTableShiftBits	9
-#else
-#define HandleTableCapacity		1024
-#define HandleTableShiftBits	10
-#endif
 
-typedef ULONG_PTR CVM_HANDLE;
-typedef PULONG_PTR PCVM_HANDLE;
+typedef ULONG64 CVM_HANDLE;
+typedef PULONG64 PCVM_HANDLE;
 
 typedef struct _NOIR_CVM_HANDLE_TABLE
 {
@@ -288,6 +281,8 @@ NOIR_STATUS nvc_release_vcpu(IN PVOID VirtualProcessor);
 NOIR_STATUS nvc_run_vcpu(IN PVOID VirtualProcessor,OUT PVOID ExitContext);
 NOIR_STATUS nvc_view_vcpu_registers(IN PVOID VirtualProcessor,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS nvc_edit_vcpu_registers(IN PVOID VirtualProcessor,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
+NOIR_STATUS nvc_set_event_injection(IN PVOID VirtualProcessor,IN ULONG64 InjectedEvent);
+NOIR_STATUS nvc_set_guest_vcpu_options(IN PVOID VirtualProcessor,IN ULONG32 OptionType,IN ULONG32 Options);
 PVOID nvc_reference_vcpu(IN PVOID VirtualMachine,IN ULONG32 VpIndex);
 HANDLE nvc_get_vm_pid(IN PVOID VirtualMachine);
 

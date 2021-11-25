@@ -657,9 +657,3 @@ void noir_qsort(IN PVOID base,IN ULONG num,IN ULONG width,IN noir_sorting_compar
 {
 	qsort(base,num,width,comparator);
 }
-
-// System Call Hook Function
-BOOLEAN noir_do_syscall_hook(IN OUT PVOID gpr_state)
-{
-	return NoirDoSystemCallHook(gpr_state);
-}

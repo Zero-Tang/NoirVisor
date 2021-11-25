@@ -49,10 +49,11 @@
 
 #if defined(_amd64)
 #define page_base(x)			(x&0xfffffffffffff000)
-#define page_4kb_base(x)		(x&0xffffffffffe00000)
-#define page_2mb_base(x)		(x&0xffffffffc0000000)
-#define page_1gb_base(x)		(x&0xffffff8000000000)
-#define page_512gb_base(x)		(x&0xffff000000000000)
+#define page_4kb_base(x)		(x&0xfffffffffffff000)
+#define page_2mb_base(x)		(x&0xffffffffffe00000)
+#define page_1gb_base(x)		(x&0xffffffffc0000000)
+#define page_512gb_base(x)		(x&0xffffff8000000000)
+#define page_256tb_base(x)		(x&0xffff000000000000)
 #else
 #define page_base(x)			(x&0xfffff000)
 #endif

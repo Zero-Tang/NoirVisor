@@ -33,15 +33,103 @@ void static fastcall nvc_svm_default_cvexit_handler(noir_gpr_state_p gpr_state,n
 // Expected Intercept Code: -1
 void static fastcall nvc_svm_invalid_state_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
+	void* vmcb=cvcpu->vmcb.virt;
+	u64 cr0,cr3,cr4,efer,dr6,dr7;
+	svm_segment_access_rights cs_attrib;
+	u64 csb,dsb,esb,ssb;
+	amd64_event_injection evi;
 	// Invalid State in VMCB is detected by processor.
 	// Deliver to subverted host.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_invalid_state;
 	// We may record additional information to indicate why the state is invalid
 	// in order to help hypervisor developer check their vCPU state settings.
+	cvcpu->header.exit_context.invalid_state.id=noir_cvm_invalid_state_amd_v;
+	cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_unknown_failure;
+	// Preparation: Read all registers subject to consistency checks.
+	cr0=noir_svm_vmread64(vmcb,guest_cr0);
+	cr3=noir_svm_vmread64(vmcb,guest_cr3);
+	cr4=noir_svm_vmread64(vmcb,guest_cr4);
+	efer=noir_svm_vmread64(vmcb,guest_efer);
+	dr6=noir_svm_vmread64(vmcb,guest_dr6);
+	dr7=noir_svm_vmread64(vmcb,guest_dr7);
+	cs_attrib.value=noir_svm_vmread16(vmcb,guest_cs_attrib);
+	csb=noir_svm_vmread64(vmcb,guest_cs_base);
+	dsb=noir_svm_vmread64(vmcb,guest_ds_base);
+	esb=noir_svm_vmread64(vmcb,guest_es_base);
+	ssb=noir_svm_vmread64(vmcb,guest_ss_base);
+	evi.value=noir_svm_vmread64(vmcb,event_injection);
+	// Examination I: Is CR0.CD reset while CR0.NW is set?
+	if(!noir_bt(&cr0,amd64_cr0_cd) && noir_bt(&cr0,amd64_cr0_nw))
+		cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_cr0_cd0_nw1;
+	// Examination II: Are upper 32 bits of CR0 zero?
+	if(cr0>0xFFFFFFFF)
+		cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_cr0_high;
+	// Examination III: Are there MBZ bits set in CR3?
+	if(cr3>>52)
+		cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_cr3_mbz;
+	// Examination IV: Are there MBZ bits set in CR4?
+	if(cr4 & 0xFFFFFFFFFF08F000)
+		cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_cr4_mbz;
+	// Examination V: Are upper 32 bits of DR6 zero?
+	if(dr6>0xFFFFFFFF)
+		cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_dr6_high;
+	// Examination VI: Are upper 32 bits of DR7 zero?
+	if(dr7>0xFFFFFFFF)
+		cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_dr7_high;
+	// Examination VII: Are there MBZ bits set in EFER?
+	if(efer & 0xFFFFFFFFFFF90200)
+		cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_efer_mbz;
+	// Examination VIII:  Are EFER.LME and CR0.PG both set while CR4.PAE is reset?
+	if(noir_bt(&efer,amd64_efer_lme) && noir_bt(&cr0,amd64_cr0_pg) && !noir_bt(&cr4,amd64_cr4_pae))
+		cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_efer_lme1_cr0_pg1_cr4_pae0;
+	// Examination IX: Are EFER.LME and CR0.PG both set while CR0.PE is reset?
+	if(noir_bt(&efer,amd64_efer_lme) && noir_bt(&cr0,amd64_cr0_pg) && !noir_bt(&cr0,amd64_cr0_pe))
+		cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_efer_lme1_cr0_pg1_pe0;
+	// Examination X: Are EFER.LME, CR0.PG, CR4.PAE, CS.L, and CS.D all set?
+	if(noir_bt(&efer,amd64_efer_lme) && noir_bt(&cr0,amd64_cr0_pg) && noir_bt(&cr4,amd64_cr4_pae) && cs_attrib.long_mode && cs_attrib.default_size)
+		cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_efer_lme1_cr0_pg1_cr4_pae1_cs_l1_d1;
+	// Examination XI: Is the event being injected illegal?
+	if(evi.valid)
+	{
+		// Is the vector of the exception is actually not an exception?
+		if(evi.type==amd64_fault_trap_exception && (evi.type>=0x20 || evi.type==amd64_nmi_interrupt))
+			cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_illegal_event_injection;
+		// Is type of event reserved?
+		if(evi.type==1 || evi.type>4)cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_illegal_event_injection;
+	}
+	// Examination XII: Is the segment base canonical?
+	if(csb>0x7fffffffffff && csb<0xffff800000000000)cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_incanonical_segment_base;
+	if(dsb>0x7fffffffffff && dsb<0xffff800000000000)cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_incanonical_segment_base;
+	if(esb>0x7fffffffffff && esb<0xffff800000000000)cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_incanonical_segment_base;
+	if(ssb>0x7fffffffffff && ssb<0xffff800000000000)cvcpu->header.exit_context.invalid_state.reason=noir_svm_failure_incanonical_segment_base;
 }
 
 // Expected Intercept Code: 0x0~0x1F
+void static fastcall nvc_svm_cr4_read_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+{
+	// Access to CR4 register is intercepted.
+	nvc_svm_cr_access_exit_info info;
+	info.value=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info1);
+	// Process the CR4.MCE shadowing.
+	ulong_ptr *gpr_array=(ulong_ptr*)gpr_state;
+	gpr_array[info.gpr]=noir_svm_vmread(cvcpu->vmcb.virt,guest_cr4);
+	if(!cvcpu->shadowed_bits.mce)noir_btr((u32*)&gpr_array[info.gpr],amd64_cr4_mce);
+	noir_svm_advance_rip(cvcpu->vmcb.virt);
+}
+
+void static fastcall nvc_svm_cr4_write_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+{
+	// Access to CR4 register is intercepted.
+	nvc_svm_cr_access_exit_info info;
+	info.value=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info1);
+	// Process the CR4.MCE shadowing.
+	ulong_ptr *gpr_array=(ulong_ptr*)gpr_state;
+	cvcpu->shadowed_bits.mce=noir_bt((u32*)&gpr_array[info.gpr],amd64_cr4_mce);
+	noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr4,gpr_array[info.gpr]|amd64_cr4_mce_bit);
+	noir_svm_advance_rip(cvcpu->vmcb.virt);
+}
+
 void static fastcall nvc_svm_cr_access_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Access to Control Registers is intercepted.
@@ -78,7 +166,7 @@ void static fastcall nvc_svm_dr_access_cvexit_handler(noir_gpr_state_p gpr_state
 	cvcpu->header.exit_context.dr_access.write=noir_bt(&code,4);
 }
 
-// Expected Intercept Code: 0x40~0x5F, except 0x5E.
+// Expected Intercept Code: 0x40~0x5F, except 0x52 and 0x5E.
 void static fastcall nvc_svm_exception_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Exception is intercepted.
@@ -95,8 +183,26 @@ void static fastcall nvc_svm_exception_cvexit_handler(noir_gpr_state_p gpr_state
 	cvcpu->header.exit_context.intercept_code=cv_exception;
 	cvcpu->header.exit_context.exception.vector=(u32)vector;
 	cvcpu->header.exit_context.exception.ev_valid=(u32)int_info.error_valid;
-	cvcpu->header.exit_context.exception.error_code=(u32)int_info.error_code;
-	if(vector==amd64_page_fault)cvcpu->header.exit_context.exception.pf_addr=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info2);
+	cvcpu->header.exit_context.exception.error_code=(u32)err_code;
+	// Page-Fault has more info to save.
+	if(vector==amd64_page_fault)
+	{
+		cvcpu->header.exit_context.exception.pf_addr=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info2);
+		cvcpu->header.exit_context.exception.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
+		noir_movsb(cvcpu->header.exit_context.exception.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
+	}
+}
+
+// Expected Intercept Code: 0x52
+void static fastcall nvc_svm_mc_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+{
+	// Machine-Check is intercepted.
+	// CVM User is not supposed to intercept an #MC exception.
+	// Transfer the #MC exception to the host.
+	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+	// Treat #MC as a scheduler's exit.
+	cvcpu->header.exit_context.intercept_code=cv_scheduler_exit;
+	// Control-flow could come back if this #MC is correctable.
 }
 
 // Expected Intercept Code: 0x5E
@@ -241,6 +347,15 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	// DO NOT advance the rip unless cpuid is handled by NoirVisor.
 }
 
+// Expected Intercept Code: 0x74
+void static fastcall nvc_svm_iret_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+{
+	// The iret instruction is an indication of interrupt window.
+	// Switch to the subverted host in order to handle interrupt window.
+	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+	cvcpu->header.exit_context.intercept_code=cv_interrupt_window;
+}
+
 // Expected Intercept Code: 0x78
 void static fastcall nvc_svm_hlt_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
@@ -287,11 +402,64 @@ void static fastcall nvc_svm_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_s
 }
 
 // Expected Intercept Code: 0x7C
+bool static fastcall nvc_svm_rdmsr_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_custom_vcpu_p cvcpu)
+{
+	u32 index=(u32)gpr_state->rcx;
+	large_integer val;
+	bool advance=true;
+	switch(index)
+	{
+		case amd64_efer:
+		{
+			// Perform SVME shadowing...
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_efer);
+			if(!cvcpu->shadowed_bits.svme)noir_btr(&val.low,amd64_efer_svme);
+			break;
+		}
+		default:
+		{
+			advance=false;
+			break;
+		}
+	}
+	if(advance)
+	{
+		*(u32*)&gpr_state->rax=val.low;
+		*(u32*)&gpr_state->rdx=val.high;
+	}
+	return advance;
+}
+
+bool static fastcall nvc_svm_wrmsr_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_custom_vcpu_p cvcpu)
+{
+	u32 index=(u32)gpr_state->rcx;
+	large_integer val;
+	bool advance=true;
+	val.low=(u32)gpr_state->rax;
+	val.high=(u32)gpr_state->rdx;
+	switch(index)
+	{
+		case amd64_efer:
+		{
+			// Perform SVME shadowing...
+			cvcpu->shadowed_bits.svme=noir_bt(&val.low,amd64_efer_svme);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_efer,val.value|amd64_efer_svme_bit);
+			break;
+		}
+		default:
+		{
+			advance=false;
+			break;
+		}
+	}
+	return advance;
+}
+
 void static fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Determine whether MSR-Interception is subject to be delivered to subverted host.
 	bool op_write=noir_svm_vmread8(cvcpu->vmcb.virt,exit_info1);
-	if((!op_write && cvcpu->header.vcpu_options.intercept_rdmsr) || (op_write && cvcpu->header.vcpu_options.intercept_wrmsr))
+	if(cvcpu->header.vcpu_options.intercept_msr)
 	{
 		// Switch to subverted host in order to handle the MSR instruction.
 		nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
@@ -303,7 +471,25 @@ void static fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 	else
 	{
 		// NoirVisor will be handling CVM's MSR Interception.
-		noir_svm_advance_rip(cvcpu->vmcb.virt);
+		bool advance=op_write?nvc_svm_wrmsr_cvexit_handler(gpr_state,cvcpu):nvc_svm_rdmsr_cvexit_handler(gpr_state,cvcpu);
+		if(advance)
+			noir_svm_advance_rip(cvcpu);
+		else
+		{
+			// If rip is not to be advance, this means #GP exception is subject to be injected.
+			if(!cvcpu->header.vcpu_options.intercept_exceptions)
+				noir_svm_inject_event(cvcpu->vmcb.virt,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
+			else
+			{
+				// If user hypervisor specifies interception of exceptions, pass to the user hypervisor.
+				nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+				cvcpu->header.exit_context.intercept_code=cv_exception;
+				cvcpu->header.exit_context.exception.vector=amd64_general_protection;
+				cvcpu->header.exit_context.exception.ev_valid=true;
+				cvcpu->header.exit_context.exception.reserved=0;
+				cvcpu->header.exit_context.exception.error_code=0;
+			}
+		}
 	}
 }
 

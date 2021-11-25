@@ -80,9 +80,60 @@ typedef struct _noir_vt_vcpu
 	u8 enabled_feature;
 }noir_vt_vcpu,*noir_vt_vcpu_p;
 
+struct _noir_vt_custom_vm;
+struct _noir_ept_pdpte_descriptor;
+struct _noir_ept_pde_descriptor;
+struct _noir_ept_pte_descriptor;
+union _ia32_ept_pml4e;
+
+typedef struct _noir_vt_custom_ept_manager
+{
+	struct
+	{
+		union _ia32_ept_pml4e *virt;	// There are only 512 possible PML4Es in principle.
+		u64 phys;
+	}ncr3;
+	struct
+	{
+		struct _noir_ept_pdpte_descriptor *head;
+		struct _noir_ept_pdpte_descriptor *tail;
+	}pdpte;
+	struct
+	{
+		struct _noir_ept_pde_descriptor *head;
+		struct _noir_ept_pde_descriptor *tail;
+	}pde;
+	struct
+	{
+		struct _noir_ept_pte_descriptor *head;
+		struct _noir_ept_pte_descriptor *tail;
+	}pte;
+}noir_svm_custom_npt_manager,*noir_svm_custom_npt_manager_p;
+
+// Virtual Processor defined for Customizable VM.
+typedef struct _noir_vt_custom_vcpu
+{
+	noir_cvm_virtual_cpu header;
+	struct _noir_vt_custom_vm *vm;
+	memory_descriptor vmcs;
+	memory_descriptor msr_auto;
+	u64 lasted_tsc;
+	u32 proc_id;
+}noir_vt_custom_vcpu,*noir_vt_custom_vcpu_p;
+
+typedef struct _noir_vt_custom_vm
+{
+	noir_cvm_virtual_machine header;
+	noir_vt_custom_vcpu_p* vcpu;
+	u32 vcpu_count;
+	u16 vpid;
+	struct _noir_vt_custom_ept_manager nptm;
+}noir_vt_custom_vm,*noir_vt_custom_vm_p;
+
 typedef struct _noir_vt_initial_stack
 {
 	noir_vt_vcpu_p vcpu;
+	noir_vt_custom_vcpu_p custom_vcpu;
 	u32 proc_id;
 }noir_vt_initial_stack,*noir_vt_initial_stack_p;
 

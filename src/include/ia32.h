@@ -97,6 +97,8 @@
 #define ia32_sysenter_esp				0x175
 #define ia32_sysenter_eip				0x176
 #define ia32_debug_control				0x1D9
+#define ia32_smrr_phys_base				0x1F2
+#define ia32_smrr_phys_mask				0x1F3
 #define ia32_mtrr_phys_base0			0x200
 #define ia32_mtrr_phys_mask0			0x201
 #define ia32_mtrr_phys_base1			0x202
@@ -113,6 +115,10 @@
 #define ia32_mtrr_phys_mask6			0x20D
 #define ia32_mtrr_phys_base7			0x20E
 #define ia32_mtrr_phys_mask7			0x20F
+#define ia32_mtrr_phys_base8			0x210
+#define ia32_mtrr_phys_mask8			0x211
+#define ia32_mtrr_phys_base9			0x212
+#define ia32_mtrr_phys_mask9			0x213
 #define ia32_mtrr_fix64k_00000			0x250
 #define ia32_mtrr_fix16k_80000			0x258
 #define ia32_mtrr_fix16k_a0000			0x259

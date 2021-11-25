@@ -22,6 +22,7 @@
 #define noir_svm_init_custom_vmcb			0x10000
 #define noir_svm_run_custom_vcpu			0x10001
 #define noir_svm_dump_vcpu_vmcb				0x10002
+#define noir_svm_set_vcpu_options			0x10003
 
 // Definition of Enabled features
 #define noir_svm_vmcb_caching		1		// Bit 0
@@ -34,6 +35,23 @@
 #define noir_svm_kva_shadow_present	128		// Bit 7
 
 struct _noir_npt_manager;
+
+typedef enum _noir_svm_consistency_check_failure_id
+{
+	noir_svm_failure_unknown_failure,
+	noir_svm_failure_cr0_cd0_nw1,
+	noir_svm_failure_cr0_high,
+	noir_svm_failure_cr3_mbz,
+	noir_svm_failure_cr4_mbz,
+	noir_svm_failure_dr6_high,
+	noir_svm_failure_dr7_high,
+	noir_svm_failure_efer_mbz,
+	noir_svm_failure_efer_lme1_cr0_pg1_cr4_pae0,
+	noir_svm_failure_efer_lme1_cr0_pg1_pe0,
+	noir_svm_failure_efer_lme1_cr0_pg1_cr4_pae1_cs_l1_d1,
+	noir_svm_failure_illegal_event_injection,
+	noir_svm_failure_incanonical_segment_base,
+}noir_svm_consistency_check_failure_id,*noir_svm_consistency_check_failure_id_p;
 
 // Optimize Memory Usage of MSRPM and IOPM.
 typedef struct _noir_svm_hvm
@@ -125,11 +143,23 @@ typedef struct _noir_svm_custom_npt_manager
 	}pte;
 }noir_svm_custom_npt_manager,*noir_svm_custom_npt_manager_p;
 
+// Some bits are host-owned. Therefore, Guest's bit must be saved accordingly.
+typedef union _noir_svm_shadowed_bits
+{
+	struct
+	{
+		u64 mce:1;
+		u64 svme:1;
+		u64 reserved:62;
+	};
+	u64 value;
+}noir_svm_shadowed_bits,*noir_svm_shadowed_bits_p;
+
 // Virtual Processor defined for Customizable VM.
-// Use Linked List so that vCPU can be dynamically added in CVM Runtime.
 typedef struct _noir_svm_custom_vcpu
 {
 	noir_cvm_virtual_cpu header;
+	noir_svm_shadowed_bits shadowed_bits;
 	struct _noir_svm_custom_vm *vm;
 	memory_descriptor vmcb;
 	memory_descriptor apic_backing;
@@ -145,6 +175,7 @@ typedef struct _noir_svm_custom_vm
 	u32 asid;
 	memory_descriptor iopm;
 	memory_descriptor msrpm;
+	memory_descriptor msrpm_full;
 	memory_descriptor avic_logical;
 	memory_descriptor avic_physical;
 	struct _noir_svm_custom_npt_manager nptm;
@@ -176,6 +207,7 @@ bool nvc_svm_build_exit_handler();
 void nvc_svm_teardown_exit_handler();
 void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vmcb);
 void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu);
+void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 u8 nvc_npt_get_host_pat_index(u8 type);

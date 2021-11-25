@@ -54,7 +54,7 @@ void static NoirX64PrintProcessorState(IN EFI_SYSTEM_CONTEXT_X64* Context)
 	// Determine the column size to optimize for number of rows.
 	UINTN MaxCol,MaxRow;
 	StdOut->QueryMode(StdOut,StdOut->Mode->Mode,&MaxCol,&MaxRow);
-	if(MaxCol>=70 && MaxCol<95)			// Column size allows at lease 3 GPRs to be displayed. 13 rows will be printed. (e.g: 80x25)
+	if(MaxCol>=70 && MaxCol<95)			// Column size allows at least 3 GPRs to be displayed. 13 rows will be printed. (e.g: 80x25)
 	{
 		Print(L"rax=0x%016X rcx=0x%016X rdx=0x%016X\n",Context->Rax,Context->Rcx,Context->Rdx);
 		Print(L"rbx=0x%016X rsp=0x%016X rbp=0x%016X\n",Context->Rbx,Context->Rsp,Context->Rbp);
@@ -127,6 +127,7 @@ void static NoirX64PrintProcessorState(IN EFI_SYSTEM_CONTEXT_X64* Context)
 
 void static NoirX64ExceptionCallback(IN EFI_EXCEPTION_TYPE ExceptionType,IN OUT EFI_SYSTEM_CONTEXT SystemContext)
 {
+	// In interrupt context, do not use boot-service protocol functions.
 	NoirX64PrintProcessorState(SystemContext.SystemContextX64);
 }
 #endif
@@ -140,7 +141,7 @@ EFI_STATUS NoirInitializeDebugAgent()
 		st=DebugSupport->GetMaximumProcessorIndex(DebugSupport,&CpuCount);
 		if(st==EFI_SUCCESS)
 		{
-			Print(L"Number of Processors: %u\n",++CpuCount);
+			Print(L"[Debug Agent] Number of Processors: %u\n",++CpuCount);
 			for(UINTN i=0;i<CpuCount;i++)
 			{
 #if defined(MDE_CPU_X64)

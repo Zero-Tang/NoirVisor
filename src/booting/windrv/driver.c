@@ -230,6 +230,25 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		{
 			break;
 		}
+		case IOCTL_CvmInjectEvent:
+		{
+			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
+			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
+			ULONG64 InjectedEvent=*(PULONG64)((ULONG_PTR)InputBuffer+16);
+			*(PULONG32)OutputBuffer=NoirSetEventInjection(VmHandle,VpIndex,InjectedEvent);
+			st=STATUS_SUCCESS;
+			break;
+		}
+		case IOCTL_CvmSetVcpuOptions:
+		{
+			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
+			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
+			ULONG32 OptionType=*(PULONG32)((ULONG_PTR)InputBuffer+16);
+			ULONG32 OptionData=*(PULONG32)((ULONG_PTR)InputBuffer+20);
+			*(PULONG32)OutputBuffer=NoirSetVirtualProcessorOptions(VmHandle,VpIndex,OptionType,OptionData);
+			st=STATUS_SUCCESS;
+			break;
+		}
 		default:
 		{
 			break;

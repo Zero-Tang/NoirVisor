@@ -79,6 +79,7 @@ typedef enum _svm_vmcb_offset
 	avic_apic_bar=0x98,
 	ghcb_physical_address=0xA0,
 	event_injection=0xA8,
+	event_error_code=0xAC,
 	npt_cr3=0xB0,
 	lbr_virtualization_control=0xB8,
 	vmcb_clean_bits=0xC0,

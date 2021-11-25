@@ -90,7 +90,6 @@ BYTE NoirGetInstructionLength16(PBYTE Code,SIZE_T CodeLength);
 BYTE NoirGetInstructionLength32(PBYTE Code,SIZE_T CodeLength);
 BYTE NoirGetInstructionLength64(PBYTE Code,SIZE_T CodeLength);
 NTSTATUS NoirGetPageInformation(IN PVOID PageAddress,OUT PMEMORY_WORKING_SET_EX_BLOCK Information);
-BOOLEAN NoirDoSystemCallHook(IN OUT PVOID GprState);
 
 PNOIR_ASYNC_DEBUG_LOG_MONITOR NoirAsyncDebugLogger=NULL;
 

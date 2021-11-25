@@ -123,6 +123,57 @@ bool noir_is_under_hvm()
 }
 
 #if !defined(_hv_type1)
+noir_status nvc_set_guest_vcpu_options(noir_cvm_virtual_cpu_p vcpu,noir_cvm_vcpu_option_type option_type,u32 data)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		bool valid=true;
+		switch(option_type)
+		{
+			case noir_cvm_guest_vcpu_options:
+			{
+				vcpu->vcpu_options.value=data;
+				break;
+			}
+			case noir_cvm_exception_bitmap:
+			{
+				vcpu->exception_bitmap=data;
+				break;
+			}
+			case noir_cvm_vcpu_priority:
+			{
+				vcpu->scheduling_priority=data;
+				break;
+			}
+			default:
+			{
+				valid=false;
+				break;
+			}
+		}
+		if(valid)
+		{
+			if(hvm_p->selected_core==use_svm_core)
+			{
+				st=noir_success;
+				noir_svm_vmmcall(noir_cvm_set_vcpu_options,(ulong_ptr)vcpu);
+			}
+			else if(hvm_p->selected_core==use_vt_core)
+				st=noir_not_implemented;
+			else
+				st=noir_unknown_processor;
+		}
+	}
+	return st;
+}
+
+void nvc_synchronize_vcpu_state(noir_cvm_virtual_cpu_p vcpu)
+{
+	if(hvm_p->selected_core==use_svm_core)
+		noir_svm_vmmcall(noir_cvm_dump_vcpu_vmcb,(ulong_ptr)vcpu);
+}
+
 noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_register_type register_type,void* buffer,u32 buffer_size)
 {
 	noir_status st=noir_buffer_too_small;
@@ -248,6 +299,18 @@ noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 				vcpu->xcrs.xcr0=*(u64*)buffer;
 				break;
 			}
+			case noir_cvm_efer_register:
+			{
+				vcpu->msrs.efer=*(u64*)buffer;
+				vcpu->state_cache.ef_valid=0;
+				break;
+			}
+			case noir_cvm_pat_register:
+			{
+				vcpu->msrs.pat=*(u64*)buffer;
+				vcpu->state_cache.pa_valid=0;
+				break;
+			}
 			default:
 			{
 				st=noir_invalid_parameter;
@@ -256,12 +319,6 @@ noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 		}
 	}
 	return st;
-}
-
-void nvc_synchronize_vcpu_state(noir_cvm_virtual_cpu_p vcpu)
-{
-	if(hvm_p->selected_core==use_svm_core)
-		noir_svm_vmmcall(noir_cvm_dump_vcpu_vmcb,(ulong_ptr)vcpu);
 }
 
 noir_status nvc_view_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_register_type register_type,void* buffer,u32 buffer_size)
@@ -397,6 +454,16 @@ noir_status nvc_view_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 				*(u64*)buffer=vcpu->xcrs.xcr0;
 				break;
 			}
+			case noir_cvm_efer_register:	
+			{
+				*(u64*)buffer=vcpu->msrs.efer;
+				break;
+			}
+			case noir_cvm_pat_register:
+			{
+				*(u64*)buffer=vcpu->msrs.pat;
+				break;
+			}
 			default:
 			{
 				st=noir_invalid_parameter;
@@ -407,17 +474,55 @@ noir_status nvc_view_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 	return st;
 }
 
+noir_status nvc_set_event_injection(noir_cvm_virtual_cpu_p vcpu,noir_cvm_event_injection injected_event)
+{
+	vcpu->injected_event=injected_event;
+	return noir_success;
+}
+
+bool nvc_validate_vcpu_state(noir_cvm_virtual_cpu_p vcpu)
+{
+	// Check Extended CRs.
+	// Bit 0 of XCR0 (FPU Enabled) must be set.
+	if(!noir_bt(&vcpu->xcrs.xcr0,0))
+	{
+		vcpu->exit_context.intercept_code=cv_invalid_state;
+		return false;
+	}
+	// Bit 1 of XCR0 (SSE Enabled) cannot be reset if Bit 2 of XCR0 (AVX Enabled) is set.
+	if(!noir_bt(&vcpu->xcrs.xcr0,1) && noir_bt(&vcpu->xcrs.xcr0,2))
+	{
+		vcpu->exit_context.intercept_code=cv_invalid_state;
+		return false;
+	}
+	// Reserved bits of XCR0 must be reset.
+	if((vcpu->xcrs.xcr0&hvm_p->xfeat.support_mask.value)!=vcpu->xcrs.xcr0)
+	{
+		vcpu->exit_context.intercept_code=cv_invalid_state;
+		return false;
+	}
+	return true;
+}
+
 noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 {
 	noir_status st=noir_hypervision_absent;
 	if(hvm_p)
 	{
-		if(hvm_p->selected_core==use_svm_core)
-			st=nvc_svmc_run_vcpu(vcpu,exit_context);
-		else if(hvm_p->selected_core==use_vt_core)
-			st=noir_not_implemented;
-		else
-			st=noir_unknown_processor;
+		// Some processor state is not checked and loaded by Intel VT-x/AMD-V.
+		// Check their consistency manually.
+		bool valid_state=nvc_validate_vcpu_state(vcpu);
+		st=noir_success;
+		if(valid_state)
+		{
+			if(hvm_p->selected_core==use_svm_core)
+				st=nvc_svmc_run_vcpu(vcpu);
+			else if(hvm_p->selected_core==use_vt_core)
+				st=noir_not_implemented;
+			else
+				st=noir_unknown_processor;
+		}
+		if(st==noir_success)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
 	}
 	return st;
 }

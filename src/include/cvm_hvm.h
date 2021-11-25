@@ -15,6 +15,15 @@
 #include <nvdef.h>
 #include <nvbdk.h>
 
+#define noir_cvm_invalid_state_intel_vmx	0
+#define noir_cvm_invalid_state_amd_v		1
+#define noir_cvm_invalid_state_reserved		2
+#define noir_cvm_invalid_state_general		3
+
+// Defining vCPU priority on scheduler.
+#define noir_cvm_vcpu_priority_user				0
+#define noir_cvm_vcpu_priority_kernel			8
+
 // CPUID Leaves for NoirVisor Customizable VM.
 #define ncvm_cpuid_leaf_range_and_vendor_string			0x40000000
 #define ncvm_cpuid_vendor_neutral_interface_id			0x40000001
@@ -36,6 +45,8 @@ typedef enum _noir_cvm_intercept_code
 	cv_dr_access=10,
 	cv_hypercall=11,
 	cv_exception=12,
+	cv_cancellation=13,
+	cv_interrupt_window=14,
 	// The rest are scheduler-relevant.
 	cv_scheduler_exit=0x80000000,
 	cv_scheduler_pause=0x80000001
@@ -60,8 +71,27 @@ typedef enum _noir_cvm_register_type
 	noir_cvm_fxstate,
 	noir_cvm_xsave_area,
 	noir_cvm_xcr0_register,
+	noir_cvm_efer_register,
+	noir_cvm_pat_register,
 	noir_cvm_maximum_register_type
 }noir_cvm_register_type,*noir_cvm_register_type_p;
+
+typedef enum _noir_cvm_vcpu_option_type
+{
+	noir_cvm_guest_vcpu_options,
+	noir_cvm_exception_bitmap,
+	noir_cvm_vcpu_priority
+}noir_cvm_vcpu_option_type,*noir_cvm_vcpu_option_type_p;
+
+typedef union _noir_cvm_invalid_state_context
+{
+	struct
+	{
+		u32 reason:30;
+		u32 id:2;
+	};
+	u32 value;
+}noir_cvm_invalid_state_context,*noir_cvm_invalid_state_context_p;
 
 typedef struct _noir_cvm_cr_access_context
 {
@@ -95,7 +125,10 @@ typedef struct _noir_cvm_exception_context
 		u32 reserved:26;
 	};
 	u32 error_code;
+	// Only available for #PF exception.
 	u64 pf_addr;
+	u8 fetched_bytes;
+	u8 instruction_bytes[15];
 }noir_cvm_exception_context,*noir_cvm_exception_context_p;
 
 typedef struct _noir_cvm_io_context
@@ -153,6 +186,7 @@ typedef struct _noir_cvm_exit_context
 	noir_cvm_intercept_code intercept_code;
 	union
 	{
+		noir_cvm_invalid_state_context invalid_state;
 		noir_cvm_cr_access_context cr_access;
 		noir_cvm_dr_access_context dr_access;
 		noir_cvm_exception_context exception;
@@ -233,17 +267,14 @@ typedef union _noir_cvm_vcpu_options
 	struct
 	{
 		u32 intercept_cpuid:1;
-		u32 intercept_rdmsr:1;
-		u32 intercept_wrmsr:1;
+		u32 intercept_msr:1;
+		u32 intercept_interrupt_window:1;
 		u32 intercept_exceptions:1;
-		u32 intercept_cr0:1;
-		u32 intercept_cr2:1;
 		u32 intercept_cr3:1;
-		u32 intercept_cr4:1;
 		u32 intercept_drx:1;
 		u32 intercept_pause:1;
 		u32 npiep:1;
-		u32 reserved:20;
+		u32 reserved:23;
 		u32 cancel_execution:1;
 	};
 	u32 value;
@@ -254,7 +285,7 @@ typedef union _noir_cvm_vcpu_state_cache
 	struct
 	{
 		u32 gprvalid:1;		// Includes rsp,rip,rflags.
-		u32 cr_valid:1;		// Includes cr0,cr3,cr4,efer.
+		u32 cr_valid:1;		// Includes cr0,cr3,cr4.
 		u32 cr2valid:1;		// Includes cr2.
 		u32 dr_valid:1;		// Includes dr6,dr7.
 		u32 sr_valid:1;		// Includes cs,ds,es,ss.
@@ -264,13 +295,33 @@ typedef union _noir_cvm_vcpu_state_cache
 		u32 sc_valid:1;		// Includes star,lstar,cstar,sfmask.
 		u32 se_valid:1;		// Includes esp,eip,cs for sysenter.
 		u32 tp_valid:1;		// Includes cr8.tpr.
-		u32 reserved:21;
+		u32 ef_valid:1;		// Includes efer.
+		u32 pa_valid:1;		// Includes pat.
+		u32 reserved:18;
 		// This field indicates whether the state in VMCS/VMCB is
 		// updated to the state save area in the vCPU structure.
 		u32 synchronized:1;
 	};
 	u32 value;
 }noir_cvm_vcpu_state_cache,*noir_cvm_vcpu_state_cache_p;
+
+typedef struct _noir_cvm_event_injection
+{
+	union
+	{
+		struct
+		{
+			u32 vector:8;
+			u32 type:3;
+			u32 ec_valid:1;
+			u32 reserved:15;
+			u32 priority:4;
+			u32 valid:1;
+		};
+		u32 value;
+	}attributes;
+	u32 error_code;
+}noir_cvm_event_injection,*noir_cvm_event_injection_p;
 
 typedef struct _noir_cvm_virtual_cpu
 {
@@ -283,10 +334,12 @@ typedef struct _noir_cvm_virtual_cpu
 	void* xsave_area;
 	u64 rflags;
 	u64 rip;
+	noir_cvm_event_injection injected_event;
 	noir_cvm_exit_context exit_context;
 	noir_cvm_vcpu_options vcpu_options;
 	noir_cvm_vcpu_state_cache state_cache;
 	u32 exception_bitmap;
+	u32 scheduling_priority;
 }noir_cvm_virtual_cpu,*noir_cvm_virtual_cpu_p;
 
 typedef union _noir_cvm_mapping_attributes
@@ -324,7 +377,7 @@ noir_status nvc_svmc_create_vm(noir_cvm_virtual_machine_p* virtual_machine);
 void nvc_svmc_release_vm(noir_cvm_virtual_machine_p vm);
 noir_status nvc_svmc_create_vcpu(noir_cvm_virtual_cpu_p* virtual_cpu,noir_cvm_virtual_machine_p virtual_machine,u32 vcpu_id);
 void nvc_svmc_release_vcpu(noir_cvm_virtual_cpu_p vcpu);
-noir_status nvc_svmc_run_vcpu(noir_cvm_virtual_cpu_p virtual_cpu,void* exit_context);
+noir_status nvc_svmc_run_vcpu(noir_cvm_virtual_cpu_p virtual_cpu);
 noir_cvm_virtual_cpu_p nvc_svmc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id);
 noir_status nvc_svmc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info);
 u32 nvc_svmc_get_vm_asid(noir_cvm_virtual_machine_p vm);
@@ -353,6 +406,8 @@ u32 noir_cvm_register_buffer_limit[noir_cvm_maximum_register_type]=
 	sizeof(noir_fx_state),		// x87 FPU and XMM state.
 	0,							// Extended State.
 	8,							// XCR0 Register
+	8,							// EFER Register
+	8							// PAT Register
 };
 #else
 extern noir_cvm_virtual_machine noir_idle_vm;

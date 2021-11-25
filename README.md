@@ -120,11 +120,12 @@ Porting to Unified Extensible Firmware Interface (UEFI) is in progress. <br>
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has six future development plans: <br>
+Project NoirVisor has seven future development plans: <br>
 - Develop Customizable VM engine for complex purposes.
 - Develop Nested Virtualization.
 - Develop IOMMU Core on Intel VT-d and AMD-Vi.
 - Develop NPIEP (Non-Privileged Instruction Execution Prevention) Emulation on Intel VT-x.
+- Port NoirVisor to Linux.
 - Port NoirVisor to 32-bit Windows platform.
 - Port NoirVisor to UEFI and corresponding layered hypervisor.
 

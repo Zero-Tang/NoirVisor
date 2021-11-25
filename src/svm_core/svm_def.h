@@ -105,6 +105,39 @@ typedef union _nvc_svm_dra_intercept
 	u32 value;
 }nvc_svm_dra_intercept,*nvc_svm_dra_intercept_p;
 
+#define nvc_svm_intercept_vector1_intr		0
+#define nvc_svm_intercept_vector1_nmi		1
+#define nvc_svm_intercept_vector1_smi		2
+#define nvc_svm_intercept_vector1_init		3
+#define nvc_svm_intercept_vector1_vint		4
+#define nvc_svm_intercept_vector1_cr0_tsmp	5
+#define nvc_svm_intercept_vector1_sidt		6
+#define nvc_svm_intercept_vector1_sgdt		7
+#define nvc_svm_intercept_vector1_sldt		8
+#define nvc_svm_intercept_vector1_str		9
+#define nvc_svm_intercept_vector1_lidt		10
+#define nvc_svm_intercept_vector1_lgdt		11
+#define nvc_svm_intercept_vector1_lldt		12
+#define nvc_svm_intercept_vector1_ltr		13
+#define nvc_svm_intercept_vector1_rdtsc		14
+#define nvc_svm_intercept_vector1_rdpmc		15
+#define nvc_svm_intercept_vector1_pushf		16
+#define nvc_svm_intercept_vector1_popf		17
+#define nvc_svm_intercept_vector1_cpuid		18
+#define nvc_svm_intercept_vector1_rsm		19
+#define nvc_svm_intercept_vector1_iret		20
+#define nvc_svm_intercept_vector1_int		21
+#define nvc_svm_intercept_vector1_invd		22
+#define nvc_svm_intercept_vector1_pause		23
+#define nvc_svm_intercept_vector1_hlt		24
+#define nvc_svm_intercept_vector1_invlpg	25
+#define nvc_svm_intercept_vector1_invlpga	26
+#define nvc_svm_intercept_vector1_io		27
+#define nvc_svm_intercept_vector1_msr		28
+#define nvc_svm_intercept_vector1_ts		29
+#define nvc_svm_intercept_vector1_ff		30
+#define nvc_svm_intercept_vector1_shutdown	31
+
 typedef union _nvc_svm_instruction_intercept1
 {
 	struct

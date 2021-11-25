@@ -60,10 +60,12 @@ typedef ULONG32 NOIR_STATUS;
 #define IOCTL_CvmViewVcpuReg	CTL_CODE_GEN(0x893)
 #define IOCTL_CvmEditVcpuReg	CTL_CODE_GEN(0x894)
 #define IOCTL_CvmCancelRunVcpu	CTL_CODE_GEN(0x895)
+#define IOCTL_CvmInjectEvent	CTL_CODE_GEN(0x896)
+#define IOCTL_CvmSetVcpuOptions	CTL_CODE_GEN(0x897)
 
 // Layered Hypervisor Functions
-typedef ULONG_PTR CVM_HANDLE;
-typedef PULONG_PTR PCVM_HANDLE;
+typedef ULONG64 CVM_HANDLE;
+typedef PULONG64 PCVM_HANDLE;
 
 typedef struct _NOIR_ADDRESS_MAPPING
 {
@@ -122,6 +124,8 @@ NOIR_STATUS NoirReleaseVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 
 NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation);
 NOIR_STATUS NoirViewVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
+NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG64 InjectedEvent);
+NOIR_STATUS NoirSetVirtualProcessorOptions(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 OptionType,IN ULONG32 Options);
 NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID ExitContext);
 
 void NoirInitializeDisassembler();

@@ -265,6 +265,40 @@ NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN UL
 	return st;
 }
 
+NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG64 InjectedEvent)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_set_event_injection(VP,InjectedEvent);
+	}
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return st;
+}
+
+NOIR_STATUS NoirSetVirtualProcessorOptions(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 OptionType,IN ULONG32 Options)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_set_guest_vcpu_options(VP,OptionType,Options);
+	}
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return st;
+}
+
 NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID ExitContext)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;

@@ -154,11 +154,10 @@ NTSTATUS NoirConstructHook(IN PVOID Address,IN PVOID Proxy,OUT PVOID* Detour)
 			{
 				IoFreeMdl(HookPage->Mdl);
 				HookPage->Mdl=NULL;			// Purposefully set MDL to null to avoid re-unlock and re-free.
-				return GetExceptionCode();
+				st=GetExceptionCode();
 			}
 		}
-		else
-			return st;
+		if(HookPage->Mdl==NULL)return st;
 		HookPage->HookedPage.PhysicalAddress=NoirGetPhysicalAddress(HookPage->HookedPage.VirtualAddress);
 		RtlCopyMemory(HookPage->HookedPage.VirtualAddress,HookPage->OriginalPage.VirtualAddress,PAGE_SIZE);
 	}
@@ -281,37 +280,6 @@ void NoirSetProtectedPID(IN ULONG NewPID)
 {
 	// Use atomic operation for thread-safe consideration.
 	InterlockedExchange(&ProtPID,NewPID&0xFFFFFFFC);
-}
-
-void NoirSwapToUnshadowedPageTable()
-{
-	PEPROCESS Process=PsGetCurrentProcess();
-#if defined(_WIN64)
-	// Note that KPROCESS+0x110 also points to a paging base, but it
-	// does not map kernel mode address space except syscall handler.
-	ULONG64 NewCr3=*(PULONG64)((ULONG_PTR)Process+0x28);
-#else
-	ULONG64 NewCr3=*(PULONG64)((ULONG_PTR)Process+0x18);
-#endif
-	__writecr3(NewCr3);
-}
-
-// Warning: this function is invoked in hypervisor's context.
-BOOLEAN NoirDoSystemCallHook(IN OUT PNOIR_BASIC_GPR_STATE GprState)
-{
-	ULONG32 SysCallIndex=(ULONG32)GprState->Rax;
-	if(SysCallIndex==IndexOf_NtOpenProcess)
-	{
-#if defined(_WIN64)
-		PCLIENT_ID ClientId=(PCLIENT_ID)GprState->R9;
-		if(ClientId)
-		{
-			ULONG ProcId=(ULONG)ClientId->UniqueProcess&0xFFFFFFFC;
-			if(ProcId==ProtPID)GprState->Rdx=0;
-		}
-#endif
-	}
-	return FALSE;
 }
 
 // The detection algorithm is very simple: is the syscall handler located in KVASCODE section?

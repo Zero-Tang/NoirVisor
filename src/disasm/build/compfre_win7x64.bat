@@ -5,10 +5,10 @@ set libpath=T:\Program Files\Windows Kits\10\Lib
 set binpath=..\bin\compfre_win7x64
 set objpath=..\bin\compfre_win7x64\Intermediate
 
-title Compiling Zydis, Checked Build, 64-Bit Windows (AMD64 Architecture)
+title Compiling Zydis, Free Build, 64-Bit Windows (AMD64 Architecture)
 echo Project: Zydis Disassembler Library
 echo Platform: 64-Bit Windows
-echo Preset: Debug/Checked Build
+echo Preset: Release/Free Build
 echo Source Powered by zyantific. Script Powered by zero.tangptr@gmail.com.
 echo Copyright (c) 2014-2021, zyantific. All Rights Reserved.
 pause

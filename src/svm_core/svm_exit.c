@@ -1003,7 +1003,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
 			{
 #if defined(_hv_type1)
-				// FIXME: Translate GVAs in the structure .
+				// FIXME: Translate GVAs in the structure.
 				noir_svm_custom_vcpu_p cvcpu=null;
 #else
 				noir_svm_custom_vcpu_p cvcpu=(noir_svm_custom_vcpu_p)context;
@@ -1021,7 +1021,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
 			{
 #if defined(_hv_type1)
-				// FIXME: Translate GVAs in the structure .
+				// FIXME: Translate GVAs in the structure.
 				noir_svm_custom_vcpu_p cvcpu=null;
 #else
 				noir_svm_custom_vcpu_p cvcpu=(noir_svm_custom_vcpu_p)context;
@@ -1038,7 +1038,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
 			{
 #if defined(_hv_type1)
-				// FIXME: Translate GVAs in the structure .
+				// FIXME: Translate GVAs in the structure.
 				noir_svm_custom_vcpu_p cvcpu=null;
 #else
 				noir_svm_custom_vcpu_p cvcpu=(noir_svm_custom_vcpu_p)context;
@@ -1047,6 +1047,21 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 			}
 			else
 				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
+			break;
+		}
+		case noir_svm_set_vcpu_options:
+		{
+			// Validate the caller. Only Layered Hypervisor is authorized to invoke CVM hypercalls.
+			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
+			{
+#if defined(_hv_type1)
+				// FIXME: Translate GVAs in the structure.
+				noir_svm_custom_vcpu_p cvcpu=null;
+#else
+				noir_svm_custom_vcpu_p cvcpu=(noir_svm_custom_vcpu_p)context;
+#endif
+				nvc_svm_set_guest_vcpu_options(cvcpu);
+			}
 			break;
 		}
 		default:
@@ -1289,7 +1304,8 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 		else
 			svm_exit_handlers[code_group][code_num](gpr_state,vcpu);
 		// Since rax register is operated, save to VMCB.
-		noir_svm_vmwrite(vmcb_va,guest_rax,gpr_state->rax);
+		// If world is switched, do not write to VMCB.
+		if(loader_stack->guest_vmcb_pa==vcpu->vmcb.phys)noir_svm_vmwrite(vmcb_va,guest_rax,gpr_state->rax);
 	}
 	else if(gpr_state->rax==loader_stack->custom_vcpu->vmcb.phys)
 	{
@@ -1308,20 +1324,6 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 			noir_svm_vmwrite32(vmcb_va,vmcb_clean_bits,0xffffffff);
 		// Set TLB Control to Do-not-Flush
 		noir_svm_vmwrite32(vmcb_va,tlb_control,nvc_svm_tlb_control_do_nothing);
-		// Set General vCPU Exit Context.
-		cvcpu->header.exit_context.vcpu_state.instruction_length=(noir_svm_vmread64(vmcb_va,next_rip)-noir_svm_vmread64(vmcb_va,guest_rip))&0xf;
-		cvcpu->header.exit_context.vcpu_state.cpl=noir_svm_vmread8(vmcb_va,guest_cpl)&0x3;
-		cvcpu->header.exit_context.vcpu_state.int_shadow=noir_svm_vmcb_bt32(vmcb_va,guest_interrupt,0);
-		cvcpu->header.exit_context.vcpu_state.pe=noir_svm_vmcb_bt32(vmcb_va,guest_cr0,amd64_cr0_pe);
-		cvcpu->header.exit_context.vcpu_state.lm=noir_svm_vmcb_bt32(vmcb_va,guest_efer,amd64_efer_lma);
-		// Save Code Segment...
-		cvcpu->header.exit_context.cs.selector=noir_svm_vmread16(cvcpu->vmcb.virt,guest_cs_selector);
-		cvcpu->header.exit_context.cs.attrib=svm_attrib_inverse(noir_svm_vmread16(cvcpu->vmcb.virt,guest_cs_attrib));
-		cvcpu->header.exit_context.cs.limit=noir_svm_vmread32(cvcpu->vmcb.virt,guest_cs_limit);
-		cvcpu->header.exit_context.cs.base=noir_svm_vmread64(cvcpu->vmcb.virt,guest_cs_base);
-		// Save some GPRs...
-		cvcpu->header.exit_context.rflags=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rflags);
-		cvcpu->header.exit_context.rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip);
 		// Mark the state as not synchronized.
 		cvcpu->header.state_cache.synchronized=0;
 		// Check if the interception is due to invalid guest state.
@@ -1331,7 +1333,31 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 		else
 			svm_cvexit_handlers[code_group][code_num](gpr_state,vcpu,loader_stack->custom_vcpu);
 		// Since rax register is operated, save to VMCB.
-		noir_svm_vmwrite(vmcb_va,guest_rax,gpr_state->rax);
+		// If world is switched, do not write to VMCB.
+		if(loader_stack->guest_vmcb_pa==cvcpu->vmcb.phys)
+			noir_svm_vmwrite(vmcb_va,guest_rax,gpr_state->rax);
+		else
+		{
+			// VM-Exit to User Hypervisor occurs.
+			// If the exit is due to the scheduler, saving exit context is utterly meaningless.
+			if(cvcpu->header.exit_context.intercept_code!=cv_scheduler_exit)
+			{
+				// Set General vCPU Exit Context.
+				cvcpu->header.exit_context.vcpu_state.instruction_length=(noir_svm_vmread64(vmcb_va,next_rip)-noir_svm_vmread64(vmcb_va,guest_rip))&0xf;
+				cvcpu->header.exit_context.vcpu_state.cpl=noir_svm_vmread8(vmcb_va,guest_cpl)&0x3;
+				cvcpu->header.exit_context.vcpu_state.int_shadow=noir_svm_vmcb_bt32(vmcb_va,guest_interrupt,0);
+				cvcpu->header.exit_context.vcpu_state.pe=noir_svm_vmcb_bt32(vmcb_va,guest_cr0,amd64_cr0_pe);
+				cvcpu->header.exit_context.vcpu_state.lm=noir_svm_vmcb_bt32(vmcb_va,guest_efer,amd64_efer_lma);
+				// Save Code Segment...
+				cvcpu->header.exit_context.cs.selector=noir_svm_vmread16(cvcpu->vmcb.virt,guest_cs_selector);
+				cvcpu->header.exit_context.cs.attrib=svm_attrib_inverse(noir_svm_vmread16(cvcpu->vmcb.virt,guest_cs_attrib));
+				cvcpu->header.exit_context.cs.limit=noir_svm_vmread32(cvcpu->vmcb.virt,guest_cs_limit);
+				cvcpu->header.exit_context.cs.base=noir_svm_vmread64(cvcpu->vmcb.virt,guest_cs_base);
+				// Save some GPRs...
+				cvcpu->header.exit_context.rflags=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rflags);
+				cvcpu->header.exit_context.rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip);
+			}
+		}
 	}
 	else
 	{

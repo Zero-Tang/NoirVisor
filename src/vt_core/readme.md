@@ -69,7 +69,8 @@ This feature is an essential security feature. I found this feature missing in m
 Real-Time CI is now implemented by Intel EPT.
 
 # MTRR Emulation
-According to Intel 64 Architecture Manual, the MTRRs have no effect on the memory type used for an access to a guest physical address. If we map all memory as write-back with EPT, there could be conflicts in that not all memory are defined as write-back by OS. For example, OS could define MMIO region as uncacheable memory. Similarly, graphics buffer could be mapped as write-combined by OS. Failure to map these memory accordingly could cause certain issues. For example, it is observed that some processor could encounter an `#MC` exception due to L2 cache data-read error.
+According to Intel 64 Architecture Manual, the MTRRs have no effect on the memory type used for an access to a guest physical address. If we map all memory as write-back with EPT, there could be conflicts in that not all memory are defined as write-back by OS. For example, OS could define MMIO region as uncacheable memory. Similarly, graphics buffer could be mapped as write-combined by OS. Failure to map these memory accordingly could cause certain issues. For example, it is observed that some processors could encounter an `#MC` exception due to L2 cache data-read error. <br>
+On AMD-V/NPT, there is no need for MTRR Emulation in that Nested Paging automatically combines the memory type from NPT and MTRR.
 
 ## Algorithm
 There are two types of MTRRs: Fixed MTRRs and Variable MTRRs. The Fixed MTRRs map the first MiB of system memory. The Variable MTRRs map a variable range of system memory. <br>

@@ -60,6 +60,7 @@
 // Define Generic Hypercall Codes for Customizable VM.
 #define noir_cvm_run_vcpu					0x10001
 #define noir_cvm_dump_vcpu_vmcb				0x10002
+#define noir_cvm_set_vcpu_options			0x10003
 
 struct _noir_cvm_virtual_machine;
 
@@ -202,7 +203,6 @@ u64 fastcall nvc_mshv_rdmsr_handler(noir_mshv_vcpu_p vcpu,u32 index);
 void fastcall nvc_mshv_wrmsr_handler(noir_mshv_vcpu_p vcpu,u32 index,u64 val);
 
 // Miscellaneous
-bool noir_do_syscall_hook(noir_gpr_state_p gpr_state);
 u64 noir_query_enabled_features_in_system();
 void noir_system_call(void);
 

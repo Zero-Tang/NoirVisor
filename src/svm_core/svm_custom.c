@@ -43,6 +43,9 @@ void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu
 	cvcpu->header.drs.dr1=noir_readdr1();
 	cvcpu->header.drs.dr2=noir_readdr2();
 	cvcpu->header.drs.dr3=noir_readdr3();
+	// Save the event injection field...
+	cvcpu->header.injected_event.attributes.value=noir_svm_vmread32(cvcpu->vmcb.virt,event_injection);
+	cvcpu->header.injected_event.error_code=noir_svm_vmread32(cvcpu->vmcb.virt,event_error_code);
 	// If AVIC is supported, set it to be not runnning so IPIs won't be delivered to a wrong processor.
 	if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
 	{
@@ -124,7 +127,6 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr0,cvcpu->header.crs.cr0);
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr3,cvcpu->header.crs.cr3);
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr4,cvcpu->header.crs.cr4);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_efer,cvcpu->header.msrs.efer|amd64_efer_svme_bit);
 		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_control_reg);
 		cvcpu->header.state_cache.cr_valid=true;
 	}
@@ -214,6 +216,39 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_idt_gdt);
 		cvcpu->header.state_cache.dt_valid=true;
 	}
+	// Load EFER MSR
+	if(!cvcpu->header.state_cache.ef_valid)
+	{
+		// SVME Shadowing
+		cvcpu->shadowed_bits.svme=noir_bt((u32*)&cvcpu->header.msrs.efer,amd64_efer_svme);
+		// Always enable EFER.SVME.
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_efer,cvcpu->header.msrs.efer|amd64_efer_svme_bit);
+		cvcpu->header.state_cache.ef_valid=true;
+	}
+	// Load PAT MSR
+	if(!cvcpu->header.state_cache.pa_valid)
+	{
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_pat,cvcpu->header.msrs.pat);
+		// Mark the VMCB cache invalid.
+		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_npt);
+		cvcpu->header.state_cache.pa_valid=true;
+	}
+	// Set the event injection
+	if(cvcpu->header.injected_event.attributes.type)
+	{
+		noir_svm_vmwrite32(cvcpu->vmcb.virt,event_injection,cvcpu->header.injected_event.attributes.value);
+		noir_svm_vmwrite32(cvcpu->vmcb.virt,event_error_code,cvcpu->header.injected_event.error_code);
+	}
+	else
+	{
+		// Use AMD-V virtual interrupt mechanism to inject an external interrupt.
+		nvc_svm_avic_control avic_ctrl;
+		avic_ctrl.value=noir_svm_vmread64(cvcpu->vmcb.virt,avic_control);
+		avic_ctrl.virtual_irq=cvcpu->header.injected_event.attributes.valid;
+		avic_ctrl.virtual_interrupt_vector=cvcpu->header.injected_event.attributes.vector;
+		avic_ctrl.virtual_interrupt_priority=cvcpu->header.injected_event.attributes.priority;
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,avic_control,avic_ctrl.value);
+	}
 	// If AVIC is supported, set the Physical APIC ID Entry to be running.
 	if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
 	{
@@ -221,8 +256,6 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		apic_physical[cvcpu->proc_id].is_running=true;
 		apic_physical[cvcpu->proc_id].host_physical_apic_id=cvcpu->proc_id;
 	}
-	// Always enable EFER.SVME.
-	noir_svm_vmcb_bts32(cvcpu->vmcb.virt,guest_efer,amd64_efer_svme);
 	// Step 3. Switch vCPU to Guest.
 	loader_stack->custom_vcpu=cvcpu;
 	loader_stack->guest_vmcb_pa=cvcpu->vmcb.phys;
@@ -312,6 +345,14 @@ void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu)
 	}
 	if(vcpu->header.state_cache.tp_valid)
 		vcpu->header.crs.cr8=noir_svm_vmread8(vmcb,avic_control)&0xf;
+	if(vcpu->header.state_cache.ef_valid)
+	{
+		vcpu->header.msrs.efer=noir_svm_vmread64(vmcb,guest_efer);
+		// Shadow the SVME bit.
+		if(!vcpu->shadowed_bits.svme)noir_btr((u32*)&vcpu->header.msrs.efer,amd64_efer_svme);
+	}
+	if(vcpu->header.state_cache.pa_valid)
+		vcpu->header.msrs.pat=noir_svm_vmread64(vmcb,guest_pat);
 	// Tell the layered hypervisor that the vCPU state is already synchronized.
 	vcpu->header.state_cache.synchronized=1;
 }
@@ -320,14 +361,20 @@ void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	// Initialize the VMCB for vCPU.
+	nvc_svm_cra_intercept cr_vector;
 	nvc_svm_instruction_intercept1 vector1;
 	nvc_svm_instruction_intercept2 vector2;
 	nvc_svm_avic_control avic_ctrl;
 	nvc_svm_npt_control npt_ctrl;
 	// Initialize Interceptions
-	// INIT Signal must be intercepted.
-	noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_debug_exception);
+	// INIT Signal and Machine-Check must be intercepted.
+	noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_machine_check);
 	noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_security_exception);
+	// Intercept CR4 Accesses so that CR4.MCE could be shadowed.
+	cr_vector.value=0;
+	cr_vector.read.cr4=1;
+	cr_vector.write.cr4=1;
+	noir_svm_vmwrite32(vmcb,intercept_access_cr,cr_vector.value);
 	vector1.value=0;
 	// All external interrupts must be intercepted for scheduler's sake.
 	vector1.intercept_intr=1;
@@ -364,7 +411,7 @@ void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_guest);
 	// Initialize Interrupt Control.
 	avic_ctrl.value=0;
-	// Virtual interrupt masking must be enabled. Otherwise, the vCPU can be blocked forever.
+	// Virtual interrupt masking must be enabled. Otherwise, the vCPU might block the host forever.
 	avic_ctrl.virtual_interrupt_masking=1;
 	noir_svm_vmwrite64(vmcb,avic_control,avic_ctrl.value);
 	// Initialize Nested Paging.
@@ -377,13 +424,63 @@ void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	noir_svm_vmwrite64(vmcb,msrpm_physical_address,vcpu->vm->msrpm.phys);
 }
 
+void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	nvc_svm_instruction_intercept1 vector1;
+	vector1.value=noir_svm_vmread32(vmcb,intercept_instruction1);
+	// Set interception vectors according to the options.
+	// Exceptions
+	if(!vcpu->header.vcpu_options.intercept_exceptions)
+		noir_svm_vmwrite32(vmcb,intercept_exceptions,(1<<amd64_machine_check)|(1<<amd64_security_exception));
+	else
+	{
+		noir_svm_vmwrite32(vmcb,intercept_exceptions,vcpu->header.exception_bitmap);
+		// Ensure that Machine Checks and Security Exceptions are always intercepted.
+		noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_machine_check);
+		noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_security_exception);
+	}
+	// Interrupt Window
+	vector1.intercept_iret=vcpu->header.vcpu_options.intercept_interrupt_window;
+	// CR3
+	if(vcpu->header.vcpu_options.intercept_cr3)
+	{
+		noir_svm_vmcb_bts32(vmcb,intercept_access_cr,0x03);
+		noir_svm_vmcb_bts32(vmcb,intercept_access_cr,0x13);
+	}
+	else
+	{
+		noir_svm_vmcb_btr32(vmcb,intercept_access_cr,0x03);
+		noir_svm_vmcb_btr32(vmcb,intercept_access_cr,0x13);
+	}
+	// Debug Registers
+	noir_svm_vmwrite32(vmcb,intercept_access_dr,vcpu->header.vcpu_options.intercept_drx?0xFFFFFFFF:0);
+	// MSR Interceptions
+	if(vcpu->header.vcpu_options.intercept_msr)
+		noir_svm_vmwrite64(vmcb,msrpm_physical_address,vcpu->vm->msrpm_full.phys);
+	else
+		noir_svm_vmwrite64(vmcb,msrpm_physical_address,vcpu->vm->msrpm.phys);
+	// FIXME: Implement NPIEP and Pause-Filters.
+	noir_svm_vmwrite32(vmcb,intercept_instruction1,vector1.value);
+	// Invalidate VMCB Cache.
+	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_interception);
+	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_iomsrpm);
+}
+
 #if !defined(_hv_type1)
-noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu,void* exit_context)
+noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu)
 {
 	noir_status st=noir_success;
 	noir_acquire_reslock_shared(vcpu->vm->header.vcpu_list_lock);
-	noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
-	noir_copy_memory(exit_context,&vcpu->header.exit_context,sizeof(noir_cvm_exit_context));
+	if(vcpu->header.scheduling_priority<noir_cvm_vcpu_priority_kernel)
+		noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
+	else
+	{
+		do
+		{
+			noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
+		}while(vcpu->header.exit_context.intercept_code==cv_scheduler_exit);
+	}
 	noir_release_reslock(vcpu->vm->header.vcpu_list_lock);
 	return st;
 }
@@ -732,7 +829,7 @@ noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_a
 		if(noir_query_page_attributes((void*)hva,&valid,&locked,&large_page))
 		{
 			st=noir_user_page_violation;
-			if(valid && locked)
+			if(valid && locked || !mapping_info->attributes.present)
 			{
 				u64 gpa=mapping_info->gpa+(i<<increment[mapping_info->attributes.psize]);
 				u64 hpa=noir_get_user_physical_address((void*)hva);
@@ -756,6 +853,39 @@ u32 nvc_svmc_alloc_asid()
 	}
 	noir_release_reslock(hvm_p->tlb_tagging.asid_pool_lock);
 	return asid;
+}
+
+void nvc_svmc_setup_msr_interception_exception(void* msrpm)
+{
+	void* bitmap1=(void*)((ulong_ptr)msrpm+0x0);
+	void* bitmap2=(void*)((ulong_ptr)msrpm+0x800);
+	void* bitmap3=(void*)((ulong_ptr)msrpm+0x1000);
+	// System-Enter MSRs are unnecessary to be intercepted.
+	noir_reset_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_cs,0));
+	noir_reset_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_cs,1));
+	noir_reset_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_esp,0));
+	noir_reset_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_esp,1));
+	noir_reset_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,0));
+	noir_reset_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,1));
+	// System-Call MSRs are unnecessary to be intercepted.
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_star,0));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_star,1));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,0));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_lstar,1));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_cstar,0));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_cstar,1));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_sfmask,0));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_sfmask,1));
+	// FS/GS Base MSRs are unnecessary to be intercepted.
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_fs_base,0));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_fs_base,1));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_gs_base,0));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_gs_base,1));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_kernel_gs_base,0));
+	noir_reset_bitmap(bitmap2,svm_msrpm_bit(2,amd64_kernel_gs_base,1));
+	// The PAT MSR is unnecessary to be intercepted.
+	noir_reset_bitmap(bitmap1,svm_msrpm_bit(1,amd64_pat,0));
+	noir_reset_bitmap(bitmap1,svm_msrpm_bit(1,amd64_pat,1));
 }
 
 void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
@@ -816,6 +946,7 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 		}
 		// Release MSRPM & IOPM
 		if(vm->msrpm.virt)noir_free_contd_memory(vm->msrpm.virt);
+		if(vm->msrpm_full.virt)noir_free_contd_memory(vm->msrpm_full.virt);
 		if(vm->iopm.virt)noir_free_contd_memory(vm->iopm.virt);
 		// Release AVIC Pages if AVIC is supported
 		if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
@@ -865,6 +996,11 @@ noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine)
 				vm->msrpm.phys=noir_get_physical_address(vm->msrpm.virt);
 			else
 				goto alloc_failure;
+			vm->msrpm_full.virt=noir_alloc_contd_memory(page_size*3);
+			if(vm->msrpm.virt)
+				vm->msrpm_full.phys=noir_get_physical_address(vm->msrpm_full.virt);
+			else
+				goto alloc_failure;
 			// Allocate vCPU pointer list.
 			// According to AVIC, 255 physical cores are permitted.
 			vm->vcpu=noir_alloc_nonpg_memory(sizeof(void*)*256);
@@ -886,9 +1022,11 @@ noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine)
 					goto alloc_failure;
 			}
 			// Setup MSR & I/O Interceptions.
-			// We want unconditional exits.
+			// We want mostly-unconditional exits.
 			noir_stosb(vm->msrpm.virt,0xff,noir_svm_msrpm_size);
 			noir_stosb(vm->iopm.virt,0xff,noir_svm_iopm_size);
+			// Some MSRs are unnessary to be intercepted. Rule them out of interception.
+			nvc_svmc_setup_msr_interception_exception(vm->msrpm.virt);
 			st=noir_success;
 		}
 	}

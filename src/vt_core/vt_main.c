@@ -132,12 +132,12 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 			}
 			noir_free_nonpg_memory(hvm->virtual_cpu);
 		}
-		if(rhvm->msr_bitmap.virt)
-			noir_free_contd_memory(rhvm->msr_bitmap.virt);
-		if(rhvm->io_bitmap_a.virt)
-			noir_free_contd_memory(rhvm->io_bitmap_a.virt);
-		if(rhvm->io_bitmap_b.virt)
-			noir_free_contd_memory(rhvm->io_bitmap_b.virt);
+		if(rhvm)
+		{
+			if(rhvm->msr_bitmap.virt)noir_free_contd_memory(rhvm->msr_bitmap.virt);
+			if(rhvm->io_bitmap_a.virt)noir_free_contd_memory(rhvm->io_bitmap_a.virt);
+			if(rhvm->io_bitmap_b.virt)noir_free_contd_memory(rhvm->io_bitmap_b.virt);
+		}
 	}
 	// nvc_vt_teardown_exit_handlers();
 }
@@ -566,7 +566,7 @@ void static nvc_vt_setup_control_area(bool true_msr)
 	nvc_vt_setup_vmexit_controls(true_msr);
 	nvc_vt_setup_vmentry_controls(true_msr);
 	noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_pe_bit|ia32_cr0_ne_bit|ia32_cr0_pg_bit);	// Monitor PE, NE and PG flags
-	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_smap_bit|ia32_cr4_vmxe_bit);				// Monitor SMAP and VMXE flags
+	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_vmxe_bit);									// Monitor VMXE flags
 }
 
 u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,ulong_ptr gip)
@@ -678,6 +678,7 @@ void static nvc_vt_subvert_processor_thunk(void* context,u32 processor_id)
 noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 {
 	hvm->cpu_count=noir_get_processor_count();
+	hvm->relative_hvm=(noir_vt_hvm_p)hvm->reserved;
 	hvm->virtual_cpu=noir_alloc_nonpg_memory(hvm->cpu_count*sizeof(noir_vt_vcpu));
 	if(hvm->virtual_cpu)
 	{
@@ -723,7 +724,6 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 			vcpu->mshvcpu.root_vcpu=(void*)vcpu;
 		}
 	}
-	hvm->relative_hvm=(noir_vt_hvm_p)hvm->reserved;
 	hvm->relative_hvm->msr_bitmap.virt=noir_alloc_contd_memory(page_size);
 	if(hvm->relative_hvm->msr_bitmap.virt)
 		hvm->relative_hvm->msr_bitmap.phys=noir_get_physical_address(hvm->relative_hvm->msr_bitmap.virt);
