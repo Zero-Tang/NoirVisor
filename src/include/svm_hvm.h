@@ -163,6 +163,16 @@ typedef struct _noir_svm_custom_vcpu
 	struct _noir_svm_custom_vm *vm;
 	memory_descriptor vmcb;
 	memory_descriptor apic_backing;
+	union
+	{
+		struct
+		{
+			u64 prev_virq:1;	// Required for interrupt-window interception.
+			u64 reserved:62;
+			u64 rescission:1;
+		};
+		u64 value;
+	}special_state;
 	u64 lasted_tsc;
 	u32 proc_id;
 }noir_svm_custom_vcpu,*noir_svm_custom_vcpu_p;

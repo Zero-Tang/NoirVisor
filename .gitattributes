@@ -6,3 +6,4 @@
 *.asm linguist-language=Assembly
 *.nasm linguist-language=Assembly
 *.inc linguist-language=Assembly
+*.bat linguist-detectable=false

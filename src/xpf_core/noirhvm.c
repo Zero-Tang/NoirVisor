@@ -509,7 +509,7 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 	noir_status st=noir_hypervision_absent;
 	if(hvm_p)
 	{
-		// Some processor state is not checked and loaded by Intel VT-x/AMD-V.
+		// Some processor state is not checked and loaded by Intel VT-x/AMD-V. (e.g: x87 FPU State)
 		// Check their consistency manually.
 		bool valid_state=nvc_validate_vcpu_state(vcpu);
 		st=noir_success;
@@ -523,6 +523,22 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 				st=noir_unknown_processor;
 		}
 		if(st==noir_success)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
+	}
+	return st;
+}
+
+noir_status nvc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		st=noir_success;
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			st=nvc_svmc_rescind_vcpu(vcpu);
+		else
+			st=noir_unknown_processor;
 	}
 	return st;
 }

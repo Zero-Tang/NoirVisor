@@ -1357,6 +1357,20 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 				cvcpu->header.exit_context.rflags=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rflags);
 				cvcpu->header.exit_context.rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip);
 			}
+			else if(noir_locked_btr64(&cvcpu->special_state,63))		// User Hypervisor rescinded execution of vCPU.
+				cvcpu->header.exit_context.intercept_code=cv_rescission;
+			else if(cvcpu->header.vcpu_options.intercept_interrupt_window)
+			{
+				if(cvcpu->special_state.prev_virq && !noir_svm_vmcb_bt32(vmcb_va,avic_control,nvc_svm_avic_control_virq))
+				{
+					// User Hypervisor specifies intercepting the interrupt windows.
+					// If there was a previously injected IRQ and the interrupt was already taken, consider this an interrupt window.
+					// Notify the User Hypervisor of this information.
+					cvcpu->header.exit_context.intercept_code=cv_interrupt_window;
+					// Reset the status of previous vIRQ.
+					cvcpu->special_state.prev_virq=0;
+				}
+			}
 		}
 	}
 	else

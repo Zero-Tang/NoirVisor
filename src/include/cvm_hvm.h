@@ -45,7 +45,7 @@ typedef enum _noir_cvm_intercept_code
 	cv_dr_access=10,
 	cv_hypercall=11,
 	cv_exception=12,
-	cv_cancellation=13,
+	cv_rescission=13,
 	cv_interrupt_window=14,
 	// The rest are scheduler-relevant.
 	cv_scheduler_exit=0x80000000,
@@ -274,8 +274,7 @@ typedef union _noir_cvm_vcpu_options
 		u32 intercept_drx:1;
 		u32 intercept_pause:1;
 		u32 npiep:1;
-		u32 reserved:23;
-		u32 cancel_execution:1;
+		u32 reserved:24;
 	};
 	u32 value;
 }noir_cvm_vcpu_options,*noir_cvm_vcpu_options_p;
@@ -377,9 +376,10 @@ noir_status nvc_svmc_create_vm(noir_cvm_virtual_machine_p* virtual_machine);
 void nvc_svmc_release_vm(noir_cvm_virtual_machine_p vm);
 noir_status nvc_svmc_create_vcpu(noir_cvm_virtual_cpu_p* virtual_cpu,noir_cvm_virtual_machine_p virtual_machine,u32 vcpu_id);
 void nvc_svmc_release_vcpu(noir_cvm_virtual_cpu_p vcpu);
-noir_status nvc_svmc_run_vcpu(noir_cvm_virtual_cpu_p virtual_cpu);
+noir_status nvc_svmc_run_vcpu(noir_cvm_virtual_cpu_p vcpu);
+noir_status nvc_svmc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu);
 noir_cvm_virtual_cpu_p nvc_svmc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id);
-noir_status nvc_svmc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info);
+noir_status nvc_svmc_set_mapping(noir_cvm_virtual_machine_p vm,noir_cvm_address_mapping_p mapping_info);
 u32 nvc_svmc_get_vm_asid(noir_cvm_virtual_machine_p vm);
 
 // Idle VM is to be considered as the List Head.

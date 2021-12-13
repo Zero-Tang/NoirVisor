@@ -55,6 +55,16 @@ typedef u32 noir_status;
 #define noir_success					0x0
 
 /*
+  Status Indicator: noir_already_rescinded
+  If execution of a vCPU is already rescinded,
+  this value is supposed to be returned.
+
+  Value: 0x40000001
+*/
+
+#define noir_already_rescinded			0x40000001
+
+/*
   Status Indicator noir_unsuccessful
   If a procedure failed to execute due to unknown error,
   this value is supposed to be returned.

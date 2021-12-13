@@ -279,6 +279,7 @@ NOIR_STATUS nvc_set_mapping(IN PVOID VirtualMachine,IN PNOIR_ADDRESS_MAPPING Map
 NOIR_STATUS nvc_create_vcpu(IN PVOID VirtualMachine,OUT PVOID *VirtualProcessor,IN ULONG32 VpIndex);
 NOIR_STATUS nvc_release_vcpu(IN PVOID VirtualProcessor);
 NOIR_STATUS nvc_run_vcpu(IN PVOID VirtualProcessor,OUT PVOID ExitContext);
+NOIR_STATUS nvc_rescind_vcpu(IN PVOID VirtualProcessor);
 NOIR_STATUS nvc_view_vcpu_registers(IN PVOID VirtualProcessor,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS nvc_edit_vcpu_registers(IN PVOID VirtualProcessor,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS nvc_set_event_injection(IN PVOID VirtualProcessor,IN ULONG64 InjectedEvent);

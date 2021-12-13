@@ -46,6 +46,17 @@ void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu
 	// Save the event injection field...
 	cvcpu->header.injected_event.attributes.value=noir_svm_vmread32(cvcpu->vmcb.virt,event_injection);
 	cvcpu->header.injected_event.error_code=noir_svm_vmread32(cvcpu->vmcb.virt,event_error_code);
+	// If the injected event is not valid, check out the local APIC field in VMCB.
+	if(!cvcpu->header.injected_event.attributes.valid)
+	{
+		nvc_svm_avic_control avic_ctrl;
+		avic_ctrl.value=noir_svm_vmread64(cvcpu->vmcb.virt,avic_control);
+		cvcpu->header.injected_event.attributes.value=0;
+		cvcpu->header.injected_event.attributes.vector=(u32)avic_ctrl.virtual_interrupt_vector;
+		cvcpu->header.injected_event.attributes.priority=(u32)avic_ctrl.virtual_interrupt_priority;
+		cvcpu->header.injected_event.attributes.valid=(u32)avic_ctrl.virtual_irq;
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,avic_control,avic_ctrl.value);
+	}
 	// If AVIC is supported, set it to be not runnning so IPIs won't be delivered to a wrong processor.
 	if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
 	{
@@ -80,7 +91,6 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		cvcpu->proc_id=loader_stack->proc_id;
 		noir_svm_vmwrite32(cvcpu->vmcb.virt,vmcb_clean_bits,0);
 	}
-	// (FIXME) Step 0: Check Guest State Consistency not checked by vmrun instruction.
 	// Step 1: Save State of the Subverted Host.
 	// Please note that it is unnecessary to save states which are already saved in VMCB.
 	// Save General-Purpose Registers...
@@ -244,7 +254,7 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		// Use AMD-V virtual interrupt mechanism to inject an external interrupt.
 		nvc_svm_avic_control avic_ctrl;
 		avic_ctrl.value=noir_svm_vmread64(cvcpu->vmcb.virt,avic_control);
-		avic_ctrl.virtual_irq=cvcpu->header.injected_event.attributes.valid;
+		avic_ctrl.virtual_irq=cvcpu->special_state.prev_virq=cvcpu->header.injected_event.attributes.valid;
 		avic_ctrl.virtual_interrupt_vector=cvcpu->header.injected_event.attributes.vector;
 		avic_ctrl.virtual_interrupt_priority=cvcpu->header.injected_event.attributes.priority;
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,avic_control,avic_ctrl.value);
@@ -440,8 +450,6 @@ void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu)
 		noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_machine_check);
 		noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_security_exception);
 	}
-	// Interrupt Window
-	vector1.intercept_iret=vcpu->header.vcpu_options.intercept_interrupt_window;
 	// CR3
 	if(vcpu->header.vcpu_options.intercept_cr3)
 	{
@@ -456,10 +464,7 @@ void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu)
 	// Debug Registers
 	noir_svm_vmwrite32(vmcb,intercept_access_dr,vcpu->header.vcpu_options.intercept_drx?0xFFFFFFFF:0);
 	// MSR Interceptions
-	if(vcpu->header.vcpu_options.intercept_msr)
-		noir_svm_vmwrite64(vmcb,msrpm_physical_address,vcpu->vm->msrpm_full.phys);
-	else
-		noir_svm_vmwrite64(vmcb,msrpm_physical_address,vcpu->vm->msrpm.phys);
+	noir_svm_vmwrite64(vmcb,msrpm_physical_address,vcpu->header.vcpu_options.intercept_msr?vcpu->vm->msrpm_full.phys:vcpu->vm->msrpm.phys);
 	// FIXME: Implement NPIEP and Pause-Filters.
 	noir_svm_vmwrite32(vmcb,intercept_instruction1,vector1.value);
 	// Invalidate VMCB Cache.
@@ -472,7 +477,10 @@ noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu)
 {
 	noir_status st=noir_success;
 	noir_acquire_reslock_shared(vcpu->vm->header.vcpu_list_lock);
-	if(vcpu->header.scheduling_priority<noir_cvm_vcpu_priority_kernel)
+	// Abort execution if rescission is specified.
+	if(noir_locked_btr64(&vcpu->special_state,63))
+		vcpu->header.exit_context.intercept_code=cv_rescission;
+	else if(vcpu->header.scheduling_priority<noir_cvm_vcpu_priority_kernel)
 		noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
 	else
 	{
@@ -481,6 +489,15 @@ noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu)
 			noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
 		}while(vcpu->header.exit_context.intercept_code==cv_scheduler_exit);
 	}
+	noir_release_reslock(vcpu->vm->header.vcpu_list_lock);
+	return st;
+}
+
+noir_status nvc_svmc_rescind_vcpu(noir_svm_custom_vcpu_p vcpu)
+{
+	noir_status st=noir_success;
+	noir_acquire_reslock_shared(vcpu->vm->header.vcpu_list_lock);
+	st=noir_locked_bts64(&vcpu->special_state,63)?noir_already_rescinded:noir_success;
 	noir_release_reslock(vcpu->vm->header.vcpu_list_lock);
 	return st;
 }

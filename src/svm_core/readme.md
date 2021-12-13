@@ -297,7 +297,8 @@ Upon interception, perform a world switch. Specify the reason of interception to
 
 ### Interrupt Window Interception
 Interrupt Window means a specific opportunity that a vCPU can take interrupts. This feature is intended for User Hypervisors to forge an interrupt queue so that event injections are not lost if the Guest had not taken the previous interrupt yet. \
-Unlike Intel VT-x, AMD-V does not provide a dedicated control to intercept Interrupt Windows. However, AMD-V can intercept the `iret` instruction. Although such interception is taken before `iret` completes, where `RFlags.IF` would usually be reset, AMD-V's feature `Virtual IRQ` can delay the injection until the `RFlags.IF` bit is set. Therefore, interception of `iret` instruction is exactly interception of Interrupt Window in terms of AMD-V.
+Unlike Intel VT-x, AMD-V does not provide a dedicated control to intercept Interrupt Windows. In that AMD-V provides a unique way to inject external interrupts via virtualized local APICs, injecting an event while Guest `RFlags.IF` can be emulated properly. Plus, untaken interrupt requests would remain still. Therefore, scheduler's exit can simply check if the `V_IRQ` bit in VMCB is cleared. If the bit is cleared while there was an external interrupt injection on record, issue a VM-Exit of interrupt-window interception and remove the record of event injection. \
+AMD-V provides capability of intercepting `iret` and `popf` instruction. However, it requires parsing Guest stack and emulating the instruction. Such emulation could be arcane in the `GIF=0` context. Plus, AMD-V does not support intercepting `sti` instruction, so accurate interception of interrupt window is infeasible in AMD-V.
 
 ### CPUID Interception
 The `cpuid` instruction must be intercepted by NoirVisor, even though host may choose not to intercept it. If the host chooses not to intercept `cpuid` instruction, NoirVisor would handle the `cpuid` instruction itself. Otherwise, switch the world to the host so that host will be handling Guest's `cpuid` instruction.
@@ -322,10 +323,11 @@ Nested Page Fault, usually abbreviated as `#NPF`, indicates that a wrong physica
 
 ## APIC Virtualization
 APIC, acronym that stands for Advance Programmable Interrupt Controller, is a standard x86 component to utilize multi-core processing. Although Customizable VM does not necessarily need APIC to call other cores - hypercalls can be used instead - virtualization of APIC is favorable at best. <br>
-AMD-V supports a special feature called AVIC (Advanced Virtual Interrupt Controller) to accelerate APIC virtualization. NoirVisor may consult whether AVIC is supported.
+AMD-V supports a special feature called AVIC (Advanced Virtual Interrupt Controller) to accelerate APIC virtualization. NoirVisor may consult whether AVIC is supported. <br>
+Current implementation of NoirVisor CVM does not utilize AVIC feature. Virtualization of APIC is considered as User Hypervisor's task.
 
 ### APIC Virtualization with AVIC
-With AVIC, IPIs (Inter-Processor Interrupts) can be delivered without causing VM-Exits if target vCPU is already scheduled onto a physical core.
+With AVIC, IPIs (Inter-Processor Interrupts) can be delivered without causing VM-Exits if target vCPU is already scheduled onto a physical core. 
 
 #### Overall Architecture
 There are three special kinds of pages: the `AVIC Backing Page`, `Physical APIC ID Table`, `Logical APIC ID Table`. They must be mapped to Write-Back cacheable memory type, according to AMD64 architecture.

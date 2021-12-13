@@ -59,7 +59,7 @@ typedef ULONG32 NOIR_STATUS;
 #define IOCTL_CvmRunVcpu		CTL_CODE_GEN(0x892)
 #define IOCTL_CvmViewVcpuReg	CTL_CODE_GEN(0x893)
 #define IOCTL_CvmEditVcpuReg	CTL_CODE_GEN(0x894)
-#define IOCTL_CvmCancelRunVcpu	CTL_CODE_GEN(0x895)
+#define IOCTL_CvmRescindVcpu	CTL_CODE_GEN(0x895)
 #define IOCTL_CvmInjectEvent	CTL_CODE_GEN(0x896)
 #define IOCTL_CvmSetVcpuOptions	CTL_CODE_GEN(0x897)
 
@@ -127,6 +127,7 @@ NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN UL
 NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG64 InjectedEvent);
 NOIR_STATUS NoirSetVirtualProcessorOptions(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 OptionType,IN ULONG32 Options);
 NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID ExitContext);
+NOIR_STATUS NoirRescindVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
 
 void NoirInitializeDisassembler();
 NTSTATUS NoirReportWindowsVersion();

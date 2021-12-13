@@ -232,6 +232,13 @@ typedef union _nvc_svm_asid_control
 	u64 value;
 }nvc_svm_asid_control,*nvc_svm_asid_control_p;
 
+#define nvc_svm_avic_control_virq			8
+#define nvc_svm_avic_control_vgif			9
+#define nvc_svm_avic_control_ignore_vtpr	20
+#define nvc_svm_avic_control_vintr_mask		24
+#define nvc_svm_avic_control_vgif_enabled	25
+#define nvc_svm_avic_control_enabled		31
+
 typedef union _nvc_svm_avic_control
 {
 	struct

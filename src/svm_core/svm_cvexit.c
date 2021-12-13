@@ -347,15 +347,6 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	// DO NOT advance the rip unless cpuid is handled by NoirVisor.
 }
 
-// Expected Intercept Code: 0x74
-void static fastcall nvc_svm_iret_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
-{
-	// The iret instruction is an indication of interrupt window.
-	// Switch to the subverted host in order to handle interrupt window.
-	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
-	cvcpu->header.exit_context.intercept_code=cv_interrupt_window;
-}
-
 // Expected Intercept Code: 0x78
 void static fastcall nvc_svm_hlt_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {

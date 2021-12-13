@@ -283,7 +283,6 @@ void static fastcall nvc_svm_extint_cvexit_handler(noir_gpr_state_p gpr_state,no
 void static fastcall nvc_svm_nmi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_smi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
-void static fastcall nvc_svm_iret_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_hlt_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_invlpga_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
@@ -350,7 +349,7 @@ noir_svm_cvexit_handler_routine svm_cvexit_handler_group1[noir_svm_maximum_code1
 	nvc_svm_default_cvexit_handler,		// popf Instruction
 	nvc_svm_cpuid_cvexit_handler,		// cpuid Instruction
 	nvc_svm_default_cvexit_handler,		// rsm Instruction
-	nvc_svm_iret_cvexit_handler,		// iret Instruction
+	nvc_svm_default_cvexit_handler,		// iret Instruction
 	nvc_svm_default_cvexit_handler,		// int Instruction
 	nvc_svm_default_cvexit_handler,		// invd Instruction
 	nvc_svm_default_cvexit_handler,		// pause Instruction	

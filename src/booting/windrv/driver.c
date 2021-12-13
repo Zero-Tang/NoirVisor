@@ -226,8 +226,12 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			st=STATUS_SUCCESS;
 			break;
 		}
-		case IOCTL_CvmCancelRunVcpu:
+		case IOCTL_CvmRescindVcpu:
 		{
+			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
+			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
+			*(PULONG32)OutputBuffer=NoirRescindVirtualProcessor(VmHandle,VpIndex);
+			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmInjectEvent:

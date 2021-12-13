@@ -316,6 +316,23 @@ NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIn
 	return st;
 }
 
+NOIR_STATUS NoirRescindVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_rescind_vcpu(VP);
+	}
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return st;
+}
+
 NOIR_STATUS NoirCreateVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
