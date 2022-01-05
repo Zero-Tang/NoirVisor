@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file defines basic structure of VMCB.
 
@@ -43,7 +43,7 @@
 #define noir_svm_vmwrite	noir_svm_vmwrite64
 #else
 #define noir_svm_vmread		noir_svm_vmread32
-#define noir_svm_vmwrite	noir_svm_vmwrite64
+#define noir_svm_vmwrite	noir_svm_vmwrite32
 #endif
 
 // Misdefinition can be revised easily by this designation!
@@ -88,7 +88,7 @@ typedef enum _svm_vmcb_offset
 	guest_instruction_bytes=0xD1,
 	avic_backing_page_pointer=0xE0,
 	avic_logical_table_pointer=0xF0,
-	avic_physical_table=0xF8,
+	avic_physical_table_pointer=0xF8,
 	vmsa_pointer=0x108,
 	// Following offset definitions would be unusable if SEV-ES is enabled.
 	// State Save Area - SEV-ES Disabled

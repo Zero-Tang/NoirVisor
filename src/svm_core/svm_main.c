@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file is the basic driver of AMD-V.
 
@@ -141,38 +141,6 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_hsave_pa,1));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_svm_key,0));
 	noir_set_bitmap(bitmap3,svm_msrpm_bit(3,amd64_svm_key,1));
-	/*
-	// Intercept Memory-Typing MSRs.
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base0,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask0,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base1,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask1,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base2,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask2,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base3,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask3,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base4,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask4,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base5,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask5,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base6,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask6,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_base7,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_phys_mask7,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix64k_00000,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix16k_80000,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix16k_a0000,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_c0000,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_c8000,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_d0000,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_d8000,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_e0000,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_e8000,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_f0000,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_fix4k_f8000,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_pat,1));
-	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_mtrr_def_type,1));
-	*/
 	if(hvm_p->options.stealth_msr_hook)
 	{
 	// Setup custom MSR-Interception if enabled.
@@ -216,6 +184,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	list2.value=0;
 	list2.intercept_vmrun=1;		// The vmrun should always be intercepted as required by AMD.
 	list2.intercept_vmmcall=1;
+	// SVM instructions must be intercepted when EFER.SVME is cleared.
 	list2.intercept_vmload=1;
 	list2.intercept_vmsave=1;
 	list2.intercept_stgi=1;
@@ -422,6 +391,9 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 			if(vcpu->secondary_nptm)
 				nvc_npt_cleanup(vcpu->secondary_nptm);
 #endif
+			for(u32 j=0;j<noir_svm_cached_nested_vmcb;j++)
+				if(vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt)
+					noir_free_contd_memory(vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt);
 		}
 		noir_free_nonpg_memory(hvm_p->virtual_cpu);
 	}
@@ -489,13 +461,24 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			if(hvm_p->options.stealth_inline_hook)
 				nvc_npt_build_hook_mapping(vcpu);		// This feature does not have a good performance.
 #endif
+			if(hvm_p->options.nested_virtualization)
+			{
+				// Setup Nested Hypervisor
+				for(u32 j=0;j<noir_svm_cached_nested_vmcb;j++)
+				{
+					vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt=noir_alloc_contd_memory(page_size);
+					if(vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt==null)goto alloc_failure;
+					vcpu->nested_hvm.nested_vmcb[j].vmcb_t.phys=noir_get_physical_address(vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt);
+					vcpu->nested_hvm.nested_vmcb[j].vmcb_c.phys=0xffffffffffffffff;		// Use -1 to indicate unused VMCB.
+				}
+			}
 			if(nvc_npt_initialize_ci(vcpu->primary_nptm)==false)goto alloc_failure;
 			if(hvm_p->options.stealth_msr_hook)vcpu->enabled_feature|=noir_svm_syscall_hook;
 			if(hvm_p->options.stealth_inline_hook)vcpu->enabled_feature|=noir_svm_npt_with_hooks;
 			if(hvm_p->options.kva_shadow_presence)
 			{
 				vcpu->enabled_feature|=noir_svm_kva_shadow_present;
-				nv_dprintf("Warning: KVA-Shadow is present! Stealth MSR-Hook on AMD Processors is untested!\n");
+				nv_dprintf("Warning: KVA-Shadow is present! Stealth MSR-Hook on AMD Processors is untested in regards of KVA-Shadow!\n");
 			}
 		}
 	}

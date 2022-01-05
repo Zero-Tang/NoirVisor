@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file is the basic driver of Intel EPT.
 
@@ -123,7 +123,7 @@ typedef union _ia32_ept_large_pde
 		u64 accessed:1;
 		u64 dirty:1;
 		u64 umx:1;
-		u64 ignored0:1;
+		u64 ignored0:1;			// Indicate if set for variable MTRR.
 		u64 reserved:9;
 		u64 page_offset:31;
 		u64 ignored1:8;
@@ -264,3 +264,4 @@ typedef union _ia32_ept_violation_qualification
 bool nvc_ept_protect_hypervisor(noir_hypervisor_p hvm,noir_ept_manager_p eptm);
 noir_ept_manager_p nvc_ept_build_identity_map();
 void nvc_ept_cleanup(noir_ept_manager_p eptm);
+void nvc_ept_update_by_mtrr(noir_ept_manager_p eptm);

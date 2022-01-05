@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file defines constants and structures for Intel IA-32 processors.
 
@@ -276,7 +276,11 @@
 
 // This is used for defining IA-32 architectural cache types.
 #define ia32_uncacheable		0
+#define ia32_write_combining	1
+#define ia32_write_through		4
+#define ia32_write_protected	5
 #define ia32_write_back			6
+#define ia32_uncached_minus		7
 
 // This is used for defining IA-32 Extended Control Registers (XCR)
 typedef union _ia32_xcr0

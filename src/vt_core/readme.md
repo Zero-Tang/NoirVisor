@@ -74,9 +74,48 @@ On AMD-V/NPT, there is no need for MTRR Emulation in that Nested Paging automati
 
 ## Algorithm
 There are two types of MTRRs: Fixed MTRRs and Variable MTRRs. The Fixed MTRRs map the first MiB of system memory. The Variable MTRRs map a variable range of system memory. <br>
+The general layout of MTRR Emulation algorithm is described as the following:
 
-### Variable MTRR Range Calculation
-The Variable Range is described with a base and a mask. Since alignment is required, we may use `bsf` instruction to determine the alignment.
+1. Check the values of MSRs: `IA32_MTRRCAP` (MSR Index=0xFE), `IA32_MTRR_DEF_TYPE` (MSR Index=0x2FF).
+2. Set all pages to the default memory type indicated in the `IA32_MTRR_DEF_TYPE` MSR.
+3. If MTRR is enabled as indicated by `IA32_MTRR_DEF_TYPE` MSR, then emulation of variable MTRR is required.
+4. If SMRR (MTRR for System-Management Mode) is supported as indicated by `IA32_MTRR_CAP` MSR, then emulation of SMRR is required.
+5. If Fixed MTRR is enabled as indicated by `IA32_MTRR_DEF_TYPE` MSR, then emulation of variable MTRR is required.
+
+### Variable MTRR Emulation
+According to the definition of variable MTRR, there are two registers: the `base` register and `mask` register. <br>
+The pseudo-code of Variable MTRR logics would be like:
+```C
+mask_base = phys_mask.mask & phys_base.base;
+mask_target = phys_mask.mask & (target_address >> 12);
+if(mask_base == mask_target)set_memory_type(phys_base.type);
+```
+For simplicity, we may traverse all possible pages, check if the page is within the range, and set the memory type if the page is in range. <br>
+Current EPT implementation of NoirVisor only supports 512GiB of Guest Memory. Therefore, we may simply traverse 512GiB. <br>
+Set the bit 11 (a bit ignored by processor) in the final paging structure to indicate that this page is described by a variable MTRR. This bit will be used for checking MTRR overlaps. <br>
+If overlapping is detected, decision should be made to choose the correct memory type. The logics described by Intel and AMD are quite complex. For hypervisors, we can reduce the complexity of this logic by simply comparing the value of memory types for overlapped region: the smallest one is to be chosen. See Chapter 11.11.4.1, "MTRR Precedences", Volume 3, Intel 64 and IA-32 Architecture Software Developer's Manual for further details regarding the overlapping variable MTRRs.
+
+### Fixed MTRR Emulation
+The logic of Fixed MTRR is quite simple: read all MSRs related to the Fixed MTRRs and set them accordingly. Each MSR for Fixed MTRR defines eight memory types for eight ranges. The size of range depends on which MSR. For example, the `IA32_MTRR_FIX64K_00000` MSR defines eight memory types for eight 64KiB ranges (i.e: 16 pages per range). <br>
+Please note that the Fixed MTRRs take higher priority than Variable MTRRs when there are overlappings. Therefore, setting memory types for the Fixed MTRRs are to be done after setting for the Variable MTRRs.
+
+## MTRR-Write Interception
+The system might change the value of MTRR. In this regard, the old settings of EPT memory types would be invalid. However, it does not mean that intercepting MTRR is the only thing to do. Re-emulate MTRRs on every interception is a dumb idea. 
+
+On interceptions of writes that set `CR0.CD` bit, set the `CR0.CD` bit in both host and guest so that caching is disabled.
+
+On interceptions of writes to MTRRs:
+
+1. Check the `CR0.CD` bit, if caching is not disabled, re-emulate MTRRs.
+2. Otherwise, set a hint that, on writes that sets `CR0.CD`, MTRRs should be re-emulated.
+3. Pass the value to be written to the real MTRR.
+
+On interceptions of writes that clear `CR0.CD` bit:
+
+1. Re-emulate MTRRs.
+2. Clear the `CR0.CD` bit so that caching is enabled.
+
+When re-emulating MTRRs, do not forget to execute `invept` instruction to flush EPT TLBs.
 
 # Future Feature (Roadmap)
 In future, NoirVisor has following plans:
@@ -223,3 +262,98 @@ By now, I do not have a clear idea on how to effectively utilize this processor 
 ## Devirtualize on-the-fly
 Since NoirVisor is possible to be unloaded before the nested hypervisor ends, it is necessary to put nested hypervisor directly onto the processor - that is, L1 becomes L0 and L2 becomes L1. <br>
 This is a suggestion for Nested Virtualization in NoirVisor. By now, algorithm design will not be made. After the Nested Virtualization feature completes, NoirVisor may refuse unloading as long as the nested hypervisor did not leave. <br>
+
+# Customizable VM Scheduler Algorithm
+This chapter describes the CVM scheduler algorithm for VT-Core.
+
+## World Switch - Host to Guest
+The only condition to switch the world from Host to Guest is the Host's hypercall to request switching to the Guest's vCPU. <br>
+Prior to switching vCPU, the scheduler should save the Host's state, which includes:
+
+- General-Purpose Registers (Excludes `rsp`, `rip` and `rflags` in that they are already saved in VMCS)
+- Control Registers (Excludes `cr8` in that it is subject to be virtualized)
+- Debug Registers (Excludes `dr7` in that it is already saved in VMCS)
+- Extended State (We may use `xsave` instruction)
+
+To run a vCPU, the scheduler should load state for Guest's vCPU. In addition to the state above, the scheduler should load following state to VMCS:
+
+- Control Registers (Includes `cr0`, `cr3`, `cr4`)
+- Debug Registers (Includes `dr7`)
+- General-Purpose Registers (Includes `rsp`, `rflags` and `rip`)
+- Segment Registers
+- Model-Specific Registers (Includes `efer`, etc.)
+
+All states other than General-Purpose Registers are subject to be cached so that we won't have to frequently load them into VMCB. The following union defines the states to be cached by NoirVisor:
+
+```C
+typedef union _noir_cvm_vcpu_state_cache
+{
+	struct
+	{
+		u32 gprvalid:1;		// Includes rsp,rip,rflags.
+		u32 cr_valid:1;		// Includes cr0,cr3,cr4.
+		u32 cr2valid:1;		// Includes cr2.
+		u32 dr_valid:1;		// Includes dr6,dr7.
+		u32 sr_valid:1;		// Includes cs,ds,es,ss.
+		u32 fg_valid:1;		// Includes fs,gs,kgsbase.
+		u32 dt_valid:1;		// Includes idtr,gdtr.
+		u32 lt_valid:1;		// Includes tr,ldtr.
+		u32 sc_valid:1;		// Includes star,lstar,cstar,sfmask.
+		u32 se_valid:1;		// Includes esp,eip,cs for sysenter.
+		u32 tp_valid:1;		// Includes cr8.tpr.
+		u32 ef_valid:1;		// Includes efer.
+		u32 pa_valid:1;		// Includes pat.
+		u32 reserved:18;
+		u32 synchronized:1;
+	};
+	u32 value;
+}noir_cvm_vcpu_state_cache,*noir_cvm_vcpu_state_cache_p;
+```
+
+If the host changed some of the state of vCPU, its corresponding bit should be cleared so that the scheduler would copy these contents to the VMCS.
+
+## World Switch - Guest to Host
+The condition to switch the processor context from the guest to the host is certain VM-Exits from the guest. Not all VM-Exits require a world switch. VM-Exits that require a world switch includes:
+- External Interrupts. (Includes external interrupts and `NMI`s)
+- I/O Instruction. (Includes `in`, `rep outsb` instructions, etc.)
+- Processor Halt. (The `hlt` instruction)
+- Triple-Fault.
+- Hypercall (The `vmmcall` instruction)
+- User-defined interceptions (Exceptions, `cpuid` instruction, etc.)
+
+Only vCPU states not saved into VMCS should be saved for Guest and loaded for Host.
+
+## World Switch - vCPU Migration
+To migrate a vCPU to another logical processor, the VMCS must undergo a sequence of `vmclear`, `vmptrld` and `vmlaunch`. Otherwise, things could go wrong.
+
+## Interception Settings
+Certain interceptions must be set to ensure the correct functionality of NoirVisor CVM.
+
+### Interrupt Interception
+In that guests are not supposed to take external interrupts from real hardware, they must be intercepted and passed to the host. We may set `external-interrupt exiting` and `NMI exiting` bits in `Pin-Based VM-Execution Controls` field in VMCS. <br>
+In terms of external interrupts, we should set the `acknowledge interrupt on exit` to `false` in `VM-Exit Controls` fields of VMCS, so external interrupts would be held pending. Simply returning to the host, like what we did in AMD-V, should have the external interrupts to be delivered. <br>
+In terms of NMIs, we should inject the NMIs to the host in order to deliver them. In addition to event injection, the `blocking-by-NMI` bit of `Interruptibility-State` in VMCS for the host should also be set.
+
+### CPUID Interception
+The `cpuid` instruction must be intercepted by NoirVisor, even though host may choose not to intercept it. If the host chooses not to intercept `cpuid` instruction, NoirVisor would handle the `cpuid` instruction itself. Otherwise, switch the world to the host so that host will be handling Guest's `cpuid` instruction.
+
+### INVD Interception
+The `invd` instruction must be intercepted by NoirVisor. The `invd` instruction invalidates all caches without writing them back to the main memory. In this regard, NoirVisor must take responsibility to prevent the guest purposefully corrupting the global memory. Virtualization of `invd` instruction is actually simple: execute `wbinvd` instruction on exit of `invd`. At least this is what Hyper-V would do. Intel VT-x forces any hypervisor developers to intercept `invd` instruction.
+
+### I/O Interception
+I/O Interceptions are mandatory in that I/O operations in Guest are not supposed to go to real hardwares. Instead, they should go to virtual appliances, which Host is supposed to emulate. Switch the world to the host so that host will be handling Guest's I/O. Intel VT-x can specify `Unconditional I/O Exits` in `Primary Processor-based VM-Execution Control` field of VMCS, so it may save space so that we don't have to allocate pages for I/O bitmaps.
+
+### MSR Interception
+Similar to the `cpuid` instruction, Host can choose whether to intercept this instruction or not. If the host does not intercept MSR-Related instructions, NoirVisor would handle them and masking certain operations (e.g: accessing the `EFER` MSR). Otherwise, NoirVisor would switch to the Host to handle the instructions. Intel VT-x can specify not to `Use MSR Bitmaps` in `Primary Processor-based VM-Execution Control` field of VMCS, so we may only allocate a page in case the host do not intend to intercept MSR accesses.
+
+### Triple-Fault
+ NoirVisor won't handle triple-fault itself. Switch to the host so the Host may handle it.
+
+### VMX Interception
+Currently, NoirVisor does not support a hypervisor to be nested inside a CVM. Simply inject a `#UD` exception to guest if VMX instructions are intercepted. Do not switch to the host to indicate the guest is attempting to execute VMX instructions.
+
+### Exception Interception
+Exception interception is optional: it is only intercepted if the User Hypervisor specifies so. The `#MC` is exceptions to this rule: `#MC` must be intercepted in that this is a physical-hardware-issued exception, which must be taken by host interrupt handler.
+
+### EPT Violation
+EPT Violation indicates that a wrong physical address is accessed. NoirVisor would not handle EPT Violation itself, but transfer the interception to the host. Unlike AMD-V, albeit information like access type would be recorded, fetched instruction bytes would not be recorded.

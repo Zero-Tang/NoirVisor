@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file is the customizable VM engine for AMD-V
 
@@ -258,6 +258,8 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		avic_ctrl.virtual_interrupt_vector=cvcpu->header.injected_event.attributes.vector;
 		avic_ctrl.virtual_interrupt_priority=cvcpu->header.injected_event.attributes.priority;
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,avic_control,avic_ctrl.value);
+		// Note that the AVIC Control field is cached. Invalidate it.
+		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_tpr);
 	}
 	// If AVIC is supported, set the Physical APIC ID Entry to be running.
 	if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
@@ -392,6 +394,8 @@ void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	vector1.intercept_smi=1;
 	// We need to hook the cpuid instruction.
 	vector1.intercept_cpuid=1;
+	// The invd instruction could corrupt main memory globally. Intercept it.
+	vector1.intercept_invd=1;
 	// The hlt instruction is intended for scheduler.
 	vector1.intercept_hlt=1;
 	// The invlpga is an SVM instruction, which must be intercepted.

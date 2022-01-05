@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file is the Exit Handler of CVM in SVM-Core.
 
@@ -345,6 +345,15 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 		noir_svm_advance_rip(cvcpu->vmcb.virt);
 	}
 	// DO NOT advance the rip unless cpuid is handled by NoirVisor.
+}
+
+// Expected Intercept Code: 0x76
+void static fastcall nvc_svm_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+{
+	// The invd instruction would corrupt cache globally host and it thereby must be intercepted.
+	// Execute wbinvd to protect global cache.
+	noir_wbinvd();
+	noir_svm_advance_rip(cvcpu->vmcb.virt);
 }
 
 // Expected Intercept Code: 0x78

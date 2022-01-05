@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file is the exit handler of Intel VT-x.
 
@@ -699,6 +699,26 @@ void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,noir_vt
 					// Otherwise, perform setup.
 					else
 					{
+						ulong_ptr gcr0,cr0x;
+						noir_vt_vmread(guest_cr0,&gcr0);
+						// Use exclusive-or to check if CR0.CD bit is being changed.
+						cr0x=gcr0^data;
+						if(noir_bt((u32*)&cr0x,ia32_cr0_cd))
+						{
+							// The CR0.CD bit is being changed.
+							if(noir_bt((u32*)&gcr0,ia32_cr0_cd)==0)
+							{
+								invept_descriptor ied;
+								// Reset EPT entries.
+								nvc_ept_update_by_mtrr(vcpu->ept_manager);
+								// Flush EPT TLB due to the update.
+								ied.eptp=vcpu->ept_manager->eptp.phys.value;
+								ied.reserved=0;
+								noir_vt_invept(ept_single_invd,&ied);
+							}
+						}
+						// Reflect the write to both host and guest.
+						noir_vt_vmwrite(host_cr0,data);
 						noir_vt_vmwrite(guest_cr0,data);
 						noir_vt_vmwrite(cr0_read_shadow,data);
 					}
@@ -889,6 +909,61 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 				// in that we may simply throw the value to MSR.
 #endif
 				noir_wrmsr(ia32_bios_updt_trig,val.value);
+				break;
+			}
+			case ia32_mtrr_phys_base0:
+			case ia32_mtrr_phys_mask0:
+			case ia32_mtrr_phys_base1:
+			case ia32_mtrr_phys_mask1:
+			case ia32_mtrr_phys_base2:
+			case ia32_mtrr_phys_mask2:
+			case ia32_mtrr_phys_base3:
+			case ia32_mtrr_phys_mask3:
+			case ia32_mtrr_phys_base4:
+			case ia32_mtrr_phys_mask4:
+			case ia32_mtrr_phys_base5:
+			case ia32_mtrr_phys_mask5:
+			case ia32_mtrr_phys_base6:
+			case ia32_mtrr_phys_mask6:
+			case ia32_mtrr_phys_base7:
+			case ia32_mtrr_phys_mask7:
+			case ia32_mtrr_phys_base8:
+			case ia32_mtrr_phys_mask8:
+			case ia32_mtrr_phys_base9:
+			case ia32_mtrr_phys_mask9:
+			case ia32_mtrr_fix64k_00000:
+			case ia32_mtrr_fix16k_80000:
+			case ia32_mtrr_fix16k_a0000:
+			case ia32_mtrr_fix4k_c0000:
+			case ia32_mtrr_fix4k_c8000:
+			case ia32_mtrr_fix4k_d0000:
+			case ia32_mtrr_fix4k_d8000:
+			case ia32_mtrr_fix4k_e0000:
+			case ia32_mtrr_fix4k_e8000:
+			case ia32_mtrr_fix4k_f0000:
+			case ia32_mtrr_fix4k_f8000:
+			case ia32_mtrr_def_type:
+			{
+				ulong_ptr gcr0;
+				// Writes to MTRRs are intercepted.
+				// Pass the value to the real MTRR.
+				noir_wrmsr(index,val.value);
+				// If CR0.CD is cleared, we should re-emulate MTRRs.
+				// Otherwise, simply mark the MTRR is dirty.
+				// Re-emulation would be done when CR0.CD is reset.
+				noir_vt_vmread(guest_cr0,&gcr0);
+				if(noir_bt((u32*)&gcr0,ia32_cr0_cd))
+					vcpu->mtrr_dirty=1;
+				else
+				{
+					invept_descriptor ied;
+					// Reset EPT entries.
+					nvc_ept_update_by_mtrr(vcpu->ept_manager);
+					// Flush EPT TLB due to the update.
+					ied.eptp=vcpu->ept_manager->eptp.phys.value;
+					ied.reserved=0;
+					noir_vt_invept(ept_single_invd,&ied);
+				}
 				break;
 			}
 #if defined(_amd64)

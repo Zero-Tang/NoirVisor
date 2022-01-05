@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file defines intrinsics for VMX instructions.
 
@@ -40,7 +40,7 @@ typedef struct _invvpid_descriptor
 }invvpid_descriptor,*invvpid_descriptor_p;
 
 #if defined(_msvc)
-//Following intrinsics are defined inside MSVC compiler for x64.
+// Following intrinsics are defined inside MSVC compiler for x64.
 #if defined(_amd64)
 #define noir_vt_vmxon		__vmx_on
 #define noir_vt_vmptrld		__vmx_vmptrld

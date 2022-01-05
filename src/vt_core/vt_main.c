@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file is the basic driver of Intel VT-x.
 
@@ -139,7 +139,6 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 			if(rhvm->io_bitmap_b.virt)noir_free_contd_memory(rhvm->io_bitmap_b.virt);
 		}
 	}
-	// nvc_vt_teardown_exit_handlers();
 }
 
 void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
@@ -239,6 +238,39 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 	// Setup Microcode-Updater MSR Hook. Microcode update should be intercepted in
 	// that if it is not intercepted, processor may result in undefined behavior.
 	noir_set_bitmap(write_bitmap_low,ia32_bios_updt_trig);
+	// Setup MTRR Write-Hook.
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_base0);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_mask0);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_base1);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_mask1);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_base2);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_mask2);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_base3);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_mask3);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_base4);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_mask4);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_base5);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_mask5);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_base6);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_mask6);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_base7);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_mask7);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_base8);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_mask8);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_base9);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_phys_mask9);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_fix64k_00000);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_fix16k_80000);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_fix16k_a0000);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_fix4k_c0000);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_fix4k_c8000);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_fix4k_d0000);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_fix4k_d8000);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_fix4k_e0000);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_fix4k_e8000);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_fix4k_f0000);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_fix4k_f8000);
+	noir_set_bitmap(write_bitmap_low,ia32_mtrr_def_type);
 	// Setup Nested Virtualization MSR Read-Hook.
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_basic);
 	noir_set_bitmap(read_bitmap_low,ia32_vmx_pinbased_ctrl);
@@ -447,6 +479,7 @@ void static nvc_vt_setup_procbased_controls(bool true_msr)
 		proc_ctrl2.unrestricted_guest=1;	// Allows the guest to enter unpaged mode.
 		proc_ctrl2.enable_invpcid=1;
 		proc_ctrl2.enable_xsaves_xrstors=1;
+		proc_ctrl2.use_gpa_for_intel_pt=1;	// Don't allow Intel Processor Trace to bypass EPT.
 		// Filter unsupported fields.
 		proc_ctrl2.value|=proc_ctrl2_msr.allowed0_settings.value;
 		proc_ctrl2.value&=proc_ctrl2_msr.allowed1_settings.value;
@@ -507,10 +540,9 @@ void static nvc_vt_setup_memory_virtualization(noir_vt_vcpu_p vcpu)
 	if(vcpu->enabled_feature & noir_vt_vpid_tagged_tlb)
 		noir_vt_vmwrite(virtual_processor_identifier,1);
 	if(vcpu->enabled_feature & noir_vt_extended_paging)
-	{
-		noir_ept_manager_p eptm=(noir_ept_manager_p)vcpu->ept_manager;
-		noir_vt_vmwrite64(ept_pointer,eptm->eptp.phys.value);
-	}
+		noir_vt_vmwrite64(ept_pointer,vcpu->ept_manager->eptp.phys.value);
+	// It is required to setup memory types on a per-processor basis.
+	nvc_ept_update_by_mtrr(vcpu->ept_manager);
 }
 
 void static nvc_vt_setup_available_features(noir_vt_vcpu_p vcpu)
@@ -565,8 +597,8 @@ void static nvc_vt_setup_control_area(bool true_msr)
 	nvc_vt_setup_procbased_controls(true_msr);
 	nvc_vt_setup_vmexit_controls(true_msr);
 	nvc_vt_setup_vmentry_controls(true_msr);
-	noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_pe_bit|ia32_cr0_ne_bit|ia32_cr0_pg_bit);	// Monitor PE, NE and PG flags
-	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_vmxe_bit);									// Monitor VMXE flags
+	noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_pe_bit|ia32_cr0_ne_bit|ia32_cr0_pg_bit|ia32_cr0_cd_bit);	// Monitor PE, NE, CD and PG flags
+	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_vmxe_bit);													// Monitor VMXE flags
 }
 
 u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,ulong_ptr gip)
@@ -739,7 +771,6 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 	}*/
 	// Query Extended State Enumeration - Useful for xsetbv handler, CVM scheduler, etc.
 	noir_cpuid(ia32_cpuid_std_pestate_enum,0,&hvm_p->xfeat.support_mask.low,&hvm_p->xfeat.enabled_size_max,&hvm_p->xfeat.supported_size_max,&hvm_p->xfeat.support_mask.high);
-	// if(nvc_vt_build_exit_handlers()==noir_insufficient_resources)goto alloc_failure;
 	nvc_vt_set_mshv_handler(hvm_p->options.cpuid_hv_presence);
 	hvm->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();
 	if(hvm->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;

@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file is the basic development kit of NoirVisor.
   Do not include definitions related to virtualization in this header.
@@ -23,6 +23,7 @@
 #define page_1gb_size			0x40000000
 #define page_512gb_size			0x8000000000
 
+#define page_shift_diff			9
 #define page_shift				12
 #define page_4kb_shift			12
 #define page_2mb_shift			21

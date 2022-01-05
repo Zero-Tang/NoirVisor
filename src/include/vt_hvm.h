@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file defines structures and constants for VMX Driver of NoirVisor.
 
@@ -64,6 +64,8 @@ typedef struct _noir_vt_nested_vcpu
 	u32 status;
 }noir_vt_nested_vcpu,*noir_vt_nested_vcpu_p;
 
+struct _noir_ept_manager;
+
 typedef struct _noir_vt_vcpu
 {
 	memory_descriptor vmxon;
@@ -71,13 +73,14 @@ typedef struct _noir_vt_vcpu
 	memory_descriptor msr_auto;
 	void* hv_stack;
 	noir_vt_hvm_p relative_hvm;
-	void* ept_manager;
+	struct _noir_ept_manager *ept_manager;
 	noir_vt_virtual_msr virtual_msr;
 	noir_vt_nested_vcpu nested_vcpu;
 	noir_mshv_vcpu mshvcpu;
 	u32 family_ext;		// Cached info of Extended Family.
 	u8 status;
 	u8 enabled_feature;
+	u8 mtrr_dirty;
 }noir_vt_vcpu,*noir_vt_vcpu_p;
 
 struct _noir_vt_custom_vm;

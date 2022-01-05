@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file is the basic Exit Handler of SVM Driver.
 
@@ -128,6 +128,23 @@ cr4_handler_over:
 	noir_svm_advance_rip(vmcb);
 }
 
+// Expected Intercept Code: 0x41
+void static fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	if(!vcpu->nested_hvm.gif)
+	{
+		// If the GIF is reset, then:
+		// Single-stepping #DBs should be held pending.
+		// Breakpoint #DBs should be discarded.
+		// Other #DBs should immediately fired.
+		if(noir_svm_vmcb_bt32(vmcb,guest_dr6,amd64_dr6_bs))
+			vcpu->nested_hvm.pending_db=true;
+		else if(noir_svm_vmcb_bt32(vmcb,guest_dr6,amd64_dr6_bd) || noir_svm_vmcb_bt32(vmcb,guest_dr6,amd64_dr6_bt))
+			noir_svm_inject_event(vmcb,amd64_debug_exception,amd64_fault_trap_exception,false,true,0);
+	}
+}
+
 // Expected Intercept Code: 0x4E
 void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
@@ -149,9 +166,97 @@ void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noi
 		amd64_page_fault_error_code error_code;
 		error_code.value=noir_svm_vmread32(vmcb,exit_info1);
 		noir_svm_vmwrite(vmcb,guest_cr2,fault_address);
-		noir_svm_inject_event(vmcb,amd64_page_fault,amd64_fault_trap_exception,false,true,error_code.value);
+		noir_svm_inject_event(vmcb,amd64_page_fault,amd64_fault_trap_exception,true,true,error_code.value);
 		noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_cr2);
 	}
+}
+
+void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid_fms)
+{
+	// For details of emulation, see Table 14-1 in Vol.2 of AMD64 APM.
+	u64 cr0=noir_svm_vmread64(vmcb,guest_cr0);
+	cr0&=0x60000000;		// Bits CD & NW of CR0 are unchanged during INIT.
+	cr0|=0x00000010;		// Bit ET of CR0 is always set.
+	noir_svm_vmwrite64(vmcb,guest_cr0,cr0);
+	// CR2, CR3 and CR4 are cleared to zero.
+	noir_svm_vmwrite64(vmcb,guest_cr2,0);
+	noir_svm_vmwrite64(vmcb,guest_cr3,0);
+	noir_svm_vmwrite64(vmcb,guest_cr4,0);
+	// Leave SVME set but others reset in EFER.
+	noir_svm_vmwrite64(vmcb,guest_efer,amd64_efer_svme_bit);
+	// Debug Registers...
+	noir_writedr0(0);
+	noir_writedr1(0);
+	noir_writedr2(0);
+	noir_writedr3(0);
+	noir_svm_vmwrite64(vmcb,guest_dr6,0xFFFF0FF0);
+	noir_svm_vmwrite64(vmcb,guest_dr7,0x400);
+	// Segment Register - CS
+	noir_svm_vmwrite16(vmcb,guest_cs_selector,0xF000);
+	noir_svm_vmwrite16(vmcb,guest_cs_attrib,0x9B);
+	noir_svm_vmwrite32(vmcb,guest_cs_limit,0xFFFF);
+	noir_svm_vmwrite64(vmcb,guest_cs_base,0xFFFF0000);
+	// Segment Register - DS
+	noir_svm_vmwrite16(vmcb,guest_ds_selector,0);
+	noir_svm_vmwrite16(vmcb,guest_ds_attrib,0x93);
+	noir_svm_vmwrite32(vmcb,guest_ds_limit,0xFFFF);
+	noir_svm_vmwrite64(vmcb,guest_ds_base,0);
+	// Segment Register - ES
+	noir_svm_vmwrite16(vmcb,guest_es_selector,0);
+	noir_svm_vmwrite16(vmcb,guest_es_attrib,0x93);
+	noir_svm_vmwrite32(vmcb,guest_es_limit,0xFFFF);
+	noir_svm_vmwrite64(vmcb,guest_es_base,0);
+	// Segment Register - FS
+	noir_svm_vmwrite16(vmcb,guest_fs_selector,0);
+	noir_svm_vmwrite16(vmcb,guest_fs_attrib,0x93);
+	noir_svm_vmwrite32(vmcb,guest_fs_limit,0xFFFF);
+	noir_svm_vmwrite64(vmcb,guest_fs_base,0);
+	// Segment Register - GS
+	noir_svm_vmwrite16(vmcb,guest_gs_selector,0);
+	noir_svm_vmwrite16(vmcb,guest_gs_attrib,0x93);
+	noir_svm_vmwrite32(vmcb,guest_gs_limit,0xFFFF);
+	noir_svm_vmwrite64(vmcb,guest_gs_base,0);
+	// Segment Register - SS
+	noir_svm_vmwrite16(vmcb,guest_ss_selector,0);
+	noir_svm_vmwrite16(vmcb,guest_ss_attrib,0x93);
+	noir_svm_vmwrite32(vmcb,guest_ss_limit,0xFFFF);
+	noir_svm_vmwrite64(vmcb,guest_ss_base,0);
+	// Segment Register - GDTR
+	noir_svm_vmwrite32(vmcb,guest_gdtr_limit,0xFFFF);
+	noir_svm_vmwrite64(vmcb,guest_gdtr_base,0);
+	// Segment Register - IDTR
+	noir_svm_vmwrite32(vmcb,guest_idtr_limit,0xFFFF);
+	noir_svm_vmwrite64(vmcb,guest_idtr_base,0);
+	// Segment Register - LDTR
+	noir_svm_vmwrite16(vmcb,guest_ldtr_selector,0);
+	noir_svm_vmwrite16(vmcb,guest_ldtr_attrib,0x82);
+	noir_svm_vmwrite32(vmcb,guest_ldtr_limit,0xFFFF);
+	noir_svm_vmwrite64(vmcb,guest_ldtr_base,0);
+	// Segment Register - TR
+	noir_svm_vmwrite16(vmcb,guest_tr_selector,0);
+	noir_svm_vmwrite16(vmcb,guest_tr_attrib,0x8b);
+	noir_svm_vmwrite32(vmcb,guest_tr_limit,0xFFFF);
+	noir_svm_vmwrite64(vmcb,guest_tr_base,0);
+	// IDTR & GDTR
+	noir_svm_vmwrite16(vmcb,guest_gdtr_limit,0xFFFF);
+	noir_svm_vmwrite16(vmcb,guest_idtr_limit,0xFFFF);
+	noir_svm_vmwrite64(vmcb,guest_gdtr_base,0);
+	noir_svm_vmwrite64(vmcb,guest_idtr_base,0);
+	// General Purpose Registers...
+	noir_svm_vmwrite64(vmcb,guest_rsp,0);
+	noir_svm_vmwrite64(vmcb,guest_rip,0xfff0);
+	noir_svm_vmwrite64(vmcb,guest_rflags,2);
+	noir_stosp(gpr_state,0,sizeof(void*)*2);	// Clear the GPRs.
+	gpr_state->rdx=cpuid_fms;				// Use info from cached CPUID.
+	// FIXME: Set the vCPU to "Wait-for-SPI" State. AMD-V lacks this feature.
+	// Flush all TLBs in that paging in the guest is switched off during INIT signal.
+	noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_guest);
+	// Mark certain cached items as dirty in order to invalidate them.
+	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_control_reg);
+	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_debug_reg);
+	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_idt_gdt);
+	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_segment_reg);
+	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_cr2);
 }
 
 // Expected Intercept Code: 0x5E
@@ -163,99 +268,22 @@ void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noi
 	{
 		case amd64_sx_init_redirection:
 		{
-			// Check if guest has set redirection of INIT.
-			if(vcpu->nested_hvm.r_init)
-				noir_svm_inject_event(vmcb,amd64_security_exception,amd64_fault_trap_exception,true,true,amd64_sx_init_redirection);
+			// Check if the guest has a cleared GIF.
+			if(vcpu->nested_hvm.gif)
+				vcpu->nested_hvm.pending_init=true;
 			else
 			{
-				// The default treatment of INIT interception is absurd in AMD-V
-				// in that INIT signal would not disappear on interception!
-				// We thereby have to redirect INIT signals into #SX exceptions.
-				// Emulate what a real INIT Signal would do.
-				// For details of emulation, see Table 14-1 in Vol.2 of AMD64 APM.
-				u64 cr0=noir_svm_vmread64(vmcb,guest_cr0);
-				cr0&=0x60000000;		// Bits CD & NW of CR0 are unchanged during INIT.
-				cr0|=0x00000010;		// Bit ET of CR0 is always set.
-				noir_svm_vmwrite64(vmcb,guest_cr0,cr0);
-				// CR2, CR3 and CR4 are cleared to zero.
-				noir_svm_vmwrite64(vmcb,guest_cr2,0);
-				noir_svm_vmwrite64(vmcb,guest_cr3,0);
-				noir_svm_vmwrite64(vmcb,guest_cr4,0);
-				// Leave SVME set but others reset in EFER.
-				noir_svm_vmwrite64(vmcb,guest_efer,amd64_efer_svme_bit);
-				// Debug Registers...
-				noir_writedr0(0);
-				noir_writedr1(0);
-				noir_writedr2(0);
-				noir_writedr3(0);
-				noir_svm_vmwrite64(vmcb,guest_dr6,0xFFFF0FF0);
-				noir_svm_vmwrite64(vmcb,guest_dr7,0x400);
-				// Segment Register - CS
-				noir_svm_vmwrite16(vmcb,guest_cs_selector,0xF000);
-				noir_svm_vmwrite16(vmcb,guest_cs_attrib,0x9B);
-				noir_svm_vmwrite32(vmcb,guest_cs_limit,0xFFFF);
-				noir_svm_vmwrite64(vmcb,guest_cs_base,0xFFFF0000);
-				// Segment Register - DS
-				noir_svm_vmwrite16(vmcb,guest_ds_selector,0);
-				noir_svm_vmwrite16(vmcb,guest_ds_attrib,0x93);
-				noir_svm_vmwrite32(vmcb,guest_ds_limit,0xFFFF);
-				noir_svm_vmwrite64(vmcb,guest_ds_base,0);
-				// Segment Register - ES
-				noir_svm_vmwrite16(vmcb,guest_es_selector,0);
-				noir_svm_vmwrite16(vmcb,guest_es_attrib,0x93);
-				noir_svm_vmwrite32(vmcb,guest_es_limit,0xFFFF);
-				noir_svm_vmwrite64(vmcb,guest_es_base,0);
-				// Segment Register - FS
-				noir_svm_vmwrite16(vmcb,guest_fs_selector,0);
-				noir_svm_vmwrite16(vmcb,guest_fs_attrib,0x93);
-				noir_svm_vmwrite32(vmcb,guest_fs_limit,0xFFFF);
-				noir_svm_vmwrite64(vmcb,guest_fs_base,0);
-				// Segment Register - GS
-				noir_svm_vmwrite16(vmcb,guest_gs_selector,0);
-				noir_svm_vmwrite16(vmcb,guest_gs_attrib,0x93);
-				noir_svm_vmwrite32(vmcb,guest_gs_limit,0xFFFF);
-				noir_svm_vmwrite64(vmcb,guest_gs_base,0);
-				// Segment Register - SS
-				noir_svm_vmwrite16(vmcb,guest_ss_selector,0);
-				noir_svm_vmwrite16(vmcb,guest_ss_attrib,0x93);
-				noir_svm_vmwrite32(vmcb,guest_ss_limit,0xFFFF);
-				noir_svm_vmwrite64(vmcb,guest_ss_base,0);
-				// Segment Register - GDTR
-				noir_svm_vmwrite32(vmcb,guest_gdtr_limit,0xFFFF);
-				noir_svm_vmwrite64(vmcb,guest_gdtr_base,0);
-				// Segment Register - IDTR
-				noir_svm_vmwrite32(vmcb,guest_idtr_limit,0xFFFF);
-				noir_svm_vmwrite64(vmcb,guest_idtr_base,0);
-				// Segment Register - LDTR
-				noir_svm_vmwrite16(vmcb,guest_ldtr_selector,0);
-				noir_svm_vmwrite16(vmcb,guest_ldtr_attrib,0x82);
-				noir_svm_vmwrite32(vmcb,guest_ldtr_limit,0xFFFF);
-				noir_svm_vmwrite64(vmcb,guest_ldtr_base,0);
-				// Segment Register - TR
-				noir_svm_vmwrite16(vmcb,guest_tr_selector,0);
-				noir_svm_vmwrite16(vmcb,guest_tr_attrib,0x8b);
-				noir_svm_vmwrite32(vmcb,guest_tr_limit,0xFFFF);
-				noir_svm_vmwrite64(vmcb,guest_tr_base,0);
-				// IDTR & GDTR
-				noir_svm_vmwrite16(vmcb,guest_gdtr_limit,0xFFFF);
-				noir_svm_vmwrite16(vmcb,guest_idtr_limit,0xFFFF);
-				noir_svm_vmwrite64(vmcb,guest_gdtr_base,0);
-				noir_svm_vmwrite64(vmcb,guest_idtr_base,0);
-				// General Purpose Registers...
-				noir_svm_vmwrite64(vmcb,guest_rsp,0);
-				noir_svm_vmwrite64(vmcb,guest_rip,0xfff0);
-				noir_svm_vmwrite64(vmcb,guest_rflags,2);
-				noir_stosp(gpr_state,0,sizeof(void*)*2);	// Clear the GPRs.
-				gpr_state->rdx=vcpu->cpuid_fms;				// Use info from cached CPUID.
-				// FIXME: Set the vCPU to "Wait-for-SPI" State. AMD-V lacks this feature.
-				// Flush all TLBs in that paging in the guest is switched off during INIT signal.
-				noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_guest);
-				// Mark certain cached items as dirty in order to invalidate them.
-				noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_control_reg);
-				noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_debug_reg);
-				noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_idt_gdt);
-				noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_segment_reg);
-				noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_cr2);
+				// Check if guest has set redirection of INIT.
+				if(vcpu->nested_hvm.r_init)
+					noir_svm_inject_event(vmcb,amd64_security_exception,amd64_fault_trap_exception,true,true,amd64_sx_init_redirection);
+				else
+				{
+					// The default treatment of INIT interception is absurd in AMD-V
+					// in that INIT signal would not disappear on interception!
+					// We thereby have to redirect INIT signals into #SX exceptions.
+					// Emulate what a real INIT Signal would do.
+					nvc_svm_emulate_init_signal(gpr_state,vmcb,vcpu->cpuid_fms);
+				}
 			}
 			break;
 		}
@@ -266,6 +294,16 @@ void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noi
 			break;
 		}
 	}
+}
+
+// Expected Intercept Code: 0x61
+void static fastcall nvc_svm_nmi_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	// This handler is only to be called when we are emulating a cleared GIF!
+	// Let go of the NMI.
+	nvc_svm_host_ready_nmi();
+	// Mark there is a pending NMI in the vCPU.
+	vcpu->nested_hvm.pending_nmi=true;
 }
 
 bool static fastcall nvc_svm_parse_npiep_operand(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,ulong_ptr *result)
@@ -771,23 +809,9 @@ void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 					if(vcpu->nested_hvm.svme)
 					{
 						// Enable Acceleration of Virtualization if available.
+						// Note that virtual GIF has no use here.
 						nvc_svm_instruction_intercept2 list2;
 						list2.value=noir_svm_vmread16(vcpu->vmcb.virt,intercept_instruction2);
-						if(vcpu->enabled_feature & noir_svm_virtual_gif)
-						{
-							nvc_svm_avic_control avic_ctrl;
-							// Enable vGIF and set GIF for guest.
-							avic_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,avic_control);
-							avic_ctrl.virtual_gif=true;
-							avic_ctrl.enable_virtual_gif=true;
-							noir_svm_vmwrite64(vcpu->vmcb.virt,avic_control,avic_ctrl.value);
-							// We don't have to intercept stgi/clgi anymore.
-							list2.intercept_stgi=0;
-							list2.intercept_clgi=0;
-							// Because TPR-related field is changed in VMCB,
-							// Clear the cached state of VMCB.
-							noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_tpr);
-						}
 						if(vcpu->enabled_feature & noir_svm_virtualized_vmls)
 						{
 							nvc_svm_lbr_virtualization_control lbr_virt_ctrl;
@@ -807,20 +831,6 @@ void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 					{
 						nvc_svm_instruction_intercept2 list2;
 						list2.value=noir_svm_vmread16(vcpu->vmcb.virt,intercept_instruction2);
-						if(vcpu->enabled_feature & noir_svm_virtual_gif)
-						{
-							nvc_svm_avic_control avic_ctrl;
-							// Disable vGIF for guest.
-							avic_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,avic_control);
-							avic_ctrl.enable_virtual_gif=false;
-							noir_svm_vmwrite64(vcpu->vmcb.virt,avic_control,avic_ctrl.value);
-							// Because SVME is disabled, we have to intercept stgi/clgi.
-							list2.intercept_stgi=1;
-							list2.intercept_clgi=1;
-							// Because TPR-related field is changed in VMCB,
-							// Clear the cached state of VMCB.
-							noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_tpr);
-						}
 						if(vcpu->enabled_feature & noir_svm_virtualized_vmls)
 						{
 							nvc_svm_lbr_virtualization_control lbr_virt_ctrl;
@@ -850,7 +860,10 @@ void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 				if(page_4kb_offset(val.value))		// Unaligned address will trigger #GP exception.
 					noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
 				else
+				{
 					vcpu->nested_hvm.hsave_gpa=val.value;
+					vcpu->nested_hvm.hsave_hva=noir_find_virt_by_phys(val.value);
+				}
 				break;
 			}
 #if defined(_amd64)
@@ -900,20 +913,62 @@ void static fastcall nvc_svm_shutdown_handler(noir_gpr_state_p gpr_state,noir_sv
 // This is the cornerstone of nesting virtualization.
 void static fastcall nvc_svm_vmrun_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
+	// Loader stack is required for world switching.
+	noir_svm_initial_stack_p loader_stack=(noir_svm_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack));
 	void* vmcb=vcpu->vmcb.virt;
 	if(vcpu->nested_hvm.svme)
 	{
 		// Get the Nested VMCB.
 		const ulong_ptr nested_vmcb_pa=gpr_state->rax;
-		const void* nested_vmcb=noir_find_virt_by_phys(nested_vmcb_pa);
+		void* nested_vmcb_va=noir_find_virt_by_phys(nested_vmcb_pa);
+		noir_svm_nested_vcpu_node_p nvcpu=loader_stack->nested_vcpu;
+		// Search for cached VMCBs.
+		if(nvcpu)
+		{
+retry_search:
+			u32 lo=0,hi=noir_svm_cached_nested_vmcb;
+			// Use binary-search to look for cached VMCB.
+			while(hi>=lo)
+			{
+				u32 mid=(hi+lo)>>1;
+				if(vcpu->nested_hvm.nested_vmcb[mid].vmcb_c.phys>nested_vmcb_pa)
+					hi=mid-1;
+				else if(vcpu->nested_hvm.nested_vmcb[mid].vmcb_c.phys<nested_vmcb_pa)
+					lo=mid+1;
+				else
+				{
+					nvcpu=&vcpu->nested_hvm.nested_vmcb[mid];
+					nested_vmcb_va=nvcpu->vmcb_c.virt;
+					nvcpu->last_tsc=noir_rdtsc();
+					nvcpu->entry_counter++;
+				}
+			}
+		}
+		if(!nvcpu)
+		{
+			memory_descriptor temp;
+			temp.virt=nested_vmcb_va;
+			temp.phys=nested_vmcb_pa;
+			nvc_svmn_insert_nested_vmcb(vcpu,&temp);
+			goto retry_search;
+		}
 		// Some essential information for hypervisor-specific consistency check.
-		const u32 nested_asid=noir_svm_vmread32(nested_vmcb,guest_asid);
-		if(nested_asid==0)goto invalid_nested_vmcb;
-		// There is absolutely no SVM instructions since we don't support nested virtualization at this point.
-invalid_nested_vmcb:
-		// Inconsistency found by Hypervisor. Issue VM-Exit immediately.
-		noir_svm_vmwrite64(nested_vmcb,exit_code,invalid_guest_state);
+		const u32 nested_asid=noir_svm_vmread32(nested_vmcb_va,guest_asid);
+		// ASID must not equal to zero or exceed the limit.
+		if(nested_asid==0 || nested_asid>hvm_p->tlb_tagging.start-2)goto invalid_nested_vmcb;
+		// Consistency check complete. Switching to L2 Guest.
+		nvc_svmn_synchronize_to_l2t_vmcb(nvcpu);
+		loader_stack->guest_vmcb_pa=nvcpu->vmcb_t.phys;
+		loader_stack->nested_vcpu=nvcpu;
 		noir_svm_advance_rip(vmcb);
+		return;
+invalid_nested_vmcb:
+		{
+			// Inconsistency found by Hypervisor. Issue VM-Exit immediately.
+			noir_svm_vmcb_btr64(vmcb,avic_control,nvc_svm_avic_control_vgif);
+			noir_svm_vmwrite64(nested_vmcb_va,exit_code,invalid_guest_state);
+			noir_svm_advance_rip(vmcb);
+		}
 	}
 	else
 	{
@@ -1375,10 +1430,10 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 	}
 	else
 	{
-		// Nested VM is exiting...
-		noir_svm_stgi();
-		nv_dprintf("VM-Exit from Nested VM is intercepted!\n");
-		noir_int3();
+		// Nested VM is exiting, switch to L1 Guest.
+		noir_svm_vmcb_btr64(vcpu->vmcb.virt,avic_control,nvc_svm_avic_control_vgif);
+		nvc_svmn_synchronize_to_l2c_vmcb(loader_stack->nested_vcpu);
+		loader_stack->guest_vmcb_pa=vcpu->vmcb.phys;
 	}
 	// The rax in GPR state should be the physical address of VMCB
 	// in order to execute the vmrun instruction properly.

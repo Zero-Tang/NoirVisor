@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2021, Zero Tang. All rights reserved.
+  Copyright 2018-2022, Zero Tang. All rights reserved.
 
   This file defines structures and constants for SVM Driver of NoirVisor.
 
@@ -25,14 +25,21 @@
 #define noir_svm_set_vcpu_options			0x10003
 
 // Definition of Enabled features
-#define noir_svm_vmcb_caching		1		// Bit 0
-#define noir_svm_nested_paging		2		// Bit 1
-#define noir_svm_flush_by_asid		4		// Bit 2
-#define noir_svm_virtual_gif		8		// Bit 3
-#define noir_svm_virtualized_vmls	16		// Bit 4
-#define noir_svm_syscall_hook		32		// Bit 5
-#define noir_svm_npt_with_hooks		64		// Bit 6
-#define noir_svm_kva_shadow_present	128		// Bit 7
+#define noir_svm_vmcb_caching				1		// Bit 0
+#define noir_svm_nested_paging				2		// Bit 1
+#define noir_svm_flush_by_asid				4		// Bit 2
+#define noir_svm_virtual_gif				8		// Bit 3
+#define noir_svm_virtualized_vmls			16		// Bit 4
+#define noir_svm_syscall_hook				32		// Bit 5
+#define noir_svm_npt_with_hooks				64		// Bit 6
+#define noir_svm_kva_shadow_present			128		// Bit 7
+
+// Number of nested VMCBs to be cached.
+#define noir_svm_cached_nested_vmcb			32
+
+// When synchronizing nested VMCB for nested VM-Exits,
+// most fields in VMCB requires synchronization.
+#define noir_svm_nesting_vmcb_clean_bits	0xFFFFE817
 
 struct _noir_npt_manager;
 
@@ -76,17 +83,30 @@ typedef struct _noir_svm_virtual_msr
 	u64 sysenter_eip;
 }noir_svm_virtual_msr,*noir_svm_virtual_msr_p;
 
+typedef struct _noir_svm_nested_vcpu_node
+{
+	memory_descriptor vmcb_t;
+	memory_descriptor vmcb_c;
+	u64 last_tsc;
+	u64 entry_counter;
+}noir_svm_nested_vcpu_node,*noir_svm_nested_vcpu_node_p;
+
 typedef struct _noir_svm_nested_vcpu
 {
 	u64 hsave_gpa;
 	void* hsave_hva;
+	noir_svm_nested_vcpu_node nested_vmcb[noir_svm_cached_nested_vmcb];
 	struct
 	{
 		u64 svme:1;
 		u64 gif:1;
 		u64 vgif_accel:1;
 		u64 r_init:1;
-		u64 reserved:60;
+		u64 pending_db:1;
+		u64 pending_nmi:1;
+		u64 pending_mc:1;
+		u64 pending_init:1;
+		u64 reserved:59;
 	};
 }noir_svm_nested_vcpu,*noir_svm_nested_vcpu_p;
 
@@ -198,6 +218,7 @@ typedef struct _noir_svm_initial_stack
 	u64 host_vmcb_pa;
 	noir_svm_vcpu_p vcpu;
 	noir_svm_custom_vcpu_p custom_vcpu;
+	noir_svm_nested_vcpu_node_p nested_vcpu;
 	u32 proc_id;
 }noir_svm_initial_stack,*noir_svm_initial_stack_p;
 
@@ -209,6 +230,8 @@ extern noir_svm_custom_vcpu nvc_svm_idle_cvcpu;
 
 u8 fastcall nvc_svm_subvert_processor_a(noir_svm_initial_stack_p host_rsp);
 void nvc_svm_return(noir_gpr_state_p stack);
+void nvc_svm_host_nmi_handler(void);
+void nvc_svm_host_ready_nmi(void);
 void fastcall nvc_svm_reserved_cpuid_handler(u32* info);
 void nvc_svm_set_mshv_handler(bool option);
 bool nvc_svm_build_cpuid_handler();
@@ -220,6 +243,10 @@ void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid_fms);
+void nvc_svmn_synchronize_to_l2t_vmcb(noir_svm_nested_vcpu_node_p nvcpu);
+void nvc_svmn_synchronize_to_l2c_vmcb(noir_svm_nested_vcpu_node_p nvcpu);
+void nvc_svmn_insert_nested_vmcb(noir_svm_vcpu_p vcpu,memory_descriptor_p vmcb);
 u8 nvc_npt_get_host_pat_index(u8 type);
 noir_status nvc_svmc_initialize_cvm_module();
 void nvc_svmc_finalize_cvm_module();
