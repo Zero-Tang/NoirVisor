@@ -160,7 +160,10 @@ noir_status nvc_set_guest_vcpu_options(noir_cvm_virtual_cpu_p vcpu,noir_cvm_vcpu
 				noir_svm_vmmcall(noir_cvm_set_vcpu_options,(ulong_ptr)vcpu);
 			}
 			else if(hvm_p->selected_core==use_vt_core)
-				st=noir_not_implemented;
+			{
+				st=noir_success;
+				noir_vt_vmcall(noir_cvm_set_vcpu_options,(ulong_ptr)vcpu);
+			}
 			else
 				st=noir_unknown_processor;
 		}
@@ -518,7 +521,7 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 			if(hvm_p->selected_core==use_svm_core)
 				st=nvc_svmc_run_vcpu(vcpu);
 			else if(hvm_p->selected_core==use_vt_core)
-				st=noir_not_implemented;
+				st=nvc_vtc_run_vcpu(vcpu);
 			else
 				st=noir_unknown_processor;
 		}
@@ -534,7 +537,7 @@ noir_status nvc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu)
 	{
 		st=noir_success;
 		if(hvm_p->selected_core==use_vt_core)
-			st=noir_not_implemented;
+			st=nvc_vtc_rescind_vcpu(vcpu);
 		else if(hvm_p->selected_core==use_svm_core)
 			st=nvc_svmc_rescind_vcpu(vcpu);
 		else
@@ -551,6 +554,8 @@ noir_cvm_virtual_cpu_p nvc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu
 		noir_acquire_reslock_shared(vm->vcpu_list_lock);
 		if(hvm_p->selected_core==use_svm_core)
 			vcpu=nvc_svmc_reference_vcpu(vm,vcpu_id);
+		else if(hvm_p->selected_core==use_vt_core)
+			vcpu=nvc_vtc_reference_vcpu(vm,vcpu_id);
 		noir_release_reslock(vm->vcpu_list_lock);
 	}
 	return vcpu;
@@ -563,7 +568,7 @@ noir_status nvc_release_vcpu(noir_cvm_virtual_cpu_p vcpu)
 	{
 		st=noir_success;
 		if(hvm_p->selected_core==use_vt_core)
-			st=noir_not_implemented;
+			nvc_vtc_release_vcpu(vcpu);
 		else if(hvm_p->selected_core==use_svm_core)
 			nvc_svmc_release_vcpu(vcpu);
 		else
@@ -579,7 +584,7 @@ noir_status nvc_create_vcpu(noir_cvm_virtual_machine_p vm,noir_cvm_virtual_cpu_p
 	{
 		st=noir_success;
 		if(hvm_p->selected_core==use_vt_core)
-			st=noir_not_implemented;
+			st=nvc_vt_create_vcpu(vcpu,vm,vcpu_id);
 		else if(hvm_p->selected_core==use_svm_core)
 			st=nvc_svmc_create_vcpu(vcpu,vm,vcpu_id);
 		else
@@ -596,7 +601,7 @@ noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_
 		st=noir_success;
 		noir_acquire_reslock_exclusive(virtual_machine->vcpu_list_lock);
 		if(hvm_p->selected_core==use_vt_core)
-			st=noir_not_implemented;
+			st=nvc_vtc_set_mapping(virtual_machine,mapping_info);
 		else if(hvm_p->selected_core==use_svm_core)
 			st=nvc_svmc_set_mapping(virtual_machine,mapping_info);
 		else
@@ -617,7 +622,7 @@ noir_status nvc_release_vm(noir_cvm_virtual_machine_p vm)
 		noir_remove_list_entry(&vm->active_vm_list);
 		// Release the VM structure.
 		if(hvm_p->selected_core==use_vt_core)
-			st=noir_not_implemented;
+			nvc_vtc_release_vm(vm);
 		else if(hvm_p->selected_core==use_svm_core)
 			nvc_svmc_release_vm(vm);
 		else
@@ -636,7 +641,7 @@ noir_status nvc_create_vm(noir_cvm_virtual_machine_p* vm,u32 process_id)
 	{
 		// Select a core.
 		if(hvm_p->selected_core==use_vt_core)
-			st=noir_not_implemented;
+			st=nvc_vtc_create_vm(vm);
 		else if(hvm_p->selected_core==use_svm_core)
 			st=nvc_svmc_create_vm(vm);
 		else
@@ -675,6 +680,8 @@ u32 nvc_get_vm_asid(noir_cvm_virtual_machine_p vm)
 		// Select a core and invoke its function.
 		if(hvm_p->selected_core==use_svm_core)
 			return nvc_svmc_get_vm_asid(vm);
+		else if(hvm_p->selected_core==use_vt_core)
+			return nvc_vtc_get_vm_asid(vm);
 		else
 			return noir_unknown_processor;
 	}

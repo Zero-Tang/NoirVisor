@@ -444,6 +444,62 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 			nv_dprintf("Unknown vmcall index!\n");
 			break;
 		}
+		case noir_vt_init_custom_vmcs:
+		{
+			// For CVM hypercalls, the caller must be located in Layered Hypervisor.
+			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
+			{
+#if defined(_hv_type1)
+#else
+				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
+#endif
+				nvc_vt_initialize_cvm_vmcs(vcpu,cvcpu);
+				valid_call=true;
+			}
+			break;
+		}
+		case noir_vt_run_custom_vcpu:
+		{
+			// For CVM hypercalls, the caller must be located in Layered Hypervisor.
+			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
+			{
+#if defined(_hv_type1)
+#else
+				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
+#endif
+				nvc_vt_switch_to_guest_vcpu(gpr_state,vcpu,cvcpu);
+				valid_call=true;
+			}
+			break;
+		}
+		case noir_vt_dump_vcpu_vmcs:
+		{
+			// For CVM hypercalls, the caller must be located in Layered Hypervisor.
+			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
+			{
+#if defined(_hv_type1)
+#else
+				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
+#endif
+				nvc_vt_dump_vcpu_state(cvcpu);
+				valid_call=true;
+			}
+			break;
+		}
+		case noir_vt_set_vcpu_options:
+		{
+			// For CVM hypercalls, the caller must be located in Layered Hypervisor.
+			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
+			{
+#if defined(_hv_type1)
+#else
+				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
+#endif
+				nvc_vt_set_guest_vcpu_options(vcpu,cvcpu);
+				valid_call=true;
+			}
+			break;
+		}
 	}
 	if(valid_call)
 		noir_vt_advance_rip();
@@ -850,11 +906,11 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 #if defined(_amd64)
 			case ia32_lstar:
 			{
-				ia32_vmx_msr_auto_p entry_load=(ia32_vmx_msr_auto_p)((ulong_ptr)vcpu->msr_auto.virt+0);
-				if(entry_load->data==(u64)noir_system_call)
+				ia32_vmx_msr_auto_p exit_store=(ia32_vmx_msr_auto_p)((ulong_ptr)vcpu->msr_auto.virt+0x800);
+				if(exit_store->data==(u64)noir_system_call)
 					val.value=orig_system_call;
 				else
-					val.value=entry_load->data;
+					val.value=exit_store->data;
 				break;
 			}
 #else
@@ -907,8 +963,8 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 				// If NoirVisor is running as a Type-II hypervisor,
 				// there is nothing really should be going on here,
 				// in that we may simply throw the value to MSR.
-#endif
 				noir_wrmsr(ia32_bios_updt_trig,val.value);
+#endif
 				break;
 			}
 			case ia32_mtrr_phys_base0:
@@ -1249,13 +1305,8 @@ void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 			break;
 		}
 	}
-	if(gp_exception)
-	{
-		u32 len;
-		noir_vt_vmread(vmexit_instruction_length,&len);
-		// Exception induced by xsetbv has error code zero pushed onto stack.
-		noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,len,0);
-	}
+	if(gp_exception)	// Exception induced by xsetbv has error code zero pushed onto stack.
+		noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
 	else
 	{
 		// Everything is fine.
@@ -1269,13 +1320,14 @@ void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu
 {
 	noir_vt_initial_stack_p loader_stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
 	u64 vmcs_phys;
+	u32 exit_reason;
+	noir_vt_vmread(vmexit_reason,&exit_reason);
+	exit_reason&=0xFFFF;
+	loader_stack->flags.initial_vmcs=false;
 	noir_vt_vmptrst(&vmcs_phys);
 	// Confirm which vCPU is exiting so that the correct handler is to be invoked...
 	if(likely(vmcs_phys==vcpu->vmcs.phys))
 	{
-		u32 exit_reason;
-		noir_vt_vmread(vmexit_reason,&exit_reason);
-		exit_reason&=0xFFFF;
 		if(exit_reason<vmx_maximum_exit_reason)
 			vt_exit_handlers[exit_reason](gpr_state,vcpu);
 		else
@@ -1283,6 +1335,11 @@ void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu
 	}
 	else if(vmcs_phys==loader_stack->custom_vcpu->vmcs.phys)
 	{
+		noir_vt_custom_vcpu_p cvcpu=loader_stack->custom_vcpu;
+		if(exit_reason<vmx_maximum_exit_reason)
+			vt_cvexit_handlers[exit_reason](gpr_state,vcpu,cvcpu);
+		else
+			nvc_vt_default_cvexit_handler(gpr_state,vcpu,cvcpu);
 		nv_dprintf("Customizable VM is exiting...\n");
 		noir_int3();
 	}
@@ -1292,30 +1349,68 @@ void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu
 
 void fastcall nvc_vt_resume_failure(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,u8 vmx_status)
 {
-	switch(vmx_status)
+	noir_vt_initial_stack_p loader_stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
+	// This function could be called by virtue of bugs in NoirVisor CVM.
+	u64 vmcs_phys;
+	noir_vt_vmptrst(&vmcs_phys);
+	if(vmcs_phys==vcpu->vmcs.phys)
 	{
-		case vmx_fail_valid:
+		nv_panicf("The VM-Entry failed on Resume of Host vCPU!\n");
+		switch(vmx_status)
 		{
-			u32 err_code;
-			noir_vt_vmread(vm_instruction_error,&err_code);
-			nv_panicf("Failed to VM-Entry on Resume! Error Code: %d\n",err_code);
-			nv_panicf("Explanation to VM-Entry Failure: %s\n",vt_error_message[err_code]);
-			break;
+			case vmx_fail_valid:
+			{
+				u32 err_code;
+				noir_vt_vmread(vm_instruction_error,&err_code);
+				nv_panicf("Error Code of VM-Entry Failure: %u\n",err_code);
+				nv_panicf("Explanation to VM-Entry Failure: %s\n",vt_error_message[err_code]);
+				break;
+			}
+			case vmx_fail_invalid:
+			{
+				nv_panicf("Failed to VM-Entry on Resume because no active VMCS is loaded!\n");
+				break;
+			}
+			default:
+			{
+				nv_panicf("Unknown VM-Entry Failure status on Resume! Status=%u\n",vmx_status);
+				break;
+			}
 		}
-		case vmx_fail_invalid:
-		{
-			nv_panicf("Failed to VM-Entry on Resume because no active VMCS is loaded!\n");
-			break;
-		}
-		default:
-		{
-			nv_panicf("Unknown VM-Entry Failure status on Resume! Status=%d\n",vmx_status);
-			break;
-		}
+		// Break at last to let the debug personnel know the failure.
+		noir_int3();
+		// Call the panic function to stop the system.
 	}
-	// Break at last to let the debug personnel know the failure.
-	noir_int3();
-	// Call the panic function to stop the system.
+	else if(vmcs_phys==loader_stack->custom_vcpu->vmcs.phys)
+	{
+		noir_vt_custom_vcpu_p cvcpu=loader_stack->custom_vcpu;
+		nv_dprintf("The VM-Entry failed on Running CVM Guest vCPU!\n");
+		switch(vmx_status)
+		{
+			case vmx_fail_valid:
+			{
+				u32 err_code;
+				noir_vt_vmread(vm_instruction_error,&err_code);
+				nv_panicf("Error Code of VM-Entry Failure: %u\n",err_code);
+				nv_panicf("Explanation to VM-Entry Failure: %s\n",vt_error_message[err_code]);
+				break;
+			}
+			case vmx_fail_invalid:
+			{
+				nv_panicf("Failed to VM-Entry on Resume because no active VMCS is loaded!\n");
+				break;
+			}
+			default:
+			{
+				nv_panicf("Unknown VM-Entry Failure status on Resume! Status=%u\n",vmx_status);
+				break;
+			}
+		}
+		// Indicate there is a bug while running this vCPU.
+		cvcpu->header.exit_context.intercept_code=cv_scheduler_bug;
+		// Switch to Host Context.
+		nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
+	}
 }
 
 void nvc_vt_reconfigure_npiep_interceptions(noir_vt_vcpu_p vcpu)

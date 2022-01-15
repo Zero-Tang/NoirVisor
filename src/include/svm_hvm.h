@@ -188,13 +188,15 @@ typedef struct _noir_svm_custom_vcpu
 		struct
 		{
 			u64 prev_virq:1;	// Required for interrupt-window interception.
-			u64 reserved:62;
+			u64 prev_nmi:1;
+			u64 reserved:61;
 			u64 rescission:1;
 		};
 		u64 value;
 	}special_state;
 	u64 lasted_tsc;
 	u32 proc_id;
+	u32 vcpu_id;
 }noir_svm_custom_vcpu,*noir_svm_custom_vcpu_p;
 
 typedef struct _noir_svm_custom_vm
@@ -234,10 +236,6 @@ void nvc_svm_host_nmi_handler(void);
 void nvc_svm_host_ready_nmi(void);
 void fastcall nvc_svm_reserved_cpuid_handler(u32* info);
 void nvc_svm_set_mshv_handler(bool option);
-bool nvc_svm_build_cpuid_handler();
-void nvc_svm_teardown_cpuid_handler();
-bool nvc_svm_build_exit_handler();
-void nvc_svm_teardown_exit_handler();
 void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vmcb);
 void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu);

@@ -88,6 +88,16 @@
 #define ia32_cr4_cet_bit			0x800000
 #define ia32_cr4_pks_bit			0x1000000
 
+// EFER Bit Fields
+#define ia32_efer_sce		0
+#define ia32_efer_lme		8
+#define ia32_efer_lma		10
+#define ia32_efer_nxe		11
+#define ia32_efer_sce_bit	0x1
+#define ia32_efer_lme_bit	0x100
+#define ia32_efer_lma_bit	0x400
+#define ia32_efer_nxe_bit	0x800
+
 // This is used for defining MSRs.
 #define ia32_feature_control			0x3A
 #define ia32_bios_updt_trig				0x79
@@ -155,6 +165,7 @@
 #define ia32_efer						0xC0000080
 #define ia32_star						0xC0000081
 #define ia32_lstar						0xC0000082
+#define ia32_cstar						0xC0000082
 #define ia32_fmask						0xC0000084
 #define ia32_fs_base					0xC0000100
 #define ia32_gs_base					0xC0000101

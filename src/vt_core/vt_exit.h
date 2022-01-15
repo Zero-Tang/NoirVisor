@@ -144,6 +144,55 @@ typedef union _ia32_cr_access_qualification
 	ulong_ptr value;
 }ia32_cr_access_qualification,*ia32_cr_access_qualification_p;
 
+typedef union _ia32_dr_access_qualification
+{
+	struct
+	{
+		ulong_ptr dr_num:3;		// Bits	0-2
+		ulong_ptr reserved0:1;	// Bit	3
+		ulong_ptr direction:1;	// Bit	4
+		ulong_ptr reserved1:3;	// Bits	5-7
+		ulong_ptr gpr_num:4;	// Bits	8-11
+		ulong_ptr reserved2:20;	// Bits	12-31
+#if defined(_amd64)
+		ulong_ptr reserved3:32;
+#endif
+	};
+	ulong_ptr value;
+}ia32_dr_access_qualification,*ia32_dr_access_qualification_p;
+
+typedef union _ia32_io_access_qualification
+{
+	struct
+	{
+		ulong_ptr access_size:3;	// Bits	0-2
+		ulong_ptr direction:1;		// Bit	3
+		ulong_ptr string:1;			// Bit	4
+		ulong_ptr repeat:1;			// Bit	5
+		ulong_ptr imm_op:1;			// Bit	6
+		ulong_ptr reserved0:9;		// Bits	7-15
+		ulong_ptr port:16;			// Bits	16-31
+#if defined(_amd64)
+		ulong_ptr reserved1:32;
+#endif
+	};
+	ulong_ptr value;
+}ia32_io_access_qualification,*ia32_io_access_qualification_p;
+
+typedef union _ia32_task_switch_qualification
+{
+	struct
+	{
+		ulong_ptr tss_selector:16;
+		ulong_ptr reserved1:14;
+		ulong_ptr ts_source:2;
+#if defined(_amd64)
+		ulong_ptr reserved2:32;
+#endif
+	};
+	ulong_ptr value;
+}ia32_task_switch_qualification,*ia32_task_switch_qualification_p;
+
 typedef union _ia32_vmexit_instruction_information
 {
 	// ins, outs instructions use this field.
@@ -249,6 +298,13 @@ typedef union _ia32_vmexit_instruction_information
 	u32 value;
 }ia32_vmexit_instruction_information,*ia32_vmexit_instruction_information_p;
 
+typedef void (fastcall *noir_vt_cvexit_handler_routine)
+(
+ noir_gpr_state_p gpr_state,
+ noir_vt_vcpu_p vcpu,
+ noir_vt_custom_vcpu_p cvcpu
+);
+
 typedef void (fastcall *noir_vt_exit_handler_routine)
 (
  noir_gpr_state_p gpr_state,
@@ -261,6 +317,8 @@ typedef void (fastcall *noir_vt_cpuid_exit_handler)
  u32 subleaf,
  noir_cpuid_general_info_p info
 );
+
+void fastcall nvc_vt_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
 
 #if defined(_vt_exit)
 const char* vmx_exit_msg[vmx_maximum_exit_reason]=
@@ -434,7 +492,116 @@ noir_vt_exit_handler_routine vt_exit_handlers[vmx_maximum_exit_reason]=
 	nvc_vt_default_handler,			// TPAUSE Instruction
 	nvc_vt_default_handler			// LOADIWKEY Instruction
 };
+
 noir_vt_cpuid_exit_handler nvcp_vt_cpuid_handler=null;
+extern noir_vt_cvexit_handler_routine vt_cvexit_handlers[];
+#elif defined(_vt_cvexit)
+void static fastcall nvc_vt_exception_nmi_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_extint_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_trifault_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_init_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_sipi_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_interrupt_window_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_nmi_window_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_task_switch_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_hlt_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_vmcall_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_vmclear_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_vmlaunch_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_vmptrld_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_vmptrst_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_vmread_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_vmresume_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_vmwrite_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_vmxoff_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_vmxon_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_cr_access_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_rdmsr_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_wrmsr_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_invalid_guest_state_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_invalid_msr_loading_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_ept_violation_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_ept_misconfig_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_invept_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_invvpid_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void static fastcall nvc_vt_xsetbv_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+
+noir_vt_cvexit_handler_routine vt_cvexit_handlers[vmx_maximum_exit_reason]=
+{
+	nvc_vt_exception_nmi_cvexit_handler,	// Exception or NMI
+	nvc_vt_extint_cvexit_handler,			// External Interrupt
+	nvc_vt_trifault_cvexit_handler,			// Triple Fault
+	nvc_vt_init_cvexit_handler,				// INIT Signal
+	nvc_vt_sipi_cvexit_handler,				// Start-up IPI
+	nvc_vt_default_cvexit_handler,			// I/O SMI
+	nvc_vt_default_cvexit_handler,			// Other SMI
+	nvc_vt_interrupt_window_cvexit_handler,	// Interrupt Window
+	nvc_vt_nmi_window_cvexit_handler,		// NMI Window
+	nvc_vt_task_switch_cvexit_handler,		// Task Switch
+	nvc_vt_cpuid_cvexit_handler,			// CPUID Instruction
+	nvc_vt_default_cvexit_handler,			// GETSEC Instruction
+	nvc_vt_hlt_cvexit_handler,				// HLT Instruction
+	nvc_vt_invd_cvexit_handler,				// INVD Instruction
+	nvc_vt_default_cvexit_handler,			// INVLPG Instruction
+	nvc_vt_default_cvexit_handler,			// RDPMC Instruction
+	nvc_vt_default_cvexit_handler,			// RDTSC Instruction
+	nvc_vt_default_cvexit_handler,			// RSM Instruction
+	nvc_vt_vmcall_cvexit_handler,			// VMCALL Instruction
+	nvc_vt_vmclear_cvexit_handler,			// VMCLEAR Instruction
+	nvc_vt_vmlaunch_cvexit_handler,			// VMLAUNCH Instruction
+	nvc_vt_vmptrld_cvexit_handler,			// VMPTRLD Instruction
+	nvc_vt_vmptrst_cvexit_handler,			// VMPTRST Instruction
+	nvc_vt_vmread_cvexit_handler,			// VMREAD Instruction
+	nvc_vt_vmresume_cvexit_handler,			// VMRESUME Instruction
+	nvc_vt_vmwrite_cvexit_handler,			// VMWRITE Instruction
+	nvc_vt_vmxoff_cvexit_handler,			// VMXOFF Instruction
+	nvc_vt_vmxon_cvexit_handler,			// VMXON Instruction
+	nvc_vt_cr_access_cvexit_handler,		// Control-Register Access
+	nvc_vt_default_cvexit_handler,			// Debug-Register Access
+	nvc_vt_io_cvexit_handler,				// I/O Instruction
+	nvc_vt_rdmsr_cvexit_handler,			// RDMSR Instruction
+	nvc_vt_wrmsr_cvexit_handler,			// WRMSR Instruction
+	nvc_vt_invalid_guest_state_cvexit_handler,	// Invalid Guest State
+	nvc_vt_invalid_msr_loading_cvexit_handler,	// MSR-Loading Failure
+	nvc_vt_default_cvexit_handler,			// Reserved (35)
+	nvc_vt_default_cvexit_handler,			// MWAIT Instruction
+	nvc_vt_default_cvexit_handler,			// Monitor Trap Flag
+	nvc_vt_default_cvexit_handler,			// Reserved (38)
+	nvc_vt_default_cvexit_handler,			// MONITOR Instruction
+	nvc_vt_default_cvexit_handler,			// PAUSE Instruction
+	nvc_vt_default_cvexit_handler,			// Machine-Check during VM-Entry
+	nvc_vt_default_cvexit_handler,			// Reserved (42)
+	nvc_vt_default_cvexit_handler,			// TPR Below Threshold
+	nvc_vt_default_cvexit_handler,			// APIC Access
+	nvc_vt_default_cvexit_handler,			// Virtualized EOI
+	nvc_vt_default_cvexit_handler,			// GDTR/IDTR Access
+	nvc_vt_default_cvexit_handler,			// LDTR/TR Access
+	nvc_vt_ept_violation_cvexit_handler,	// EPT Violation
+	nvc_vt_ept_misconfig_cvexit_handler,	// EPT Misconfiguration
+	nvc_vt_invept_cvexit_handler,			// INVEPT Instruction
+	nvc_vt_default_cvexit_handler,			// RDTSCP Instruction
+	nvc_vt_default_cvexit_handler,			// VMX-Preemption Timer Expiry
+	nvc_vt_invvpid_cvexit_handler,			// INVVPID Instruction
+	nvc_vt_default_cvexit_handler,			// WBINVD/WBNOINVD Instruction
+	nvc_vt_xsetbv_cvexit_handler,			// XSETBV Instruction
+	nvc_vt_default_cvexit_handler,			// APIC Write
+	nvc_vt_default_cvexit_handler,			// RDRAND Instruction
+	nvc_vt_default_cvexit_handler,			// INVPCID Instruction
+	nvc_vt_default_cvexit_handler,			// VMFUNC Instruction
+	nvc_vt_default_cvexit_handler,			// ENCLS Instruction
+	nvc_vt_default_cvexit_handler,			// RDSEED Instruction
+	nvc_vt_default_cvexit_handler,			// Page-Modification Log Full
+	nvc_vt_default_cvexit_handler,			// XSAVES Instruction
+	nvc_vt_default_cvexit_handler,			// XRSTORS Instruction
+	nvc_vt_default_cvexit_handler,			// Reserved (65)
+	nvc_vt_default_cvexit_handler,			// Sub-Page Permission Related Event
+	nvc_vt_default_cvexit_handler,			// UMWAIT Instruction
+	nvc_vt_default_cvexit_handler,			// TPAUSE Instruction
+	nvc_vt_default_cvexit_handler			// LOADIWKEY Instruction
+};
 #endif
 
 void inline noir_vt_set_single_stepping(ulong_ptr gflags)

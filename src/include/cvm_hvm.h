@@ -47,9 +47,11 @@ typedef enum _noir_cvm_intercept_code
 	cv_exception=12,
 	cv_rescission=13,
 	cv_interrupt_window=14,
+	cv_task_switch=15,
 	// The rest are scheduler-relevant.
 	cv_scheduler_exit=0x80000000,
-	cv_scheduler_pause=0x80000001
+	cv_scheduler_pause=0x80000001,
+	cv_scheduler_bug=0x80000002
 }noir_cvm_intercept_code,*noir_cvm_intercept_code_p;
 
 typedef enum _noir_cvm_register_type
@@ -158,6 +160,12 @@ typedef struct _noir_cvm_msr_context
 	u32 ecx;
 }noir_cvm_msr_context,*noir_cvm_msr_context_p;
 
+typedef struct _noir_cvm_task_switch_context
+{
+	u16 task_selector;
+	u16 initiator_id;
+}noir_cvm_task_switch_context,*noir_cvm_task_switch_context_p;
+
 typedef struct _noir_cvm_memory_access_context
 {
 	struct
@@ -171,6 +179,16 @@ typedef struct _noir_cvm_memory_access_context
 	u8 instruction_bytes[15];
 	u64 gpa;
 }noir_cvm_memory_access_context,*noir_cvm_memory_access_context_p;
+
+typedef struct _noir_cvm_interrupt_window_context
+{
+	struct
+	{
+		u32 nmi:1;
+		u32 iret_passed:1;
+		u32 reserved:30;
+	};
+}noir_cvm_interrupt_window_context;
 
 typedef struct _noir_cvm_cpuid_context
 {
@@ -194,6 +212,8 @@ typedef struct _noir_cvm_exit_context
 		noir_cvm_msr_context msr;
 		noir_cvm_memory_access_context memory_access;
 		noir_cvm_cpuid_context cpuid;
+		noir_cvm_task_switch_context task_switch;
+		noir_cvm_interrupt_window_context interrupt_window;
 	};
 	segment_register cs;
 	u64 rip;
@@ -249,10 +269,12 @@ typedef struct _noir_msr_state
 	u64 sysenter_eip;
 	u64 pat;
 	u64 efer;
+	u64 gsswap;
 	u64 star;
 	u64 lstar;
 	u64 cstar;
 	u64 sfmask;
+	u64 ststar;
 }noir_msr_state,*noir_msr_state_p;
 
 typedef struct _noir_xcr_state
@@ -274,7 +296,8 @@ typedef union _noir_cvm_vcpu_options
 		u32 intercept_drx:1;
 		u32 intercept_pause:1;
 		u32 npiep:1;
-		u32 reserved:24;
+		u32 intercept_nmi_window:1;
+		u32 reserved:23;
 	};
 	u32 value;
 }noir_cvm_vcpu_options,*noir_cvm_vcpu_options_p;
@@ -372,6 +395,7 @@ typedef struct _noir_cvm_virtual_machine
 }noir_cvm_virtual_machine,*noir_cvm_virtual_machine_p;
 
 #if defined(_central_hvm)
+// CVM Functions from SVM-Core
 noir_status nvc_svmc_create_vm(noir_cvm_virtual_machine_p* virtual_machine);
 void nvc_svmc_release_vm(noir_cvm_virtual_machine_p vm);
 noir_status nvc_svmc_create_vcpu(noir_cvm_virtual_cpu_p* virtual_cpu,noir_cvm_virtual_machine_p virtual_machine,u32 vcpu_id);
@@ -381,6 +405,16 @@ noir_status nvc_svmc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu);
 noir_cvm_virtual_cpu_p nvc_svmc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id);
 noir_status nvc_svmc_set_mapping(noir_cvm_virtual_machine_p vm,noir_cvm_address_mapping_p mapping_info);
 u32 nvc_svmc_get_vm_asid(noir_cvm_virtual_machine_p vm);
+// CVM Functions from VT-Core
+noir_status nvc_vtc_create_vm(noir_cvm_virtual_machine_p *virtual_machine);
+void nvc_vtc_release_vm(noir_cvm_virtual_machine_p virtual_machine);
+noir_status nvc_vt_create_vcpu(noir_cvm_virtual_cpu_p *virtual_processor,noir_cvm_virtual_machine_p virtual_machine,u32 vcpu_id);
+void nvc_vtc_release_vcpu(noir_cvm_virtual_cpu_p virtual_processor);
+noir_status nvc_vtc_run_vcpu(noir_cvm_virtual_cpu_p vcpu);
+noir_status nvc_vtc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu);
+noir_cvm_virtual_cpu_p nvc_vtc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id);
+noir_status nvc_vtc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info);
+u32 nvc_vtc_get_vm_asid(noir_cvm_virtual_machine_p vm);
 
 // Idle VM is to be considered as the List Head.
 noir_cvm_virtual_machine noir_idle_vm={0};

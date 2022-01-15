@@ -403,7 +403,7 @@ void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessI
 				HANDLE Pid=NoirGetVirtualMachineProcessIdByPointer(VirtualMachine);
 				if(Pid==ProcessId)
 				{
-					NoirCvmTracePrint("[Handle Recycle] PID=%d has created CVM Handle=%d! Terminating VM...\n",Pid,Handle);
+					NoirCvmTracePrint("[Handle Recycle] Terminated PID=%d has created CVM Handle=%d! Terminating VM...\n",Pid,Handle);
 					nvc_release_vm(VirtualMachine);
 					NoirCvmHandleTable.HandleCount--;
 					NoirDeleteHandle(Handle,NoirCvmHandleTable.TableCode);
@@ -428,34 +428,42 @@ NTSTATUS NoirFinalizeCvmModule()
 
 NTSTATUS NoirInitializeCvmModule()
 {
-	NTSTATUS st=ExInitializeResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	NTSTATUS st=STATUS_UNSUCCESSFUL;
 	PVOID NtKernelBase=NoirLocateImageBaseByName(L"ntoskrnl.exe");
-	if(NT_SUCCESS(st))
-	{
-		PVOID TableBase=NoirAllocateNonPagedMemory(PAGE_SIZE);
-		if(TableBase)
-		{
-			RtlZeroMemory(TableBase,PAGE_SIZE);
-			// At initialization, leave only one level of table.
-			NoirCvmHandleTable.TableCode=(ULONG_PTR)TableBase;
-			// Register a processor creation callback to recycle VMs.
-			st=PsSetCreateProcessNotifyRoutine(NoirCreateProcessNotifyRoutine,FALSE);
-			if(NT_ERROR(st))
-			{
-				NoirFreeNonPagedMemory(TableBase);
-				ExDeleteResourceLite(&NoirCvmHandleTable.HandleTableLock);
-			}
-		}
-		else
-		{
-			ExDeleteResourceLite(&NoirCvmHandleTable.HandleTableLock);
-			st=STATUS_INSUFFICIENT_RESOURCES;
-		}
-	}
 	if(NtKernelBase)
 	{
+		st=ExInitializeResourceLite(&NoirCvmHandleTable.HandleTableLock);
 		ZwQueryVirtualMemory=NoirLocateExportedProcedureByName(NtKernelBase,"ZwQueryVirtualMemory");
 		NoirCvmTracePrint("Location of ZwQueryVirtualMemory: 0x%p\n",ZwQueryVirtualMemory);
+		if(ZwQueryVirtualMemory==NULL)
+			NoirCvmTracePrint("Failed to locate ZwQueryVirtualMemory!\n");
+		else
+		{
+			if(NT_SUCCESS(st))
+			{
+				PVOID TableBase=NoirAllocateNonPagedMemory(PAGE_SIZE);
+				if(TableBase)
+				{
+					RtlZeroMemory(TableBase,PAGE_SIZE);
+					// At initialization, leave only one level of table.
+					NoirCvmHandleTable.TableCode=(ULONG_PTR)TableBase;
+					// Register a processor creation callback to recycle VMs.
+					st=PsSetCreateProcessNotifyRoutine(NoirCreateProcessNotifyRoutine,FALSE);
+					if(NT_ERROR(st))
+					{
+						NoirFreeNonPagedMemory(TableBase);
+						ExDeleteResourceLite(&NoirCvmHandleTable.HandleTableLock);
+					}
+				}
+				else
+				{
+					ExDeleteResourceLite(&NoirCvmHandleTable.HandleTableLock);
+					st=STATUS_INSUFFICIENT_RESOURCES;
+				}
+			}
+		}
 	}
+	else
+		NoirCvmTracePrint("Failed to locate NT Kernel Image!\n");
 	return st;
 }

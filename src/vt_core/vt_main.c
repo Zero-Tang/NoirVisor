@@ -128,6 +128,8 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 					noir_free_contd_memory(vcpu->nested_vcpu.vmcs_t.virt);
 				if(vcpu->hv_stack)
 					noir_free_nonpg_memory(vcpu->hv_stack);
+				if(vcpu->cvm_state.xsave_area)
+					noir_free_contd_memory(vcpu->cvm_state.xsave_area);
 				nvc_ept_cleanup(vcpu->ept_manager);
 			}
 			noir_free_nonpg_memory(hvm->virtual_cpu);
@@ -138,6 +140,13 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 			if(rhvm->io_bitmap_a.virt)noir_free_contd_memory(rhvm->io_bitmap_a.virt);
 			if(rhvm->io_bitmap_b.virt)noir_free_contd_memory(rhvm->io_bitmap_b.virt);
 		}
+#if !defined(_hv_type1)
+		if(hvm->tlb_tagging.vpid_pool_lock)
+			noir_finalize_reslock(hvm->tlb_tagging.vpid_pool_lock);
+		if(hvm->tlb_tagging.vpid_pool)
+			noir_free_nonpg_memory(hvm->tlb_tagging.vpid_pool);
+#endif
+		nvc_vtc_finalize_cvm_module();
 	}
 }
 
@@ -156,6 +165,7 @@ void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
 #if defined(_amd64)
 		noir_vt_vmwrite(vmentry_msr_load_count,1);
 		noir_vt_vmwrite(vmexit_msr_load_count,1);
+		noir_vt_vmwrite(vmexit_msr_store_count,1);
 #else
 		noir_vt_vmwrite(guest_msr_ia32_sysenter_eip,(ulong_ptr)noir_system_call);
 		noir_vt_vmwrite(host_msr_ia32_sysenter_eip,orig_system_call);
@@ -180,7 +190,7 @@ void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
 #endif
 }
 
-void static nvc_vt_setup_msr_auto_list(noir_vt_vcpu_p vcpu)
+void static nvc_vt_setup_msr_auto_list(noir_vt_vcpu_p vcpu,noir_processor_state_p state_p)
 {
 	/*
 		For MSR-Auto list, we have following convention:
@@ -194,6 +204,7 @@ void static nvc_vt_setup_msr_auto_list(noir_vt_vcpu_p vcpu)
 	ia32_vmx_msr_auto_p entry_load=(ia32_vmx_msr_auto_p)((ulong_ptr)vcpu->msr_auto.virt+0);
 	ia32_vmx_msr_auto_p exit_load=(ia32_vmx_msr_auto_p)((ulong_ptr)vcpu->msr_auto.virt+0x400);
 	ia32_vmx_msr_auto_p exit_store=(ia32_vmx_msr_auto_p)((ulong_ptr)vcpu->msr_auto.virt+0x800);
+	ia32_vmx_msr_auto_p cvexit_load=(ia32_vmx_msr_auto_p)((ulong_ptr)vcpu->msr_auto.virt+0xC00);
 	unref_var(exit_store);
 	// Setup custom MSR-Auto list.
 #if !defined(_hv_type1)
@@ -204,12 +215,24 @@ void static nvc_vt_setup_msr_auto_list(noir_vt_vcpu_p vcpu)
 		entry_load[0].data=(ulong_ptr)noir_system_call;
 		exit_load[0].index=ia32_lstar;
 		exit_load[0].data=orig_system_call;
+		exit_store[0].index=ia32_lstar;
 #endif
 	}
 #else
 	unref_var(entry_load);
 	unref_var(exit_load);
 #endif
+	// Setup MSR-Auto List for CVM.
+	cvexit_load[noir_vt_cvm_msr_auto_star].index=ia32_star;
+	cvexit_load[noir_vt_cvm_msr_auto_star].data=state_p->star;
+	cvexit_load[noir_vt_cvm_msr_auto_lstar].index=ia32_lstar;
+	cvexit_load[noir_vt_cvm_msr_auto_lstar].data=state_p->lstar;
+	cvexit_load[noir_vt_cvm_msr_auto_cstar].index=ia32_cstar;
+	cvexit_load[noir_vt_cvm_msr_auto_cstar].data=state_p->cstar;
+	cvexit_load[noir_vt_cvm_msr_auto_sfmask].index=ia32_fmask;
+	cvexit_load[noir_vt_cvm_msr_auto_sfmask].data=state_p->sfmask;
+	cvexit_load[noir_vt_cvm_msr_auto_gsswap].index=ia32_kernel_gs_base;
+	cvexit_load[noir_vt_cvm_msr_auto_gsswap].data=state_p->gsswap;
 }
 
 void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
@@ -480,6 +503,7 @@ void static nvc_vt_setup_procbased_controls(bool true_msr)
 		proc_ctrl2.enable_invpcid=1;
 		proc_ctrl2.enable_xsaves_xrstors=1;
 		proc_ctrl2.use_gpa_for_intel_pt=1;	// Don't allow Intel Processor Trace to bypass EPT.
+		proc_ctrl2.enable_user_wait_and_pause=1;
 		// Filter unsupported fields.
 		proc_ctrl2.value|=proc_ctrl2_msr.allowed0_settings.value;
 		proc_ctrl2.value&=proc_ctrl2_msr.allowed1_settings.value;
@@ -614,7 +638,7 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	nvc_vt_setup_guest_state_area(&state,gsp,gip);
 	nvc_vt_setup_host_state_area(vcpu,&state);
 	nvc_vt_setup_memory_virtualization(vcpu);
-	nvc_vt_setup_msr_auto_list(vcpu);
+	nvc_vt_setup_msr_auto_list(vcpu,&state);
 	nvc_vt_setup_msr_hook_p(vcpu);
 	nvc_vt_setup_virtual_msr(vcpu);
 	vcpu->status=noir_virt_on;
@@ -709,6 +733,8 @@ void static nvc_vt_subvert_processor_thunk(void* context,u32 processor_id)
 */
 noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 {
+	// Query Extended State Enumeration - Useful for xsetbv handler, CVM scheduler, etc.
+	noir_cpuid(ia32_cpuid_std_pestate_enum,0,&hvm_p->xfeat.support_mask.low,&hvm_p->xfeat.enabled_size_max,&hvm_p->xfeat.supported_size_max,&hvm_p->xfeat.support_mask.high);
 	hvm->cpu_count=noir_get_processor_count();
 	hvm->relative_hvm=(noir_vt_hvm_p)hvm->reserved;
 	hvm->virtual_cpu=noir_alloc_nonpg_memory(hvm->cpu_count*sizeof(noir_vt_vcpu));
@@ -743,6 +769,9 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 			vcpu->ept_manager=(void*)nvc_ept_build_identity_map();
 			if(vcpu->ept_manager==null)
 				goto alloc_failure;
+			vcpu->cvm_state.xsave_area=noir_alloc_contd_memory(hvm->xfeat.supported_size_max);
+			if(vcpu->cvm_state.xsave_area==null)
+				goto alloc_failure;
 			if(hvm_p->options.stealth_msr_hook)
 			{
 				if(hvm_p->options.kva_shadow_presence)
@@ -769,8 +798,6 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 		hvm->relative_hvm->io_bitmap_a.phys=noir_get_physical_address(hvm->relative_hvm->io_bitmap_a.virt);
 		hvm->relative_hvm->io_bitmap_b.phys=noir_get_physical_address(hvm->relative_hvm->io_bitmap_b.virt);
 	}*/
-	// Query Extended State Enumeration - Useful for xsetbv handler, CVM scheduler, etc.
-	noir_cpuid(ia32_cpuid_std_pestate_enum,0,&hvm_p->xfeat.support_mask.low,&hvm_p->xfeat.enabled_size_max,&hvm_p->xfeat.supported_size_max,&hvm_p->xfeat.support_mask.high);
 	nvc_vt_set_mshv_handler(hvm_p->options.cpuid_hv_presence);
 	hvm->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();
 	if(hvm->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;
@@ -779,6 +806,26 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 	for(u32 i=0;i<hvm->cpu_count;i++)
 		if(nvc_ept_protect_hypervisor(hvm,(noir_ept_manager_p)hvm->virtual_cpu[i].ept_manager)==false)
 			goto alloc_failure;
+#if !defined(_hv_type1)
+	if(nvc_vtc_initialize_cvm_module()!=noir_success)goto alloc_failure;
+	// Initialize VPID Pool for Customizable VMs.
+	if(hvm->options.nested_virtualization)
+	{
+		// If nested virtualization is enabled, use 32768-2 only for CVM.
+		hvm->tlb_tagging.vpid_pool=noir_alloc_nonpg_memory(page_size);
+		hvm->tlb_tagging.limit=32766;
+	}
+	else
+	{
+		// Otherwise, all available VPIDs (65534) belong to CVM.
+		hvm->tlb_tagging.vpid_pool=noir_alloc_nonpg_memory(page_size*2);
+		hvm->tlb_tagging.limit=65534;
+	}
+	if(hvm->tlb_tagging.vpid_pool==null)goto alloc_failure;
+	hvm->tlb_tagging.vpid_pool_lock=noir_initialize_reslock();
+	if(hvm->tlb_tagging.vpid_pool_lock==null)goto alloc_failure;
+	hvm->tlb_tagging.start=2;
+#endif
 	nv_dprintf("All allocations are done, start subversion!\n");
 	noir_generic_call(nvc_vt_subvert_processor_thunk,hvm->virtual_cpu);
 	return noir_success;

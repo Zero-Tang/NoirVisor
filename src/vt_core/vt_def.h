@@ -163,21 +163,11 @@ typedef union _ia32_vmx_3rdproc_controls
 {
 	struct
 	{
-		u32 loadiwkey_exiting:1;				// bit	0
-		u32 reserved:31;						// bits	1-31
-	};
-	u32 value;
-}ia32_vmx_3rdproc_controls,*ia32_vmx_3rdproc_controls_p;
-
-typedef union _ia32_vmx_3rdproc_ctrl_msr
-{
-	struct
-	{
-		ia32_vmx_3rdproc_controls allowed0_settings;
-		ia32_vmx_3rdproc_controls allowed1_settings;
+		u64 loadiwkey_exiting:1;				// bit	0
+		u64 reserved:63;						// bits	1-63
 	};
 	u64 value;
-}ia32_vmx_3rdproc_ctrl_msr,*ia32_vmx_3rdproc_ctrl_msr_p;
+}ia32_vmx_3rdproc_controls,*ia32_vmx_3rdproc_controls_p;
 
 typedef union _ia32_vmx_exit_controls
 {

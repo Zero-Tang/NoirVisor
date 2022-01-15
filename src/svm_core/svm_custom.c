@@ -193,6 +193,8 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		// Load segment bases.
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_fs_base,cvcpu->header.seg.fs.base);
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_gs_base,cvcpu->header.seg.gs.base);
+		// Load Kernel-GS-Base MSR.
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_kernel_gs_base,cvcpu->header.msrs.gsswap);
 		// No need to invalidate VMCB. The vmload instruction will load them.
 		cvcpu->header.state_cache.fg_valid=true;
 	}
@@ -243,9 +245,36 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_npt);
 		cvcpu->header.state_cache.pa_valid=true;
 	}
+	// Load MSRs for System Call (sysenter/sysexit)
+	if(!cvcpu->header.state_cache.se_valid)
+	{
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_cs,cvcpu->header.msrs.sysenter_cs);
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_esp,cvcpu->header.msrs.sysenter_esp);
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_eip,cvcpu->header.msrs.sysenter_eip);
+		// No need to invalidate VMCB. The vmload instruction will load them.
+		cvcpu->header.state_cache.se_valid=true;
+	}
+	// Load MSRs for System Call (syscall/sysret)
+	if(!cvcpu->header.state_cache.sc_valid)
+	{
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_star,cvcpu->header.msrs.star);
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_lstar,cvcpu->header.msrs.lstar);
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cstar,cvcpu->header.msrs.cstar);
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sfmask,cvcpu->header.msrs.sfmask);
+		// No need to invalidate VMCB. The vmload instruction will load them.
+		cvcpu->header.state_cache.sc_valid=true;
+	}
 	// Set the event injection
 	if(cvcpu->header.injected_event.attributes.type)
 	{
+		if(cvcpu->header.injected_event.attributes.vector==amd64_nmi_interrupt)
+		{
+			// Special treatments for NMIs.
+			// Intercept the iret instructions for NMI-windows.
+			noir_svm_vmcb_bts32(cvcpu->vmcb.virt,intercept_instruction1,nvc_svm_intercept_vector1_iret);
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
+			cvcpu->special_state.prev_nmi=true;
+		}
 		noir_svm_vmwrite32(cvcpu->vmcb.virt,event_injection,cvcpu->header.injected_event.attributes.value);
 		noir_svm_vmwrite32(cvcpu->vmcb.virt,event_error_code,cvcpu->header.injected_event.error_code);
 	}
@@ -525,7 +554,7 @@ void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 		// Release XSAVE State Area,
 		if(vcpu->header.xsave_area)noir_free_contd_memory(vcpu->header.xsave_area);
 		// Remove vCPU from VM.
-		if(vcpu->vm)vcpu->vm->vcpu[vcpu->proc_id]=null;
+		if(vcpu->vm)vcpu->vm->vcpu[vcpu->vcpu_id]=null;
 		// In addition, remove the vCPU from AVIC.
 		if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
 		{
@@ -572,11 +601,12 @@ noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_cu
 			}
 			// Allocate XSAVE State Area
 			vcpu->header.xsave_area=noir_alloc_contd_memory(hvm_p->xfeat.supported_size_max);
+			if(vcpu->header.xsave_area==null)goto alloc_failure;
 			// Insert the vCPU into the VM.
 			virtual_machine->vcpu[vcpu_id]=vcpu;
+			vcpu->vcpu_id=vcpu_id;
 			// Mark the owner VM of vCPU.
 			vcpu->vm=virtual_machine;
-			vcpu->proc_id=vcpu_id;
 			// Initialize the VMCB via hypercall. It is supposed that only hypervisor can operate VMCB.
 			noir_svm_vmmcall(noir_svm_init_custom_vmcb,(ulong_ptr)vcpu);
 		}
@@ -736,7 +766,7 @@ noir_status static nvc_svmc_create_2mb_page_map(noir_svm_custom_npt_manager_p np
 			if(!cur)
 			{
 				noir_cvm_mapping_attributes null_map={0};
-				// This 512GiB page is not yet described yet.
+				// This 512GiB page is not yet described.
 				st=nvc_svmc_create_1gb_page_map(npt_manager,gpa,0,null_map);
 				if(st==noir_success)cur=npt_manager->pdpte.tail;
 			}
@@ -784,7 +814,7 @@ noir_status static nvc_svmc_create_4kb_page_map(noir_svm_custom_npt_manager_p np
 			if(!cur)
 			{
 				noir_cvm_mapping_attributes null_map={0};
-				// This 1GiB page is not yet described yet.
+				// This 1GiB page is not yet described.
 				st=nvc_svmc_create_2mb_page_map(npt_manager,gpa,0,null_map);
 				if(st==noir_success)cur=npt_manager->pde.tail;
 			}
@@ -925,7 +955,7 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 			noir_free_nonpg_memory(vm->vcpu);
 			vm->vcpu=null;
 		}
-		noir_release_reslock(vm->header.vcpu_list_lock);
+		noir_release_reslock(vm->header.vcpu_list_lock);\
 		// Release Nested Paging Structure.
 		if(vm->nptm.ncr3.virt)
 			noir_free_contd_memory(vm->nptm.ncr3.virt);

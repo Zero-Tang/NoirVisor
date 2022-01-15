@@ -292,15 +292,15 @@ typedef union _noir_cvm_vcpu_state_cache
 	{
 		u32 gprvalid:1;		// Includes rsp,rip,rflags.
 		u32 cr_valid:1;		// Includes cr0,cr3,cr4.
-		u32 cr2valid:1;		// Includes cr2.
-		u32 dr_valid:1;		// Includes dr6,dr7.
+		u32 cr2valid:1;		// Includes cr2, uncached in Intel VT-x.
+		u32 dr_valid:1;		// Includes dr7.
 		u32 sr_valid:1;		// Includes cs,ds,es,ss.
 		u32 fg_valid:1;		// Includes fs,gs,kgsbase.
 		u32 dt_valid:1;		// Includes idtr,gdtr.
 		u32 lt_valid:1;		// Includes tr,ldtr.
 		u32 sc_valid:1;		// Includes star,lstar,cstar,sfmask.
 		u32 se_valid:1;		// Includes esp,eip,cs for sysenter.
-		u32 tp_valid:1;		// Includes cr8.tpr.
+		u32 tp_valid:1;		// Includes cr8.tpr, unused in Intel VT-x.
 		u32 ef_valid:1;		// Includes efer.
 		u32 pa_valid:1;		// Includes pat.
 		u32 reserved:18;
@@ -340,6 +340,12 @@ The `cpuid` instruction must be intercepted by NoirVisor, even though host may c
 ### INVD Interception
 The `invd` instruction must be intercepted by NoirVisor. The `invd` instruction invalidates all caches without writing them back to the main memory. In this regard, NoirVisor must take responsibility to prevent the guest purposefully corrupting the global memory. Virtualization of `invd` instruction is actually simple: execute `wbinvd` instruction on exit of `invd`. At least this is what Hyper-V would do. Intel VT-x forces any hypervisor developers to intercept `invd` instruction.
 
+### CR8 Interception
+In that Intel VT-x lacks support of local APIC, which is instead present in AMD-V, there is no space left for the `cr8` register. Therefore, NoirVisor must emulate the behavior of the `cr8` register. <br>
+When an external interrupt is to be injected, the priority of the interrupt will be compared with `cr8` value. If the priority of the interrupt is greater, the interrupt will be injected. Otherwise, it will be held pending. <br>
+When writes to `cr8` register is intercepted, it will check if there is pending external interrupts and inject it accordingly. Nevertheless, if the guest has `RFLAGS.IF` cleared, the interrupt is still pending even if the priority is high enough. Intercept the interrupt-window in order to get it injected. <br>
+When reads from `cr8` register is intercepted, it will return the virtualized value of `cr8` register.
+
 ### I/O Interception
 I/O Interceptions are mandatory in that I/O operations in Guest are not supposed to go to real hardwares. Instead, they should go to virtual appliances, which Host is supposed to emulate. Switch the world to the host so that host will be handling Guest's I/O. Intel VT-x can specify `Unconditional I/O Exits` in `Primary Processor-based VM-Execution Control` field of VMCS, so it may save space so that we don't have to allocate pages for I/O bitmaps.
 
@@ -347,7 +353,7 @@ I/O Interceptions are mandatory in that I/O operations in Guest are not supposed
 Similar to the `cpuid` instruction, Host can choose whether to intercept this instruction or not. If the host does not intercept MSR-Related instructions, NoirVisor would handle them and masking certain operations (e.g: accessing the `EFER` MSR). Otherwise, NoirVisor would switch to the Host to handle the instructions. Intel VT-x can specify not to `Use MSR Bitmaps` in `Primary Processor-based VM-Execution Control` field of VMCS, so we may only allocate a page in case the host do not intend to intercept MSR accesses.
 
 ### Triple-Fault
- NoirVisor won't handle triple-fault itself. Switch to the host so the Host may handle it.
+NoirVisor won't handle triple-fault itself. Switch to the host so the Host may handle it.
 
 ### VMX Interception
 Currently, NoirVisor does not support a hypervisor to be nested inside a CVM. Simply inject a `#UD` exception to guest if VMX instructions are intercepted. Do not switch to the host to indicate the guest is attempting to execute VMX instructions.

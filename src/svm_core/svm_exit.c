@@ -1422,6 +1422,9 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 					// If there was a previously injected IRQ and the interrupt was already taken, consider this an interrupt window.
 					// Notify the User Hypervisor of this information.
 					cvcpu->header.exit_context.intercept_code=cv_interrupt_window;
+					cvcpu->header.exit_context.interrupt_window.nmi=false;
+					cvcpu->header.exit_context.interrupt_window.iret_passed=false;
+					cvcpu->header.exit_context.interrupt_window.reserved=0;
 					// Reset the status of previous vIRQ.
 					cvcpu->special_state.prev_virq=0;
 				}

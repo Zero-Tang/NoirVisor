@@ -93,7 +93,14 @@ nvc_vt_exit_handler_a proc frame
 	popaq_fast 20h
 	; We don't have to increment stack here in
 	; that the host rsp is already set in VMCS.
+	; Check if the VMCS is launched.
+	btr dword ptr [rsp+ktrap_frame_size-mach_frame_size+gpr_stack_size+20h+14h],0
+	jc launch_initial_vmcs
 	vmresume
+	jmp vmentry_failure
+launch_initial_vmcs:
+	vmlaunch
+vmentry_failure:
 	; Usually we won't be here, unless the VM-Entry fails.
 	; We will call the special procedure to handle this situation.
 	; First Parameter: the GPR state of the guest.
@@ -105,6 +112,9 @@ nvc_vt_exit_handler_a proc frame
 	setc al
 	adc r8b,al
 	call nvc_vt_resume_failure
+	; If it was Guest vCPU which failed to run, we may return to host.
+	popaq_fast 20h
+	vmresume
 	; The "ret" here is to let the WinDbg stop disassembling for the uf command.
 	ret
 

@@ -28,6 +28,7 @@
 void static fastcall nvc_svm_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+	cvcpu->header.exit_context.intercept_code=cv_scheduler_bug;
 }
 
 // Expected Intercept Code: -1
@@ -347,10 +348,34 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	// DO NOT advance the rip unless cpuid is handled by NoirVisor.
 }
 
+// Expected Intercept Code: 0x74
+void static fastcall nvc_svm_iret_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+{
+	// The iret instruction indicates NMI-window.
+	if(cvcpu->special_state.prev_nmi)
+	{
+		cvcpu->special_state.prev_nmi=false;
+		// Inject the pending NMI and keep the NMI-window interception on.
+		noir_svm_vmwrite32(cvcpu->vmcb.virt,event_injection,cvcpu->header.injected_event.attributes.value);
+		noir_svm_vmwrite32(cvcpu->vmcb.virt,event_error_code,cvcpu->header.injected_event.error_code);
+	}
+	else if(cvcpu->header.vcpu_options.intercept_nmi_window)
+	{
+		nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+		cvcpu->header.exit_context.intercept_code=cv_interrupt_window;
+		cvcpu->header.exit_context.interrupt_window.nmi=true;				// This is an NMI-window.
+		cvcpu->header.exit_context.interrupt_window.iret_passed=false;		// The iret instruction is not yet executed.
+		cvcpu->header.exit_context.interrupt_window.reserved=0;
+		// Cancel the interceptions of iret instruction.
+		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,intercept_instruction1,nvc_svm_intercept_vector1_iret);
+		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
+	}
+}
+
 // Expected Intercept Code: 0x76
 void static fastcall nvc_svm_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	// The invd instruction would corrupt cache globally host and it thereby must be intercepted.
+	// The invd instruction would corrupt cache globally host and it must thereby be intercepted.
 	// Execute wbinvd to protect global cache.
 	noir_wbinvd();
 	noir_svm_advance_rip(cvcpu->vmcb.virt);

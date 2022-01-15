@@ -141,10 +141,10 @@ typedef enum _vmx_vmcs_encoding
 	guest_interruptibility_state=0x4824,
 	guest_activity_state=0x4826,
 	guest_smbase=0x4828,
-	guest_msr_ia32_sysenter_cs_=0x482A,
+	guest_msr_ia32_sysenter_cs=0x482A,
 	vmx_preemption_timer_value=0x482E,
 	// 32-Bit Host State Fields
-	host_msr_ia32_sysenter_cs_=0x4C00,
+	host_msr_ia32_sysenter_cs=0x4C00,
 	// Natural-Width Control Fields
 	cr0_guest_host_mask=0x6000,
 	cr4_guest_host_mask=0x6002,
