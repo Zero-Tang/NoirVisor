@@ -685,7 +685,78 @@ void static fastcall nvc_vt_wrmsr_cvexit_handler(noir_gpr_state_p gpr_state,noir
 
 void static fastcall nvc_vt_invalid_guest_state_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
+	ulong_ptr cr0,cr3,cr4,dr7;
+	u64 efer,pat,debug_ctrl,se_cs,se_esp,se_eip;
+	u16 cs_sel,ds_sel,es_sel,fs_sel,gs_sel,ss_sel,tr_sel,ldtr_sel;
+	vmx_segment_access_right cs_ar,ds_ar,es_ar,fs_ar,gs_ar,ss_ar,tr_ar,ldtr_ar;
+	u32 cs_lim,ds_lim,es_lim,fs_lim,gs_lim,ss_lim,tr_lim,ldtr_lim,idtr_lim,gdtr_lim;
+	u64 cs_base,ds_base,es_base,fs_base,gs_base,ss_base,tr_base,ldtr_base,idtr_base,gdtr_base;
+	ulong_ptr rflags,rip;
 	// Invalid State in VMCS is detected by processor.
+	nvc_vt_dump_vmcs_guest_state();
+	// Dump the VMCS and parse the reason of failure.
+	// Read Control & Debug Registers.
+	noir_vt_vmread(guest_cr0,&cr0);
+	noir_vt_vmread(guest_cr3,&cr3);
+	noir_vt_vmread(guest_cr4,&cr4);
+	noir_vt_vmread(guest_dr7,&dr7);
+	// Read MSRs saved in VMCS.
+	noir_vt_vmread(guest_msr_ia32_efer,&efer);
+	noir_vt_vmread(guest_msr_ia32_pat,&pat);
+	noir_vt_vmread(guest_msr_ia32_debug_ctrl,&debug_ctrl);
+	noir_vt_vmread(guest_msr_ia32_sysenter_cs,&se_cs);
+	noir_vt_vmread(guest_msr_ia32_sysenter_esp,&se_esp);
+	noir_vt_vmread(guest_msr_ia32_sysenter_eip,&se_eip);
+	// Read Segment Register - CS
+	noir_vt_vmread(guest_cs_selector,&cs_sel);
+	noir_vt_vmread(guest_cs_access_rights,&cs_ar);
+	noir_vt_vmread(guest_cs_limit,&cs_lim);
+	noir_vt_vmread(guest_cs_base,&cs_base);
+	// Read Segment Register - DS
+	noir_vt_vmread(guest_ds_selector,&ds_sel);
+	noir_vt_vmread(guest_ds_access_rights,&ds_ar);
+	noir_vt_vmread(guest_ds_limit,&ds_lim);
+	noir_vt_vmread(guest_ds_base,&ds_base);
+	// Read Segment Register - ES
+	noir_vt_vmread(guest_es_selector,&es_sel);
+	noir_vt_vmread(guest_es_access_rights,&es_ar);
+	noir_vt_vmread(guest_es_limit,&es_lim);
+	noir_vt_vmread(guest_es_base,&es_base);
+	// Read Segment Register - FS
+	noir_vt_vmread(guest_fs_selector,&fs_sel);
+	noir_vt_vmread(guest_fs_access_rights,&fs_ar);
+	noir_vt_vmread(guest_fs_limit,&fs_lim);
+	noir_vt_vmread(guest_fs_base,&fs_base);
+	// Read Segment Register - GS
+	noir_vt_vmread(guest_gs_selector,&gs_sel);
+	noir_vt_vmread(guest_gs_access_rights,&gs_ar);
+	noir_vt_vmread(guest_gs_limit,&gs_lim);
+	noir_vt_vmread(guest_gs_base,&gs_base);
+	// Read Segment Register - SS
+	noir_vt_vmread(guest_ss_selector,&ss_sel);
+	noir_vt_vmread(guest_ss_access_rights,&ss_ar);
+	noir_vt_vmread(guest_ss_limit,&ss_lim);
+	noir_vt_vmread(guest_ss_base,&ss_base);
+	// Read Segment Register - TR
+	noir_vt_vmread(guest_tr_selector,&tr_sel);
+	noir_vt_vmread(guest_tr_access_rights,&tr_ar);
+	noir_vt_vmread(guest_tr_limit,&tr_lim);
+	noir_vt_vmread(guest_tr_base,&tr_base);
+	// Read Segment Register - LDTR
+	noir_vt_vmread(guest_ldtr_selector,&ldtr_sel);
+	noir_vt_vmread(guest_ldtr_access_rights,&ldtr_ar);
+	noir_vt_vmread(guest_ldtr_limit,&ldtr_lim);
+	noir_vt_vmread(guest_ldtr_base,&ldtr_base);
+	// Read Descriptor Tables - IDTR & GDTR
+	noir_vt_vmread(guest_idtr_limit,&idtr_lim);
+	noir_vt_vmread(guest_idtr_base,&idtr_base);
+	noir_vt_vmread(guest_gdtr_limit,&gdtr_lim);
+	noir_vt_vmread(guest_gdtr_base,&gdtr_base);
+	// Read General-Purpose Registers - Rip & RFlags
+	noir_vt_vmread(guest_rip,&rip);
+	noir_vt_vmread(guest_rflags,&rflags);
+	// Perform examinations...
+
 	// Deliver to subverted host.
 	nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_invalid_state;
@@ -693,6 +764,7 @@ void static fastcall nvc_vt_invalid_guest_state_cvexit_handler(noir_gpr_state_p 
 
 void static fastcall nvc_vt_invalid_msr_loading_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
+	nv_dprintf("The MSRs to be loaded for CVM is invalid! vCPU=0x%p\n",cvcpu);
 	nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_invalid_state;
 }

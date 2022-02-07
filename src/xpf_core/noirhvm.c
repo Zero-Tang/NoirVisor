@@ -175,6 +175,8 @@ void nvc_synchronize_vcpu_state(noir_cvm_virtual_cpu_p vcpu)
 {
 	if(hvm_p->selected_core==use_svm_core)
 		noir_svm_vmmcall(noir_cvm_dump_vcpu_vmcb,(ulong_ptr)vcpu);
+	else if(hvm_p->selected_core==use_vt_core)
+		noir_vt_vmcall(noir_cvm_dump_vcpu_vmcb,(ulong_ptr)vcpu);
 }
 
 noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_register_type register_type,void* buffer,u32 buffer_size)
@@ -584,7 +586,7 @@ noir_status nvc_create_vcpu(noir_cvm_virtual_machine_p vm,noir_cvm_virtual_cpu_p
 	{
 		st=noir_success;
 		if(hvm_p->selected_core==use_vt_core)
-			st=nvc_vt_create_vcpu(vcpu,vm,vcpu_id);
+			st=nvc_vtc_create_vcpu(vcpu,vm,vcpu_id);
 		else if(hvm_p->selected_core==use_svm_core)
 			st=nvc_svmc_create_vcpu(vcpu,vm,vcpu_id);
 		else

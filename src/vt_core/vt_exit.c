@@ -27,7 +27,7 @@
 void nvc_vt_dump_vmcs_guest_state()
 {
 	ulong_ptr v1,v2,v3,v4;
-	nv_dprintf("Dumping VMCS Guest State Area!\n");
+	nv_dprintf("Dumping VMCS Guest State Area...\n");
 	noir_vt_vmread(guest_cs_selector,&v1);
 	noir_vt_vmread(guest_cs_access_rights,&v2);
 	noir_vt_vmread(guest_cs_limit,&v3);
@@ -81,9 +81,35 @@ void nvc_vt_dump_vmcs_guest_state()
 	noir_vt_vmread(guest_rsp,&v1);
 	noir_vt_vmread(guest_rip,&v2);
 	noir_vt_vmread(guest_rflags,&v3);
-	nv_dprintf("Guest Special GPRs: Rsp: 0x%p\t Rip: 0x%p\t RFlags:0x%X\n",v1,v2,v3);
+	noir_vt_vmread(guest_ssp,&v4);
+	nv_dprintf("Guest Special GPRs: Rsp: 0x%p\t Rip: 0x%p\t RFlags:0x%X\t Ssp: 0x%p\n",v1,v2,v3,v4);
+	noir_vt_vmread(guest_activity_state,&v1);
+	noir_vt_vmread(guest_interruptibility_state,&v2);
+	noir_vt_vmread(guest_pending_debug_exceptions,&v3);
+	nv_dprintf("Guest Activity State: %u\t Interruptibility State: 0x%X\t Pending Debug Exceptions: 0x%X\n",v1,v2,v3);
+	noir_vt_vmread(guest_msr_ia32_efer,&v1);
+	noir_vt_vmread(guest_msr_ia32_pat,&v2);
+	noir_vt_vmread(guest_msr_ia32_debug_ctrl,&v3);
+	nv_dprintf("Guest EFER: 0x%llX\t PAT: 0x%llX\t Debug Control: 0x%llX\n",v1,v2,v3);
 	noir_vt_vmread(vmcs_link_pointer,&v4);
 	nv_dprintf("Guest VMCS Link Pointer: 0x%p\n",v4);
+	noir_vt_vmread(guest_pdpte0,&v1);
+	noir_vt_vmread(guest_pdpte1,&v2);
+	noir_vt_vmread(guest_pdpte2,&v3);
+	noir_vt_vmread(guest_pdpte3,&v4);
+	nv_dprintf("Guest PDPTE0: 0x%llX\t PDPTE1: 0x%llX\t PDPTE2: 0x%llX\t PDPTE3: 0x%llX\n",v1,v2,v3,v4);
+	noir_vt_vmread(pin_based_vm_execution_controls,&v1);
+	noir_vt_vmread(primary_processor_based_vm_execution_controls,&v2);
+	noir_vt_vmread(secondary_processor_based_vm_execution_controls,&v3);
+	noir_vt_vmread(exception_bitmap,&v4);
+	nv_dprintf("Pin-Based Controls: 0x%X\t Primary Controls: 0x%X\t Secondary Controls: 0x%X\t Exception Bitmap: 0x%X\n",v1,v2,v3,v4);
+	noir_vt_vmread(vmexit_controls,&v1);
+	noir_vt_vmread(vmentry_controls,&v2);
+	nv_dprintf("VM-Exit Controls: 0x%X\t VM-Entry Controls: 0x%X\n",v1,v2);
+	noir_vt_vmread(ept_pointer,&v3);
+	nv_dprintf("EPT Pointer: 0x%llX\n",v3);
+	noir_vt_vmread(vmentry_interruption_information_field,&v4);
+	nv_dprintf("Event Injection: 0x%X\n",v4);
 }
 
 // This is the default exit-handler for unexpected VM-Exit.
@@ -405,7 +431,7 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 				nv_dprintf("Restoration completed!\n");
 				nvc_vt_resume_without_entry(saved_state);
 				// The code won't reach here.
-				valid_call=true;
+				noir_vt_advance_rip();
 			}
 			break;
 		}
@@ -421,7 +447,7 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 			noir_writecr3(gcr3k);		// Switch to the Guest Address Space.
 			disasm->instruction_length=noir_get_instruction_length_ex(disasm->buffer,disasm->bits);
 #endif
-			valid_call=true;
+			noir_vt_advance_rip();
 			break;
 		}
 		case noir_vt_disasm_mnemonic:
@@ -436,12 +462,7 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 			noir_writecr3(gcr3k);		// Switch to the Guest Address Space.
 			disasm->instruction_length=noir_disasm_instruction(disasm->buffer,disasm->mnemonic,disasm->mnemonic_limit,disasm->bits,disasm->va);
 #endif
-			valid_call=true;
-			break;
-		}
-		default:
-		{
-			nv_dprintf("Unknown vmcall index!\n");
+			noir_vt_advance_rip();
 			break;
 		}
 		case noir_vt_init_custom_vmcs:
@@ -454,7 +475,7 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
 #endif
 				nvc_vt_initialize_cvm_vmcs(vcpu,cvcpu);
-				valid_call=true;
+				noir_vt_advance_rip();
 			}
 			break;
 		}
@@ -467,8 +488,8 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 #else
 				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
 #endif
+				noir_vt_advance_rip();
 				nvc_vt_switch_to_guest_vcpu(gpr_state,vcpu,cvcpu);
-				valid_call=true;
 			}
 			break;
 		}
@@ -482,7 +503,7 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
 #endif
 				nvc_vt_dump_vcpu_state(cvcpu);
-				valid_call=true;
+				noir_vt_advance_rip();
 			}
 			break;
 		}
@@ -496,35 +517,34 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
 #endif
 				nvc_vt_set_guest_vcpu_options(vcpu,cvcpu);
-				valid_call=true;
+				noir_vt_advance_rip();
 			}
 			break;
 		}
-	}
-	if(valid_call)
-		noir_vt_advance_rip();
-	else
-	{
-		// If vmcall is not inside the NoirVisor's image,
-		// we consider this is a regular VMX instruction
-		// execution not in VMX Non-Root Operation.
-		// Note that this is Nested VMX scenario.
-		// Check status of vCPU.
-		if(vcpu->status==noir_virt_nesting)
+		default:
 		{
-			u64 linked_vmcs;
-			noir_vt_vmread64(vmcs_link_pointer,&linked_vmcs);
-			if(linked_vmcs==0xffffffffffffffff)
-				noir_vt_vmfail_invalid();		// At this moment, valid VMCS is not loaded.
+			// If vmcall is not inside the NoirVisor's image,
+			// we consider this is a regular VMX instruction
+			// execution not in VMX Non-Root Operation.
+			// Note that this is Nested VMX scenario.
+			// Check status of vCPU.
+			if(vcpu->status==noir_virt_nesting)
+			{
+				u64 linked_vmcs;
+				noir_vt_vmread64(vmcs_link_pointer,&linked_vmcs);
+				if(linked_vmcs==0xffffffffffffffff)
+					noir_vt_vmfail_invalid();		// At this moment, valid VMCS is not loaded.
+				else
+					noir_vt_vmfail_valid();			// At this moment, valid VMCS is loaded.
+				noir_vt_advance_rip();
+			}
 			else
-				noir_vt_vmfail_valid();			// At this moment, valid VMCS is loaded.
-			noir_vt_advance_rip();
-		}
-		else
-		{
-			// At this moment, vCPU did not enter VMX operation.
-			// Issue a #UD exception to Guest.
-			noir_vt_inject_event(ia32_invalid_opcode,ia32_hardware_exception,false,0,0);
+			{
+				// At this moment, vCPU did not enter VMX operation.
+				// Issue a #UD exception to Guest.
+				noir_vt_inject_event(ia32_invalid_opcode,ia32_hardware_exception,false,0,0);
+			}
+			break;
 		}
 	}
 }
@@ -1340,8 +1360,6 @@ void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu
 			vt_cvexit_handlers[exit_reason](gpr_state,vcpu,cvcpu);
 		else
 			nvc_vt_default_cvexit_handler(gpr_state,vcpu,cvcpu);
-		nv_dprintf("Customizable VM is exiting...\n");
-		noir_int3();
 	}
 	// Guest RIP is supposed to be advanced in specific handlers, not here.
 	// Do not execute vmresume here. It will be done as this function returns.

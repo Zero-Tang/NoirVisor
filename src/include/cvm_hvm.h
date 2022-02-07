@@ -75,6 +75,7 @@ typedef enum _noir_cvm_register_type
 	noir_cvm_xcr0_register,
 	noir_cvm_efer_register,
 	noir_cvm_pat_register,
+	noir_cvm_last_branch_record_register,
 	noir_cvm_maximum_register_type
 }noir_cvm_register_type,*noir_cvm_register_type_p;
 
@@ -275,6 +276,12 @@ typedef struct _noir_msr_state
 	u64 cstar;
 	u64 sfmask;
 	u64 ststar;
+	u64 debug_ctrl;
+	// The LBR virtualization is in draft-stage.
+	u64 last_branch_from_ip;
+	u64 last_branch_to_ip;
+	u64 last_exception_from_ip;
+	u64 last_exception_to_ip;
 }noir_msr_state,*noir_msr_state_p;
 
 typedef struct _noir_xcr_state
@@ -319,6 +326,7 @@ typedef union _noir_cvm_vcpu_state_cache
 		u32 tp_valid:1;		// Includes cr8.tpr.
 		u32 ef_valid:1;		// Includes efer.
 		u32 pa_valid:1;		// Includes pat.
+		u32 lb_valid:1;		// Includes debugctl,br_from/to,ex_from/to.
 		u32 reserved:18;
 		// This field indicates whether the state in VMCS/VMCB is
 		// updated to the state save area in the vCPU structure.
@@ -408,7 +416,7 @@ u32 nvc_svmc_get_vm_asid(noir_cvm_virtual_machine_p vm);
 // CVM Functions from VT-Core
 noir_status nvc_vtc_create_vm(noir_cvm_virtual_machine_p *virtual_machine);
 void nvc_vtc_release_vm(noir_cvm_virtual_machine_p virtual_machine);
-noir_status nvc_vt_create_vcpu(noir_cvm_virtual_cpu_p *virtual_processor,noir_cvm_virtual_machine_p virtual_machine,u32 vcpu_id);
+noir_status nvc_vtc_create_vcpu(noir_cvm_virtual_cpu_p *virtual_processor,noir_cvm_virtual_machine_p virtual_machine,u32 vcpu_id);
 void nvc_vtc_release_vcpu(noir_cvm_virtual_cpu_p virtual_processor);
 noir_status nvc_vtc_run_vcpu(noir_cvm_virtual_cpu_p vcpu);
 noir_status nvc_vtc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu);

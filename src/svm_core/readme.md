@@ -150,15 +150,25 @@ As a matter of fact, there is no need to intercept physical interrupts. The Loca
 There is no easy way to mask `NMI`s like we did for masking physical interrupts. The `NMI` handler must be hijacked. When `NMI`s are intercepted, execute the `stgi` instruction to let the processor discard the pending `NMI`. <br>
 The algorithm of hijacked `NMI` handler is simple: mark the vCPU has a pending `NMI`. However, do not execute the `iret` instruction in order to return because doing so would cancel the masking of `NMI`s. <br>
 Likewise, when there is a pending `NMI`, the `iret` instruction must be intercepted and emulated so that masking of `NMI` is unaffected. <br>
-When unmasking `NMI`s (i.e: the `vGIF` is set), remove interceptions of `NMI`s and `iret` instructions.
+When unmasking `NMI`s (i.e: the `vGIF` is set), remove interceptions of `NMI`s and `iret` instructions. However, emulating the `iret` instruction is required on `iret`-interception. Otherwise, the stack may conflict if the handler of `NMI` specified `IST`-mechanism.
+
+##### NMI Masking of Matryoshka
+There is a scenario where NMI is already masked but the processor has just entered state of `GIF=0`. This scenario is called NMI Masking of Matryoshka (i.e: Nested NMI Masking; two or more factors are masking NMIs). Such scenario could happen in two ways:
+
+- The program executed `clgi` instruction in an NMI handler.
+- The program triggered a VM-Exit during NMI.
+
+In either way, the processor keeps the blocking of NMI internally. NoirVisor's logically-emulated masking of NMI is ineffective: no NMIs will be intercepted, so leaving the `vGIF=0` is fine with processor's internal-blocking of NMI. <br>
+Even if the guest executed `iret` instruction while `vGIF=0`, where internal-blocking of NMI is removed by the processor, the interception of NMI is still in effect as indicated in VMCB. <br>
+In a word, NMI Masking of Matryoshka does not affect the logic of masking NMIs from virtualized GIF.
 
 #### Masking Debug Exceptions
 The method to mask `#DB`s are simple: intercept the `#DB` exception. <br>
-Please note that `#DB` trace trap due to `RFLAGS.TF` bit is not to be held pending, so forward the `#DB`.
+Please note that `#DB` trace trap due to `RFLAGS.TF` bit is not to be held pending, so forward the `#DB` by injecting it.
 
 #### Masking SMIs
-General hypervisors which do not gain control of system-management mode cannot hijack SMIs, so SMIs cannot be blocked when `vGIF=0`. Plus, the firmware may lock accesses to system-management mode, so interceptions of `SMI`s are actually ignored by the processor. This is a thereby fundamental flaw in an otherwise perfect global hypervisor that supports nested virtualization. <br>
-By virtue of this, current implementation of NoirVisor would give up masking `SMI`s. Future implementation of NoirVisor, if to be integrated in firmware, would properly mask `SMI`s.
+General hypervisors which do not gain control of system-management mode cannot hijack SMIs, so SMIs cannot be blocked when `vGIF=0`. Plus, the firmware may lock accesses to system-management mode, so interceptions of SMIs are actually ignored by the processor. This is a thereby fundamental flaw in an otherwise perfect global hypervisor that supports nested virtualization. <br>
+By virtue of this, current implementation of NoirVisor would give up masking SMIs. Future implementation of NoirVisor, if to be integrated in firmware, would properly mask SMIs.
 
 #### Masking INIT signals
 In that NoirVisor would specify redirecting `INIT` signals to `#SX` exceptions, we are actually intercepting `#SX` exceptions in order to mask `INIT` signals. Mark there is pending `INIT` signal in the vCPU. When `vGIF` is set, we will be unmasking this `INIT` signal. Emulate the `INIT` signal if `VM_CR.R_INIT` is not set. Otherwise, inject an `#SX` exception.
@@ -167,15 +177,15 @@ In that NoirVisor would specify redirecting `INIT` signals to `#SX` exceptions, 
 The logic of masking `#MC` exceptions is simple: mark the vCPU has a pending `#MC` exception, and inject the `#MC` exception once the `vGIF` is logically set.
 
 #### Unmasking Interrupts
-The AMD64 Architecture defines priorities for pending interrupts. In that `#DB` traps, `#MC` aborts, `NMI`s and `INIT` signals are held pending while `GIF=0`, we need to take care about their orders when unmasking. <br>
-Generally, the relationship of their priorities are: `#MC` aborts > `INIT` signals > `#DB` traps > `NMI`s.
+The AMD64 Architecture defines priorities for pending interrupts. In that `#MC` aborts, `NMI`s and `INIT` signals are held pending while `GIF=0`, we need to take care about their orders when unmasking. <br>
+Generally, the relationship of their priorities are: `#MC` aborts > `INIT` signals > `NMI`s.
 
 ### GIF Logics
 As defined by AMD, certain interrupts are controlled by GIF:
 | Interrupt Source								| Actions on `GIF=0` Scenario	| Actions on `GIF=1` Scenario	|
 |-----------------------------------------------|-------------------------------|-------------------------------|
 | `#DB` Trap due to breakpoint register match   | Discarded						| Act as usual					|
-| `#DB` Trap due to single-stepping				| Held Pending					| Act as usual					|
+| `#DB` Trap due to single-stepping				| Act as usual					| Act as usual					|
 | `INIT` Signal									| Held Pending					| Act as usual					|
 | `NMI` - Non-Maskable Interrupt				| Held Pending					| Act as usual					|
 | External `SMI`								| Held Pending					| Act as usual					|

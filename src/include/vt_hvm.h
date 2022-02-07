@@ -43,8 +43,50 @@
 #define noir_vt_cvm_msr_auto_cstar		2
 #define noir_vt_cvm_msr_auto_sfmask		3
 #define noir_vt_cvm_msr_auto_gsswap		4
+#define noir_vt_cvm_msr_auto_br_from	5
+#define noir_vt_cvm_msr_auto_br_to		6
+#define noir_vt_cvm_msr_auto_ex_from	7
+#define noir_vt_cvm_msr_auto_ex_to		8
 
+// FIXME: When LBR Virtualization is ready, change this value.
 #define noir_vt_cvm_msr_auto_max		5
+
+typedef enum _noir_vt_consistency_check_failure_id
+{
+	noir_vt_failure_unknown_failure,
+	noir_vt_failure_cr0_pg1_pe0,
+	noir_vt_failure_cr4_vmx_unsupported,
+	noir_vt_failure_cr4_cet1_cr0_wp0,
+	noir_vt_failure_debugctrl_reserved,
+	noir_vt_failure_ia32e0_cr4_pcide1,
+	noir_vt_failure_ia32e1_cr0_pg0,
+	noir_vt_failure_ia32e1_cr4_pae0,
+	noir_vt_failure_cr3_beyond_limit,
+	noir_vt_failure_sysenter_msr_incanonical,
+	noir_vt_failure_invalid_pat,
+	noir_vt_failure_efer_reserved,
+	noir_vt_failure_tr_ti1,
+	noir_vt_failure_ldtr_ti1,
+	noir_vt_failure_segbase_v8086_mismatch,
+	noir_vt_failure_segbase_incanonical,
+	noir_vt_failure_usable_base_high_32bits,
+	noir_vt_failure_invalid_v8086_segment_limit,
+	noir_vt_failure_invalid_v8086_segment_attributes,
+	noir_vt_failure_invalid_cs_type,
+	noir_vt_failure_invalid_ss_type,
+	noir_vt_failure_invalid_dataseg_type,
+	noir_vt_failure_invalid_segment_dpl,
+	noir_vt_failure_usable_segment_absent,
+	noir_vt_failure_reserved_segment_access_rights,
+	noir_vt_failure_cs_l1_db1,
+	noir_vt_failure_invalid_granularity_limit,
+	noir_vt_failure_invalid_tr,
+	noir_vt_failure_invalid_ldtr,
+	noir_vt_failure_invalid_gdtr,
+	noir_vt_failure_invalid_idtr,
+	noir_vt_failrue_invalid_rip,
+	noir_vt_failure_invalid_rflags
+}noir_vt_consistency_check_failure_id,*noir_vt_consistency_check_failure_id_p;
 
 typedef struct _noir_vt_hvm
 {
@@ -190,6 +232,7 @@ void nvc_vt_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,
 void nvc_vt_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void nvc_vt_dump_vcpu_state(noir_vt_custom_vcpu_p vcpu);
 void nvc_vt_set_guest_vcpu_options(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
+void nvc_vt_dump_vmcs_guest_state();
 void nvc_vt_resume_without_entry(noir_gpr_state_p state);
 void nvc_vt_exit_handler_a(void);
 void nvc_vt_set_mshv_handler(bool option);

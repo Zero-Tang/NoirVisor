@@ -71,7 +71,6 @@ void nvc_vt_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,
 {
 	noir_vt_initial_stack_p loader_stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
 	ia32_vmx_msr_auto_p msr_auto=(ia32_vmx_msr_auto_p)cvcpu->msr_auto.virt;
-	noir_int3();
 	// IMPORTANT: If vCPU is scheduled to a different processor, clear the state of VMCS is required.
 	if(cvcpu->proc_id!=loader_stack->proc_id)
 	{
@@ -128,9 +127,13 @@ void nvc_vt_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,
 	noir_writecr2(cvcpu->header.crs.cr2);
 	if(!cvcpu->header.state_cache.cr_valid)
 	{
+		u64 cr4=cvcpu->header.crs.cr4;
 		noir_vt_vmwrite(guest_cr0,cvcpu->header.crs.cr0);
 		noir_vt_vmwrite(guest_cr3,cvcpu->header.crs.cr3);
-		noir_vt_vmwrite(guest_cr4,cvcpu->header.crs.cr4|ia32_cr4_mce);
+		// Intel VT-x requires VMXE to be set.
+		cr4|=noir_rdmsr(ia32_vmx_cr4_fixed0);
+		cr4&=noir_rdmsr(ia32_vmx_cr4_fixed1);
+		noir_vt_vmwrite(guest_cr4,cr4);
 		noir_vt_vmwrite(cr0_read_shadow,cvcpu->header.crs.cr0);
 		noir_vt_vmwrite(cr4_read_shadow,cvcpu->header.crs.cr4);
 		cvcpu->header.state_cache.cr_valid=true;
@@ -187,7 +190,7 @@ void nvc_vt_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,
 		noir_vt_vmwrite(guest_ldtr_selector,cvcpu->header.seg.ldtr.selector);
 		// Load segment attributes.
 		noir_vt_vmwrite(guest_tr_access_rights,cvcpu->header.seg.tr.attrib);
-		noir_vt_vmwrite(guest_ldtr_access_rights,vt_attrib(cvcpu->header.seg.ldtr.selector,cvcpu->header.seg.ldtr.attrib));
+		noir_vt_vmwrite(guest_ldtr_access_rights,cvcpu->header.seg.ldtr.attrib);
 		// Load segment limits.
 		noir_vt_vmwrite(guest_tr_limit,cvcpu->header.seg.tr.limit);
 		noir_vt_vmwrite(guest_ldtr_limit,cvcpu->header.seg.ldtr.limit);
@@ -306,6 +309,7 @@ void nvc_vt_dump_vcpu_state(noir_vt_custom_vcpu_p vcpu)
 		noir_vt_vmread(guest_cr0,&vcpu->header.crs.cr0);
 		noir_vt_vmread(guest_cr3,&vcpu->header.crs.cr3);
 		noir_vt_vmread(guest_cr4,&vcpu->header.crs.cr4);
+		vcpu->header.crs.cr4&=~ia32_cr4_vmxe_bit;
 	}
 	if(vcpu->header.state_cache.dr_valid)
 		noir_vt_vmread(guest_dr7,&vcpu->header.drs.dr7);
@@ -518,6 +522,7 @@ void static nvc_vt_initialize_cvm_host_state(noir_vt_vcpu_p vcpu)
 	noir_vt_vmwrite(host_cr3,system_cr3);	// We should use the system page table.
 	noir_vt_vmwrite(host_cr4,pstate.cr4);
 	noir_vt_vmwrite(host_msr_ia32_efer,pstate.efer);
+	noir_vt_vmwrite(host_msr_ia32_pat,pstate.pat);
 	// Host State Area - Stack Pointer, Instruction Pointer
 	noir_vt_vmwrite(host_rsp,(ulong_ptr)loader_stack);
 	noir_vt_vmwrite(host_rip,(ulong_ptr)nvc_vt_exit_handler_a);
@@ -556,8 +561,6 @@ void nvc_vt_initialize_cvm_vmcs(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 		vst=noir_vt_vmptrld(&cvcpu->vmcs.phys);
 		if(vst==vmx_success)
 		{
-			// Because the VMCS is loaded to CPU, mark which processor this VMCS is currently belonged to.
-			cvcpu->proc_id=noir_get_current_processor();
 			// Initialize Control Fields...
 			nvc_vt_initialize_cvm_pin_based_controls(vt_basic_msr.use_true_msr);
 			nvc_vt_initialize_cvm_proc_based_controls(vt_basic_msr.use_true_msr);
@@ -569,7 +572,10 @@ void nvc_vt_initialize_cvm_vmcs(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 			noir_vt_vmwrite64(ept_pointer,cvcpu->vm->eptm.eptp.phys);
 			noir_vt_vmwrite64(vmcs_link_pointer,maxu64);
 			noir_vt_vmwrite(virtual_processor_identifier,cvcpu->vm->vpid);
-			noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_mce_bit|ia32_cr4_vmxe_bit);
+			noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_et_bit);
+			noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_vmxe_bit);
+			noir_vt_vmwrite(guest_interruptibility_state,0);
+			noir_vt_vmwrite(guest_activity_state,guest_is_active);
 			// Switch back to Host vCPU.
 			noir_vt_vmptrld(&vcpu->vmcs.phys);
 		}
@@ -666,7 +672,7 @@ void static nvc_vtc_set_pde_entry(ia32_ept_pde_p entry,u64 hpa,noir_cvm_mapping_
 	entry->value=0;
 	if(map_attrib.psize!=1)
 	{
-		entry->read=entry->write=1;
+		entry->read=entry->write=entry->execute=1;
 		entry->pte_offset=page_4kb_count(hpa);
 	}
 	else
@@ -689,7 +695,7 @@ void static nvc_vtc_set_pdpte_entry(ia32_ept_pdpte_p entry,u64 hpa,noir_cvm_mapp
 	entry->value=0;
 	if(map_attrib.psize!=2)
 	{
-		entry->read=entry->write=1;
+		entry->read=entry->write=entry->execute=1;
 		entry->pde_offset=page_4kb_count(hpa);
 	}
 	else
@@ -710,7 +716,7 @@ void static nvc_vtc_set_pdpte_entry(ia32_ept_pdpte_p entry,u64 hpa,noir_cvm_mapp
 void static nvc_vtc_set_pml4e_entry(ia32_ept_pml4e_p entry,u64 hpa)
 {
 	entry->value=0;
-	entry->read=entry->write=1;
+	entry->read=entry->write=entry->execute=1;
 	entry->pdpte_offset=page_4kb_count(hpa);
 }
 
@@ -925,7 +931,7 @@ void nvc_vtc_release_vcpu(noir_vt_custom_vcpu_p virtual_processor)
 	}
 }
 
-noir_status nvc_vt_create_vcpu(noir_vt_custom_vcpu_p *virtual_processor,noir_vt_custom_vm_p virtual_machine,u32 vcpu_id)
+noir_status nvc_vtc_create_vcpu(noir_vt_custom_vcpu_p *virtual_processor,noir_vt_custom_vm_p virtual_machine,u32 vcpu_id)
 {
 	noir_status st=noir_invalid_parameter;
 	if(virtual_machine && virtual_processor)
@@ -1052,7 +1058,6 @@ noir_status nvc_vtc_create_vm(noir_vt_custom_vm_p *virtual_machine)
 			// Allocate vCPU List
 			vm->vcpu=noir_alloc_nonpg_memory(page_size);
 			if(vm->vcpu==null)goto alloc_failure;
-			vm->header.vcpu_list_lock=noir_initialize_reslock();
 			// Initialize EPT Manager (with Top-Level Paging Structure)
 			vm->eptm.eptp.virt=noir_alloc_contd_memory(page_size);
 			if(vm->eptm.eptp.virt)

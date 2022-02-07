@@ -605,6 +605,7 @@ noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_cu
 			// Insert the vCPU into the VM.
 			virtual_machine->vcpu[vcpu_id]=vcpu;
 			vcpu->vcpu_id=vcpu_id;
+			vcpu->proc_id=0xffffffff;
 			// Mark the owner VM of vCPU.
 			vcpu->vm=virtual_machine;
 			// Initialize the VMCB via hypercall. It is supposed that only hypervisor can operate VMCB.
