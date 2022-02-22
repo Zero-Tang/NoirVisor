@@ -131,6 +131,7 @@ typedef struct _noir_svm_vcpu
 	u16 enabled_feature;
 	u8 status;
 	u8 vcpu_property;
+	u32 volatile global_state;
 }noir_svm_vcpu,*noir_svm_vcpu_p;
 
 struct _noir_svm_custom_vm;

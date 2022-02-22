@@ -420,7 +420,7 @@ void* noir_alloc_paged_memory(size_t length)
 	return p;
 }
 
-void noir_free_contd_memory(void* virtual_address)
+void noir_free_contd_memory(void* virtual_address,size_t length)
 {
 #if defined(_WINNT5)
 	// It is recommended to release contiguous memory at APC level on NT5.

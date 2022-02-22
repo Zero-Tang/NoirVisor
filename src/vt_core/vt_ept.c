@@ -96,9 +96,9 @@ void nvc_ept_cleanup(noir_ept_manager_p eptm)
 	if(eptm)
 	{
 		if(eptm->eptp.virt)
-			noir_free_contd_memory(eptm->eptp.virt);
+			noir_free_contd_memory(eptm->eptp.virt,page_size);
 		if(eptm->pdpt.virt)
-			noir_free_contd_memory(eptm->pdpt.virt);
+			noir_free_contd_memory(eptm->pdpt.virt,page_size);
 		if(eptm->pde.virt)
 			noir_free_2mb_page(eptm->pde.virt);
 		if(eptm->pte.head)
@@ -107,13 +107,13 @@ void nvc_ept_cleanup(noir_ept_manager_p eptm)
 			do
 			{
 				noir_ept_pte_descriptor_p next=cur->next;
-				noir_free_contd_memory(cur->virt);
+				noir_free_contd_memory(cur->virt,page_size);
 				noir_free_nonpg_memory(cur);
 				cur=next;
 			}while(cur);
 		}
 		if(eptm->blank_page.virt)
-			noir_free_contd_memory(eptm->blank_page.virt);
+			noir_free_contd_memory(eptm->blank_page.virt,page_size);
 		noir_free_nonpg_memory(eptm);
 	}
 }
@@ -323,7 +323,7 @@ void static nvc_ept_update_per_var_mtrr(noir_ept_manager_p eptm,u32 mtrr_msr_ind
 			b1=noir_bsf64(&min_bitp1,phys_mask.phys_mask);
 			b2=noir_bsf64(&min_bitp2,phys_base.phys_base);
 			// If the MTRR specified a range that aligned under 2MiB, we can't proceed.
-			if(b1 && min_bitp1<page_shift_diff || b2 && min_bitp2<page_shift_diff)
+			if((b1 && min_bitp1<page_shift_diff) || (b2 && min_bitp2<page_shift_diff))
 			{
 				nv_panicf("MTRR MSR 0x%X is aligned under 2MiB!\n",mtrr_msr_index);
 				noir_int3();

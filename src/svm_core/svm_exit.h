@@ -127,8 +127,10 @@ typedef union _amd64_event_injection
 void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_cr4_write_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
-void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_nmi_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_sidt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_sgdt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_sldt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
@@ -169,7 +171,9 @@ noir_svm_exit_handler_routine svm_exit_handler_group1[noir_svm_maximum_code1]=
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	// 32 Exception Exit Handler...
-	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
+	nvc_svm_default_handler,		// Exception Vector 0
+	nvc_svm_db_exception_handler,	// Debug Exception
+	nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,
@@ -183,7 +187,7 @@ noir_svm_exit_handler_routine svm_exit_handler_group1[noir_svm_maximum_code1]=
 	nvc_svm_default_handler,		// Exception Vector 31
 	// 32 Interception Handlers from Vector 1
 	nvc_svm_default_handler,		// Physical External Interrupt
-	nvc_svm_default_handler,		// Physical Non-Maskable Interrupt
+	nvc_svm_nmi_handler,			// Physical Non-Maskable Interrupt
 	nvc_svm_default_handler,		// Physical System Management Interrupt
 	nvc_svm_default_handler,		// Physical INIT Signal
 	nvc_svm_default_handler,		// Virtual Interrupt

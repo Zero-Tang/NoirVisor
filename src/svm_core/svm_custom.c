@@ -550,9 +550,9 @@ void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 	if(vcpu)
 	{
 		// Release VMCB.
-		if(vcpu->vmcb.virt)noir_free_contd_memory(vcpu->vmcb.virt);
+		if(vcpu->vmcb.virt)noir_free_contd_memory(vcpu->vmcb.virt,page_size);
 		// Release XSAVE State Area,
-		if(vcpu->header.xsave_area)noir_free_contd_memory(vcpu->header.xsave_area);
+		if(vcpu->header.xsave_area)noir_free_contd_memory(vcpu->header.xsave_area,page_size);
 		// Remove vCPU from VM.
 		if(vcpu->vm)vcpu->vm->vcpu[vcpu->vcpu_id]=null;
 		// In addition, remove the vCPU from AVIC.
@@ -564,7 +564,7 @@ void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 			avic_physical[vcpu->proc_id].value=0;
 			avic_logical[vcpu->proc_id].value=0;
 			// Release APIC Backing Page.
-			if(vcpu->apic_backing.virt)noir_free_contd_memory(vcpu->apic_backing.virt);
+			if(vcpu->apic_backing.virt)noir_free_contd_memory(vcpu->apic_backing.virt,page_size);
 		}
 		noir_free_nonpg_memory(vcpu);
 	}
@@ -615,7 +615,7 @@ noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_cu
 		return noir_success;
 alloc_failure:
 		if(vcpu->vmcb.virt)
-			noir_free_contd_memory(vcpu->vmcb.virt);
+			noir_free_contd_memory(vcpu->vmcb.virt,page_size);
 		noir_free_nonpg_memory(vcpu);
 		return noir_insufficient_resources;
 	}
@@ -959,7 +959,7 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 		noir_release_reslock(vm->header.vcpu_list_lock);\
 		// Release Nested Paging Structure.
 		if(vm->nptm.ncr3.virt)
-			noir_free_contd_memory(vm->nptm.ncr3.virt);
+			noir_free_contd_memory(vm->nptm.ncr3.virt,page_size);
 		// Release PDPTE descriptors and paging structures...
 		if(vm->nptm.pdpte.head)
 		{
@@ -967,7 +967,7 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 			while(cur)
 			{
 				noir_npt_pdpte_descriptor_p next=cur->next;
-				if(cur->virt)noir_free_contd_memory(cur->virt);
+				if(cur->virt)noir_free_contd_memory(cur->virt,page_size);
 				noir_free_nonpg_memory(cur);
 				cur=next;
 			}
@@ -979,7 +979,7 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 			while(cur)
 			{
 				noir_npt_pde_descriptor_p next=cur->next;
-				if(cur->virt)noir_free_contd_memory(cur->virt);
+				if(cur->virt)noir_free_contd_memory(cur->virt,page_size);
 				noir_free_nonpg_memory(cur);
 				cur=next;
 			}
@@ -991,20 +991,20 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 			while(cur)
 			{
 				noir_npt_pte_descriptor_p next=cur->next;
-				if(cur->virt)noir_free_contd_memory(cur->virt);
+				if(cur->virt)noir_free_contd_memory(cur->virt,page_size);
 				noir_free_nonpg_memory(cur);
 				cur=next;
 			}
 		}
 		// Release MSRPM & IOPM
-		if(vm->msrpm.virt)noir_free_contd_memory(vm->msrpm.virt);
-		if(vm->msrpm_full.virt)noir_free_contd_memory(vm->msrpm_full.virt);
-		if(vm->iopm.virt)noir_free_contd_memory(vm->iopm.virt);
+		if(vm->msrpm.virt)noir_free_contd_memory(vm->msrpm.virt,page_size*2);
+		if(vm->msrpm_full.virt)noir_free_contd_memory(vm->msrpm_full.virt,page_size*2);
+		if(vm->iopm.virt)noir_free_contd_memory(vm->iopm.virt,page_size*3);
 		// Release AVIC Pages if AVIC is supported
 		if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
 		{
-			if(vm->avic_logical.virt)noir_free_contd_memory(vm->avic_logical.virt);
-			if(vm->avic_physical.virt)noir_free_contd_memory(vm->avic_physical.virt);
+			if(vm->avic_logical.virt)noir_free_contd_memory(vm->avic_logical.virt,page_size);
+			if(vm->avic_physical.virt)noir_free_contd_memory(vm->avic_physical.virt,page_size);
 		}
 		// Release ASID.
 		noir_acquire_reslock_exclusive(hvm_p->tlb_tagging.asid_pool_lock);

@@ -235,12 +235,35 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
 }
 
+void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu,noir_processor_state_p host_state)
+{
+	descriptor_register idtr,gdtr;
+	// Use vmsave instruction to save effort.
+	noir_svm_vmsave((ulong_ptr)vcpu->hvmcb.phys);
+	// Load IDTR and GDTR. They are not indicated in VMCB during vmsave.
+	idtr.limit=(u16)host_state->idtr.limit;
+	gdtr.limit=(u16)host_state->gdtr.limit;
+	idtr.base=host_state->idtr.base;
+	gdtr.base=host_state->gdtr.base;
+	noir_lidt(&idtr);
+	noir_lgdt(&gdtr);
+	// Load Task Register. They are indicated in VMCB during vmsave.
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_selector,host_state->tr.selector);
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_attrib,svm_attrib(host_state->tr.attrib));
+	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_tr_limit,host_state->tr.limit);
+	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_tr_base,host_state->tr.base);
+	// Although Host CR3 is derived from host state, it is to be loaded from system_cr3 global variable.
+}
+
 // This function has context of cleared GIF.
 ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_ptr gip)
 {
 	// Save Processor State
-	noir_processor_state state;
+	noir_processor_state state,host_state;
 	noir_save_processor_state(&state);
+	// Setup Host State
+	noir_copy_memory(&host_state,&state,sizeof(noir_processor_state));
+	nvc_svm_load_host_processor_state(vcpu,&state);
 	// Setup State-Save Area
 	// Save Segment State - CS
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_cs_selector,state.cs.selector);
@@ -305,7 +328,6 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
 	// Save Processor Hidden State
 	noir_svm_vmsave((ulong_ptr)vcpu->vmcb.phys);
-	noir_svm_vmsave((ulong_ptr)vcpu->hvmcb.phys);
 	// Save Model Specific Registers.
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_pat,state.pat);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_efer,state.efer);
@@ -376,15 +398,15 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 		{
 			noir_svm_vcpu_p vcpu=&hvm_p->virtual_cpu[i];
 			if(vcpu->vmcb.virt)
-				noir_free_contd_memory(vcpu->vmcb.virt);
+				noir_free_contd_memory(vcpu->vmcb.virt,page_size);
 			if(vcpu->hsave.virt)
-				noir_free_contd_memory(vcpu->hsave.virt);
+				noir_free_contd_memory(vcpu->hsave.virt,page_size);
 			if(vcpu->hvmcb.virt)
-				noir_free_contd_memory(vcpu->hvmcb.virt);
+				noir_free_contd_memory(vcpu->hvmcb.virt,page_size);
 			if(vcpu->hv_stack)
 				noir_free_nonpg_memory(vcpu->hv_stack);
 			if(vcpu->cvm_state.xsave_area)
-				noir_free_contd_memory(vcpu->cvm_state.xsave_area);
+				noir_free_contd_memory(vcpu->cvm_state.xsave_area,page_size);
 			if(vcpu->primary_nptm)
 				nvc_npt_cleanup(vcpu->primary_nptm);
 #if !defined(_hv_type1)
@@ -393,16 +415,16 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 #endif
 			for(u32 j=0;j<noir_svm_cached_nested_vmcb;j++)
 				if(vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt)
-					noir_free_contd_memory(vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt);
+					noir_free_contd_memory(vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt,page_size);
 		}
 		noir_free_nonpg_memory(hvm_p->virtual_cpu);
 	}
 	if(hvm_p->relative_hvm->msrpm.virt)
-		noir_free_contd_memory(hvm_p->relative_hvm->msrpm.virt);
+		noir_free_contd_memory(hvm_p->relative_hvm->msrpm.virt,page_size*2);
 	if(hvm_p->relative_hvm->iopm.virt)
-		noir_free_contd_memory(hvm_p->relative_hvm->iopm.virt);
+		noir_free_contd_memory(hvm_p->relative_hvm->iopm.virt,page_size*3);
 	if(hvm_p->relative_hvm->blank_page.virt)
-		noir_free_contd_memory(hvm_p->relative_hvm->blank_page.virt);
+		noir_free_contd_memory(hvm_p->relative_hvm->blank_page.virt,page_size);
 #if !defined(_hv_type1)
 	if(hvm_p->tlb_tagging.asid_pool_lock)
 		noir_finalize_reslock(hvm_p->tlb_tagging.asid_pool_lock);

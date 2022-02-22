@@ -34,9 +34,9 @@ void nvc_npt_cleanup(noir_npt_manager_p nptm)
 	if(nptm)
 	{
 		if(nptm->ncr3.virt)
-			noir_free_contd_memory(nptm->ncr3.virt);
+			noir_free_contd_memory(nptm->ncr3.virt,page_size);
 		if(nptm->pdpt.virt)
-			noir_free_contd_memory(nptm->pdpt.virt);
+			noir_free_contd_memory(nptm->pdpt.virt,page_size);
 		if(nptm->pde.virt)
 			noir_free_2mb_page(nptm->pde.virt);
 		if(nptm->pte.head)
@@ -45,7 +45,7 @@ void nvc_npt_cleanup(noir_npt_manager_p nptm)
 			while(cur)
 			{
 				noir_npt_pte_descriptor_p next=cur->next;
-				noir_free_contd_memory(cur->virt);
+				noir_free_contd_memory(cur->virt,page_size);
 				noir_free_nonpg_memory(cur);
 				cur=next;
 			}

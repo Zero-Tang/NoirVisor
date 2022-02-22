@@ -375,7 +375,7 @@ void static fastcall nvc_svm_iret_cvexit_handler(noir_gpr_state_p gpr_state,noir
 // Expected Intercept Code: 0x76
 void static fastcall nvc_svm_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	// The invd instruction would corrupt cache globally host and it must thereby be intercepted.
+	// The invd instruction would corrupt cache globally and it must thereby be intercepted.
 	// Execute wbinvd to protect global cache.
 	noir_wbinvd();
 	noir_svm_advance_rip(cvcpu->vmcb.virt);
@@ -501,7 +501,7 @@ void static fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 			noir_svm_advance_rip(cvcpu);
 		else
 		{
-			// If rip is not to be advance, this means #GP exception is subject to be injected.
+			// If rip is not being advanced, this means #GP exception is subject to be injected.
 			if(!cvcpu->header.vcpu_options.intercept_exceptions)
 				noir_svm_inject_event(cvcpu->vmcb.virt,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
 			else

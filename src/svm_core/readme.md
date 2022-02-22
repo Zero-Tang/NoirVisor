@@ -81,6 +81,7 @@ We will divide the problem into several sub-problems, as stated below:
 - Virtualize VM-Exit
 - Virtualize ASID
 - Virtualize GIF
+- Virtualize Local SVM APIC
 - Virtualize Nested Paging
 - Utilize Accelerated Nested Virtualization
 - Virtualize L2 VMCB
@@ -200,6 +201,9 @@ Here is a table that lists the conditions that change the GIF.
 | `clgi` Instruction	| Clears GIF	|
 | `vmrun` Instruction	| Sets GIF		|
 | VM-Exit				| Clears GIF	|
+
+## Virtualize Local SVM APIC
+There is a `V_INTR_MASKING` control bit in VMCB by virtue of the Local APIC support in AMD-V. In that the behavior of interrupt is controlled by the `RFlags.IF` bit of the host if the `V_INTR_MASKING` bit is set, ignorance of this bit may trigger deadlocking of the system: no physical interrupts can be intercepted because the `RFlags.IF` bit in host is reset. In order to address this issue, on VM-Entry of nested guest, the `V_INTR_MASKING` bit in VMCB must be checked. Copy the `RFlags.IF` bit from the guest to the host if `V_INTR_MASKING` bit is set.
 
 ## Virtualize Nested Paging
 To virtualize NPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the SVM-nesting feature in future NoirVisor may not support NPT unless I have one. <br>

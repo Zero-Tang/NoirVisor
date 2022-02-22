@@ -140,7 +140,7 @@ typedef union _NHGDTDATA
 #define X64_GDT_AVAILABLE_TSS	0x9
 #define X64_GDT_BUSY_TSS		0xB
 #define X64_GDT_CALL_GATE		0xC
-#define X64_GDT_INTERRUPT_GATE	0xD
+#define X64_GDT_INTERRUPT_GATE	0xE
 #define X64_GDT_TRAP_GATE		0xF
 
 #pragma pack(1)
@@ -238,13 +238,15 @@ typedef union _NHX64_HUGE_PDPTE
 }NHX64_HUGE_PDPTE,*PNHX64_HUGE_PDPTE;
 
 // Definitions of NoirVisor Host Segment Selectors
-#define NH_X64_CS_SELECTOR		0x18
-#define NH_X64_DS_SELECTOR		0x08
-#define NH_X64_ES_SELECTOR		0x08
-#define NH_X64_FS_SELECTOR		0x28
-#define NH_X64_GS_SELECTOR		0x28
-#define NH_X64_SS_SELECTOR		0x08
-#define NH_X64_TR_SELECTOR		0x40
+// These selectors are only used if processor enters trusted computing mode.
+#define NH_X64_CS_SELECTOR32	0x08
+#define NH_X64_CS_SELECTOR64	0x10
+#define NH_X64_DS_SELECTOR64	0x18
+#define NH_X64_ES_SELECTOR64	0x18
+#define NH_X64_FS_SELECTOR64	0x20
+#define NH_X64_GS_SELECTOR64	0x30
+#define NH_X64_SS_SELECTOR64	0x18
+#define NH_X64_TR_SELECTOR64	0x40
 #define NH_X64_NULL_SELECTOR	0x00
 
 #define NH_INTERRUPT_GATE_TYPE	0xE
@@ -254,19 +256,7 @@ typedef union _NHX64_HUGE_PDPTE
 #define NH_X64_DATA_ATTRIBUTES	0xC093
 #define NH_X64_TASK_ATTRIBUTES	0x8B
 
-/*
-  Descriptor Tables Layout:
-  NoirVisor defines the DescriptorTables as a page. (4KiB)
-  
-  Range		Definition
-  +0x000	Global Descriptor Table	- Fixed at Size=0x50
-  +0x050	Reserved
-  +0x100	Task Segment State - Fixed at Size=0x68
-  +0x168	Reserved
-  +0x400	Interrupt Descriptor Table
-  +0x800	Reserved
-*/
-
+// NoirVisor Host Processor Control Region
 typedef struct _NHPCR
 {
 	struct _NHPCR* Self;		// Point to this structure (Base of FS&GS)
@@ -281,9 +271,16 @@ typedef struct _NHPCR
 	CHAR8 ProcessorVendor[13];
 }NHPCR,*PNHPCR;
 
+// NoirVisor Host Processor Control Region Page
+typedef struct _NHPCRP
+{
+	NHPCR Core;
+	UINT8 Misc[EFI_PAGE_SIZE-sizeof(NHPCR)];
+}NHPCRP,*PNHPCRP;
+
 typedef struct _NV_HOST_SYSTEM
 {
-	PNHPCR ProcessorBlocks;
+	PNHPCRP ProcessorBlocks;
 	UINTN NumberOfProcessors;
 	PNHX64_PML4E Pml4Base;		// Paging for NoirVisor in Host Mode
 	PNHX64_HUGE_PDPTE PdptBase;	// Paging for NoirVisor in Host Mode
@@ -297,8 +294,9 @@ typedef struct _NV_MP_SERVICE_GENERIC_INFO
 	VOID* Context;
 }NV_MP_SERVICE_GENERIC_INFO,*PNV_MP_SERVICE_GENERIC_INFO;
 
-#define NoirSaveProcessorState	noir_save_processor_state
-UINT32 noir_lsl(UINT16 selector);
+#define NoirSaveProcessorState		noir_save_processor_state
+#define NoirSetHostInterruptHandler		noir_
+void noir_save_processor_state(OUT PNOIR_PROCESSOR_STATE State);
 void NoirBlockUntilKeyStroke(IN CHAR16 Unicode);
 void NoirUnexpectedInterruptHandler(void);
 

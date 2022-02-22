@@ -129,7 +129,7 @@ nvc_vt_subvert_processor_a proc
 	mov r9,vt_launched
 	sub rsp,20h
 	call nvc_vt_subvert_processor_i
-	;At this moment, VM-Entry resulted failure.
+	; At this moment, VM-Entry resulted failure.
 	add rsp,20h
 	mov qword ptr [rsp],rax
 vt_launched:

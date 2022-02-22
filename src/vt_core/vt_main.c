@@ -119,26 +119,26 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 			for(noir_vt_vcpu_p vcpu=hvm->virtual_cpu;i<hvm->cpu_count;vcpu=&hvm->virtual_cpu[++i])
 			{
 				if(vcpu->vmxon.virt)
-					noir_free_contd_memory(vcpu->vmxon.virt);
+					noir_free_contd_memory(vcpu->vmxon.virt,page_size);
 				if(vcpu->vmcs.virt)
-					noir_free_contd_memory(vcpu->vmcs.virt);
+					noir_free_contd_memory(vcpu->vmcs.virt,page_size);
 				if(vcpu->msr_auto.virt)
-					noir_free_contd_memory(vcpu->msr_auto.virt);
+					noir_free_contd_memory(vcpu->msr_auto.virt,page_size);
 				if(vcpu->nested_vcpu.vmcs_t.virt)
-					noir_free_contd_memory(vcpu->nested_vcpu.vmcs_t.virt);
+					noir_free_contd_memory(vcpu->nested_vcpu.vmcs_t.virt,page_size);
 				if(vcpu->hv_stack)
 					noir_free_nonpg_memory(vcpu->hv_stack);
 				if(vcpu->cvm_state.xsave_area)
-					noir_free_contd_memory(vcpu->cvm_state.xsave_area);
+					noir_free_contd_memory(vcpu->cvm_state.xsave_area,page_size);
 				nvc_ept_cleanup(vcpu->ept_manager);
 			}
 			noir_free_nonpg_memory(hvm->virtual_cpu);
 		}
 		if(rhvm)
 		{
-			if(rhvm->msr_bitmap.virt)noir_free_contd_memory(rhvm->msr_bitmap.virt);
-			if(rhvm->io_bitmap_a.virt)noir_free_contd_memory(rhvm->io_bitmap_a.virt);
-			if(rhvm->io_bitmap_b.virt)noir_free_contd_memory(rhvm->io_bitmap_b.virt);
+			if(rhvm->msr_bitmap.virt)noir_free_contd_memory(rhvm->msr_bitmap.virt,page_size);
+			if(rhvm->io_bitmap_a.virt)noir_free_contd_memory(rhvm->io_bitmap_a.virt,page_size);
+			if(rhvm->io_bitmap_b.virt)noir_free_contd_memory(rhvm->io_bitmap_b.virt,page_size);
 		}
 #if !defined(_hv_type1)
 		if(hvm->tlb_tagging.vpid_pool_lock)

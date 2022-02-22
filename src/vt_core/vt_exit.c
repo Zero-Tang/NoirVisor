@@ -150,7 +150,7 @@ void static fastcall nvc_vt_exception_nmi_handler(noir_gpr_state_p gpr_state,noi
 					{
 						invvpid_descriptor ivd={0};
 						ivd.vpid=1;
-						noir_vt_invvpid(vpid_single_invd,&ivd);
+						noir_vt_invvpid(vpid_sicrgb_invd,&ivd);
 					}
 				}
 				else
@@ -386,7 +386,6 @@ void static fastcall nvc_vt_invd_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu
 void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	ulong_ptr gip,gcr3;
-	bool valid_call=false;
 	u32 index=(u32)gpr_state->rcx;
 	noir_vt_vmread(guest_rip,&gip);
 	noir_vt_vmread(guest_cr3,&gcr3);
@@ -471,6 +470,8 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
 			{
 #if defined(_hv_type1)
+				// FIXME: Translate the GVA in the structure.
+				noir_vt_custom_vcpu_p cvcpu=null;
 #else
 				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
 #endif
@@ -485,6 +486,8 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
 			{
 #if defined(_hv_type1)
+				// FIXME: Translate the GVA in the structure.
+				noir_vt_custom_vcpu_p cvcpu=null;
 #else
 				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
 #endif
@@ -499,6 +502,8 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
 			{
 #if defined(_hv_type1)
+				// FIXME: Translate the GVA in the structure.
+				noir_vt_custom_vcpu_p cvcpu=null;
 #else
 				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
 #endif
@@ -513,6 +518,8 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
 			{
 #if defined(_hv_type1)
+				// FIXME: Translate the GVA in the structure.
+				noir_vt_custom_vcpu_p cvcpu=null;
 #else
 				noir_vt_custom_vcpu_p cvcpu=(noir_vt_custom_vcpu_p)gpr_state->rdx;
 #endif
@@ -1117,7 +1124,7 @@ void static fastcall nvc_vt_access_gdtr_idtr_handler(noir_gpr_state_p gpr_state,
 	// Apply the segment base.
 	noir_vt_vmread(guest_cr0,&gcr0);
 #if defined(_hv_type1)
-	if(gcr0 & noir_cr0_pe)
+	if(gcr0 & ia32_cr0_pe_bit)
 #endif
 		noir_vt_vmread(guest_es_base+(exit_info.f2.segment<<1),&seg_base);
 #if defined(_hv_type1)
@@ -1204,7 +1211,7 @@ void static fastcall nvc_vt_access_ldtr_tr_handler(noir_gpr_state_p gpr_state,no
 {
 	ia32_vmexit_instruction_information exit_info;
 	long_ptr displacement;
-	ulong_ptr *gpr_array=(ulong_ptr*)gpr_state;
+	// ulong_ptr *gpr_array=(ulong_ptr*)gpr_state;
 	ulong_ptr pointer=0,seg_base=0,gdt_base,gcr0;
 	vmx_segment_access_right cs_attrib;
 	noir_vt_vmread(guest_cs_access_rights,&cs_attrib.value);
@@ -1212,6 +1219,8 @@ void static fastcall nvc_vt_access_ldtr_tr_handler(noir_gpr_state_p gpr_state,no
 	noir_vt_vmread(vmexit_qualification,&displacement);
 	noir_vt_vmread(guest_cr0,&gcr0);
 	noir_vt_vmread(guest_gdtr_base,&gdt_base);
+	unref_var(pointer);
+	unref_var(seg_base);
 	// Accessing LDTR and TR does not necessarily reference memory.
 	if(!exit_info.f3.use_register)
 	{
@@ -1429,6 +1438,12 @@ void fastcall nvc_vt_resume_failure(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vc
 		// Switch to Host Context.
 		nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
 	}
+}
+
+void nvc_vt_inject_nmi_to_subverted_host()
+{
+	// Forward the NMI to the subverted host.
+	;
 }
 
 void nvc_vt_reconfigure_npiep_interceptions(noir_vt_vcpu_p vcpu)

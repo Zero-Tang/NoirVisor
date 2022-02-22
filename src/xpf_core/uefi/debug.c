@@ -19,6 +19,9 @@
 #include <intrin.h>
 #include "debug.h"
 
+/* Note:	Debug Support Protocol is unsupported on most platforms. Even the VMware does not support it.
+			All codes regarding the debug support protocol are currently commented as deprecation.
+
 EFI_STATUS NoirLocateDebugSupportProtocol()
 {
 	EFI_HANDLE *HandleList=NULL;
@@ -169,3 +172,4 @@ EFI_STATUS NoirInitializeDebugAgent()
 	}
 	return st;
 }
+*/

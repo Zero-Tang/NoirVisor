@@ -25,12 +25,6 @@ void NoirFreeHostEnvironment()
 {
 	if(Host.ProcessorBlocks)
 	{
-		for(UINTN i=0;i<Host.NumberOfProcessors;i++)
-		{
-			FreePool(Host.ProcessorBlocks[i].Idt);
-			FreePool(Host.ProcessorBlocks[i].Gdt);
-			FreePool(Host.ProcessorBlocks[i].Tss);
-		}
 		FreePool(Host.ProcessorBlocks);
 		Host.ProcessorBlocks=NULL;
 	}
@@ -46,28 +40,24 @@ void NoirFreeHostEnvironment()
 	}
 }
 
-void NoirBuildInterruptDescriptorTable(OUT PNHIDTENTRY64 Idt)
-{
-	UINTN Handler=(UINTN)NoirUnexpectedInterruptHandler;
-	for(UINT8 i=0;i<=255;i++)
-	{
-		// Set the address.
-		Idt[i].OffsetLow=(UINT16)Handler;
-		Idt[i].OffsetMid=(UINT16)((Handler>>16)&0xFFFF);
-		Idt[i].OffsetHigh=(UINT32)(Handler>>32);
-		// Miscellaneous.
-		Idt[i].Selector=NH_X64_CS_SELECTOR;
-		Idt[i].IstIndex=1;
-		Idt[i].Type=NH_INTERRUPT_GATE_TYPE;
-		Idt[i].Present=1;
-	}
-}
-
 UINT16 NoirAllocateSegmentSelector(IN PNHGDTENTRY64 GdtBase,IN UINT16 Limit)
 {
 	for(UINT16 i=8;i<Limit;i+=8)
 	{
-		if(GdtBase[i>>3].Bits.Present==0)
+		if(GdtBase[i>>3].Bits.Present)
+		{
+			switch(GdtBase[i>>3].Bits.Type)
+			{
+				case X64_GDT_LDT:
+				case X64_GDT_AVAILABLE_TSS:
+				case X64_GDT_BUSY_TSS:
+				{
+					i+=8;
+					break;
+				}
+			}
+		}
+		else
 		{
 			// This selector is available for use.
 			GdtBase[i>>3].Bits.Present=1;	// Mark as used.
@@ -79,32 +69,24 @@ UINT16 NoirAllocateSegmentSelector(IN PNHGDTENTRY64 GdtBase,IN UINT16 Limit)
 
 void NoirPrepareHostProcedureAp(IN VOID *ProcedureArgument)
 {
-	PNHPCR Pcr=(PNHPCR)ProcedureArgument;
-	VOID* NewGdt=NULL;
-	VOID* NewIdt=NULL;
+	PNHPCRP Pcr=(PNHPCRP)ProcedureArgument;
+	UINTN AllocationBase=((UINTN)Pcr->Misc+0xF)&0xFFFFFFFFFFFFFFF0;
+	VOID *NewGdt,*NewIdt;
 	UINTN CurProc=0;
-	AsmReadGdtr(&Pcr[CurProc].GdtR);
-	AsmReadIdtr(&Pcr[CurProc].IdtR);
-	NewGdt=AllocateRuntimePool(Pcr[CurProc].GdtR.Limit+1);
-	NewIdt=AllocateRuntimePool(Pcr[CurProc].IdtR.Limit+1);
+	// Get the processor number.
 	if(MpServices)MpServices->WhoAmI(MpServices,&CurProc);
-	Pcr[CurProc].ProcessorNumber=CurProc;
-	if(NewGdt && NewIdt)
-	{
-		CopyMem(NewGdt,(VOID*)Pcr[CurProc].GdtR.Base,Pcr[CurProc].GdtR.Limit+1);
-		CopyMem(NewIdt,(VOID*)Pcr[CurProc].IdtR.Base,Pcr[CurProc].IdtR.Limit+1);
-	}
-	else
-	{
-		if(!NewGdt)
-			Print(L"Failed to allocate new GDT for Processor %d!\n",CurProc);
-		else
-			FreePool(NewGdt);
-		if(!NewIdt)
-			Print(L"Failed to allocate new IDT for Processor %d!\n",CurProc);
-		else
-			FreePool(NewIdt);
-	}
+	Pcr[CurProc].Core.ProcessorNumber=CurProc;
+	// Copy the GDT and IDT.
+	AsmReadGdtr(&Pcr[CurProc].Core.GdtR);
+	AsmReadIdtr(&Pcr[CurProc].Core.IdtR);
+	NewIdt=(VOID*)AllocationBase;
+	NewGdt=(VOID*)(AllocationBase+Pcr[CurProc].Core.IdtR.Limit+1);
+	CopyMem(NewGdt,(VOID*)Pcr[CurProc].Core.GdtR.Base,Pcr[CurProc].Core.GdtR.Limit+1);
+	CopyMem(NewIdt,(VOID*)Pcr[CurProc].Core.IdtR.Base,Pcr[CurProc].Core.IdtR.Limit+1);
+	Pcr[CurProc].Core.Gdt=(PNHGDTENTRY64)NewGdt;
+	Pcr[CurProc].Core.Idt=(PNHIDTENTRY64)NewIdt;
+	// Initialize TSS.
+	Pcr[CurProc].Core.Tss=(PNHTSS64)((UINTN)NewGdt+Pcr[CurProc].Core.GdtR.Limit+17);
 }
 
 // This function is invoked by Center HVM Core prior to subverting system,
@@ -121,14 +103,14 @@ EFI_STATUS NoirBuildHostEnvironment()
 	}
 	else
 	{
-		// If MP-Services is unavailable, only one logical processor is accessible.
+		// If MP-Services is unavailable, only one logical processor (the BSP) is accessible.
 		Host.NumberOfProcessors=EnabledProcessors=1;
 		st=EFI_SUCCESS;
 	}
 	if(st==EFI_SUCCESS)
 	{
 		// Initialize Host System.
-		Host.ProcessorBlocks=AllocateRuntimeZeroPool(Host.NumberOfProcessors*sizeof(NHPCR));
+		Host.ProcessorBlocks=AllocateRuntimePages(Host.NumberOfProcessors);
 		Host.Pml4Base=AllocateRuntimePages(1);
 		Host.PdptBase=AllocateRuntimePages(1);
 		if(Host.ProcessorBlocks && Host.Pml4Base && Host.PdptBase)
@@ -164,23 +146,35 @@ EFI_STATUS NoirBuildHostEnvironment()
 	return st;
 }
 
-void noir_load_host_processor_state()
+VOID* noir_get_host_gdt_base(IN UINT32 ProcessorNumber)
 {
-	// Locate processor block.
+	return (VOID*)Host.ProcessorBlocks[ProcessorNumber].Core.Gdt;
+}
+
+VOID* noir_get_host_idt_base(IN UINT32 ProcessorNumber)
+{
+	return (VOID*)Host.ProcessorBlocks[ProcessorNumber].Core.Idt;
+}
+
+void noir_set_host_interrupt_handler(IN UINT8 Vector,IN UINTN HandlerRoutine)
+{
 	UINTN CurProc=0;
 	if(MpServices)MpServices->WhoAmI(MpServices,&CurProc);
-	// Load Descriptor Tables...
-	AsmWriteGdtr(&Host.ProcessorBlocks[CurProc].GdtR);
-	AsmWriteIdtr(&Host.ProcessorBlocks[CurProc].IdtR);
-	// Load Paging Tables...
-	AsmWriteCr3((UINTN)Host.Pml4Base);
+	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].OffsetLow=HandlerRoutine&0xFFFF;
+	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].OffsetMid=(HandlerRoutine>>16)&0xFFFF;
+	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].OffsetHigh=HandlerRoutine>>32;
+	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].Selector=AsmReadCs();
+	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].IstIndex=0;
+	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].Reserved0=0;
+	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].Type=X64_GDT_INTERRUPT_GATE;
+	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].DPL=0;
+	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].Present=1;
+	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].Reserved1=0;
 }
 
 void* noir_alloc_nonpg_memory(IN UINTN Length)
 {
-	void* p=AllocateRuntimePool(Length);
-	if(p)ZeroMem(p,Length);
-	return p;
+	return AllocateRuntimeZeroPool(Length);
 }
 
 void* noir_alloc_contd_memory(IN UINTN Length)
@@ -188,6 +182,28 @@ void* noir_alloc_contd_memory(IN UINTN Length)
 	void* p=AllocateRuntimePages(EFI_SIZE_TO_PAGES(Length));
 	if(p)ZeroMem(p,Length);
 	return p;
+}
+
+void* noir_alloc_2mb_page()
+{
+	void* p=AllocateAlignedRuntimePages(0x200,0x200000);
+	if(p)ZeroMem(p,0x2000000);
+	return p;
+}
+
+void noir_free_nonpg_memory(IN VOID* VirtualAddress)
+{
+	FreePool(VirtualAddress);
+}
+
+void noir_free_contd_memory(IN VOID* VirtualAddress,IN UINTN Length)
+{
+	FreePages(VirtualAddress,EFI_SIZE_TO_PAGES(Length));
+}
+
+void noir_free_2mb_page(IN VOID* VirtualAddress)
+{
+	FreeAlignedPages(VirtualAddress,0x200);
 }
 
 void static NoirGenericCallRT(IN VOID* ProcedureArgument)
@@ -233,75 +249,6 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 		// Only one core is accessible.
 		NoirGenericCallRT((VOID*)&GenericInfo);
 	}
-}
-
-void NoirGetSegmentAttributes(IN UINTN GdtBase,IN UINT16 Selector,OUT PSEGMENT_REGISTER Segment)
-{
-	PNHGDTENTRY64 GdtEntry=(PNHGDTENTRY64)(GdtBase+(Selector&GDT_SELECTOR_MASK));
-	Segment->Attributes=GdtEntry->Bytes.Flags;
-	Segment->Limit=(UINT32)(GdtEntry->Bits.LimitLo|(GdtEntry->Bits.LimitHi<<16))+1;
-	if(GdtEntry->Bits.Granularity)Segment->Limit<<=EFI_PAGE_SHIFT;
-	Segment->Limit-=1;
-	Segment->Base=(UINT64)((GdtEntry->Bytes.BaseHi<<24)|(GdtEntry->Bytes.BaseMid<<16)|GdtEntry->Bytes.BaseLo);
-	Segment->Base|=((UINT64)(*(UINT32*)(GdtBase+8))<<32);
-}
-
-void noir_save_processor_state(OUT PNOIR_PROCESSOR_STATE State)
-{
-	IA32_DESCRIPTOR Gdtr,Idtr;
-	// Save IDTR/GDTR...
-	AsmReadGdtr(&Gdtr);
-	AsmReadIdtr(&Idtr);
-	State->Gdtr.Limit=Gdtr.Limit;
-	State->Gdtr.Base=Gdtr.Base;
-	State->Idtr.Limit=Idtr.Limit;
-	State->Idtr.Base=Idtr.Base;
-	// Save Segment Selectors...
-	State->Cs.Selector=AsmReadCs();
-	State->Ds.Selector=AsmReadDs();
-	State->Es.Selector=AsmReadEs();
-	State->Fs.Selector=AsmReadFs();
-	State->Gs.Selector=AsmReadGs();
-	State->Ss.Selector=AsmReadSs();
-	State->Tr.Selector=AsmReadTr();
-	// Save Segment Attributes...
-	NoirGetSegmentAttributes(Gdtr.Base,State->Cs.Selector,&State->Cs);
-	NoirGetSegmentAttributes(Gdtr.Base,State->Ds.Selector,&State->Ds);
-	NoirGetSegmentAttributes(Gdtr.Base,State->Es.Selector,&State->Es);
-	NoirGetSegmentAttributes(Gdtr.Base,State->Fs.Selector,&State->Fs);
-	NoirGetSegmentAttributes(Gdtr.Base,State->Gs.Selector,&State->Gs);
-	NoirGetSegmentAttributes(Gdtr.Base,State->Ss.Selector,&State->Ss);
-	NoirGetSegmentAttributes(Gdtr.Base,State->Tr.Selector,&State->Tr);
-	State->Cs.Base=State->Ds.Base=State->Es.Base=State->Ss.Base=0;
-	// Save Control Registers...
-	State->Cr0=AsmReadCr0();
-	State->Cr2=AsmReadCr2();
-	State->Cr3=AsmReadCr3();
-	State->Cr4=AsmReadCr4();
-	// Save Debug Registers...
-	State->Dr0=AsmReadDr0();
-	State->Dr1=AsmReadDr1();
-	State->Dr2=AsmReadDr2();
-	State->Dr3=AsmReadDr3();
-	State->Dr6=AsmReadDr6();
-	State->Dr7=AsmReadDr7();
-	// Save Model Specific Registers...
-	State->SysEnter_Cs=AsmReadMsr64(MSR_SYSENTER_CS);
-	State->SysEnter_Esp=AsmReadMsr64(MSR_SYSENTER_ESP);
-	State->SysEnter_Eip=AsmReadMsr64(MSR_SYSENTER_EIP);
-	State->DebugControl=AsmReadMsr64(MSR_DEBUG_CONTROL);
-	State->Pat=AsmReadMsr64(MSR_PAT);
-	State->Efer=AsmReadMsr64(MSR_EFER);
-	State->Star=AsmReadMsr64(MSR_STAR);
-	State->LStar=AsmReadMsr64(MSR_LSTAR);
-	State->CStar=AsmReadMsr64(MSR_CSTAR);
-	State->SfMask=AsmReadMsr64(MSR_SFMASK);
-	State->FsBase=AsmReadMsr64(MSR_FSBASE);
-	State->GsBase=AsmReadMsr64(MSR_GSBASE);
-	State->GsSwap=AsmReadMsr64(MSR_GSSWAP);
-	// Save Segment Bases...
-	State->Fs.Base=State->FsBase;
-	State->Gs.Base=State->GsBase;
 }
 
 void NoirDisplayProcessorState()

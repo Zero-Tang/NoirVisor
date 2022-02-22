@@ -17,9 +17,9 @@ if "%~1"=="/s" (echo DO-NOT-PAUSE is activated!) else (pause)
 
 echo ============Start Compiling============
 echo Compiling UEFI Booting Facility...
-clang-cl ..\src\booting\efiapp\efimain.c /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /O2 /D"_efi_boot" /Fa"%objpath%\efimain.cod" /Fo"%objpath%\efimain.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-int-to-pointer-cast
+clang-cl ..\src\booting\efiapp\efimain.c /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /O2 /D"_efi_boot" /Fa"%objpath%\efimain.cod" /Fo"%objpath%\efimain.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-int-to-pointer-cast -Wno-microsoft-static-assert
 
-clang-cl ..\src\booting\efiapp\driver.c /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /O2 /D"_efi_boot" /Fa"%objpath%\efimain.cod" /Fo"%objpath%\driver.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types
+clang-cl ..\src\booting\efiapp\driver.c /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /O2 /D"_efi_boot" /Fa"%objpath%\efimain.cod" /Fo"%objpath%\driver.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-microsoft-static-assert
 
 echo Compiling Core Engine of Intel VT-x...
 for %%1 in (..\src\vt_core\*.c) do (clang-cl %%1 /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_hv_type1" /D"_vt_core" /D"_%%~n1" /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign)
@@ -31,9 +31,9 @@ echo Compiling Core Engine of Microsoft Hypervisor (MSHV)...
 for %%1 in (..\src\mshv_core\*.c) do (clang-cl %%1 /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_hv_type1" /D"_mshv_core" /D"_%%~n1" /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign)
 
 echo Compiling Core of Cross-Platform Framework (XPF)...
-for %%1 in (..\src\xpf_core\uefi\*.c) do (clang-cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /Od /Oi /D"_efi_boot" /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /GS- /Gy /Gr /TC /c)
+for %%1 in (..\src\xpf_core\uefi\*.c) do (clang-cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /Od /Oi /D"_efi_boot" /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /GS- /Gy /Gr /TC /c -Wno-microsoft-static-assert)
 
-for %%1 in (..\src\xpf_core\uefi\*.asm) do (nasm -o "%objpath%\%%~n1.obj" -i "..\src\xpf_core\uefi" -l "%objpath%\%%~n1.cod" -fwin64 -g -d"_amd64" %%1)
+for %%1 in (..\src\xpf_core\msvc\*.asm) do (llvm-ml /X /D"_amd64" /I"..\src\xpf_core\msvc" /Fo"%objpath%\%%~n1.obj" /c --m64 %%1)
 
 clang-cl ..\src\xpf_core\noirhvm.c /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_central_hvm" /Fa"%objpath%\noirhvm.cod" /Fo"%objpath%\noirhvm.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign
 

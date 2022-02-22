@@ -68,8 +68,26 @@ This feature is an essential security feature. I found this feature missing in m
 # Real-Time Code Integrity
 Real-Time CI is now implemented by Intel EPT.
 
+# Host NMI Processing
+Unlike the GIF mechanism in AMD-V, Intel VT-x does not prevent the NMI to be triggered in the host context. The negative side-effect of this phenomenon can be manifested in two ways.
+
+## Type-I Hypervisor
+If NoirVisor is loaded as a Type-I Hypervisor, the NMI will be taken in a wrong context. The approach of MiniVisor, written by Satoshi Tanda, is to discard the NMIs. However, if some messages are to be delivered through NMI, loss of message may cause incorrect behavior in the system.
+
+## Type-II Hypervisor
+If NoirVisor is loaded as a Type-II Hypervisor, the NMI will be taken in an out-of-monitor context. If malicious software hijacked the NMI handler of the OS, then the malicious software can sometimes circumvent the monitoring of hypervisor.
+
+## Solution
+The straight-forward solution is to set up hypervisor's own NMI handler for the host. The handler will inject NMI to the guest. However, the return of NMI should be emulated (i.e: not to use `iret` instruction) so that the NMI will not be logically re-entered, causing race condition.
+
+Note: it is somewhat ambiguous whether NMI-blocking in the host will be delivered to the next VM-Exit in the manual. There is no chapter claiming what host-state is automatically saved by VM-Entry out of VMCS. According to Chapter 27.5.5 "Updating Non-Register State", Volume 3, Intel 64 and IA-32 Architecture Software Developer's Manual:
+
+> VM-Exits caused directly by NMIs cause blocking of NMI. **Other VM-Exits do not affect blocking of NMI.**
+
+Let's assume the blocking of NMI is taken from the guest. In other words, blocking of NMI is not taken from the previous host state.
+
 # MTRR Emulation
-According to Intel 64 Architecture Manual, the MTRRs have no effect on the memory type used for an access to a guest physical address. If we map all memory as write-back with EPT, there could be conflicts in that not all memory are defined as write-back by OS. For example, OS could define MMIO region as uncacheable memory. Similarly, graphics buffer could be mapped as write-combined by OS. Failure to map these memory accordingly could cause certain issues. For example, it is observed that some processors could encounter an `#MC` exception due to L2 cache data-read error. <br>
+According to Intel 64 Architecture Manual, the MTRRs have **no effect** on the memory type used for an access to a guest physical address. If we map all memory as write-back with EPT, there could be conflicts in that not all memory are defined as write-back by OS. For example, OS could define MMIO region as uncacheable memory. Similarly, graphics buffer could be mapped as write-combined by OS. Failure to map these memory accordingly could cause certain issues. For example, it is observed that some processors could encounter an `#MC` exception due to L2 cache data-read error. <br>
 On AMD-V/NPT, there is no need for MTRR Emulation in that Nested Paging automatically combines the memory type from NPT and MTRR.
 
 ## Algorithm

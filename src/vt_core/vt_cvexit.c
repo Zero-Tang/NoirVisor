@@ -546,6 +546,7 @@ void static fastcall nvc_vt_cr_access_cvexit_handler(noir_gpr_state_p gpr_state,
 						invvpid_descriptor ivd={0};
 						if(info.gpr_num==4)noir_vt_vmread(guest_rsp,&gpr_state->rsp);
 						noir_vt_vmwrite(guest_cr3,gpr_array[info.gpr_num]);
+						noir_vt_invvpid(vpid_sicrgb_invd,&ivd);
 						noir_vt_advance_rip();
 					}
 					break;
@@ -617,7 +618,12 @@ void static fastcall nvc_vt_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt
 	cvcpu->header.exit_context.io.access.string=(u16)info.string;
 	cvcpu->header.exit_context.io.access.repeat=(u16)info.repeat;
 	cvcpu->header.exit_context.io.access.operand_size=size_array[info.access_size];
-	cvcpu->header.exit_context.io.access.address_width;
+	if(info.string)
+	{
+		ia32_vmexit_instruction_information exit_info;
+		noir_vt_vmread(vmexit_instruction_information,&exit_info);
+		cvcpu->header.exit_context.io.access.address_width=1<<(exit_info.f0.address_size+1);
+	}
 	cvcpu->header.exit_context.io.port=(u16)info.port;
 	cvcpu->header.exit_context.io.rax=cvcpu->header.gpr.rax;
 	cvcpu->header.exit_context.io.rcx=cvcpu->header.gpr.rcx;

@@ -568,6 +568,7 @@ void nvc_vt_initialize_cvm_vmcs(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 			nvc_vt_initialize_cvm_vmentry_controls(vt_basic_msr.use_true_msr);
 			nvc_vt_initialize_cvm_host_state(vcpu);
 			// Miscellaneous stuff...
+			nvc_vt_initialize_cvm_msr_auto_list(vcpu,cvcpu);
 			noir_vt_vmwrite64(address_of_msr_bitmap,cvcpu->vm->msr_bitmap.phys);
 			noir_vt_vmwrite64(ept_pointer,cvcpu->vm->eptm.eptp.phys);
 			noir_vt_vmwrite64(vmcs_link_pointer,maxu64);
@@ -920,13 +921,13 @@ void nvc_vtc_release_vcpu(noir_vt_custom_vcpu_p virtual_processor)
 	{
 		// Release VMCS
 		if(virtual_processor->vmcs.virt)
-			noir_free_contd_memory(virtual_processor->vmcs.virt);
+			noir_free_contd_memory(virtual_processor->vmcs.virt,page_size);
 		// Release MSR-Auto List.
 		if(virtual_processor->msr_auto.virt)
-			noir_free_contd_memory(virtual_processor->msr_auto.virt);
+			noir_free_contd_memory(virtual_processor->msr_auto.virt,page_size);
 		// Release Extended State.
 		if(virtual_processor->header.xsave_area)
-			noir_free_contd_memory(virtual_processor->header.xsave_area);
+			noir_free_contd_memory(virtual_processor->header.xsave_area,page_size);
 		noir_free_nonpg_memory(virtual_processor);
 	}
 }
@@ -982,7 +983,7 @@ void nvc_vtc_release_vm(noir_vt_custom_vm_p virtual_machine)
 	if(virtual_machine)
 	{
 		if(virtual_machine->msr_bitmap.virt)
-			noir_free_contd_memory(virtual_machine->msr_bitmap.virt);
+			noir_free_contd_memory(virtual_machine->msr_bitmap.virt,page_size);
 		// Release vCPU List...
 		noir_acquire_reslock_exclusive(virtual_machine->header.vcpu_list_lock);
 		if(virtual_machine->vcpu)
@@ -996,14 +997,14 @@ void nvc_vtc_release_vm(noir_vt_custom_vm_p virtual_machine)
 		noir_release_reslock(virtual_machine->header.vcpu_list_lock);
 		// Release Extended Paging Structure...
 		if(virtual_machine->eptm.eptp.virt)
-			noir_free_contd_memory(virtual_machine->eptm.eptp.virt);
+			noir_free_contd_memory(virtual_machine->eptm.eptp.virt,page_size);
 		if(virtual_machine->eptm.pdpte.head)
 		{
 			noir_ept_pdpte_descriptor_p cur=virtual_machine->eptm.pdpte.head;
 			while(cur)
 			{
 				noir_ept_pdpte_descriptor_p next=cur->next;
-				if(cur->virt)noir_free_contd_memory(cur->virt);
+				if(cur->virt)noir_free_contd_memory(cur->virt,page_size);
 				noir_free_nonpg_memory(cur);
 				cur=next;
 			}
@@ -1014,7 +1015,7 @@ void nvc_vtc_release_vm(noir_vt_custom_vm_p virtual_machine)
 			while(cur)
 			{
 				noir_ept_pde_descriptor_p next=cur->next;
-				if(cur->virt)noir_free_contd_memory(cur->virt);
+				if(cur->virt)noir_free_contd_memory(cur->virt,page_size);
 				noir_free_nonpg_memory(cur);
 				cur=next;
 			}
@@ -1025,7 +1026,7 @@ void nvc_vtc_release_vm(noir_vt_custom_vm_p virtual_machine)
 			while(cur)
 			{
 				noir_ept_pte_descriptor_p next=cur->next;
-				if(cur->virt)noir_free_contd_memory(cur->virt);
+				if(cur->virt)noir_free_contd_memory(cur->virt,page_size);
 				noir_free_nonpg_memory(cur);
 				cur=next;
 			}

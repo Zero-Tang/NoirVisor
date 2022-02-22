@@ -79,6 +79,7 @@ typedef struct _noir_hypervisor
 #if !defined(_hv_type1)
 	// Only Type-II (Layered) HyperVisor can schedule CVM.
 	struct _noir_cvm_virtual_machine *idle_vm;
+#endif
 	struct
 	{
 		union
@@ -94,7 +95,6 @@ typedef struct _noir_hypervisor
 		u32 start;
 		u32 limit;
 	}tlb_tagging;
-#endif
 #if defined(_hv_type1)
 	// In Type-I Hypervisor model (i.e: NoirVisor is loaded as an RT driver in UEFI),
 	// Layered hypervisor is to be loaded in the guest and subject to register.
@@ -126,7 +126,7 @@ typedef struct _noir_hypervisor
 			u64 disable_patchguard:1;
 			u64 nested_virtualization:1;
 			u64 kva_shadow_presence:1;
-			u64 reserved:59;
+			u64 reserved:58;
 		};
 		u64 value;
 	}options;		// Enable certain features.

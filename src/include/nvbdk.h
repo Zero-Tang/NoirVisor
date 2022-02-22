@@ -269,6 +269,57 @@ typedef struct _noir_fx_state
 	u64 available[6];
 }noir_fx_state,*noir_fx_state_p;
 
+typedef union _noir_segment_attributes
+{
+	struct
+	{
+		u16 type:4;
+		u16 system:1;
+		u16 dpl:1;
+		u16 present:1;
+		u16 limit_hi:4;
+		u16 avl:1;
+		u16 long_mode:1;
+		u16 default_big:1;
+		u16 granularity:1;
+	};
+	u16 value;
+}noir_segment_attributes,*noir_segment_attributes_p;
+
+#pragma pack(1)
+typedef struct _noir_segment_descriptor
+{
+	u16 limit_lo;
+	u16 base_lo;
+	u8 base_mid1;
+	noir_segment_attributes attributes;
+	u8 base_mid2;
+	u32 base_hi;
+	u32 reserved;
+}noir_segment_descriptor,*noir_segment_descriptor_p;
+#pragma pack()
+
+#pragma pack(1)
+typedef struct _noir_tss64
+{
+	u32 reserved0;
+	u64 rsp0;
+	u64 rsp1;
+	u64 rsp2;
+	u64 reserved1;
+	u64 ist1;
+	u64 ist2;
+	u64 ist3;
+	u64 ist4;
+	u64 ist5;
+	u64 ist6;
+	u64 ist7;
+	u64 reserved2;
+	u16 reserved3;
+	u16 iomap_base;
+}noir_tss64,*noir_tss64_p;
+#pragma pack()
+
 typedef struct _noir_cpuid_general_info
 {
 	u32 eax;
@@ -383,6 +434,7 @@ typedef i32(cdecl *noir_sorting_comparator)(const void* a,const void*b);
 void noir_save_processor_state(noir_processor_state_p);
 u16 noir_get_segment_attributes(ulong_ptr gdt_base,u16 selector);
 void noir_generic_call(noir_broadcast_worker worker,void* context);
+void* noir_get_host_idt_base(u32 processor_number);
 u32 noir_get_processor_count();
 u32 noir_get_current_processor();
 u32 noir_get_instruction_length(void* code,bool long_mode);
@@ -392,6 +444,9 @@ void noir_decode_instruction16(u8* code,size_t code_length,void* decode_result);
 void noir_decode_instruction32(u8* code,size_t code_length,void* decode_result);
 void noir_decode_instruction64(u8* code,size_t code_length,void* decode_result);
 void noir_decode_basic_operand(void* decode_result,noir_basic_operand_p basic_operand);
+
+void* noir_get_host_gdt_base(u32 processor_number);
+void* noir_get_host_idt_base(u32 processor_number);
 
 // Doubly-Linked List Facility
 void noir_initialize_list_entry(list_entry_p entry);
@@ -421,7 +476,7 @@ void* noir_alloc_contd_memory(size_t length);
 void* noir_alloc_nonpg_memory(size_t length);
 void* noir_alloc_paged_memory(size_t length);
 void* noir_alloc_2mb_page();
-void noir_free_contd_memory(void* virtual_address);
+void noir_free_contd_memory(void* virtual_address,size_t length);
 void noir_free_nonpg_memory(void* virtual_address);
 void noir_free_paged_memory(void* virtual_address);
 void noir_free_2mb_page(void* virtual_address);

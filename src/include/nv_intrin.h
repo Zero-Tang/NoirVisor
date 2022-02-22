@@ -82,6 +82,24 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 #define noir_rdmsr		__readmsr
 #define noir_wrmsr		__writemsr
 
+// Read/Write Descriptor Tables
+#pragma pack(1)
+typedef struct _descriptor_register
+{
+	u16 limit;
+	ulong_ptr base;
+}descriptor_register,*descriptor_register_p;
+#pragma pack()
+
+#define noir_sidt		__sidt
+#define noir_lidt		__lidt
+void noir_sgdt(descriptor_register_p dest);
+void noir_lgdt(descriptor_register_p src);
+void noir_sldt(u16p dest);
+void noir_lldt(u16 src);
+void noir_str(u16p dest);
+void noir_ltr(u16 src);
+
 // Store-String instructions.
 #define noir_stosb		__stosb
 #define noir_stosw		__stosw

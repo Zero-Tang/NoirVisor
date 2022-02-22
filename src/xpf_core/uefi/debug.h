@@ -13,6 +13,7 @@
 */
 
 #include <Uefi.h>
+#include <Protocol/SerialIo.h>
 #include <Protocol/DebugSupport.h>
 #include <Protocol/DebugPort.h>
 

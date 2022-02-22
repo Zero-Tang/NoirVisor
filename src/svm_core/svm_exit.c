@@ -372,7 +372,9 @@ void static fastcall nvc_svm_sidt_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 	ulong_ptr decode_result=0;
 	// AMD-V does not provide further decoding assistance regarding operands.
 	// We must decode the instruction on our own.
-#if !defined(_hv_type1)
+#if defined(_hv_type1)
+	unref_var(superv_instruction);
+#else
 	// Step 0. Switch to the guest address space.
 	if(!superv_instruction)
 	{
@@ -389,6 +391,7 @@ void static fastcall nvc_svm_sidt_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 		// Construct the pointer.
 		ulong_ptr pointer=decode_result;
 #if defined(_hv_type1)
+		unref_var(pointer);
 #else
 		// FIXME: Check if the page is present and writable.
 		// If the page is absent/readonly, throw #PF to the guest.
@@ -417,7 +420,9 @@ void static fastcall nvc_svm_sgdt_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 	ulong_ptr decode_result=0;
 	// AMD-V does not provide further decoding assistance regarding operands.
 	// We must decode the instruction on our own.
-#if !defined(_hv_type1)
+#if defined(_hv_type1)
+	unref_var(superv_instruction);
+#else
 	// Step 0. Switch to the guest address space.
 	if(!superv_instruction)
 	{
@@ -434,6 +439,7 @@ void static fastcall nvc_svm_sgdt_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 		// Construct the pointer.
 		ulong_ptr pointer=decode_result;
 #if defined(_hv_type1)
+		unref_var(pointer);
 #else
 		// FIXME: Check if the page is present and writable.
 		// If the page is absent/readonly, throw #PF to the guest.
@@ -462,7 +468,9 @@ void static fastcall nvc_svm_sldt_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 	ulong_ptr decode_result=0;
 	// AMD-V does not provide further decoding assistance regarding operands.
 	// We must decode the instruction on our own.
-#if !defined(_hv_type1)
+#if defined(_hv_type1)
+	unref_var(superv_instruction);
+#else
 	// Step 0. Switch to the guest address space.
 	if(!superv_instruction)
 	{
@@ -479,6 +487,7 @@ void static fastcall nvc_svm_sldt_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 		// Construct the pointer.
 		ulong_ptr pointer=decode_result;
 #if defined(_hv_type1)
+		unref_var(pointer);
 #else
 		// FIXME: Check if the page is present and writable.
 		// If the page is absent/readonly, throw #PF to the guest.
@@ -527,7 +536,9 @@ void static fastcall nvc_svm_str_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 	ulong_ptr decode_result=0;
 	// AMD-V does not provide further decoding assistance regarding operands.
 	// We must decode the instruction on our own.
-#if !defined(_hv_type1)
+#if defined(_hv_type1)
+	unref_var(superv_instruction);
+#else
 	// Step 0. Switch to the guest address space.
 	if(!superv_instruction)
 	{
@@ -544,6 +555,7 @@ void static fastcall nvc_svm_str_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 		// Construct the pointer.
 		ulong_ptr pointer=decode_result;
 #if defined(_hv_type1)
+		unref_var(pointer);
 #else
 		// FIXME: Check if the page is present and writable.
 		// If the page is absent/readonly, throw #PF to the guest.
@@ -997,6 +1009,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				// Directly use space from the starting stack position.
 				// Normally it is unused.
 				noir_gpr_state_p saved_state=(noir_gpr_state_p)vcpu->hv_stack;
+				descriptor_register gidtr,ggdtr;
 				noir_svm_stgi();
 				// Before Debug-Print, GIF should be set because Debug-Printing requires IPI not to be blocked.
 				nv_dprintf("VMM-Call for Restoration is intercepted. Exiting...\n");
@@ -1010,6 +1023,15 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				noir_svm_vmload((ulong_ptr)vcpu->vmcb.phys);
 				// Switch to Restored CR3
 				noir_writecr3(gcr3);
+				// Switch to Restored IDT
+				gidtr.limit=noir_svm_vmread16(vcpu->vmcb.virt,guest_idtr_limit);
+				gidtr.base=noir_svm_vmread(vcpu->vmcb.virt,guest_idtr_base);
+				noir_lidt(&gidtr);
+				// Switch to Restored GDT
+				ggdtr.limit=noir_svm_vmread16(vcpu->vmcb.virt,guest_gdtr_limit);
+				ggdtr.base=noir_svm_vmread(vcpu->vmcb.virt,guest_gdtr_base);
+				noir_lgdt(&ggdtr);
+				// TSS is switched in previous vmload.
 				// Mark the processor is in transition mode.
 				vcpu->status=noir_virt_trans;
 				// Return to the caller at Host Mode.

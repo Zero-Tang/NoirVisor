@@ -140,11 +140,11 @@ noir_fxsave proc
 	fxsave [rcx]
 	; Determine if FFXSR is enabled.
 	cmp qword ptr[rcx+464],0
-	jz non_ffxsr
+	jz non_ffxs
 	; FFXSR is enabled. Save XMMs manually.
 	add rcx,160
 	call noir_xmmsave
-non_ffxsr:
+non_ffxs:
 	ret
 
 noir_fxsave endp
@@ -154,14 +154,56 @@ noir_fxrestore proc
 	fxrstor [rcx]
 	; Determine if FFXSR is enabled.
 	cmp qword ptr[rcx+464],0
-	jz non_ffxsr
+	jz non_ffxr
 	; FFXSR is enabled. Restore XMMs manually.
 	add rcx,160
 	call noir_xmmrestore
-non_ffxsr:
+non_ffxr:
 	ret
 
 noir_fxrestore endp
+
+noir_lgdt proc
+
+	lgdt fword ptr [rcx]
+	ret
+
+noir_lgdt endp
+
+noir_lldt proc
+
+	lldt cx
+	ret
+
+noir_lldt endp
+
+noir_ltr proc
+
+	ltr cx
+	ret
+
+noir_ltr endp
+
+noir_sgdt proc
+
+	sgdt fword ptr [rcx]
+	ret
+
+noir_sgdt endp
+
+noir_sldt proc
+
+	sldt word ptr [rcx]
+	ret
+
+noir_sldt endp
+
+noir_str proc
+
+	str word ptr [rcx]
+	ret
+
+noir_str endp
 
 noir_get_segment_attributes proc
 
