@@ -15,7 +15,69 @@
 #include <Uefi.h>
 #include <IndustryStandard/PeImage.h>
 #include <Library/BaseLib.h>
+#include <Library/PrintLib.h>
+#include <Library/UefiLib.h>
+#include <Register/Intel/Cpuid.h>
 #include "uefihvm.h"
+
+void NoirTestCpuid()
+{
+	CPUID_VERSION_INFO_ECX VerInfoEcx;
+	AsmCpuid(CPUID_VERSION_INFO,NULL,NULL,(UINT32*)&VerInfoEcx,NULL);
+	if(VerInfoEcx.Bits.NotUsed)
+	{
+		CHAR8 TempBuffer[512];
+		UINTN Length;
+		UINT32 MaximumLeaf;
+		CHAR8 VendorString[13];
+		AsmCpuid(CPUID_LEAF_HV_VENDOR_ID,&MaximumLeaf,(UINT32*)&VendorString[0],(UINT32*)&VendorString[4],(UINT32*)&VendorString[8]);
+		VendorString[12]='\0';
+		Length=AsciiSPrint(TempBuffer,sizeof(TempBuffer),"[Test] Hypervisor is detected! Maximum Leaf: 0x%X, Vendor: %a\n",MaximumLeaf,VendorString);
+		NoirSerialWrite(1,(UINT8*)TempBuffer,Length);
+		if(MaximumLeaf>=CPUID_LEAF_HV_VENDOR_NEUTRAL)
+		{
+			CHAR8 Signature[5];
+			AsmCpuid(CPUID_LEAF_HV_VENDOR_NEUTRAL,(UINT32*)Signature,NULL,NULL,NULL);
+			Signature[4]='\0';
+			Length=AsciiSPrint(TempBuffer,sizeof(TempBuffer),"[Test] Signature: %a\n",Signature);
+			NoirSerialWrite(1,(UINT8*)TempBuffer,Length);
+		}
+	}
+}
+
+UINT32 NoirBuildHypervisor()
+{
+	UINT32 st=nvc_build_hypervisor();
+	NoirTestCpuid();
+	return st;
+}
+
+void NoirTeardownHypervisor()
+{
+	nvc_teardown_hypervisor();
+}
+
+UINT64 noir_query_enabled_features_in_system()
+{
+	// Future implementation will support user-defined configuration.
+	// Current implementation will force the CPUID-presence.
+	return NOIR_HVM_FEATURE_CPUID_PRESENCE;
+}
+
+void nvc_store_image_info(OUT VOID** Base,OUT UINT32* Size)
+{
+	if(Base)*Base=NvImageBase;
+	if(Size)*Size=NvImageSize;
+}
+
+void NoirSaveImageInfo(IN EFI_LOADED_IMAGE_PROTOCOL *LoadedImageProtocol)
+{
+	if(LoadedImageProtocol)
+	{
+		NvImageBase=LoadedImageProtocol->ImageBase;
+		NvImageSize=(UINT32)LoadedImageProtocol->ImageSize;
+	}
+}
 
 BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)
 {

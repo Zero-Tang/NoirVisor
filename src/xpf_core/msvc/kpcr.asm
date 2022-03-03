@@ -163,6 +163,27 @@ non_ffxr:
 
 noir_fxrestore endp
 
+ifdef _llvm
+
+__inbyte proc
+
+	mov dx,cx
+	in al,dx
+	ret
+
+__inbyte endp
+
+__outbyte proc
+
+	mov al,dl
+	mov dx,cx
+	out dx,al
+	ret
+
+__outbyte endp
+
+endif
+
 noir_lgdt proc
 
 	lgdt fword ptr [rcx]

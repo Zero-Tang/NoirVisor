@@ -34,6 +34,12 @@
 #define noir_svm_npt_with_hooks				64		// Bit 6
 #define noir_svm_kva_shadow_present			128		// Bit 7
 
+// Definition of vCPU Global Status Bit Fields
+#define noir_svm_sipi_sent					0
+#define noir_svm_init_receiving				1
+#define noir_svm_apic_access				2
+#define noir_svm_issuing_ipi				3
+
 // Number of nested VMCBs to be cached.
 #define noir_svm_cached_nested_vmcb			32
 
@@ -106,9 +112,14 @@ typedef struct _noir_svm_nested_vcpu
 		u64 pending_nmi:1;
 		u64 pending_mc:1;
 		u64 pending_init:1;
-		u64 reserved:59;
+		u64 reserved:56;
 	};
 }noir_svm_nested_vcpu,*noir_svm_nested_vcpu_p;
+
+union _amd64_npt_pml4e;
+union _amd64_npt_pdpte;
+union _amd64_npt_pde;
+union _amd64_npt_pte;
 
 // Virtual Processor defined for host.
 typedef struct _noir_svm_vcpu
@@ -121,24 +132,29 @@ typedef struct _noir_svm_vcpu
 	struct _noir_npt_manager* primary_nptm;
 #if !defined(_hv_type1)
 	struct _noir_npt_manager* secondary_nptm;
+#else
+	memory_descriptor sapic;
+	u64 apic_base;
+	union _amd64_npt_pte *apic_pte;
 #endif
 	noir_mshv_vcpu mshvcpu;
 	u32 proc_id;
+	u32 apic_id;
 	noir_svm_virtual_msr virtual_msr;
 	noir_svm_nested_vcpu nested_hvm;
 	noir_cvm_virtual_cpu cvm_state;
 	u32 cpuid_fms;
-	u16 enabled_feature;
+	u32 enabled_feature;
+	u32v global_state;
+	u8v sipi_vector;
 	u8 status;
 	u8 vcpu_property;
-	u32 volatile global_state;
 }noir_svm_vcpu,*noir_svm_vcpu_p;
 
 struct _noir_svm_custom_vm;
 struct _noir_npt_pdpte_descriptor;
 struct _noir_npt_pde_descriptor;
 struct _noir_npt_pte_descriptor;
-union _amd64_npt_pml4e;
 
 typedef struct _noir_svm_custom_npt_manager
 {
@@ -235,6 +251,7 @@ u8 fastcall nvc_svm_subvert_processor_a(noir_svm_initial_stack_p host_rsp);
 void nvc_svm_return(noir_gpr_state_p stack);
 void nvc_svm_host_nmi_handler(void);
 void nvc_svm_host_ready_nmi(void);
+void nvc_svm_guest_start(void);
 void fastcall nvc_svm_reserved_cpuid_handler(u32* info);
 void nvc_svm_set_mshv_handler(bool option);
 void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vmcb);
@@ -245,6 +262,8 @@ void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu
 void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid_fms);
 void nvc_svmn_synchronize_to_l2t_vmcb(noir_svm_nested_vcpu_node_p nvcpu);
 void nvc_svmn_synchronize_to_l2c_vmcb(noir_svm_nested_vcpu_node_p nvcpu);
+void nvc_svmn_set_gif(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,void* target_vmcb);
+void nvc_svmn_clear_gif(noir_svm_vcpu_p vcpu);
 void nvc_svmn_insert_nested_vmcb(noir_svm_vcpu_p vcpu,memory_descriptor_p vmcb);
 u8 nvc_npt_get_host_pat_index(u8 type);
 noir_status nvc_svmc_initialize_cvm_module();

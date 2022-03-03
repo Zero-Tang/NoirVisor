@@ -142,7 +142,7 @@ typedef union _amd64_npt_pte
 		u64 pat:1;			// Bit	7
 		u64 global:1;		// Bit	8
 		u64 reserved1:3;	// Bits 9-11
-		u64 page_base:40;		// Bits	12-51
+		u64 page_base:40;	// Bits	12-51
 		u64 reserved2:11;	// Bits 52-62
 		u64 no_execute:1;	// Bit	63
 	};
@@ -200,6 +200,14 @@ typedef struct _noir_npt_manager
 	{
 		noir_npt_pte_descriptor_p head;
 		noir_npt_pte_descriptor_p tail;
+#if defined(_hv_type1)
+		struct
+		{
+			amd64_npt_pte_p virt;
+			u64 phys;
+			u64 gpa_start;
+		}apic;
+#endif
 	}pte;
 }noir_npt_manager,*noir_npt_manager_p;
 
@@ -228,6 +236,12 @@ bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm);
 bool nvc_npt_initialize_ci(noir_npt_manager_p nptm);
 noir_npt_manager_p nvc_npt_build_identity_map();
 bool nvc_npt_update_pde(noir_npt_manager_p nptm,u64 hpa,bool r,bool w,bool x);
+bool nvc_npt_update_pte(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bool x);
+#if defined(_hv_type1)
+bool nvc_npt_build_apic_shadowing(noir_svm_vcpu_p vcpu);
+void nvc_npt_setup_apic_shadowing(noir_svm_vcpu_p vcpu);
+#else
 void nvc_npt_build_hook_mapping(noir_svm_vcpu_p vcpu);
+#endif
 void nvc_npt_cleanup(noir_npt_manager_p nptm);
 u32 nvc_npt_get_allocation_size();

@@ -128,6 +128,16 @@ cr4_handler_over:
 	noir_svm_advance_rip(vmcb);
 }
 
+#if defined(_hv_type1)
+u32 static fastcall nvc_svm_convert_apic_id(u32 apic_id)
+{
+	for(u32 i=0;i<hvm_p->cpu_count;i++)
+		if(hvm_p->virtual_cpu[i].apic_id==apic_id)
+			return hvm_p->virtual_cpu[i].proc_id;
+	return 0xFFFFFFFF;
+}
+#endif
+
 // Expected Intercept Code: 0x41
 void static fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
@@ -143,11 +153,66 @@ void static fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noi
 		else if(noir_svm_vmcb_bt32(vmcb,guest_dr6,amd64_dr6_bd) || noir_svm_vmcb_bt32(vmcb,guest_dr6,amd64_dr6_bt))
 			noir_svm_inject_event(vmcb,amd64_debug_exception,amd64_fault_trap_exception,false,true,0);
 	}
+#if defined(_hv_type1)
+	// The guest might be accessing APIC. Clear the flag by the way.
+	if(noir_btr(&vcpu->global_state,noir_svm_apic_access))
+	{
+		// If the APIC-Access is issuing IPI, inspect what's inside.
+		if(noir_btr(&vcpu->global_state,noir_svm_issuing_ipi))
+		{
+			amd64_apic_register_icr_lo icr_lo;
+			amd64_apic_register_icr_hi icr_hi;
+			// The value of ICR-Lo is in shadowed APIC page.
+			icr_lo.value=*(u32p)((ulong_ptr)vcpu->sapic.virt+amd64_apic_icr_lo);
+			// The value of ICR-Hi is in original APIC page.
+			// It does not matter if we read by physical address.
+			icr_hi.value=*(u32p)(vcpu->apic_base+amd64_apic_icr_hi);
+			switch(icr_lo.msg_type)
+			{
+				case amd64_apic_icr_msg_init:
+				{
+					u32 proc_id=nvc_svm_convert_apic_id(icr_hi.destination);
+					// INIT signal must be discarded if target processor is still waiting for SIPI.
+					if(!noir_locked_bts(&hvm_p->virtual_cpu[proc_id].global_state,noir_svm_init_receiving))
+						*(u32p)(vcpu->apic_base+amd64_apic_icr_lo)=icr_lo.value;	// Forward the write to APIC page.
+					break;
+				}
+				case amd64_apic_icr_msg_sipi:
+				{
+					u32 proc_id=nvc_svm_convert_apic_id(icr_hi.destination);
+					// SIPI signal must be discarded if target processor is out of Wait-for-SIPI state.
+					if(!noir_locked_btr(&hvm_p->virtual_cpu[proc_id].global_state,noir_svm_init_receiving))
+					{
+						hvm_p->virtual_cpu[proc_id].sipi_vector=icr_lo.vector;		// Notify the target processor about the vector.
+						// Signal the target processor to leave the spin-lock.
+						noir_locked_bts(&hvm_p->virtual_cpu[proc_id].global_state,noir_svm_sipi_sent);
+					}
+					break;
+				}
+				default:
+				{
+					// Irrelevant IPI. Simply forward it.
+					*(u32p)(vcpu->apic_base+amd64_apic_icr_lo)=icr_lo.value;
+					break;
+				}
+			}
+			// Switch the APIC back to original page.
+			vcpu->apic_pte->page_base=vcpu->apic_base>>page_shift;
+			vcpu->apic_pte->write=false;		// Revoke the write-permission.
+			noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_guest);
+		}
+		// Stop single-stepping.
+		noir_svm_vmcb_btr32(vmcb,guest_rflags,amd64_rflags_tf);
+		noir_svm_vmcb_btr32(vmcb,intercept_exceptions,amd64_debug_exception);
+		noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_interception);
+	}
+#endif
 }
 
 // Expected Intercept Code: 0x4E
 void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
+#if !defined(_hv_type1)
 	void* vmcb=vcpu->vmcb.virt;
 	ulong_ptr fault_address=noir_svm_vmread(vmcb,exit_info2);
 	if(fault_address==(ulong_ptr)noir_system_call)
@@ -169,8 +234,17 @@ void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noi
 		noir_svm_inject_event(vmcb,amd64_page_fault,amd64_fault_trap_exception,true,true,error_code.value);
 		noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_cr2);
 	}
+#endif
 }
 
+// Expected Intercept Code: 0x52
+void static fastcall nvc_svm_mc_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	// If the GIF is reset then hold the #MC pending.
+	if(!vcpu->nested_hvm.gif)vcpu->nested_hvm.pending_mc=true;
+}
+
+// This function does not emulate the Wait-for-SIPI processor state!
 void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid_fms)
 {
 	// For details of emulation, see Table 14-1 in Vol.2 of AMD64 APM.
@@ -248,7 +322,6 @@ void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid
 	noir_svm_vmwrite64(vmcb,guest_rflags,2);
 	noir_stosp(gpr_state,0,sizeof(void*)*2);	// Clear the GPRs.
 	gpr_state->rdx=cpuid_fms;				// Use info from cached CPUID.
-	// FIXME: Set the vCPU to "Wait-for-SPI" State. AMD-V lacks this feature.
 	// Flush all TLBs in that paging in the guest is switched off during INIT signal.
 	noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_guest);
 	// Mark certain cached items as dirty in order to invalidate them.
@@ -273,7 +346,7 @@ void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noi
 				vcpu->nested_hvm.pending_init=true;
 			else
 			{
-				// Check if guest has set redirection of INIT.
+				// Check if the guest has set redirection of INIT.
 				if(vcpu->nested_hvm.r_init)
 					noir_svm_inject_event(vmcb,amd64_security_exception,amd64_fault_trap_exception,true,true,amd64_sx_init_redirection);
 				else
@@ -283,6 +356,12 @@ void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noi
 					// We thereby have to redirect INIT signals into #SX exceptions.
 					// Emulate what a real INIT Signal would do.
 					nvc_svm_emulate_init_signal(gpr_state,vmcb,vcpu->cpuid_fms);
+					// Emulate the Wait-for-SIPI state by spin-locking...
+					while(!noir_locked_btr(&vcpu->global_state,noir_svm_sipi_sent))noir_pause();
+					// After the spin-lock is over, emulate the Startup-IPI behavior.
+					noir_svm_vmwrite16(vmcb,guest_cs_selector,vcpu->sipi_vector<<8);
+					noir_svm_vmwrite64(vmcb,guest_cs_base,vcpu->sipi_vector<<12);
+					noir_svm_vmwrite64(vmcb,guest_rip,0);
 				}
 			}
 			break;
@@ -300,7 +379,7 @@ void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noi
 void static fastcall nvc_svm_nmi_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	// This handler is only to be called when we are emulating a cleared GIF!
-	// Let go of the NMI.
+	// Take the NMI, but do not unblock NMI by not executing the iret instruction.
 	nvc_svm_host_ready_nmi();
 	// Mark there is a pending NMI in the vCPU.
 	vcpu->nested_hvm.pending_nmi=true;
@@ -616,8 +695,6 @@ void static fastcall nvc_svm_cpuid_nested_virtualization_handler(noir_cpuid_gene
 		noir_bts(&info->edx,amd64_cpuid_vmcb_clean);
 		noir_bts(&info->edx,amd64_cpuid_flush_asid);
 		noir_bts(&info->edx,amd64_cpuid_decoder);
-		noir_bts(&info->edx,amd64_cpuid_vmlsvirt);
-		noir_bts(&info->edx,amd64_cpuid_vgif);
 	}
 }
 
@@ -758,6 +835,7 @@ void static fastcall nvc_svm_rdmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 				break;
 			}
 			// To be implemented in future.
+#if !defined(_hv_type1)
 #if defined(_amd64)
 			case amd64_lstar:
 			{
@@ -774,6 +852,7 @@ void static fastcall nvc_svm_rdmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 				val.value=vcpu->virtual_msr.sysenter_eip;
 				break;
 			}
+#endif
 #endif
 		}
 	}
@@ -878,6 +957,7 @@ void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 				}
 				break;
 			}
+#if !defined(_hv_type1)
 #if defined(_amd64)
 			case amd64_lstar:
 			{
@@ -893,6 +973,7 @@ void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 				vcpu->virtual_msr.sysenter_eip=val.value;
 				break;
 			}
+#endif
 #endif
 		}
 	}
@@ -953,6 +1034,7 @@ retry_search:
 					nested_vmcb_va=nvcpu->vmcb_c.virt;
 					nvcpu->last_tsc=noir_rdtsc();
 					nvcpu->entry_counter++;
+					break;
 				}
 			}
 		}
@@ -970,6 +1052,8 @@ retry_search:
 		if(nested_asid==0 || nested_asid>hvm_p->tlb_tagging.start-2)goto invalid_nested_vmcb;
 		// Consistency check complete. Switching to L2 Guest.
 		nvc_svmn_synchronize_to_l2t_vmcb(nvcpu);
+		// GIF is set on vmrun instruction.
+		nvc_svmn_set_gif(gpr_state,vcpu,nvcpu->vmcb_t.virt);
 		loader_stack->guest_vmcb_pa=nvcpu->vmcb_t.phys;
 		loader_stack->nested_vcpu=nvcpu;
 		noir_svm_advance_rip(vmcb);
@@ -977,7 +1061,7 @@ retry_search:
 invalid_nested_vmcb:
 		{
 			// Inconsistency found by Hypervisor. Issue VM-Exit immediately.
-			noir_svm_vmcb_btr64(vmcb,avic_control,nvc_svm_avic_control_vgif);
+			nvc_svmn_clear_gif(vcpu);
 			noir_svm_vmwrite64(nested_vmcb_va,exit_code,invalid_guest_state);
 			noir_svm_advance_rip(vmcb);
 		}
@@ -1256,6 +1340,7 @@ void static fastcall nvc_svm_stgi_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 		// If the code reaches here, there is no hardware support for vGIF.
 		vcpu->nested_hvm.gif=1;		// Marks that GIF is set in Guest.
 		// FIXME: Inject pending interrupts held due to cleared GIF, and clear interceptions on certain interrupts.
+		nvc_svmn_set_gif(gpr_state,vcpu,vmcb);
 		noir_svm_advance_rip(vmcb);
 	}
 	else
@@ -1274,6 +1359,7 @@ void static fastcall nvc_svm_clgi_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 		// If the code reaches here, there is no hardware support for vGIF.
 		vcpu->nested_hvm.gif=0;		// Marks that GIF is reset in Guest.
 		// FIXME: Setup interceptions on certain interrupts.
+		nvc_svmn_clear_gif(vcpu);
 		noir_svm_advance_rip(vmcb);
 	}
 	else
@@ -1334,6 +1420,39 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 		noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_npt);
 		// It is necessary to flush TLB.
 		noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+	}
+#else
+	// For Type-I Hypervisors, #NPF can be triggerred by virtue of interceptions on writes to APIC pages.
+	if(fault.write)
+	{
+		u64 gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
+		u64 apic_bar=noir_rdmsr(amd64_apic_base);
+		u64 apic_base=page_base(apic_bar);
+		if(gpa>=apic_base && gpa<apic_base+page_size)
+		{
+			const u64 offset=gpa-apic_base;
+			switch(offset)
+			{
+				case amd64_apic_icr_lo:
+				{
+					// Write to Interrupt Control Register (Low) is intercepted.
+					// Deactivate APIC by redirecting to the shadowed page.
+					// Mark this vCPU is issuing IPI.
+					noir_bts(&vcpu->global_state,noir_svm_issuing_ipi);
+					vcpu->apic_pte->page_base=vcpu->sapic.phys>>page_shift;
+					break;
+				}
+			}
+			// Grant the access to write for the sake of single-stepping.
+			vcpu->apic_pte->write=true;
+			noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+			// Single-step the guest execution.
+			noir_svm_vmcb_bts32(vcpu->vmcb.virt,guest_rflags,amd64_rflags_tf);
+			noir_svm_vmcb_bts32(vcpu->vmcb.virt,intercept_exceptions,amd64_debug_exception);
+			noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
+			// Do not advance the rip in order to single-step.
+			advance=false;
+		}
 	}
 #endif
 	if(advance)
@@ -1456,7 +1575,7 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 	else
 	{
 		// Nested VM is exiting, switch to L1 Guest.
-		noir_svm_vmcb_btr64(vcpu->vmcb.virt,avic_control,nvc_svm_avic_control_vgif);
+		nvc_svmn_clear_gif(vcpu);
 		nvc_svmn_synchronize_to_l2c_vmcb(loader_stack->nested_vcpu);
 		loader_stack->guest_vmcb_pa=vcpu->vmcb.phys;
 	}

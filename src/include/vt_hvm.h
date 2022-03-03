@@ -235,6 +235,7 @@ void nvc_vt_set_guest_vcpu_options(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvc
 void nvc_vt_dump_vmcs_guest_state();
 void nvc_vt_resume_without_entry(noir_gpr_state_p state);
 void nvc_vt_exit_handler_a(void);
+void nvc_vt_guest_start(void);
 void nvc_vt_set_mshv_handler(bool option);
 void noir_vt_vmsuccess();
 void noir_vt_vmfail_invalid();

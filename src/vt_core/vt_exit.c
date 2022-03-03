@@ -133,6 +133,7 @@ void static fastcall nvc_vt_exception_nmi_handler(noir_gpr_state_p gpr_state,noi
 		{
 			case ia32_page_fault:
 			{
+#if !defined(_hv_type1)
 				ulong_ptr gcr2;
 				ia32_page_fault_error_code err_code;
 				noir_vt_vmread(vmexit_interruption_error_code,&err_code.value);
@@ -160,6 +161,7 @@ void static fastcall nvc_vt_exception_nmi_handler(noir_gpr_state_p gpr_state,noi
 					// Update the CR2 for the Guest.
 					noir_writecr2(gcr2);
 				}
+#endif
 				break;
 			}
 			default:
@@ -930,6 +932,7 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 				advance=false;	// For exception, rip does not advance.
 			}
 			// Expected Case: Check MSR Hook.
+#if !defined(_hv_type1)
 #if defined(_amd64)
 			case ia32_lstar:
 			{
@@ -946,6 +949,7 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 				val.value=vcpu->virtual_msr.sysenter_eip;
 				break;
 			}
+#endif
 #endif
 			default:
 			{
@@ -1049,6 +1053,7 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 				}
 				break;
 			}
+#if !defined(_hv_type1)
 #if defined(_amd64)
 			case ia32_lstar:
 			{
@@ -1067,6 +1072,7 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 				vcpu->virtual_msr.sysenter_eip=val.value;
 				break;
 			}
+#endif
 #endif
 			default:
 			{
@@ -1171,7 +1177,8 @@ void static fastcall nvc_vt_access_gdtr_idtr_handler(noir_gpr_state_p gpr_state,
 		u64 base;
 		bool prevention=false;
 		vmx_segment_access_right ss_attrib;
-		u64 gcr3k=noir_get_current_process_cr3();
+		ulong_ptr gcr3;
+		noir_vt_vmread(guest_cr3,&gcr3);
 		// Unlike AMD-V, interception does not mean prevention is active.
 		if(exit_info.f2.is_idtr_access)
 			prevention|=noir_bt((u32*)&vcpu->mshvcpu.npiep_config,noir_mshv_npiep_prevent_sidt);
@@ -1196,7 +1203,7 @@ void static fastcall nvc_vt_access_gdtr_idtr_handler(noir_gpr_state_p gpr_state,
 				noir_vt_vmread(guest_gdtr_base,&base);
 			}
 		}
-		noir_writecr3(gcr3k);
+		noir_writecr3(gcr3);
 		if(cs_attrib.long_mode)
 			*(u64*)(pointer+2)=base;
 		else
@@ -1236,9 +1243,10 @@ void static fastcall nvc_vt_access_ldtr_tr_handler(noir_gpr_state_p gpr_state,no
 // may invoke this handler. Simply advance the rip for these circumstances.
 void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
+	bool advance=true;
+#if !defined(_hv_type1)
 	i32 lo=0,hi=noir_hook_pages_count;
 	u64 gpa;
-	bool advance=true;
 	noir_vt_vmread64(guest_physical_address,&gpa);
 	// We previously sorted the list.
 	// Use binary search to reduce time complexity.
@@ -1288,6 +1296,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noi
 			break;
 		}
 	}
+#endif
 	if(advance)noir_vt_advance_rip();
 }
 

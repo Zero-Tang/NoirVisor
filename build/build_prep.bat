@@ -31,9 +31,13 @@ mkdir ..\bin\compfre_win7x86\Intermediate
 echo Making Directories for NoirVisor Checked Build, 64-Bit UEFI
 mkdir ..\bin\compchk_uefix64
 mkdir ..\bin\compchk_uefix64\Intermediate
+mkdir ..\bin\compchk_uefix64\Intermediate\efiapp
+mkdir ..\bin\compchk_uefix64\Intermediate\driver
 
 echo Making Directories for NoirVisor Free Build, 64-Bit UEFI
 mkdir ..\bin\compfre_uefix64
 mkdir ..\bin\compfre_uefix64\Intermediate
+mkdir ..\bin\compfre_uefix64\Intermediate\efiapp
+mkdir ..\bin\compfre_uefix64\Intermediate\driver
 
 if "%~1"=="/s" (echo Preparation Completed!) else (pause)

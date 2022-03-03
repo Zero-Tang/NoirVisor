@@ -222,6 +222,10 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 		npt_ctrl.value=0;
 		npt_ctrl.enable_npt=1;
 		noir_svm_vmwrite64(vcpu->vmcb.virt,npt_control,npt_ctrl.value);
+#if defined(_hv_type1)
+		// Update the NPT by APIC
+		nvc_npt_setup_apic_shadowing(vcpu);
+#endif
 		// Write NPT CR3
 		noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
 	}
@@ -235,35 +239,57 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
 }
 
-void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu,noir_processor_state_p host_state)
+void nvc_svm_setup_host_idt(ulong_ptr idtr_base)
 {
+	noir_gate_descriptor_p idt_base=(noir_gate_descriptor_p)idtr_base;
+	// Current implementation of NoirVisor only has to take care of NMI.
+	idt_base[amd64_nmi_interrupt].offset_lo=(u16)((u64)nvc_svm_host_nmi_handler&0xFFFF);
+	idt_base[amd64_nmi_interrupt].offset_mid=(u16)((u64)nvc_svm_host_nmi_handler>>16);
+	idt_base[amd64_nmi_interrupt].offset_hi=(u32)((u64)nvc_svm_host_nmi_handler>>32);
+#if defined(_hv_type1)
+	// If NoirVisor is to be loaded as Type-I hypervisor, exception handlers must be prepared for debugging purpose.
+#endif
+}
+
+void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu)
+{
+	noir_processor_state state;
 	descriptor_register idtr,gdtr;
+	noir_get_prebuilt_host_processor_state(&state);
 	// Use vmsave instruction to save effort.
 	noir_svm_vmsave((ulong_ptr)vcpu->hvmcb.phys);
 	// Load IDTR and GDTR. They are not indicated in VMCB during vmsave.
-	idtr.limit=(u16)host_state->idtr.limit;
-	gdtr.limit=(u16)host_state->gdtr.limit;
-	idtr.base=host_state->idtr.base;
-	gdtr.base=host_state->gdtr.base;
+	idtr.limit=(u16)state.idtr.limit;
+	gdtr.limit=(u16)state.gdtr.limit;
+	idtr.base=state.idtr.base;
+	gdtr.base=state.gdtr.base;
+	// IDT requires some modification.
+	nvc_svm_setup_host_idt(idtr.base);
+	// Load them into processor.
 	noir_lidt(&idtr);
 	noir_lgdt(&gdtr);
-	// Load Task Register. They are indicated in VMCB during vmsave.
-	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_selector,host_state->tr.selector);
-	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_attrib,svm_attrib(host_state->tr.attrib));
-	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_tr_limit,host_state->tr.limit);
-	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_tr_base,host_state->tr.base);
-	// Although Host CR3 is derived from host state, it is to be loaded from system_cr3 global variable.
+	// Load GS Segment.
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_gs_selector,state.gs.selector);
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_gs_attrib,svm_attrib(state.gs.attrib));
+	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_gs_limit,state.gs.limit);
+	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_gs_base,state.gs.base);
+	// Load Task State Segment.
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_selector,state.tr.selector);
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_attrib,svm_attrib(state.tr.attrib));
+	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_tr_limit,state.tr.limit);
+	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_tr_base,state.tr.base);
+	// Load Host CR3.
+	noir_writecr3(state.cr3);
 }
 
 // This function has context of cleared GIF.
-ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_ptr gip)
+ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp)
 {
 	// Save Processor State
-	noir_processor_state state,host_state;
+	noir_processor_state state;
 	noir_save_processor_state(&state);
 	// Setup Host State
-	noir_copy_memory(&host_state,&state,sizeof(noir_processor_state));
-	nvc_svm_load_host_processor_state(vcpu,&state);
+	nvc_svm_load_host_processor_state(vcpu);
 	// Setup State-Save Area
 	// Save Segment State - CS
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_cs_selector,state.cs.selector);
@@ -325,7 +351,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	// Save RFlags, RSP and RIP
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rflags,2);	// Fixed bit should be set.
 	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rsp,gsp);
-	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
+	noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,(ulong_ptr)nvc_svm_guest_start);
 	// Save Processor Hidden State
 	noir_svm_vmsave((ulong_ptr)vcpu->vmcb.phys);
 	// Save Model Specific Registers.
@@ -333,9 +359,11 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp,ulong_p
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_efer,state.efer);
 #if defined(_amd64)
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_star,state.star);
+#if !defined(_hv_type1)
 	if(vcpu->enabled_feature & noir_svm_syscall_hook)
 		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,(u64)noir_system_call);
 	else
+#endif
 		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,state.lstar);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_cstar,state.cstar);
 	noir_svm_vmwrite64(vcpu->vmcb.virt,guest_sfmask,state.sfmask);
@@ -366,7 +394,8 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 	vcpu->status=nvc_svm_enable();
 	if(vcpu->status==noir_virt_trans)
 	{
-		noir_svm_initial_stack_p stack=(noir_svm_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack));
+		ulong_ptr estimated_stack=(ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack);
+		noir_svm_initial_stack_p stack=(noir_svm_initial_stack_p)(estimated_stack&0xFFFFFFFFFFFFFFF0);
 		// Initialize Hypervisor Context Stack.
 		stack->guest_vmcb_pa=vcpu->vmcb.phys;
 		stack->host_vmcb_pa=vcpu->hvmcb.phys;
@@ -403,6 +432,10 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 				noir_free_contd_memory(vcpu->hsave.virt,page_size);
 			if(vcpu->hvmcb.virt)
 				noir_free_contd_memory(vcpu->hvmcb.virt,page_size);
+#if defined(_hv_type1)
+			if(vcpu->sapic.virt)
+				noir_free_contd_memory(vcpu->sapic.virt,page_size);
+#endif
 			if(vcpu->hv_stack)
 				noir_free_nonpg_memory(vcpu->hv_stack);
 			if(vcpu->cvm_state.xsave_area)
@@ -439,9 +472,6 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	hvm_p->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
 	// Query available virtualization capabilities.
 	nvc_query_svm_capability();
-	// If hardware support of virtualizing GIF is unavailable, disable nested virtualization.
-	if(!noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_vgif))
-		hvm_p->options.nested_virtualization=false;
 	// Query Extended State Enumeration - Useful for xsetbv handler, CVM scheduler, etc.
 	noir_cpuid(amd64_cpuid_std_pestate_enum,0,&hvm_p->xfeat.support_mask.low,&hvm_p->xfeat.enabled_size_max,&hvm_p->xfeat.supported_size_max,&hvm_p->xfeat.support_mask.high);
 	// Initialize vCPUs.
@@ -482,6 +512,15 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			if(vcpu->secondary_nptm==null)goto alloc_failure;
 			if(hvm_p->options.stealth_inline_hook)
 				nvc_npt_build_hook_mapping(vcpu);		// This feature does not have a good performance.
+#else
+			// Type-I Hypervisor must set up shadowed APIC page.
+			vcpu->sapic.virt=noir_alloc_contd_memory(page_size);
+			if(vcpu->sapic.virt)
+				vcpu->sapic.phys=noir_get_physical_address(vcpu->sapic.virt);
+			else
+				goto alloc_failure;
+			if(nvc_npt_build_apic_shadowing(vcpu)==false)
+				goto alloc_failure;
 #endif
 			if(hvm_p->options.nested_virtualization)
 			{
@@ -494,6 +533,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 					vcpu->nested_hvm.nested_vmcb[j].vmcb_c.phys=0xffffffffffffffff;		// Use -1 to indicate unused VMCB.
 				}
 			}
+#if !defined(_hv_type1)
 			if(nvc_npt_initialize_ci(vcpu->primary_nptm)==false)goto alloc_failure;
 			if(hvm_p->options.stealth_msr_hook)vcpu->enabled_feature|=noir_svm_syscall_hook;
 			if(hvm_p->options.stealth_inline_hook)vcpu->enabled_feature|=noir_svm_npt_with_hooks;
@@ -502,6 +542,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 				vcpu->enabled_feature|=noir_svm_kva_shadow_present;
 				nv_dprintf("Warning: KVA-Shadow is present! Stealth MSR-Hook on AMD Processors is untested in regards of KVA-Shadow!\n");
 			}
+#endif
 		}
 	}
 	hvm_p->host_pat.value=noir_rdmsr(amd64_pat);
@@ -584,7 +625,9 @@ void nvc_svm_restore_system(noir_hypervisor_p hvm_p)
 	{
 		noir_generic_call(nvc_svm_restore_processor_thunk,hvm_p->virtual_cpu);
 		nvc_svm_cleanup(hvm_p);
+#if !defined(_hv_type1)
 		nvc_svmc_finalize_cvm_module();
+#endif
 		nvc_mshv_teardown_cpuid_handlers();
 	}
 }

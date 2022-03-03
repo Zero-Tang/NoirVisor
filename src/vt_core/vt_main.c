@@ -145,8 +145,8 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 			noir_finalize_reslock(hvm->tlb_tagging.vpid_pool_lock);
 		if(hvm->tlb_tagging.vpid_pool)
 			noir_free_nonpg_memory(hvm->tlb_tagging.vpid_pool);
-#endif
 		nvc_vtc_finalize_cvm_module();
+#endif
 	}
 }
 
@@ -353,7 +353,7 @@ u8 static nvc_vt_disable()
 	return noir_virt_off;
 }
 
-void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_ptr gsp,ulong_ptr gip)
+void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_ptr gsp)
 {
 	// Guest State Area - CS Segment
 	noir_vt_vmwrite(guest_cs_selector,state_p->cs.selector);
@@ -414,7 +414,7 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	noir_vt_vmwrite64(vmcs_link_pointer,0xffffffffffffffff);
 	// Guest State Area - Flags, Stack Pointer, Instruction Pointer
 	noir_vt_vmwrite(guest_rsp,gsp);
-	noir_vt_vmwrite(guest_rip,gip);
+	noir_vt_vmwrite(guest_rip,(ulong_ptr)nvc_vt_guest_start);
 	noir_vt_vmwrite(guest_rflags,2);		// That the essential bit is set is fine.
 }
 
@@ -625,7 +625,7 @@ void static nvc_vt_setup_control_area(bool true_msr)
 	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_vmxe_bit);													// Monitor VMXE flags
 }
 
-u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,ulong_ptr gip)
+u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp)
 {
 	ia32_vmx_basic_msr vt_basic;
 	u8 vst=0;
@@ -635,7 +635,7 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp,u
 	vt_basic.value=noir_rdmsr(ia32_vmx_basic);
 	nvc_vt_setup_available_features(vcpu);
 	nvc_vt_setup_control_area(vt_basic.use_true_msr);
-	nvc_vt_setup_guest_state_area(&state,gsp,gip);
+	nvc_vt_setup_guest_state_area(&state,gsp);
 	nvc_vt_setup_host_state_area(vcpu,&state);
 	nvc_vt_setup_memory_virtualization(vcpu);
 	nvc_vt_setup_msr_auto_list(vcpu,&state);

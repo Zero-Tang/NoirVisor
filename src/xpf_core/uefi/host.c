@@ -15,10 +15,12 @@
 #include <Uefi.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/MemoryAllocationLib.h>
+#include <Library/PrintLib.h>
 #include <Library/UefiLib.h>
 #include <Pi/PiMultiPhase.h>
 #include <Protocol/MpService.h>
 #include <intrin.h>
+#include <stdarg.h>
 #include "host.h"
 
 void NoirFreeHostEnvironment()
@@ -38,6 +40,33 @@ void NoirFreeHostEnvironment()
 		FreePages(Host.PdptBase,1);
 		Host.PdptBase=NULL;
 	}
+}
+
+void noir_get_prebuilt_host_processor_state(OUT PNOIR_PROCESSOR_STATE State)
+{
+	UINTN CurProc=0;
+	if(MpServices)MpServices->WhoAmI(MpServices,&CurProc);
+	// Only necessary states are filled in.
+	// Segment Selectors
+	State->Cs.Selector=AsmReadCs();
+	State->Ds.Selector=AsmReadDs();
+	State->Es.Selector=AsmReadEs();
+	State->Fs.Selector=AsmReadFs();
+	State->Gs.Selector=AsmReadGs();
+	State->Ss.Selector=AsmReadSs();
+	// GDT & IDT Registers
+	State->Gdtr.Limit=Host.ProcessorBlocks[CurProc].Core.GdtR.Limit;
+	State->Idtr.Limit=Host.ProcessorBlocks[CurProc].Core.IdtR.Limit;
+	State->Gdtr.Base=Host.ProcessorBlocks[CurProc].Core.GdtR.Base;
+	State->Idtr.Base=Host.ProcessorBlocks[CurProc].Core.IdtR.Base;
+	// Task Segment State
+	State->Tr=Host.ProcessorBlocks[CurProc].Core.Tr;
+	// Paging Base
+	State->Cr3=(UINTN)Host.Pml4Base;
+	// GS Segment.
+	State->Gs.Attributes=NH_X64_DATA_ATTRIBUTES;
+	State->Gs.Limit=0xFFFFFFFF;
+	State->Gs.Base=(UINT64)Host.ProcessorBlocks[CurProc].Core.Self;
 }
 
 UINT16 NoirAllocateSegmentSelector(IN PNHGDTENTRY64 GdtBase,IN UINT16 Limit)
@@ -71,22 +100,44 @@ void NoirPrepareHostProcedureAp(IN VOID *ProcedureArgument)
 {
 	PNHPCRP Pcr=(PNHPCRP)ProcedureArgument;
 	UINTN AllocationBase=((UINTN)Pcr->Misc+0xF)&0xFFFFFFFFFFFFFFF0;
+	IA32_DESCRIPTOR IdtR,GdtR;
 	VOID *NewGdt,*NewIdt;
 	UINTN CurProc=0;
+	UINT16 TrSel,TrAttrib;
 	// Get the processor number.
 	if(MpServices)MpServices->WhoAmI(MpServices,&CurProc);
 	Pcr[CurProc].Core.ProcessorNumber=CurProc;
 	// Copy the GDT and IDT.
-	AsmReadGdtr(&Pcr[CurProc].Core.GdtR);
-	AsmReadIdtr(&Pcr[CurProc].Core.IdtR);
+	AsmReadGdtr(&GdtR);
+	AsmReadIdtr(&IdtR);
 	NewIdt=(VOID*)AllocationBase;
-	NewGdt=(VOID*)(AllocationBase+Pcr[CurProc].Core.IdtR.Limit+1);
-	CopyMem(NewGdt,(VOID*)Pcr[CurProc].Core.GdtR.Base,Pcr[CurProc].Core.GdtR.Limit+1);
-	CopyMem(NewIdt,(VOID*)Pcr[CurProc].Core.IdtR.Base,Pcr[CurProc].Core.IdtR.Limit+1);
+	NewGdt=(VOID*)(AllocationBase+1024);
+	CopyMem(NewGdt,(VOID*)GdtR.Base,GdtR.Limit+1);
+	CopyMem(NewIdt,(VOID*)IdtR.Base,IdtR.Limit+1);
 	Pcr[CurProc].Core.Gdt=(PNHGDTENTRY64)NewGdt;
 	Pcr[CurProc].Core.Idt=(PNHIDTENTRY64)NewIdt;
+	Pcr[CurProc].Core.GdtR.Limit=GdtR.Limit+32;
+	Pcr[CurProc].Core.IdtR.Limit=1024;
+	Pcr[CurProc].Core.GdtR.Base=(UINTN)NewGdt;
+	Pcr[CurProc].Core.GdtR.Base=(UINTN)NewIdt;
 	// Initialize TSS.
-	Pcr[CurProc].Core.Tss=(PNHTSS64)((UINTN)NewGdt+Pcr[CurProc].Core.GdtR.Limit+17);
+	TrSel=AsmReadTr();
+	TrAttrib=NoirGetSegmentAttributes(TrSel,NewGdt);
+	if(TrAttrib & 0x80)		// Is TSS present?
+		Pcr[CurProc].Core.Tr.Selector=TrSel;
+	else					// If TSS is absent, allocate a selector for it.
+		Pcr[CurProc].Core.Tr.Selector=NoirAllocateSegmentSelector(NewGdt,Pcr[CurProc].Core.GdtR.Limit+33);
+	Pcr[CurProc].Core.Tr.Attributes=NH_X64_TASK_ATTRIBUTES;
+	Pcr[CurProc].Core.Tr.Limit=sizeof(NHTSS64);
+	Pcr[CurProc].Core.Tr.Base=AllocationBase+1024+Pcr[CurProc].Core.GdtR.Limit+33;
+	// Guarantee that TSS Base is aligned on 16-byte boundary
+	if(Pcr[CurProc].Core.Tr.Base & 0xF)
+	{
+		Pcr[CurProc].Core.Tr.Base+=0xF;
+		Pcr[CurProc].Core.Tr.Base&=0xFFFFFFFFFFFFFFF0;
+	}
+	Pcr[CurProc].Core.Tss=(PNHTSS64)Pcr[CurProc].Core.Tr.Base;
+	// As a matter of fact, there is nothing special in TSS required to be set up.
 }
 
 // This function is invoked by Center HVM Core prior to subverting system,
@@ -121,12 +172,15 @@ EFI_STATUS NoirBuildHostEnvironment()
 			Host.Pml4Base->Value=(UINT64)Host.PdptBase;
 			Host.Pml4Base->Present=1;
 			Host.Pml4Base->Write=1;
+			Host.Pml4Base->User=1;
 			// Initialize Host Paging - Page Directory Pointer Table Entries.
 			for(UINT64 i=0;i<512;i++)
 			{
 				Host.PdptBase[i].Value=(i<<30);
 				Host.PdptBase[i].Present=1;
 				Host.PdptBase[i].Write=1;
+				Host.PdptBase[i].User=1;
+				// Let's use 1GiB Huge Pages for simplest implementation.
 				Host.PdptBase[i].PageSize=1;
 			}
 			Print(L"NoirVisor starts initialization per processor...\n");
@@ -135,6 +189,7 @@ EFI_STATUS NoirBuildHostEnvironment()
 			if(MpServices)MpServices->StartupAllAPs(MpServices,NoirPrepareHostProcedureAp,TRUE,NULL,0,Host.ProcessorBlocks,NULL);
 			// If it reaches here, the initialization is successful.
 			Print(L"NoirVisor Host Context is initialized successfully! Host System=0x%p\n",&Host);
+			system_cr3=(UINT64)Host.Pml4Base;
 			st=EFI_SUCCESS;
 		}
 		else
@@ -172,6 +227,32 @@ void noir_set_host_interrupt_handler(IN UINT8 Vector,IN UINTN HandlerRoutine)
 	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].Reserved1=0;
 }
 
+void __cdecl nv_dprintf(const char* format,...)
+{
+	CHAR8 TempBuffer[512]="[NoirVisor] ";
+	UINTN Size,Start;
+	va_list arg_list;
+	va_start(arg_list,format);
+	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
+	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,format,arg_list);
+	va_end(arg_list);
+	NoirSerialWrite(1,(UINT8*)TempBuffer,Start+Size);
+	AsciiPrint(TempBuffer,Size);
+}
+
+void __cdecl nv_panicf(const char* format,...)
+{
+	CHAR8 TempBuffer[512]="[NoirVisor - Panic] ";
+	UINTN Size,Start;
+	va_list arg_list;
+	va_start(arg_list,format);
+	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
+	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,format,arg_list);
+	va_end(arg_list);
+	NoirSerialWrite(1,(UINT8*)TempBuffer,Start+Size);
+	AsciiPrint(TempBuffer,Size);
+}
+
 void* noir_alloc_nonpg_memory(IN UINTN Length)
 {
 	return AllocateRuntimeZeroPool(Length);
@@ -187,7 +268,7 @@ void* noir_alloc_contd_memory(IN UINTN Length)
 void* noir_alloc_2mb_page()
 {
 	void* p=AllocateAlignedRuntimePages(0x200,0x200000);
-	if(p)ZeroMem(p,0x2000000);
+	if(p)ZeroMem(p,0x200000);
 	return p;
 }
 
@@ -204,6 +285,23 @@ void noir_free_contd_memory(IN VOID* VirtualAddress,IN UINTN Length)
 void noir_free_2mb_page(IN VOID* VirtualAddress)
 {
 	FreeAlignedPages(VirtualAddress,0x200);
+}
+
+UINT64 noir_get_physical_address(IN VOID* VirtualAddress)
+{
+	// Mapping is identical.
+	return (UINT64)VirtualAddress;
+}
+
+VOID* noir_find_virt_by_phys(IN UINT64 PhysicalAddress)
+{
+	// Mapping is identical.
+	return (VOID*)PhysicalAddress;
+}
+
+void noir_copy_memory(IN VOID* Destination,IN VOID* Source,IN UINT32 Length)
+{
+	CopyMem(Destination,Source,Length);
 }
 
 void static NoirGenericCallRT(IN VOID* ProcedureArgument)
@@ -248,6 +346,71 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 	{
 		// Only one core is accessible.
 		NoirGenericCallRT((VOID*)&GenericInfo);
+	}
+}
+
+UINT32 noir_get_current_processor()
+{
+	if(MpServices)
+	{
+		UINTN Num;
+		EFI_STATUS st=MpServices->WhoAmI(MpServices,&Num);
+		if(st==EFI_SUCCESS)return Num;
+	}
+	return 0;
+}
+
+UINT32 noir_get_processor_count()
+{
+	if(MpServices)
+	{
+		UINTN Num1,Num2;
+		EFI_STATUS st=MpServices->GetNumberOfProcessors(MpServices,&Num1,&Num2);
+		if(st==EFI_SUCCESS)return Num1;
+	}
+	return 1;
+}
+
+void noir_qsort(IN OUT VOID* Base,IN UINT32 Number,IN UINT32 Width,IN BASE_SORT_COMPARE CompareFunction)
+{
+	UINT8 Buffer[1024];		// 1024 bytes should be enough.
+	if(Width<=sizeof(Buffer))QuickSort(Base,Number,Width,CompareFunction,Buffer);
+}
+
+UINT32 noir_get_instruction_length(IN VOID* code,IN BOOLEAN LongMode)
+{
+	if(LongMode)
+		return NoirGetInstructionLength64(code,0);
+	return NoirGetInstructionLength32(code,0);
+}
+
+UINT32 noir_get_instruction_length_ex(IN VOID* Code,IN UINT8 Bits)
+{
+	switch(Bits)
+	{
+	case 16:
+		return NoirGetInstructionLength16(Code,0);
+	case 32:
+		return NoirGetInstructionLength32(Code,0);
+	case 64:
+		return NoirGetInstructionLength64(Code,0);
+	default:
+		return 0;
+	}
+}
+
+UINT32 noir_disasm_instruction(IN VOID* Code,OUT CHAR8 *Mnemonic,IN UINTN MnemonicLength,IN UINT8 Bits,IN UINT64 VirtualAddress)
+{
+	switch(Bits)
+	{
+	case 16:
+		return NoirDisasmCode16(Mnemonic,MnemonicLength,Code,15,VirtualAddress);
+	case 32:
+		return NoirDisasmCode32(Mnemonic,MnemonicLength,Code,15,VirtualAddress);
+	case 64:
+		return NoirDisasmCode64(Mnemonic,MnemonicLength,Code,15,VirtualAddress);
+	default:
+		return 0;
 	}
 }
 

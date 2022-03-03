@@ -124,6 +124,10 @@
 #define amd64_smmctrl_rsm_cycle			4
 
 // This is used for defining MSRs
+#define amd64_tsc						0x10
+#define amd64_apic_base					0x1B
+#define amd64_spec_ctrl					0x48
+#define amd64_pred_cmd					0x49
 #define amd64_mtrr_cap					0xFE
 #define amd64_sysenter_cs				0x174
 #define amd64_sysenter_esp				0x175
@@ -241,6 +245,80 @@
 
 // #SX Exception Error Codes
 #define amd64_sx_init_redirection		1
+
+// This is used for defining AMD64 APIC Page Offsets
+#define amd64_apic_id					0x020
+#define amd64_apic_version				0x030
+#define amd64_apic_tpr					0x080
+#define amd64_apic_apr					0x090
+#define amd64_apic_ppr					0x0A0
+#define amd64_apic_eoi					0x0B0
+#define amd64_apic_remote_read_register	0x0C0
+#define amd64_apic_ldr					0x0D0
+#define amd64_apic_dfr					0x0E0
+#define amd64_apic_spurious_int_vector	0x0F0
+#define amd64_apic_isr					0x100
+#define amd64_apic_tmr					0x180
+#define amd64_apic_irr					0x200
+#define amd64_apic_esr					0x280
+#define amd64_apic_icr_lo				0x300
+#define amd64_apic_icr_hi				0x310
+#define amd64_apic_timer_lvt			0x320
+#define amd64_apic_thermal_lvt			0x330
+#define amd64_apic_perfcnt_lvt			0x340
+#define amd64_apic_lint0_lvt			0x350
+#define amd64_apic_lint1_lvt			0x360
+#define amd64_apic_evt					0x370
+#define amd64_apic_timer_init_count		0x380
+#define amd64_apic_timer_cur_count		0x390
+#define amd64_apic_timer_div_conf		0x3E0
+#define amd64_apic_ext_feat				0x400
+#define amd64_apic_ext_ctrl				0x410
+#define amd64_apic_seoi					0x420
+#define amd64_apic_ier					0x480
+#define amd64_apic_extint_lvt			0x500
+
+// This is used for defining APIC BAR definitions
+#define amd64_apic_bsc	8
+#define amd64_apic_ae	11
+
+// This is used for defining APIC Interrupt Command Register
+typedef union _amd64_apic_register_icr_lo
+{
+	struct
+	{
+		u32 vector:8;				// Bits	0-7
+		u32 msg_type:3;				// Bits	8-10
+		u32 dest_mode:1;			// Bit	11
+		u32 delivery_status:1;		// Bit	12
+		u32 reserved0:1;			// Bit	13
+		u32 level:1;				// Bit	14
+		u32 trigger_mode:1;			// Bit	15
+		u32 rread_status:2;			// Bits	16-17
+		u32 dest_shorthand:2;		// Bits	18-19
+		u32 reserved1:12;			// Bits	20-31
+	};
+	u32 value;
+}amd64_apic_register_icr_lo,*amd64_apic_register_icr_lo_p;
+
+typedef union _amd64_apic_register_icr_hi
+{
+	struct
+	{
+		u32 reserved:24;
+		u32 destination:8;
+	};
+	u32 value;
+}amd64_apic_register_icr_hi,*amd64_apic_register_icr_hi_p;
+
+#define amd64_apic_icr_msg_fixed		0
+#define amd64_apic_icr_msg_lowest_prio	1
+#define amd64_apic_icr_msg_smi			2
+#define amd64_apic_icr_msg_rread		3
+#define amd64_apic_icr_msg_nmi			4
+#define amd64_apic_icr_msg_init			5
+#define amd64_apic_icr_msg_sipi			6
+#define amd64_apic_icr_msg_extint		7
 
 // This is used for defining AMD64 architectural memory types.
 #define amd64_memory_type_uc			0x00	// Uncacheable

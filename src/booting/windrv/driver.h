@@ -155,6 +155,8 @@ void NoirGetProcessorName(OUT PSTR ProcessorName);
 void NoirGetNtOpenProcessIndex();
 void NoirSaveImageInfo(IN PDRIVER_OBJECT DriverObject);
 void NoirSetProtectedPID(IN ULONG NewPID);
+NTSTATUS NoirBuildHostEnvironment();
+void NoirFreeHostEnvironment();
 void NoirBuildHookedPages();
 void NoirTeardownHookedPages();
 extern ULONG32 noir_cvm_exit_context_size;

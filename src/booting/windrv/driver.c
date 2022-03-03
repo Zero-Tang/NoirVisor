@@ -52,6 +52,7 @@ void NoirDriverUnload(IN PDRIVER_OBJECT DriverObject)
 	NoirTeardownHookedPages();
 	NoirTeardownProtectedFile();
 	NoirFinalizeCodeIntegrity();
+	NoirFreeHostEnvironment();
 	NoirFinalizePowerStateCallback();
 	NoirReportMemoryIntrospectionCounter();
 	NoirFinalizeAsyncDebugPrinter();
@@ -278,6 +279,7 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	NoirGetUefiHypervisionStatus();
 	NoirBuildHookedPages();
 	NoirBuildProtectedFile();
+	NoirBuildHostEnvironment();
 	NoirInitializePowerStateCallback();
 }
 

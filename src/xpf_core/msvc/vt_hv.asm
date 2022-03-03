@@ -57,6 +57,122 @@ noir_vt_vmcall proc
 
 noir_vt_vmcall endp
 
+ifdef _llvm
+
+noir_vt_vmxon proc
+
+	vmxon qword ptr [rcx]
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmxon endp
+
+noir_vt_vmxoff proc
+
+	vmxoff
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmxoff endp
+
+noir_vt_vmptrld proc
+
+	vmptrld qword ptr [rcx]
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmptrld endp
+
+noir_vt_vmptrst proc
+
+	vmptrst qword ptr [rcx]
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmptrst endp
+
+noir_vt_vmclear proc
+
+	vmclear qword ptr [rcx]
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmclear endp
+
+
+noir_vt_vmread proc
+
+	vmread qword ptr [rdx],rcx
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmread endp
+
+noir_vt_vmwrite proc
+
+	vmwrite rcx,rdx
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmwrite endp
+
+noir_vt_vmread64 proc
+
+	vmread qword ptr [rdx],rcx
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmread64 endp
+
+noir_vt_vmwrite64 proc
+
+	vmwrite rcx,rdx
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmwrite64 endp
+
+noir_vt_vmlaunch proc
+
+	vmlaunch
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmlaunch endp
+
+
+noir_vt_vmresume proc
+
+	vmresume
+	setc al
+	setz cl
+	adc al,cl
+	ret
+
+noir_vt_vmresume endp
+
+endif
+
 nvc_vt_resume_without_entry proc
 
 	mov rsp,rcx
@@ -126,13 +242,17 @@ nvc_vt_subvert_processor_a proc
 	xor rax,rax		; Make sure it would return zero if vmlaunch succeeds.
 	pushaq
 	mov r8,rsp
-	mov r9,vt_launched
 	sub rsp,20h
 	call nvc_vt_subvert_processor_i
 	; At this moment, VM-Entry resulted failure.
 	add rsp,20h
 	mov qword ptr [rsp],rax
-vt_launched:
+	jmp nvc_vt_guest_start
+
+nvc_vt_subvert_processor_a endp
+
+nvc_vt_guest_start proc
+
 	; There are four conditions why we are here:
 	; 1. al=0. VM-Entry is successful (Expected condition)
 	; 2. al=1. VM-Entry failed by valid vm-fail
@@ -143,7 +263,7 @@ vt_launched:
 	; Things will be handled in code written in C.
 	ret
 
-nvc_vt_subvert_processor_a endp
+nvc_vt_guest_start endp
 
 else
 

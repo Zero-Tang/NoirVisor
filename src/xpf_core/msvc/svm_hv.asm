@@ -94,7 +94,6 @@ nvc_svm_subvert_processor_a proc
 	pushfq
 	pushaq
 	mov rdx,rsp
-	mov r8,svm_launched
 	push rcx
 	mov rcx,qword ptr[rcx+10h]
 	sub rsp,20h
@@ -103,9 +102,6 @@ nvc_svm_subvert_processor_a proc
 	; Third parameter is in r8 - guest rip
 	call nvc_svm_subvert_processor_i
 	add rsp,20h
-	; Switch Page Table to System Page Table
-	mov rcx,qword ptr[system_cr3]
-	mov cr3,rcx
 	; Now, rax stores the physical address of VMCB.
 	; Switch stack pointer to host stack now.
 	pop rcx
@@ -117,7 +113,11 @@ nvc_svm_subvert_processor_a proc
 	; As the code goes here, VM-Exit occurs.
 	; Jump to VM-Exit Handler.
 	jmp nvc_svm_exit_handler_a
-svm_launched:
+
+nvc_svm_subvert_processor_a endp
+
+nvc_svm_guest_start proc
+
 	; At this moment, Guest is successfully launched.
 	; Host rsp is saved and Guest rsp is switched
 	; automatically by vmrun instruction.
@@ -130,7 +130,7 @@ svm_launched:
 	popfq
 	ret
 
-nvc_svm_subvert_processor_a endp
+nvc_svm_guest_start endp
 
 else
 

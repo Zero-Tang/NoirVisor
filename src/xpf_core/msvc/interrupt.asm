@@ -20,6 +20,7 @@ nvc_vt_host_nmi_handler proc
 
 	; In Intel VT-x, the NMI is not blocked while in Host Context.
 	; Transfer the NMI to the guest if the host receives an NMI.
+	; In other words, no registers can be destroyed in NMI handler of Intel VT-x.
 	pushaq
 	popaq
 	jmp fword ptr [rsp]

@@ -263,6 +263,7 @@ typedef struct _NHPCR
 	UINTN ProcessorNumber;		// Current Processor Number
 	IA32_DESCRIPTOR GdtR;		// Global Descriptor Table
 	IA32_DESCRIPTOR IdtR;		// Interrupt Descriptor Table
+	SEGMENT_REGISTER Tr;		// Task Segment State
 	PNHGDTENTRY64 Gdt;			// Global Descriptor Table
 	PNHIDTENTRY64 Idt;			// Interrupt Descriptor Table
 	PNHTSS64 Tss;				// Task Segment State
@@ -274,7 +275,9 @@ typedef struct _NHPCR
 // NoirVisor Host Processor Control Region Page
 typedef struct _NHPCRP
 {
+	// Core Structure.
 	NHPCR Core;
+	// Reserved for Page-Alignment.
 	UINT8 Misc[EFI_PAGE_SIZE-sizeof(NHPCR)];
 }NHPCRP,*PNHPCRP;
 
@@ -295,13 +298,28 @@ typedef struct _NV_MP_SERVICE_GENERIC_INFO
 }NV_MP_SERVICE_GENERIC_INFO,*PNV_MP_SERVICE_GENERIC_INFO;
 
 #define NoirSaveProcessorState		noir_save_processor_state
-#define NoirSetHostInterruptHandler		noir_
+#define NoirGetSegmentAttributes	noir_get_segment_attributes
 void noir_save_processor_state(OUT PNOIR_PROCESSOR_STATE State);
+UINT16 noir_get_segment_attributes(IN UINT16 Selector,IN PNHGDTENTRY64 GdtBase);
 void NoirBlockUntilKeyStroke(IN CHAR16 Unicode);
 void NoirUnexpectedInterruptHandler(void);
+void NoirInitializeSerialPort(IN UINTN ComPort,IN UINT16 PortBase);
+void NoirSerialRead(IN UINTN ComPort,OUT UINT8 *Buffer,IN UINTN Length);
+void NoirSerialWrite(IN UINTN ComPort,IN UINT8 *Buffer,IN UINTN Length);
+
+UINT8 NoirGetInstructionLength16(IN UINT8 *Code,IN UINTN CodeLength);
+UINT8 NoirGetInstructionLength32(IN UINT8 *Code,IN UINTN CodeLength);
+UINT8 NoirGetInstructionLength64(IN UINT8 *Code,IN UINTN CodeLength);
+UINT8 NoirDisasmCode16(OUT CHAR8 *Mnemonic,IN UINTN MnemonicLength,IN UINT8 *Code,IN UINTN CodeLength,IN UINT64 VirtualAddress);
+UINT8 NoirDisasmCode32(OUT CHAR8 *Mnemonic,IN UINTN MnemonicLength,IN UINT8 *Code,IN UINTN CodeLength,IN UINT64 VirtualAddress);
+UINT8 NoirDisasmCode64(OUT CHAR8 *Mnemonic,IN UINTN MnemonicLength,IN UINT8 *Code,IN UINTN CodeLength,IN UINT64 VirtualAddress);
 
 extern EFI_MP_SERVICES_PROTOCOL *MpServices;
 extern EFI_BOOT_SERVICES *gBS;
 extern EFI_SYSTEM_TABLE *gST;
+
+extern BOOLEAN NoirEfiInRuntimeStage;
+
+extern UINT64 system_cr3;
 
 NV_HOST_SYSTEM Host;

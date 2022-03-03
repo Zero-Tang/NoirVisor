@@ -27,7 +27,7 @@ EFI_STATUS EFIAPI NoirDriverUnload(IN EFI_HANDLE ImageHandle)
 
 void EFIAPI NoirNotifyExitBootServices(IN EFI_EVENT Event,IN VOID* Context)
 {
-	;
+	NoirEfiInRuntimeStage=TRUE;
 }
 
 void NoirBlockUntilKeyStroke(IN CHAR16 Unicode)
@@ -95,6 +95,11 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	st=NoirRegisterHypervisorVariables();
 	Print(L"NoirVisor Variables Registration Status=0x%X\n",st);
 	st=NoirBuildHostEnvironment();
-	Print(L"NoirVisor Runtime Driver Initialization Status: 0x%X MpServices: 0x%p\r\n",st,MpServices);
+	Print(L"NoirVisor Runtime Driver Initialization Status: 0x%X\r\n",st);
+	Print(L"NoirVisor is loaded to base 0x%p, Size=0x%X\n",ImageInfo->ImageBase,ImageInfo->ImageSize);
+	NoirInitializeSerialPort(1,0);
+	StdOut->OutputString(StdOut,L"Press Enter key to continue subversion!\r\n");
+	NoirBlockUntilKeyStroke(L'\r');
+	NoirBuildHypervisor();
 	return EFI_SUCCESS;
 }

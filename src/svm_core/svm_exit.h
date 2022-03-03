@@ -129,6 +129,7 @@ void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir
 void static fastcall nvc_svm_cr4_write_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void static fastcall nvc_svm_mc_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_nmi_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_sidt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
@@ -179,7 +180,9 @@ noir_svm_exit_handler_routine svm_exit_handler_group1[noir_svm_maximum_code1]=
 	nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_pf_exception_handler,	// Page-Fault Exception
 	nvc_svm_default_handler,		// Exception Vector 15
-	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
+	nvc_svm_default_handler,nvc_svm_default_handler,
+	nvc_svm_mc_exception_handler,	// Machine-Check Exception
+	nvc_svm_default_handler,		// Exception Vector 19
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
 	nvc_svm_default_handler,nvc_svm_default_handler,

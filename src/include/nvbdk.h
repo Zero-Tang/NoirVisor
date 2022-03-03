@@ -23,30 +23,44 @@
 #define page_1gb_size			0x40000000
 #define page_512gb_size			0x8000000000
 
+#if defined(_amd64)
 #define page_shift_diff			9
+#else
+#define page_shift_diff			10
+#endif
+
 #define page_shift				12
 #define page_4kb_shift			12
 #define page_2mb_shift			21
 #define page_1gb_shift			30
 #define page_512gb_shift		39
+#define page_256tb_shift		48
 
 #define page_offset(x)			(x&0xfff)
 #define page_4kb_offset(x)		(x&0xfff)
 #define page_2mb_offset(x)		(x&0x1fffff)
 #define page_1gb_offset(x)		(x&0x3fffffff)
 #define page_512gb_offset(x)	(x&0x7fffffffff)
+#define page_256tb_offset(x)	(x&0xffffffffffff)
 
-#define page_count(x)			(x>>12)
-#define page_4kb_count(x)		(x>>12)
-#define page_2mb_count(x)		(x>>21)
-#define page_1gb_count(x)		(x>>30)
-#define page_512gb_count(x)		(x>>39)
+#define page_count(x)			(x>>page_shift)
+#define page_4kb_count(x)		(x>>page_4kb_shift)
+#define page_2mb_count(x)		(x>>page_2mb_shift)
+#define page_1gb_count(x)		(x>>page_1gb_shift)
+#define page_512gb_count(x)		(x>>page_512gb_shift)
+#define page_256tb_count(x)		(x>>page_256tb_shift)
 
-#define page_mult(x)			(x<<12)
-#define page_4kb_mult(x)		(x<<12)
-#define page_2mb_mult(x)		(x<<21)
-#define page_1gb_mult(x)		(x<<30)
-#define page_512gb_mult(x)		(x<<39)
+#define page_mult(x)			(x<<page_shift)
+#define page_4kb_mult(x)		(x<<page_4kb_shift)
+#define page_2mb_mult(x)		(x<<page_2mb_shift)
+#define page_1gb_mult(x)		(x<<page_1gb_shift)
+#define page_512gb_mult(x)		(x<<page_512gb_shift)
+
+#define bytes_to_pages(x)		(page_count(x)+(page_offset(x)!=0))
+#define bytes_to_4kb_pages(x)	(page_4kb_count(x)+(page_4kb_offset(x)!=0))
+#define bytes_to_2mb_pages(x)	(page_2mb_count(x)+(page_2mb_offset(x)!=0))
+#define bytes_to_1gb_pages(x)	(page_1gb_count(x)+(page_1gb_offset(x)!=0))
+#define bytes_to_512gb_pages(x)	(page_512gb_count(x)+(page_512gb_offset(x)!=0))
 
 #if defined(_amd64)
 #define page_base(x)			(x&0xfffffffffffff000)
@@ -300,6 +314,29 @@ typedef struct _noir_segment_descriptor
 #pragma pack()
 
 #pragma pack(1)
+typedef struct _noir_gate_descriptor
+{
+	u16 offset_lo;
+	u16 selector;
+	union
+	{
+		struct
+		{
+			u16 ist:3;
+			u16 reserved:5;
+			u16 type:5;
+			u16 dpl:2;
+			u16 present:1;
+		};
+		u16 value;
+	}attrib;
+	u16 offset_mid;
+	u32 offset_hi;
+	u32 reserved;
+}noir_gate_descriptor,*noir_gate_descriptor_p;
+#pragma pack()
+
+#pragma pack(1)
 typedef struct _noir_tss64
 {
 	u32 reserved0;
@@ -431,7 +468,8 @@ typedef union _noir_paging32_general_entry
 typedef void (*noir_broadcast_worker)(void* context,u32 processor_id);
 typedef i32(cdecl *noir_sorting_comparator)(const void* a,const void*b);
 
-void noir_save_processor_state(noir_processor_state_p);
+void noir_save_processor_state(noir_processor_state_p state);
+void noir_get_prebuilt_host_processor_state(noir_processor_state_p state);
 u16 noir_get_segment_attributes(ulong_ptr gdt_base,u16 selector);
 void noir_generic_call(noir_broadcast_worker worker,void* context);
 void* noir_get_host_idt_base(u32 processor_number);

@@ -82,6 +82,7 @@ svm_check:
 	return false;
 }
 
+#if !defined(_hv_type1)
 u32 static stdcall noir_ci_enforcement_worker(void* context)
 {
 	// Retrieve Thread Context
@@ -108,6 +109,7 @@ u32 static stdcall noir_ci_enforcement_worker(void* context)
 	noir_exit_thread(0);
 	return 0;
 }
+#endif
 
 i32 static cdecl noir_ci_sorting_comparator(const void* a,const void*b)
 {
@@ -155,6 +157,8 @@ bool noir_initialize_ci(void* section,u32 size,bool soft_ci,bool hard_ci)
 			// Sort it to accelerate real-time CI.
 			// Do the sort only if we enable Hardware-Level CI. Sorting is unnecessary elsewise.
 			if(use_hard)noir_qsort(noir_ci->page_ci,page_num,sizeof(noir_ci_page),noir_ci_sorting_comparator);
+#if !defined(_hv_type1)
+			// No need to trace-print in Type-I hypervisor.
 			for(u32 i=0;i<page_num;i++)
 				nvci_tracef("Physical: 0x%llX\t CRC32C: 0x%08X\t Virtual: 0x%p\n",noir_ci->page_ci[i].phys,noir_ci->page_ci[i].crc,noir_ci->page_ci[i].virt);
 			// Create Worker Thread.
@@ -163,6 +167,7 @@ bool noir_initialize_ci(void* section,u32 size,bool soft_ci,bool hard_ci)
 				return true;
 			else
 				noir_free_nonpg_memory(noir_ci);
+#endif
 		}
 	}
 	return false;
@@ -174,10 +179,12 @@ void noir_finalize_ci()
 	{
 		// Set the signal.
 		noir_locked_inc(&noir_ci->signal);
+#if !defined(_hv_type1)
 		// Wake up thread if sleeping.
 		noir_alert_thread(noir_ci->ci_thread);
 		// Wait for exit.
 		noir_join_thread(noir_ci->ci_thread);
+#endif
 		// Finalization.
 		noir_free_nonpg_memory(noir_ci);
 		noir_ci=null;

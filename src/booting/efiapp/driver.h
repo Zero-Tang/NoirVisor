@@ -62,8 +62,10 @@ EFI_STATUS EFIAPI UefiRuntimeServicesTableLibConstructor(IN EFI_HANDLE ImageHand
 EFI_STATUS EFIAPI UefiLibConstructor(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable);
 EFI_STATUS EFIAPI DevicePathLibConstructor(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable);
 
+void NoirInitializeSerialPort(IN UINTN ComPort,IN UINT16 PortBase);
 void NoirDisplayProcessorState();
 EFI_STATUS NoirBuildHostEnvironment();
+UINT32 NoirBuildHypervisor();
 
 EFI_GUID gEfiMpServicesProtocolGuid=EFI_MP_SERVICES_PROTOCOL_GUID;
 EFI_GUID gEfiSimpleFileSystemProtocolGuid=EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
@@ -86,6 +88,7 @@ CHAR8 LayeringPasscode[]="NoirVisor#ZT#14y3r3d####Nv#1";
 EFI_SIMPLE_TEXT_INPUT_PROTOCOL *StdIn=NULL;
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *StdOut=NULL;
 EFI_EVENT NoirEfiExitBootServicesNotification;
+BOOLEAN NoirEfiInRuntimeStage=FALSE;
 EFI_MP_SERVICES_PROTOCOL *MpServices=NULL;
 
 extern EFI_BOOT_SERVICES *gBS;

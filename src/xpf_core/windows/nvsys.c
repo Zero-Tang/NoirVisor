@@ -241,6 +241,16 @@ ULONG32 noir_get_current_processor()
 	return KeGetCurrentProcessorNumber();
 }
 
+void noir_get_prebuilt_host_processor_state(OUT PNOIR_PROCESSOR_STATE State)
+{
+	ULONG CurProc=KeGetCurrentProcessorNumber();
+	// For Type-II Hypervisors, most states are derivable inter-state.
+	NoirSaveProcessorState(State);
+	// Only IDT needs modifications.
+	State->Idtr.Limit=0xFFF;
+	State->Idtr.Base=(ULONG_PTR)NoirHostArrayIDT+(CurProc<<10);
+}
+
 void static NoirDpcRT(IN PKDPC Dpc,IN PVOID DeferedContext OPTIONAL,IN PVOID SystemArgument1 OPTIONAL,IN PVOID SystemArgument2 OPTIONAL)
 {
 	noir_broadcast_worker worker=(noir_broadcast_worker)SystemArgument1;
@@ -561,6 +571,39 @@ ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress)
 {
 	PHYSICAL_ADDRESS pa=MmGetPhysicalAddress(VirtualAddress);
 	return pa.QuadPart;
+}
+
+void static NoirHostEnvironmentBuilder(IN OUT PVOID Context,IN ULONG ProcessorNumber)
+{
+	BYTE IdtR[sizeof(ULONG_PTR)+2];
+	PVOID IdtBase,NewIdtBase;
+	__sidt(&IdtR);
+	IdtBase=*(PVOID*)&IdtR[2];
+	NewIdtBase=(PVOID)((ULONG_PTR)NoirHostArrayIDT+(ProcessorNumber<<10));
+	RtlCopyMemory(NewIdtBase,IdtBase,1024);
+}
+
+void NoirFreeHostEnvironment()
+{
+	if(NoirHostArrayIDT)
+	{
+		NoirFreeContiguousMemory(NoirHostArrayIDT);
+		NoirHostArrayIDT=NULL;
+	}
+}
+
+NTSTATUS NoirBuildHostEnvironment()
+{
+	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
+	SIZE_T AllocSize=KeNumberProcessors<<10;
+	NoirHostArrayIDT=NoirAllocateContiguousMemory(AllocSize);
+	if(NoirHostArrayIDT)
+	{
+		RtlZeroMemory(NoirHostArrayIDT,AllocSize);
+		noir_generic_call(NoirHostEnvironmentBuilder,NULL);
+		st=STATUS_SUCCESS;
+	}
+	return st;
 }
 
 // Essential Multi-Threading Facility.
