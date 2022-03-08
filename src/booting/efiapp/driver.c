@@ -92,11 +92,11 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	gBS->CreateEvent(EVT_SIGNAL_EXIT_BOOT_SERVICES,TPL_NOTIFY,NoirNotifyExitBootServices,NULL,&NoirEfiExitBootServicesNotification);
 	st=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocolGuid,&ImageInfo);
 	if(st==EFI_SUCCESS)ImageInfo->Unload=NoirDriverUnload;
+	Print(L"NoirVisor is loaded to base 0x%p, Size=0x%X\n",ImageInfo->ImageBase,ImageInfo->ImageSize);
 	st=NoirRegisterHypervisorVariables();
 	Print(L"NoirVisor Variables Registration Status=0x%X\n",st);
 	st=NoirBuildHostEnvironment();
 	Print(L"NoirVisor Runtime Driver Initialization Status: 0x%X\r\n",st);
-	Print(L"NoirVisor is loaded to base 0x%p, Size=0x%X\n",ImageInfo->ImageBase,ImageInfo->ImageSize);
 	NoirInitializeSerialPort(1,0);
 	StdOut->OutputString(StdOut,L"Press Enter key to continue subversion!\r\n");
 	NoirBlockUntilKeyStroke(L'\r');

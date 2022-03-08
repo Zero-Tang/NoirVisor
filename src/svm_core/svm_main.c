@@ -278,8 +278,9 @@ void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu)
 	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_attrib,svm_attrib(state.tr.attrib));
 	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_tr_limit,state.tr.limit);
 	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_tr_base,state.tr.base);
-	// Load Host CR3.
+	// Load Host Control Registers.
 	noir_writecr3(state.cr3);
+	noir_writecr4(state.cr4|amd64_cr4_osfxsr_bit|amd64_cr4_osxsave_bit);
 }
 
 // This function has context of cleared GIF.
@@ -408,7 +409,7 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 		// Cache the Family-Model-Stepping Information for INIT Signal Emulation.
 		noir_cpuid(amd64_cpuid_std_proc_feature,0,&vcpu->cpuid_fms,null,null,null);
 		vcpu->status=nvc_svm_subvert_processor_a(stack);
-		nv_dprintf("Processor %d Subversion Status: %d\n",vcpu->proc_id,vcpu->status);
+		nv_dprintf("Processor %u Subversion Status: %u\n",vcpu->proc_id,vcpu->status);
 	}
 }
 

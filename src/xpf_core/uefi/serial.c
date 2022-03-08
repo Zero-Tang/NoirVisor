@@ -101,3 +101,10 @@ void NoirSerialWrite(IN UINTN ComPort,IN UINT8 *Buffer,IN UINTN Length)
 		__outbyte(IO_PORT_COM[ComPort]+IO_PORT_OFFSET_DATA,Buffer[i]);
 	}
 }
+
+BOOLEAN NoirSerialPoll(IN UINTN ComPort)
+{
+	IO_PORT_LINE_STATUS LineStatus;
+	LineStatus.Value=__inbyte(IO_PORT_COM[ComPort]+IO_PORT_OFFSET_LINE_ST);
+	return LineStatus.DataReady;
+}

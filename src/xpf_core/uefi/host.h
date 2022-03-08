@@ -263,6 +263,7 @@ typedef struct _NHPCR
 	UINTN ProcessorNumber;		// Current Processor Number
 	IA32_DESCRIPTOR GdtR;		// Global Descriptor Table
 	IA32_DESCRIPTOR IdtR;		// Interrupt Descriptor Table
+	IA32_DESCRIPTOR OldIdtR;
 	SEGMENT_REGISTER Tr;		// Task Segment State
 	PNHGDTENTRY64 Gdt;			// Global Descriptor Table
 	PNHIDTENTRY64 Idt;			// Interrupt Descriptor Table
@@ -279,6 +280,8 @@ typedef struct _NHPCRP
 	NHPCR Core;
 	// Reserved for Page-Alignment.
 	UINT8 Misc[EFI_PAGE_SIZE-sizeof(NHPCR)];
+	// The IDT will use a full page. (16*256=4096)
+	UINT8 IdtBuffer[EFI_PAGE_SIZE];
 }NHPCRP,*PNHPCRP;
 
 typedef struct _NV_HOST_SYSTEM
@@ -306,6 +309,7 @@ void NoirUnexpectedInterruptHandler(void);
 void NoirInitializeSerialPort(IN UINTN ComPort,IN UINT16 PortBase);
 void NoirSerialRead(IN UINTN ComPort,OUT UINT8 *Buffer,IN UINTN Length);
 void NoirSerialWrite(IN UINTN ComPort,IN UINT8 *Buffer,IN UINTN Length);
+void NoirSetupDebugSupportPerProcessor(IN VOID *ProcedureArgument);
 
 UINT8 NoirGetInstructionLength16(IN UINT8 *Code,IN UINTN CodeLength);
 UINT8 NoirGetInstructionLength32(IN UINT8 *Code,IN UINTN CodeLength);

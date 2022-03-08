@@ -34,6 +34,8 @@ for %%1 in (..\src\mshv_core\*.c) do (clang-cl %%1 /I"..\src\include" /Zi /W3 /W
 echo Compiling Core of Cross-Platform Framework (XPF)...
 for %%1 in (..\src\xpf_core\uefi\*.c) do (clang-cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /Od /Oi /D"_efi_boot" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gr /TC /c -Wno-microsoft-static-assert)
 
+llvm-ml /X /D"_amd64" /D"_llvm" /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\exception.obj" /c --m64 ..\src\xpf_core\uefi\exception.asm
+
 for %%1 in (..\src\xpf_core\msvc\*.asm) do (llvm-ml /X /D"_amd64" /D"_llvm" /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\%%~n1.obj" /c --m64 %%1)
 
 clang-cl ..\src\xpf_core\noirhvm.c /I"..\src\include" /Zi /W3 /WX /Od /Oi /D"_llvm" /D"_amd64" /D"_hv_type1" /D"_central_hvm" /Fa"%objpath%\driver\noirhvm.cod" /Fo"%objpath%\driver\noirhvm.obj" /GS- /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign

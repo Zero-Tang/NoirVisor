@@ -271,7 +271,7 @@ EFI_STATUS EFIAPI NoirEfiEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *Sy
 	NoirPrintSystemMemoryInformation();
 	st=NoirLoadHypervisorDriver(ImageHandle,&HvImage);
 	if(st==EFI_SUCCESS)st=gBS->StartImage(HvImage,NULL,NULL);
-	Print(L"Press enter key to continue...\r\n");
+	StdOut->OutputString(StdOut,L"Press Enter key to continue...\r\n");
 	NoirBlockUntilKeyStroke(L'\r');
 	return EFI_SUCCESS;
 }

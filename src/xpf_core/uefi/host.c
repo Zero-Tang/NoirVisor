@@ -63,6 +63,8 @@ void noir_get_prebuilt_host_processor_state(OUT PNOIR_PROCESSOR_STATE State)
 	State->Tr=Host.ProcessorBlocks[CurProc].Core.Tr;
 	// Paging Base
 	State->Cr3=(UINTN)Host.Pml4Base;
+	// CR4.
+	State->Cr4=AsmReadCr4();
 	// GS Segment.
 	State->Gs.Attributes=NH_X64_DATA_ATTRIBUTES;
 	State->Gs.Limit=0xFFFFFFFF;
@@ -99,37 +101,39 @@ UINT16 NoirAllocateSegmentSelector(IN PNHGDTENTRY64 GdtBase,IN UINT16 Limit)
 void NoirPrepareHostProcedureAp(IN VOID *ProcedureArgument)
 {
 	PNHPCRP Pcr=(PNHPCRP)ProcedureArgument;
-	UINTN AllocationBase=((UINTN)Pcr->Misc+0xF)&0xFFFFFFFFFFFFFFF0;
+	UINTN AllocationBase;
 	IA32_DESCRIPTOR IdtR,GdtR;
 	VOID *NewGdt,*NewIdt;
 	UINTN CurProc=0;
 	UINT16 TrSel,TrAttrib;
 	// Get the processor number.
 	if(MpServices)MpServices->WhoAmI(MpServices,&CurProc);
+	AllocationBase=((UINTN)Pcr[CurProc].Misc+0xF)&0xFFFFFFFFFFFFFFF0;
 	Pcr[CurProc].Core.ProcessorNumber=CurProc;
 	// Copy the GDT and IDT.
 	AsmReadGdtr(&GdtR);
 	AsmReadIdtr(&IdtR);
-	NewIdt=(VOID*)AllocationBase;
-	NewGdt=(VOID*)(AllocationBase+1024);
+	AsmReadIdtr(&Pcr[CurProc].Core.OldIdtR);
+	NewIdt=(VOID*)Pcr[CurProc].IdtBuffer;
+	NewGdt=(VOID*)AllocationBase;
 	CopyMem(NewGdt,(VOID*)GdtR.Base,GdtR.Limit+1);
 	CopyMem(NewIdt,(VOID*)IdtR.Base,IdtR.Limit+1);
 	Pcr[CurProc].Core.Gdt=(PNHGDTENTRY64)NewGdt;
 	Pcr[CurProc].Core.Idt=(PNHIDTENTRY64)NewIdt;
-	Pcr[CurProc].Core.GdtR.Limit=GdtR.Limit+32;
-	Pcr[CurProc].Core.IdtR.Limit=1024;
+	Pcr[CurProc].Core.GdtR.Limit=GdtR.Limit+32;		// Give 32 more bytes to allow allocating segments.
+	Pcr[CurProc].Core.IdtR.Limit=EFI_PAGE_SIZE-1;
 	Pcr[CurProc].Core.GdtR.Base=(UINTN)NewGdt;
-	Pcr[CurProc].Core.GdtR.Base=(UINTN)NewIdt;
+	Pcr[CurProc].Core.IdtR.Base=(UINTN)NewIdt;
 	// Initialize TSS.
 	TrSel=AsmReadTr();
 	TrAttrib=NoirGetSegmentAttributes(TrSel,NewGdt);
-	if(TrAttrib & 0x80)		// Is TSS present?
+	if((TrAttrib & 0x80) && TrSel!=0)	// Is TSS present?
 		Pcr[CurProc].Core.Tr.Selector=TrSel;
-	else					// If TSS is absent, allocate a selector for it.
+	else								// If TSS is absent, allocate a selector for it.
 		Pcr[CurProc].Core.Tr.Selector=NoirAllocateSegmentSelector(NewGdt,Pcr[CurProc].Core.GdtR.Limit+33);
 	Pcr[CurProc].Core.Tr.Attributes=NH_X64_TASK_ATTRIBUTES;
 	Pcr[CurProc].Core.Tr.Limit=sizeof(NHTSS64);
-	Pcr[CurProc].Core.Tr.Base=AllocationBase+1024+Pcr[CurProc].Core.GdtR.Limit+33;
+	Pcr[CurProc].Core.Tr.Base=AllocationBase+Pcr[CurProc].Core.GdtR.Limit+33;
 	// Guarantee that TSS Base is aligned on 16-byte boundary
 	if(Pcr[CurProc].Core.Tr.Base & 0xF)
 	{
@@ -138,6 +142,9 @@ void NoirPrepareHostProcedureAp(IN VOID *ProcedureArgument)
 	}
 	Pcr[CurProc].Core.Tss=(PNHTSS64)Pcr[CurProc].Core.Tr.Base;
 	// As a matter of fact, there is nothing special in TSS required to be set up.
+	// Debug Purpose: Overwrite the default IDT.
+	NoirSetupDebugSupportPerProcessor(NULL);
+	AsmWriteIdtr(&Pcr[CurProc].Core.IdtR);
 }
 
 // This function is invoked by Center HVM Core prior to subverting system,
@@ -161,7 +168,8 @@ EFI_STATUS NoirBuildHostEnvironment()
 	if(st==EFI_SUCCESS)
 	{
 		// Initialize Host System.
-		Host.ProcessorBlocks=AllocateRuntimePages(Host.NumberOfProcessors);
+		Host.ProcessorBlocks=AllocateRuntimePages(EFI_SIZE_TO_PAGES(sizeof(NHPCRP)*Host.NumberOfProcessors));
+		if(sizeof(NHPCRP) & EFI_PAGE_MASK)Print(L"[Assertion] Size of NHPCR is not aligned at page! Size=0x%X\n",sizeof(NHPCRP));
 		Host.Pml4Base=AllocateRuntimePages(1);
 		Host.PdptBase=AllocateRuntimePages(1);
 		if(Host.ProcessorBlocks && Host.Pml4Base && Host.PdptBase)
@@ -172,14 +180,12 @@ EFI_STATUS NoirBuildHostEnvironment()
 			Host.Pml4Base->Value=(UINT64)Host.PdptBase;
 			Host.Pml4Base->Present=1;
 			Host.Pml4Base->Write=1;
-			Host.Pml4Base->User=1;
 			// Initialize Host Paging - Page Directory Pointer Table Entries.
 			for(UINT64 i=0;i<512;i++)
 			{
 				Host.PdptBase[i].Value=(i<<30);
 				Host.PdptBase[i].Present=1;
 				Host.PdptBase[i].Write=1;
-				Host.PdptBase[i].User=1;
 				// Let's use 1GiB Huge Pages for simplest implementation.
 				Host.PdptBase[i].PageSize=1;
 			}
@@ -199,16 +205,6 @@ EFI_STATUS NoirBuildHostEnvironment()
 		}
 	}
 	return st;
-}
-
-VOID* noir_get_host_gdt_base(IN UINT32 ProcessorNumber)
-{
-	return (VOID*)Host.ProcessorBlocks[ProcessorNumber].Core.Gdt;
-}
-
-VOID* noir_get_host_idt_base(IN UINT32 ProcessorNumber)
-{
-	return (VOID*)Host.ProcessorBlocks[ProcessorNumber].Core.Idt;
 }
 
 void noir_set_host_interrupt_handler(IN UINT8 Vector,IN UINTN HandlerRoutine)
@@ -249,6 +245,19 @@ void __cdecl nv_panicf(const char* format,...)
 	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
 	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,format,arg_list);
 	va_end(arg_list);
+	NoirSerialWrite(1,(UINT8*)TempBuffer,Start+Size);
+	AsciiPrint(TempBuffer,Size);
+}
+
+void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...)
+{
+	CHAR8 TempBuffer[320]="[NoirVisor - Host] ";
+	UINTN Size,Start;
+	va_list ArgList;
+	va_start(ArgList,Format);
+	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
+	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,Format,ArgList);
+	va_end(ArgList);
 	NoirSerialWrite(1,(UINT8*)TempBuffer,Start+Size);
 	AsciiPrint(TempBuffer,Size);
 }
@@ -323,7 +332,7 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 #if defined(_GPC)
 		// We are going to do Generic Calls asynchronously.
 		EFI_EVENT GenericCallEvent;
-		EFI_STATUS st=gBS->CreateEvent(EVT_NOTIFY_WAIT,TPL_APPLICATION,NULL,NULL,&GenericCallEvent);
+		EFI_STATUS st=gBS->CreateEvent(0,0,NULL,NULL,&GenericCallEvent);
 		if(st==EFI_SUCCESS)
 		{
 			UINTN SignaledIndex;

@@ -13,11 +13,11 @@
 */
 
 #include <Uefi.h>
+#include <Pi/PiMultiPhase.h>
 #include <Protocol/SerialIo.h>
 #include <Protocol/DebugSupport.h>
-#include <Protocol/DebugPort.h>
+#include <Protocol/MpService.h>
 
-#if defined(MDE_CPU_X64) || defined(MDE_CPU_IA32)
 CHAR16* ExceptionNames[0x20]=
 {
 	L"Divide Error Trap (#DE)",					// Vector 0
@@ -53,14 +53,77 @@ CHAR16* ExceptionNames[0x20]=
 	L"Security Fault (#SX)",					// Vector 30
 	L"Reserved (Vector 31)",					// Vector 31
 };
-#endif
 
-EFI_DEBUG_SUPPORT_PROTOCOL* DebugSupport=NULL;
-EFI_DEBUGPORT_PROTOCOL* DebugPort=NULL;
-EFI_GUID gEfiDebugSupportProtocolGuid=EFI_DEBUG_SUPPORT_PROTOCOL_GUID;
-EFI_GUID gEfiDebugPortProtocolGuid=EFI_DEBUGPORT_PROTOCOL_GUID;
+typedef struct _X64_GPR_STATE
+{
+	UINT64 Rax;
+	UINT64 Rcx;
+	UINT64 Rdx;
+	UINT64 Rbx;
+	UINT64 Rsp;
+	UINT64 Rbp;
+	UINT64 Rsi;
+	UINT64 Rdi;
+	UINT64 R8;
+	UINT64 R9;
+	UINT64 R10;
+	UINT64 R11;
+	UINT64 R12;
+	UINT64 R13;
+	UINT64 R14;
+	UINT64 R15;
+}X64_GPR_STATE;
+
+typedef struct _X64_EXCEPTION_STACK_WITH_ERROR_CODE
+{
+	UINT32 ErrorCode;
+	UINT32 Padding0;
+	UINT64 ReturnRip;
+	UINT16 ReturnCs;
+	UINT16 Padding1[3];
+	UINT64 ReturnRflags;
+	UINT64 ReturnRsp;
+	UINT16 ReturnSs;
+	UINT16 Padding2[3];
+}X64_EXCEPTION_STACK_WITH_ERROR_CODE;
+
+typedef struct _X64_EXCEPTION_STACK_WITHOUT_ERROR_CODE
+{
+	UINT64 ReturnRip;
+	UINT16 ReturnCs;
+	UINT16 Padding1[3];
+	UINT64 ReturnRflags;
+	UINT64 ReturnRsp;
+	UINT16 ReturnSs;
+	UINT16 Padding2[3];
+}X64_EXCEPTION_STACK_WITHOUT_ERROR_CODE;
+
+void noir_set_host_interrupt_handler(IN UINT8 Vector,IN UINTN HandlerRoutine);
+#define NoirSetHostInterruptHandler	noir_set_host_interrupt_handler
+
+void AsmDivideErrorFaultHandler(void);
+void AsmDebugFaultTrapHandler(void);
+void AsmBreakpointTrapHandler(void);
+void AsmOverflowTrapHandler(void);
+void AsmBoundRangeFaultHandler(void);
+void AsmInvalidOpcodeFaultHandler(void);
+void AsmUnavailableDeviceFaultHandler(void);
+void AsmDoubleFaultAbortHandler(void);
+void AsmInvalidTssFaultHandler(void);
+void AsmAbsentSegmentFaultHandler(void);
+void AsmStackFaultHandler(void);
+void AsmGeneralProtectionFaultHandler(void);
+void AsmPageFaultHandler(void);
+void AsmFloatingPointFaultHandler(void);
+void AsmAlignmentCheckFaultHandler(void);
+void AsmMachineCheckAbortHandler(void);
+void AsmSimdFaultHandler(void);
+void AsmControlProtectionFaultHandler(void);
+
+void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 
 extern EFI_BOOT_SERVICES *gBS;
 extern EFI_SYSTEM_TABLE *gST;
 extern EFI_SIMPLE_TEXT_INPUT_PROTOCOL *StdIn;
 extern EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *StdOut;
+extern EFI_MP_SERVICES_PROTOCOL *MpServices;

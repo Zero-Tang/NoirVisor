@@ -8,7 +8,7 @@
 ; without any warranty (no matter implied warranty of merchantability or
 ; fitness for a particular purpose, etc.).
 ;
-; File location: ./xpf_core/windows/interrupt.asm
+; File location: ./xpf_core/msvc/interrupt.asm
 
 .code
 

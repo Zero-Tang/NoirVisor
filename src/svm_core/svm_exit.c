@@ -375,6 +375,12 @@ void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noi
 	}
 }
 
+// Expected Intercept Code: 0x40-0x5F, excluding other already-defined exceptions.
+void static fastcall nvc_svm_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	;
+}
+
 // Expected Intercept Code: 0x61
 void static fastcall nvc_svm_nmi_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
@@ -1094,9 +1100,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				// Normally it is unused.
 				noir_gpr_state_p saved_state=(noir_gpr_state_p)vcpu->hv_stack;
 				descriptor_register gidtr,ggdtr;
-				noir_svm_stgi();
-				// Before Debug-Print, GIF should be set because Debug-Printing requires IPI not to be blocked.
-				nv_dprintf("VMM-Call for Restoration is intercepted. Exiting...\n");
+				ulong_ptr gcr4=noir_svm_vmread(vcpu->vmcb.virt,guest_cr4);
 				// Copy state.
 				noir_movsp(saved_state,gpr_state,sizeof(void*)*2);
 				saved_state->rax=noir_svm_vmread(vcpu->vmcb.virt,next_rip);
@@ -1105,8 +1109,9 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				// Restore processor's hidden state.
 				noir_svm_vmwrite64(vcpu->vmcb.virt,guest_lstar,(u64)orig_system_call);
 				noir_svm_vmload((ulong_ptr)vcpu->vmcb.phys);
-				// Switch to Restored CR3
+				// Switch to Restored Control Registers
 				noir_writecr3(gcr3);
+				noir_writecr4(gcr4);
 				// Switch to Restored IDT
 				gidtr.limit=noir_svm_vmread16(vcpu->vmcb.virt,guest_idtr_limit);
 				gidtr.base=noir_svm_vmread(vcpu->vmcb.virt,guest_idtr_base);
@@ -1118,6 +1123,8 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				// TSS is switched in previous vmload.
 				// Mark the processor is in transition mode.
 				vcpu->status=noir_virt_trans;
+				// Finally, set the GIF. Otherwise the host will never be interrupted.
+				noir_svm_stgi();
 				// Return to the caller at Host Mode.
 				nvc_svm_return(saved_state);
 				// Never reaches here.
