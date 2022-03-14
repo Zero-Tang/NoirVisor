@@ -28,6 +28,7 @@ EFI_STATUS EFIAPI NoirDriverUnload(IN EFI_HANDLE ImageHandle)
 void EFIAPI NoirNotifyExitBootServices(IN EFI_EVENT Event,IN VOID* Context)
 {
 	NoirEfiInRuntimeStage=TRUE;
+	NoirDebugPrint("UEFI now enters Runtime Stage!\n");
 }
 
 void NoirBlockUntilKeyStroke(IN CHAR16 Unicode)

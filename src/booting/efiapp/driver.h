@@ -63,6 +63,7 @@ EFI_STATUS EFIAPI UefiLibConstructor(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TAB
 EFI_STATUS EFIAPI DevicePathLibConstructor(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable);
 
 void NoirInitializeSerialPort(IN UINTN ComPort,IN UINT16 PortBase);
+void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 void NoirDisplayProcessorState();
 EFI_STATUS NoirBuildHostEnvironment();
 UINT32 NoirBuildHypervisor();

@@ -590,7 +590,10 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	nvc_svm_setup_msr_hook(hvm_p);
 	if(nvc_npt_protect_critical_hypervisor(hvm_p)==false)goto alloc_failure;
 	if(hvm_p->virtual_cpu==null)goto alloc_failure;
-	nvc_svm_set_mshv_handler(hvm_p->options.cpuid_hv_presence);
+	hvm_p->options.tlfs_passthrough=noir_is_under_hvm();
+	if(hvm_p->options.tlfs_passthrough && hvm_p->options.cpuid_hv_presence)
+		nv_dprintf("Note: Hypervisor is detected! The cpuid presence will be in pass-through mode!\n");
+	nvc_svm_set_mshv_handler(hvm_p->options.tlfs_passthrough?false:hvm_p->options.cpuid_hv_presence);
 	nv_dprintf("All allocations are done, start subversion!\n");
 	noir_generic_call(nvc_svm_subvert_processor_thunk,hvm_p->virtual_cpu);
 	nv_dprintf("Subversion completed!\n");

@@ -52,6 +52,7 @@ void NoirBoundRangeFaultHandler(IN OUT X64_GPR_STATE *State,IN OUT X64_EXCEPTION
 void NoirInvalidOpcodeFaultHandler(IN OUT X64_GPR_STATE *State,IN OUT X64_EXCEPTION_STACK_WITHOUT_ERROR_CODE *ExceptionStack)
 {
 	NoirDebugPrint("Invalid Opcode Fault occured!\n");
+	NoirDebugPrint("Faulting RIP=0x%p, Rsp=0x%p\n",ExceptionStack->ReturnRip,ExceptionStack->ReturnRsp);
 	CpuDeadLoop();
 }
 
@@ -88,12 +89,15 @@ void NoirStackFaultHandler(IN OUT X64_GPR_STATE *State,IN OUT X64_EXCEPTION_STAC
 void NoirGeneralProtectionFaultHandler(IN OUT X64_GPR_STATE *State,IN OUT X64_EXCEPTION_STACK_WITH_ERROR_CODE *ExceptionStack)
 {
 	NoirDebugPrint("General Protection Fault occured!\n");
+	NoirDebugPrint("Faulting RIP=0x%p, Rsp=0x%p, Error Code: 0x%X\n",ExceptionStack->ReturnRip,ExceptionStack->ReturnRsp,ExceptionStack->ErrorCode);
 	CpuDeadLoop();
 }
 
 void NoirPageFaultHandler(IN OUT X64_GPR_STATE *State,IN OUT X64_EXCEPTION_STACK_WITH_ERROR_CODE *ExceptionStack)
 {
 	NoirDebugPrint("Page Fault occured!\n");
+	NoirDebugPrint("Faulting RIP=0x%p, Rsp=0x%p\n",ExceptionStack->ReturnRip,ExceptionStack->ReturnRsp);
+	NoirDebugPrint("Faulting Address=0x%p, Error Code=0x%X\n",AsmReadCr2(),ExceptionStack->ErrorCode);
 	CpuDeadLoop();
 }
 

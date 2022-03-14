@@ -36,104 +36,88 @@ extern NoirControlProtectionFaultHandler:proc
 
 AsmDivideErrorFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirDivideErrorFaultHandler
 	popaq
-	popfq
 	iret
 	
 AsmDivideErrorFaultHandler endp
 
 AsmDebugFaultTrapHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirDebugFaultTrapHandler
 	popaq
-	popfq
 	iret
 
 AsmDebugFaultTrapHandler endp
 
 AsmBreakpointTrapHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirBreakpointTrapHandler
 	popaq
-	popfq
 	iret
 
 AsmBreakpointTrapHandler endp
 
 AsmOverflowTrapHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirOverflowTrapHandler
 	popaq
-	popfq
 	iret
 
 AsmOverflowTrapHandler endp
 
 AsmBoundRangeFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirBoundRangeFaultHandler
 	popaq
-	popfq
 	iret
 
 AsmBoundRangeFaultHandler endp
 
 AsmInvalidOpcodeFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirInvalidOpcodeFaultHandler
 	popaq
-	popfq
 	iret
 
 AsmInvalidOpcodeFaultHandler endp
 
 AsmUnavailableDeviceFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirUnavailableDeviceFaultHandler
 	popaq
-	popfq
 	iret
 
 AsmUnavailableDeviceFaultHandler endp
 
 AsmDoubleFaultAbortHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirDoubleFaultAbortHandler
 	popaq
-	popfq
 	add rsp,8	; There is an error code for this exception.
 	iret
 
@@ -141,13 +125,11 @@ AsmDoubleFaultAbortHandler endp
 
 AsmInvalidTssFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirInvalidTssFaultHandler
 	popaq
-	popfq
 	add rsp,8	; There is an error code for this exception.
 	iret
 
@@ -155,13 +137,11 @@ AsmInvalidTssFaultHandler endp
 
 AsmAbsentSegmentFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirAbsentSegmentFaultHandler
 	popaq
-	popfq
 	add rsp,8	; There is an error code for this exception.
 	iret
 
@@ -169,13 +149,11 @@ AsmAbsentSegmentFaultHandler endp
 
 AsmStackFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirStackFaultHandler
 	popaq
-	popfq
 	add rsp,8	; There is an error code for this exception.
 	iret
 
@@ -183,13 +161,11 @@ AsmStackFaultHandler endp
 
 AsmGeneralProtectionFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirGeneralProtectionFaultHandler
 	popaq
-	popfq
 	add rsp,8	; There is an error code for this exception.
 	iret
 
@@ -197,13 +173,11 @@ AsmGeneralProtectionFaultHandler endp
 
 AsmPageFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirPageFaultHandler
 	popaq
-	popfq
 	add rsp,8	; There is an error code for this exception.
 	iret
 
@@ -211,26 +185,22 @@ AsmPageFaultHandler endp
 
 AsmFloatingPointFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirFloatingPointFaultHandler
 	popaq
-	popfq
 	iret
 
 AsmFloatingPointFaultHandler endp
 
 AsmAlignmentCheckFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirAlignmentCheckFaultHandler
 	popaq
-	popfq
 	add rsp,8	; There is an error code for this exception.
 	iret
 
@@ -238,39 +208,33 @@ AsmAlignmentCheckFaultHandler endp
 
 AsmMachineCheckAbortHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirMachineCheckAbortHandler
 	popaq
-	popfq
 	iret
 
 AsmMachineCheckAbortHandler endp
 
 AsmSimdFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirSimdFaultHandler
 	popaq
-	popfq
 	iret
 
 AsmSimdFaultHandler endp
 
 AsmControlProtectionFaultHandler proc
 
-	pushfq
 	pushaq
 	mov rcx,rsp
-	lea rdx,[rsp+88h]
+	lea rdx,[rsp+gpr_stack_size]
 	call NoirControlProtectionFaultHandler
 	popaq
-	popfq
 	add rsp,8	; There is an error code for this exception.
 	iret
 

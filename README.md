@@ -95,6 +95,9 @@ Edit the `CpuidPresence` Key Value to 0. Feel free to execute the following comm
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 0 /f
 ```
 
+## NoirVisor as a Nested Hypervisor
+If NoirVisor is subverting a system under a virtualized environment with exposed detection (e.g: VMware virtual machines with `hypervisor.cpuid.v0 = TRUE` configuration,) as a Type-II hypervisor, the operating system may have already been using functionalities provided by the hypervisor. In this regard, NoirVisor should pass-through the access to hypervisor functionalities (e.g: `cpuid` instructions, accesses to Microsoft Synthetic MSRs, hypercalls, etc.)
+
 ## TSC-Omission
 Since the end of 2020, NoirVisor implemented a simple Time-Profiler Countermeasure. According to the half-year test, this technique is deemed unstable with multiprocessing systems. For example, TSC-omission may cause external hardwares to trigger drivers resetting themselves. Everything could be messed up: Timer, Graphics Card, NIC, etc. In a nutshell, system may go haywire. <br>
 By virtue of this unexpected and unpleasant side-effect, this feature is now obsolete. Codes addressing this feature are now removed.

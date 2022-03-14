@@ -19,6 +19,7 @@
 #include <Library/UefiLib.h>
 #include <Pi/PiMultiPhase.h>
 #include <Protocol/MpService.h>
+#include <Register/Intel/Cpuid.h>
 #include <intrin.h>
 #include <stdarg.h>
 #include "host.h"
@@ -46,6 +47,7 @@ void noir_get_prebuilt_host_processor_state(OUT PNOIR_PROCESSOR_STATE State)
 {
 	UINTN CurProc=0;
 	if(MpServices)MpServices->WhoAmI(MpServices,&CurProc);
+	ZeroMem(State,sizeof(NOIR_PROCESSOR_STATE));
 	// Only necessary states are filled in.
 	// Segment Selectors
 	State->Cs.Selector=AsmReadCs();
@@ -65,6 +67,8 @@ void noir_get_prebuilt_host_processor_state(OUT PNOIR_PROCESSOR_STATE State)
 	State->Cr3=(UINTN)Host.Pml4Base;
 	// CR4.
 	State->Cr4=AsmReadCr4();
+	// EFER
+	State->Efer=AsmReadMsr64(MSR_EFER);
 	// GS Segment.
 	State->Gs.Attributes=NH_X64_DATA_ATTRIBUTES;
 	State->Gs.Limit=0xFFFFFFFF;
@@ -106,6 +110,7 @@ void NoirPrepareHostProcedureAp(IN VOID *ProcedureArgument)
 	VOID *NewGdt,*NewIdt;
 	UINTN CurProc=0;
 	UINT16 TrSel,TrAttrib;
+	PNHGDTENTRY64 TssGdtEntry;
 	// Get the processor number.
 	if(MpServices)MpServices->WhoAmI(MpServices,&CurProc);
 	AllocationBase=((UINTN)Pcr[CurProc].Misc+0xF)&0xFFFFFFFFFFFFFFF0;
@@ -141,10 +146,21 @@ void NoirPrepareHostProcedureAp(IN VOID *ProcedureArgument)
 		Pcr[CurProc].Core.Tr.Base&=0xFFFFFFFFFFFFFFF0;
 	}
 	Pcr[CurProc].Core.Tss=(PNHTSS64)Pcr[CurProc].Core.Tr.Base;
+	// Initialize TSS in the GDT.
+	TssGdtEntry=(PNHGDTENTRY64)((UINTN)NewGdt+Pcr[CurProc].Core.Tr.Selector);
+	TssGdtEntry->Value=0;
+	TssGdtEntry->Bits.LimitLo=Pcr[CurProc].Core.Tr.Limit;
+	TssGdtEntry->Bits.BaseLo=Pcr[CurProc].Core.Tr.Base&0xFFFFFF;
+	TssGdtEntry->Bits.Type=X64_GDT_AVAILABLE_TSS;
+	TssGdtEntry->Bits.Present=TRUE;
+	TssGdtEntry->Bits.BaseHi=(Pcr[CurProc].Core.Tr.Base>>24)&0xFF;
+	*(UINT32*)&TssGdtEntry[1]=Pcr[CurProc].Core.Tr.Base>>32;
 	// As a matter of fact, there is nothing special in TSS required to be set up.
 	// Debug Purpose: Overwrite the default IDT.
 	NoirSetupDebugSupportPerProcessor(NULL);
 	AsmWriteIdtr(&Pcr[CurProc].Core.IdtR);
+	AsmWriteGdtr(&Pcr[CurProc].Core.GdtR);
+	AsmWriteTr(Pcr[CurProc].Core.Tr.Selector);
 }
 
 // This function is invoked by Center HVM Core prior to subverting system,
@@ -226,40 +242,72 @@ void noir_set_host_interrupt_handler(IN UINT8 Vector,IN UINTN HandlerRoutine)
 void __cdecl nv_dprintf(const char* format,...)
 {
 	CHAR8 TempBuffer[512]="[NoirVisor] ";
+	CHAR8 FormatBuffer[320];
 	UINTN Size,Start;
 	va_list arg_list;
+	for(UINTN i=0;i<sizeof(FormatBuffer);i++)
+	{
+		FormatBuffer[i]=format[i];
+		if(format[i]=='\0')break;
+		if(format[i]=='%' && format[i+1]=='s')FormatBuffer[++i]='a';
+	}
 	va_start(arg_list,format);
 	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
-	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,format,arg_list);
+	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,FormatBuffer,arg_list);
 	va_end(arg_list);
 	NoirSerialWrite(1,(UINT8*)TempBuffer,Start+Size);
-	AsciiPrint(TempBuffer,Size);
+	if(!NoirEfiInRuntimeStage)AsciiPrint(TempBuffer,Size);
 }
 
 void __cdecl nv_panicf(const char* format,...)
 {
 	CHAR8 TempBuffer[512]="[NoirVisor - Panic] ";
+	CHAR8 FormatBuffer[320];
 	UINTN Size,Start;
 	va_list arg_list;
+	for(UINTN i=0;i<sizeof(FormatBuffer);i++)
+	{
+		FormatBuffer[i]=format[i];
+		if(format[i]=='%' && format[i+1]=='s')
+		{
+			FormatBuffer[i+1]='a';
+			i+=2;
+		}
+		if(format[i]=='\0')break;
+	}
 	va_start(arg_list,format);
 	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
-	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,format,arg_list);
+	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,FormatBuffer,arg_list);
 	va_end(arg_list);
 	NoirSerialWrite(1,(UINT8*)TempBuffer,Start+Size);
-	AsciiPrint(TempBuffer,Size);
+	if(!NoirEfiInRuntimeStage)AsciiPrint(TempBuffer,Size);
 }
 
 void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...)
 {
-	CHAR8 TempBuffer[320]="[NoirVisor - Host] ";
+	CPUID_VERSION_INFO_ECX Ecx;
+	CHAR8 TempBuffer[320];
+	CHAR8 FormatBuffer[320];
 	UINTN Size,Start;
 	va_list ArgList;
+	for(UINTN i=0;i<sizeof(FormatBuffer);i++)
+	{
+		FormatBuffer[i]=Format[i];
+		if(Format[i]=='%' && Format[i+1]=='s')
+		{
+			FormatBuffer[i+1]='a';
+			i+=2;
+		}
+		if(Format[i]=='\0')break;
+	}
+	AsmCpuid(CPUID_VERSION_INFO,NULL,NULL,&Ecx.Uint32,NULL);
+	AsciiSPrint(TempBuffer,sizeof(TempBuffer),"[NoirVisor - %a] ",Ecx.Bits.NotUsed?"Guest":"Host");
 	va_start(ArgList,Format);
 	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
-	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,Format,ArgList);
+	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,FormatBuffer,ArgList);
 	va_end(ArgList);
 	NoirSerialWrite(1,(UINT8*)TempBuffer,Start+Size);
-	AsciiPrint(TempBuffer,Size);
+	if(!NoirEfiInRuntimeStage)AsciiPrint(TempBuffer,Size);
 }
 
 void* noir_alloc_nonpg_memory(IN UINTN Length)

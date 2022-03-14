@@ -150,6 +150,12 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 	}
 }
 
+void static nvc_vt_setup_io_hook_p(noir_vt_vcpu_p vcpu)
+{
+	noir_vt_vmwrite64(address_of_io_bitmap_a,vcpu->relative_hvm->io_bitmap_a.phys);
+	noir_vt_vmwrite64(address_of_io_bitmap_b,vcpu->relative_hvm->io_bitmap_b.phys);
+}
+
 void static nvc_vt_setup_msr_hook_p(noir_vt_vcpu_p vcpu)
 {
 	u64 entry_load=vcpu->msr_auto.phys;
@@ -233,6 +239,14 @@ void static nvc_vt_setup_msr_auto_list(noir_vt_vcpu_p vcpu,noir_processor_state_
 	cvexit_load[noir_vt_cvm_msr_auto_sfmask].data=state_p->sfmask;
 	cvexit_load[noir_vt_cvm_msr_auto_gsswap].index=ia32_kernel_gs_base;
 	cvexit_load[noir_vt_cvm_msr_auto_gsswap].data=state_p->gsswap;
+}
+
+void static nvc_vt_setup_io_hook(noir_hypervisor_p hvm)
+{
+	void* bitmap_a=hvm->relative_hvm->io_bitmap_a.virt;
+	void* bitmap_b=hvm->relative_hvm->io_bitmap_b.virt;
+	unref_var(bitmap_a);
+	unref_var(bitmap_b);
 }
 
 void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
@@ -418,32 +432,39 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	noir_vt_vmwrite(guest_rflags,2);		// That the essential bit is set is fine.
 }
 
-void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_state_p state_p)
+void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu)
 {
+	noir_processor_state state;
 	// Setup stack for Exit Handler.
 	noir_vt_initial_stack_p stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
 	stack->vcpu=vcpu;
 	stack->proc_id=noir_get_current_processor();
+	// Get the prebuilt state for host.
+	noir_get_prebuilt_host_processor_state(&state);
 	// Host State Area - Segment Selectors
-	noir_vt_vmwrite(host_cs_selector,state_p->cs.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_ds_selector,state_p->ds.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_es_selector,state_p->es.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_fs_selector,state_p->fs.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_gs_selector,state_p->gs.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_ss_selector,state_p->ss.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_tr_selector,state_p->tr.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_cs_selector,state.cs.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_ds_selector,state.ds.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_es_selector,state.es.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_fs_selector,state.fs.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_gs_selector,state.gs.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_ss_selector,state.ss.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_tr_selector,state.tr.selector & selector_rplti_mask);
 	// Host State Area - Segment Bases
-	noir_vt_vmwrite(host_fs_base,(ulong_ptr)state_p->fs.base);
-	noir_vt_vmwrite(host_gs_base,(ulong_ptr)state_p->gs.base);
-	noir_vt_vmwrite(host_tr_base,(ulong_ptr)state_p->tr.base);
+	noir_vt_vmwrite(host_fs_base,(ulong_ptr)state.fs.base);
+	noir_vt_vmwrite(host_gs_base,(ulong_ptr)state.gs.base);
+	noir_vt_vmwrite(host_tr_base,(ulong_ptr)state.tr.base);
 	// Host State Area - Descriptor Tables
-	noir_vt_vmwrite(host_gdtr_base,(ulong_ptr)state_p->gdtr.base);
-	noir_vt_vmwrite(host_idtr_base,(ulong_ptr)state_p->idtr.base);
+	noir_vt_vmwrite(host_gdtr_base,(ulong_ptr)state.gdtr.base);
+	noir_vt_vmwrite(host_idtr_base,(ulong_ptr)state.idtr.base);
 	// Host State Area - Control Registers
-	noir_vt_vmwrite(host_cr0,state_p->cr0);
-	noir_vt_vmwrite(host_cr3,system_cr3);	// We should use the system page table.
-	noir_vt_vmwrite(host_cr4,state_p->cr4);
-	noir_vt_vmwrite(host_msr_ia32_efer,state_p->efer);
+	state.cr0|=noir_rdmsr(ia32_vmx_cr0_fixed0);
+	state.cr0&=noir_rdmsr(ia32_vmx_cr0_fixed1);
+	state.cr4|=noir_rdmsr(ia32_vmx_cr4_fixed0);
+	state.cr4&=noir_rdmsr(ia32_vmx_cr4_fixed1);
+	noir_vt_vmwrite(host_cr0,state.cr0);
+	noir_vt_vmwrite(host_cr3,state.cr3);
+	noir_vt_vmwrite(host_cr4,state.cr4);
+	noir_vt_vmwrite(host_msr_ia32_efer,state.efer);
 	// Host State Area - Stack Pointer, Instruction Pointer
 	noir_vt_vmwrite(host_rsp,(ulong_ptr)stack);
 	noir_vt_vmwrite(host_rip,(ulong_ptr)nvc_vt_exit_handler_a);
@@ -478,6 +499,7 @@ void static nvc_vt_setup_procbased_controls(bool true_msr)
 		proc_ctrl_msr.value=noir_rdmsr(ia32_vmx_priproc_ctrl);
 	// Setup Primary Processor-Based VM-Execution Controls
 	proc_ctrl.value=0;
+	proc_ctrl.use_io_bitmap=1;		// Intercept exclusive I/O operations.
 	proc_ctrl.use_msr_bitmap=1;		// Essential feature for hiding MSR-Hook.
 	proc_ctrl.activate_secondary_controls=1;
 	// Filter unsupported fields.
@@ -636,13 +658,15 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp)
 	nvc_vt_setup_available_features(vcpu);
 	nvc_vt_setup_control_area(vt_basic.use_true_msr);
 	nvc_vt_setup_guest_state_area(&state,gsp);
-	nvc_vt_setup_host_state_area(vcpu,&state);
+	nvc_vt_setup_host_state_area(vcpu);
 	nvc_vt_setup_memory_virtualization(vcpu);
 	nvc_vt_setup_msr_auto_list(vcpu,&state);
 	nvc_vt_setup_msr_hook_p(vcpu);
+	nvc_vt_setup_io_hook_p(vcpu);
 	nvc_vt_setup_virtual_msr(vcpu);
 	vcpu->status=noir_virt_on;
 	// Everything are done, perform subversion.
+	nv_dprintf("Launching vCPU...\n");
 	vst=noir_vt_vmlaunch();
 	nv_dprintf("Error while launching the Guest! VMX Status: %d\n",vst);
 	if(vst==vmx_fail_valid)
@@ -790,19 +814,23 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 		hvm->relative_hvm->msr_bitmap.phys=noir_get_physical_address(hvm->relative_hvm->msr_bitmap.virt);
 	else
 		goto alloc_failure;
-	// At this time, we don't need to virtualize I/O instructions. So leave them blank.
-	/*hvm->relative_hvm->io_bitmap_a.virt=noir_alloc_contd_memory(page_size);
+	// Some I/O operations must be prohibited in that they are exclusive for hypervisors.
+	hvm->relative_hvm->io_bitmap_a.virt=noir_alloc_contd_memory(page_size);
 	hvm->relative_hvm->io_bitmap_b.virt=noir_alloc_contd_memory(page_size);
 	if(hvm->relative_hvm->io_bitmap_a.virt && hvm->relative_hvm->io_bitmap_b.virt)
 	{
 		hvm->relative_hvm->io_bitmap_a.phys=noir_get_physical_address(hvm->relative_hvm->io_bitmap_a.virt);
 		hvm->relative_hvm->io_bitmap_b.phys=noir_get_physical_address(hvm->relative_hvm->io_bitmap_b.virt);
-	}*/
-	nvc_vt_set_mshv_handler(hvm_p->options.cpuid_hv_presence);
+	}
+	hvm->options.tlfs_passthrough=noir_is_under_hvm();
+	if(hvm->options.tlfs_passthrough && hvm->options.cpuid_hv_presence)
+		nv_dprintf("Note: Hypervisor is detected! The cpuid presence will be in pass-through mode!\n");
+	nvc_vt_set_mshv_handler(hvm->options.tlfs_passthrough?false:hvm_p->options.cpuid_hv_presence);
 	hvm->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();
 	if(hvm->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;
 	nvc_vt_setup_msr_hook(hvm);
+	nvc_vt_setup_io_hook(hvm);
 	for(u32 i=0;i<hvm->cpu_count;i++)
 		if(nvc_ept_protect_hypervisor(hvm,(noir_ept_manager_p)hvm->virtual_cpu[i].ept_manager)==false)
 			goto alloc_failure;

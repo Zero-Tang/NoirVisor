@@ -32,7 +32,7 @@ echo Compiling Core Engine of Microsoft Hypervisor (MSHV)...
 for %%1 in (..\src\mshv_core\*.c) do (clang-cl %%1 /I"..\src\include" /Zi /W3 /WX /Od /Oi /D"_llvm" /D"_amd64" /D"_hv_type1" /D"_mshv_core" /D"_%%~n1" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign)
 
 echo Compiling Core of Cross-Platform Framework (XPF)...
-for %%1 in (..\src\xpf_core\uefi\*.c) do (clang-cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /Od /Oi /D"_efi_boot" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gr /TC /c -Wno-microsoft-static-assert)
+for %%1 in (..\src\xpf_core\uefi\*.c) do (clang-cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /I"..\src\disasm\zydis\include" /I"..\src\disasm\zydis\dependencies\zycore\include" /Zi /W3 /WX /Od /Oi /D"_efi_boot" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gr /TC /c -Wno-microsoft-static-assert)
 
 llvm-ml /X /D"_amd64" /D"_llvm" /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\exception.obj" /c --m64 ..\src\xpf_core\uefi\exception.asm
 

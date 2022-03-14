@@ -126,7 +126,8 @@ typedef struct _noir_hypervisor
 			u64 disable_patchguard:1;
 			u64 nested_virtualization:1;
 			u64 kva_shadow_presence:1;
-			u64 reserved:58;
+			u64 tlfs_passthrough:1;
+			u64 reserved:57;
 		};
 		u64 value;
 	}options;		// Enable certain features.

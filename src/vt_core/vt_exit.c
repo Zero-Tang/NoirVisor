@@ -333,7 +333,7 @@ void static fastcall nvc_vt_cpuid_hvp_handler(u32 leaf,u32 subleaf,noir_cpuid_ge
 	}
 }
 
-// Hypervisor-Stealthy CPUID Handler
+// Hypervisor-Stealthy or Hypervisor-Passthrough CPUID Handler
 void static fastcall nvc_vt_cpuid_hvs_handler(u32 leaf,u32 subleaf,noir_cpuid_general_info_p info)
 {
 	noir_cpuid(leaf,subleaf,&info->eax,&info->ebx,&info->ecx,&info->edx);
@@ -399,10 +399,12 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 			if(gip>=hvm_p->hv_image.base && gip<hvm_p->hv_image.base+hvm_p->hv_image.size)
 			{
 				noir_gpr_state_p saved_state=(noir_gpr_state_p)vcpu->hv_stack;
-				ulong_ptr gsp,gflags;
+				ulong_ptr gsp,gflags,gcr4;
+				descriptor_register idtr,gdtr;
 				u32 inslen=3;		// By default, vmcall uses 3 bytes.
 				noir_vt_vmread(guest_rsp,&gsp);
 				noir_vt_vmread(guest_rflags,&gflags);
+				noir_vt_vmread(guest_cr4,&gcr4);
 				noir_vt_vmread(vmexit_instruction_length,&inslen);
 				// We may allocate space from unused HV-Stack
 				noir_movsp(saved_state,gpr_state,sizeof(void*)*2);
@@ -426,7 +428,17 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 					ivd.linear_address=0;
 					noir_vt_invvpid(vpid_global_invd,&ivd);
 				}
+				// Restore Host Control Registers.
 				noir_writecr3(gcr3);
+				noir_writecr4(gcr4);
+				// Restore Host IDT.
+				noir_vt_vmread(guest_idtr_limit,&idtr.limit);
+				noir_vt_vmread(guest_idtr_base,&idtr.base);
+				noir_lidt(&idtr);
+				// Restore Host GDT.
+				noir_vt_vmread(guest_gdtr_limit,&gdtr.limit);
+				noir_vt_vmread(guest_gdtr_base,&gdtr.base);
+				noir_lgdt(&gdtr);
 				// Mark vCPU is in transition state
 				vcpu->status=noir_virt_trans;
 				nv_dprintf("Restoration completed!\n");
@@ -893,7 +905,9 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 	// Expected Case: Microsoft Synthetic MSR
 	if(noir_is_synthetic_msr(index))
 	{
-		if(hvm_p->options.cpuid_hv_presence)
+		if(hvm_p->options.tlfs_passthrough)
+			val.value=noir_rdmsr(index);
+		else if(hvm_p->options.cpuid_hv_presence)
 			val.value=nvc_mshv_rdmsr_handler(&vcpu->mshvcpu,index);
 		else
 			noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
@@ -953,7 +967,11 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 #endif
 			default:
 			{
-				nv_dprintf("Unexpected rdmsr is intercepted! Index=0x%X\n",index);
+				ulong_ptr gip;
+				noir_vt_vmread(guest_rip,&gip);
+				noir_int3();
+				nv_dprintf("Unexpected rdmsr is intercepted! Index=0x%X, rip=0x%p\n",index,gip);
+				val.value=noir_rdmsr(index);
 				break;
 			}
 		}
@@ -974,7 +992,9 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 	// Expected Case: Microsoft Synthetic MSR
 	if(noir_is_synthetic_msr(index))
 	{
-		if(hvm_p->options.cpuid_hv_presence)
+		if(hvm_p->options.tlfs_passthrough)
+			noir_wrmsr(index,val.value);
+		else if(hvm_p->options.cpuid_hv_presence)
 			nvc_mshv_wrmsr_handler(&vcpu->mshvcpu,index,val.value);
 		else
 			noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);

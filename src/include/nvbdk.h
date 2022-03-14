@@ -486,6 +486,8 @@ void noir_decode_basic_operand(void* decode_result,noir_basic_operand_p basic_op
 void* noir_get_host_gdt_base(u32 processor_number);
 void* noir_get_host_idt_base(u32 processor_number);
 
+bool noir_is_under_hvm();
+
 // Doubly-Linked List Facility
 void noir_initialize_list_entry(list_entry_p entry);
 void noir_insert_to_prev(list_entry_p inserter,list_entry_p insertee);

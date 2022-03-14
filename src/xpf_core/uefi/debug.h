@@ -120,6 +120,10 @@ void AsmMachineCheckAbortHandler(void);
 void AsmSimdFaultHandler(void);
 void AsmControlProtectionFaultHandler(void);
 
+UINT8 NoirDisasmCode64(OUT CHAR8 *Mnemonic,IN UINTN MnemonicLength,IN UINT8* Code,IN UINTN CodeLength,IN UINT64 VirtualAddress);
+UINT8 NoirDisasmCode32(OUT CHAR8 *Mnemonic,IN UINTN MnemonicLength,IN UINT8* Code,IN UINTN CodeLength,IN UINT64 VirtualAddress);
+UINT8 NoirDisasmCode16(OUT CHAR8 *Mnemonic,IN UINTN MnemonicLength,IN UINT8* Code,IN UINTN CodeLength,IN UINT64 VirtualAddress);
+
 void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 
 extern EFI_BOOT_SERVICES *gBS;
