@@ -485,6 +485,24 @@ noir_status nvc_set_event_injection(noir_cvm_virtual_cpu_p vcpu,noir_cvm_event_i
 	return noir_success;
 }
 
+noir_status nvc_query_vcpu_statistics(noir_cvm_virtual_cpu_p vcpu,void* buffer,u32 buffer_size)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		const u32 copy_size=buffer_size<sizeof(noir_cvm_vcpu_statistics)?buffer_size:sizeof(noir_cvm_vcpu_statistics);
+		if(copy_size<sizeof(noir_cvm_interception_counter))
+			st=noir_buffer_too_small;
+		else
+		{
+			noir_copy_memory(buffer,&vcpu->statistics,copy_size);
+			noir_stosb(buffer,0,sizeof(noir_cvm_interception_counter));
+			st=noir_success;
+		}
+	}
+	return st;
+}
+
 bool nvc_validate_vcpu_state(noir_cvm_virtual_cpu_p vcpu)
 {
 	// Check Extended CRs.
@@ -520,12 +538,30 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 		st=noir_success;
 		if(valid_state)
 		{
-			if(hvm_p->selected_core==use_svm_core)
-				st=nvc_svmc_run_vcpu(vcpu);
-			else if(hvm_p->selected_core==use_vt_core)
-				st=nvc_vtc_run_vcpu(vcpu);
-			else
-				st=noir_unknown_processor;
+			while(1)
+			{
+				if(hvm_p->selected_core==use_svm_core)
+					st=nvc_svmc_run_vcpu(vcpu);
+				else if(hvm_p->selected_core==use_vt_core)
+					st=nvc_vtc_run_vcpu(vcpu);
+				else
+					st=noir_unknown_processor;
+				if(vcpu->exit_context.intercept_code==cv_scheduler_map)
+				{
+					memory_descriptor_p mrq=vcpu->exit_context.mapping_request.requested_address;
+					if(mrq->virt)noir_unmap_physical_memory(mrq->virt,page_size);
+					if(vcpu->exit_context.mapping_request.mapping_reason!=cv_scheduler_map_class_unmap)
+					{
+						mrq->virt=noir_map_physical_memory(mrq->phys,page_size);
+						if(mrq->virt==null)
+						{
+							nv_panicf("Failed to map CVM guest pages! HPA=0x%llX\t Mapping Purpose: %s\n",mrq->phys,noir_cvm_mapping_purpose[vcpu->exit_context.mapping_request.mapping_reason]);
+							noir_int3();
+						}
+					}
+				}
+				else if(vcpu->exit_context.intercept_code!=cv_scheduler_exit)break;
+			}
 		}
 		if(st==noir_success)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
 	}
@@ -613,6 +649,40 @@ noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_
 	return st;
 }
 
+noir_status nvc_query_gpa_accessing_bitmap(noir_cvm_virtual_machine_p virtual_machine,u64 gpa_start,u32 page_count,void* bitmap,u32 bitmap_size)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			st=nvc_svmc_query_gpa_accessing_bitmap(virtual_machine,gpa_start,page_count,bitmap,bitmap_size);
+		else
+			st=noir_unknown_processor;
+		noir_release_reslock(virtual_machine->vcpu_list_lock);
+	}
+	return st;
+}
+
+noir_status nvc_clear_gpa_accessing_bits(noir_cvm_virtual_machine_p virtual_machine,u64 gpa_start,u32 page_count)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			st=nvc_svmc_clear_gpa_accessing_bits(virtual_machine,gpa_start,page_count);
+		else
+			st=noir_unknown_processor;
+		noir_release_reslock(virtual_machine->vcpu_list_lock);
+	}
+	return st;
+}
+
 noir_status nvc_release_vm(noir_cvm_virtual_machine_p vm)
 {
 	noir_status st=noir_hypervision_absent;
@@ -636,16 +706,25 @@ noir_status nvc_release_vm(noir_cvm_virtual_machine_p vm)
 	return st;
 }
 
-noir_status nvc_create_vm(noir_cvm_virtual_machine_p* vm,u32 process_id)
+noir_status nvc_create_vm_ex(noir_cvm_virtual_machine_p* vm,u32 process_id,noir_cvm_vm_properties properties,u32 asid_total)
 {
 	noir_status st=noir_hypervision_absent;
 	if(hvm_p)
 	{
-		// Select a core.
 		if(hvm_p->selected_core==use_vt_core)
-			st=nvc_vtc_create_vm(vm);
+		{
+			if(properties.value || asid_total!=1)
+				st=noir_not_implemented;
+			else
+				st=nvc_vtc_create_vm(vm);
+		}
 		else if(hvm_p->selected_core==use_svm_core)
-			st=nvc_svmc_create_vm(vm);
+		{
+			if(properties.value)
+				st=noir_not_implemented;
+			else
+				st=nvc_svmc_create_vm(vm,asid_total);
+		}
 		else
 			st=noir_unknown_processor;
 		if(st==noir_success)
@@ -661,10 +740,17 @@ noir_status nvc_create_vm(noir_cvm_virtual_machine_p* vm,u32 process_id)
 				noir_release_reslock(noir_vm_list_lock);
 				st=noir_success;
 			}
+			(*vm)->properties=properties;
 			(*vm)->pid=process_id;
 		}
 	}
 	return st;
+}
+
+noir_status nvc_create_vm(noir_cvm_virtual_machine_p* vm,u32 process_id)
+{
+	noir_cvm_vm_properties vmprop={0};
+	return nvc_create_vm_ex(vm,process_id,vmprop,1);
 }
 
 u32 nvc_get_vm_pid(noir_cvm_virtual_machine_p vm)

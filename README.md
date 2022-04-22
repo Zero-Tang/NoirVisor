@@ -2,10 +2,12 @@
 NoirVisor - The Grimoire Hypervisor solution for x86 Processors.
 
 <p align=center>
-    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT">
+    <img src="https://img.shields.io/github/license/Zero-Tang/NoirVisor?color=blue&style=flat">
     <a href="https://discord.gg/5cKn5FdK6U">
         <img src="https://img.shields.io/discord/796222913774354432?color=red&label=Discord&style=flat">
     </a>
+    <img src="https://img.shields.io/github/stars/Zero-Tang/NoirVisor?color=orange">
+    <img src="https://img.shields.io/github/forks/Zero-Tang/NoirVisor?color=silver">
 </p>
 
 # Introduction
@@ -105,7 +107,8 @@ By virtue of this unexpected and unpleasant side-effect, this feature is now obs
 # Customizable VM
 Customizable VM is the true explanation of "complex functions and purposes". As the project creator and director, Zero's true intention to create this project is for studying Hardware-Acclerated Virtualization Technology. Therefore, any features which is related to virtualization and which Zero has ideas to implement will be added in the project. <br>
 Customizable VM is the feature that Zero researches about Virtualization: to run an arbitrary guest, instead of to just subvert the host system. In a word, it is aimed to be a competitor of the Windows Hypervisor Platform (WHP). <br>
-For CVM Algorithm on AMD-V, visit [here](src/svm_core/readme.md#customizable-vm-scheduler-algorithm).
+For CVM Algorithm on AMD-V, visit [here](src/svm_core/readme.md#customizable-vm-scheduler-algorithm). <br>
+For CVM Algorithm on Intel VT-x, visit [here](src/vt_core/readme.md#customizable-vm-scheduler-algorithm).
 
 APIs to invoke Customizable VMs are available in the [NoirCvmApi](https://github.com/Zero-Tang/NoirCvmApi) repository. The documentation of the APIs is available in the [wiki page](https://github.com/Zero-Tang/NoirCvmApi/wiki).
 
@@ -140,6 +143,8 @@ For more information, check out the [NoirVisor 2020+](https://github.com/Zero-Ta
 Here lists some informal publications (blogs) regarding hypervisor development:
 
 - Extending the Tradition Hypervisor's Approach of System Call Hooking in the Post-2018 Windows Operating Systems: https://tangptr.com/?p=149
+- MTRR Emulation: Beginner’s Common Mistake in EPT Setup: https://tangptr.com/?p=163
+- Introduction to NoirVisor CVM: The Open-Source Alternative of the Windows Hypervisor Platform: https://tangptr.com/?p=173
 
 # Completed Features
 
@@ -157,4 +162,4 @@ Here lists some informal publications (blogs) regarding hypervisor development:
 This repository is under MIT license. <br>
 
 # Code of Conduct
-The Code of Conduct is added to NoirVisor Project since May.5th, 2019. Please follow rule when contributing.
+The Code of Conduct is added to NoirVisor Project since May.5th, 2019. Please follow the rules when contributing.

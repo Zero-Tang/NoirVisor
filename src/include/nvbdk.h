@@ -556,3 +556,4 @@ void noir_release_reslock(noir_reslock lock);
 
 // Miscellaneous
 void noir_qsort(void* base,u32 num,u32 width,noir_sorting_comparator comparator);
+u64 noir_get_system_time();

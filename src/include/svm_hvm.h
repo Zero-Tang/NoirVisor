@@ -77,6 +77,13 @@ typedef struct _noir_svm_hvm
 		u32 asid_limit;
 		u32 capabilities;
 	}virt_cap;
+	struct
+	{
+		u32 capabilities;
+		u32 mem_virt_cap;
+		u32 simultaneous;
+		u32 minimum_asid;
+	}sev_cap;
 	u32 hvm_cpuid_leaf_max;
 }noir_svm_hvm,*noir_svm_hvm_p;
 
@@ -152,6 +159,7 @@ typedef struct _noir_svm_vcpu
 }noir_svm_vcpu,*noir_svm_vcpu_p;
 
 struct _noir_svm_custom_vm;
+struct _noir_svm_secure_vm;
 struct _noir_npt_pdpte_descriptor;
 struct _noir_npt_pde_descriptor;
 struct _noir_npt_pte_descriptor;
@@ -221,14 +229,39 @@ typedef struct _noir_svm_custom_vm
 	noir_cvm_virtual_machine header;
 	noir_svm_custom_vcpu_p* vcpu;
 	u32 vcpu_count;
-	u32 asid;
+	u32 asid_total;
 	memory_descriptor iopm;
 	memory_descriptor msrpm;
 	memory_descriptor msrpm_full;
 	memory_descriptor avic_logical;
 	memory_descriptor avic_physical;
 	struct _noir_svm_custom_npt_manager nptm;
+	u32 asid_list[1];
 }noir_svm_custom_vm,*noir_svm_custom_vm_p;
+
+// Virtual Processor defined for Encrypted CVM.
+typedef struct _noir_svm_secure_vcpu
+{
+	struct _noir_svm_secure_vm *vm;
+	memory_descriptor vmcb;
+	// Albeit VMSA is used only when SEV-ES is enabled.
+	// Let's emulate the usage and discard the usage of CVM vCPU Header.
+	memory_descriptor vmsa;
+	u32 proc_id;
+	u32 vcpu_id;
+}noir_svm_secure_vcpu,*noir_svm_secure_vcpu_p;
+
+typedef struct _noir_svm_secure_vm
+{
+	noir_cvm_virtual_machine header;
+	noir_svm_secure_vcpu_p vcpu;
+	struct _noir_svm_custom_npt_manager nptm;
+	u32 vcpu_count;
+	u32 asid;
+	memory_descriptor iopm;
+	memory_descriptor msrpm;
+	memory_descriptor msrpm_full;
+}noir_svm_secure_vm,*noir_svm_secure_vm_p;
 
 // Layout of initial stack.
 typedef struct _noir_svm_initial_stack

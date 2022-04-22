@@ -154,9 +154,9 @@ bool nvc_ept_update_pde_memory_type(noir_ept_manager_p eptm,u64 hpa,u8 memory_ty
 				{
 					for(u32 i=0;i<512;i++)
 					{
-						if(regardless || cur->virt[index].ignored1 || memory_type<cur->virt[index].memory_type)
-							cur->virt[index].memory_type=memory_type;
-						cur->virt[index].ignored1=true;			// Use the ignored bit to indicate that this page is marked by MTRR.
+						if(regardless || cur->virt[i].ignored1 || memory_type<cur->virt[i].memory_type)
+							cur->virt[i].memory_type=memory_type;
+						cur->virt[i].ignored1=true;			// Use the ignored bit to indicate that this page is marked by MTRR.
 					}
 				}
 				cur=cur->next;

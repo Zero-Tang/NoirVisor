@@ -159,6 +159,15 @@ typedef u32 noir_status;
 #define noir_user_page_violation		0xC0000009
 
 /*
+  Status Indicator: noir_guest_page_absent
+  If a guest page to be accessed by
+  the hypervisor does not exist,
+  then this value is supposed to be returned.
+*/
+
+#define noir_guest_page_absent			0xC000000A
+
+/*
   Status Indicator: noir_not_intel
   If a procedure is specific for Intel Processor,
   and the processor is not manufactured by Intel,

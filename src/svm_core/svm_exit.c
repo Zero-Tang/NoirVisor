@@ -1194,6 +1194,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 #else
 				noir_svm_custom_vcpu_p cvcpu=(noir_svm_custom_vcpu_p)context;
 #endif
+				cvcpu->header.statistics_internal.runtime_start=noir_get_system_time();
 				nvc_svm_switch_to_guest_vcpu(gpr_state,vcpu,cvcpu);
 			}
 			else
@@ -1512,6 +1513,7 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 	}
 	else if(gpr_state->rax==loader_stack->custom_vcpu->vmcb.phys)
 	{
+		u64 profiler_time=noir_get_system_time();
 		// Customizable VM is exiting...
 		noir_svm_custom_vcpu_p cvcpu=loader_stack->custom_vcpu;
 		const void* vmcb_va=cvcpu->vmcb.virt;
@@ -1520,6 +1522,9 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 		// Determine the group and number of interception.
 		u8 code_group=(u8)((intercept_code&0xC00)>>10);
 		u16 code_num=(u16)(intercept_code&0x3FF);
+		// Profiler: Accumulate the Guest vCPU runtime.
+		cvcpu->header.statistics.runtime+=profiler_time-cvcpu->header.statistics_internal.runtime_start;
+		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.scheduler;
 		// rax is saved to VMCB, not GPR state.
 		gpr_state->rax=noir_svm_vmread(vmcb_va,guest_rax);
 		// Set VMCB Cache State as all to be cached.
@@ -1578,6 +1583,9 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 				}
 			}
 		}
+		// Profiler: accumulate the Hypervisor runtime.
+		cvcpu->header.statistics_internal.selector->time+=noir_get_system_time()-profiler_time;
+		cvcpu->header.statistics_internal.selector->count++;
 	}
 	else
 	{

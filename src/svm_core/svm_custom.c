@@ -290,6 +290,12 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		// Note that the AVIC Control field is cached. Invalidate it.
 		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_tpr);
 	}
+	// Flush TLB if the NPT is updated.
+	if(!cvcpu->header.state_cache.tl_valid)
+	{
+		noir_svm_vmwrite8(cvcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+		cvcpu->header.state_cache.tl_valid=true;
+	}
 	// If AVIC is supported, set the Physical APIC ID Entry to be running.
 	if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
 	{
@@ -450,7 +456,7 @@ void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	noir_svm_vmwrite16(vmcb,intercept_instruction2,vector2.value);
 	// Initialize TLB: Flushing TLB & Setting ASID.
 	// Flush all TLBs associated with this ASID before running it.
-	noir_svm_vmwrite32(vmcb,guest_asid,vcpu->vm->asid);
+	noir_svm_vmwrite32(vmcb,guest_asid,vcpu->vm->asid_list[0]);
 	noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_guest);
 	// Initialize Interrupt Control.
 	avic_ctrl.value=0;
@@ -537,7 +543,7 @@ noir_status nvc_svmc_rescind_vcpu(noir_svm_custom_vcpu_p vcpu)
 
 u32 nvc_svmc_get_vm_asid(noir_svm_custom_vm_p vm)
 {
-	return vm->asid;
+	return vm->asid_list[0];
 }
 
 noir_svm_custom_vcpu_p nvc_svmc_reference_vcpu(noir_svm_custom_vm_p vm,u32 vcpu_id)
@@ -552,7 +558,7 @@ void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 		// Release VMCB.
 		if(vcpu->vmcb.virt)noir_free_contd_memory(vcpu->vmcb.virt,page_size);
 		// Release XSAVE State Area,
-		if(vcpu->header.xsave_area)noir_free_contd_memory(vcpu->header.xsave_area,page_size);
+		if(vcpu->header.xsave_area)noir_free_contd_memory(vcpu->header.xsave_area,hvm_p->xfeat.supported_size_max);
 		// Remove vCPU from VM.
 		if(vcpu->vm)vcpu->vm->vcpu[vcpu->vcpu_id]=null;
 		// In addition, remove the vCPU from AVIC.
@@ -890,6 +896,159 @@ noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_a
 		}
 		if(st!=noir_success)break;
 	}
+	// Broadcast to all vCPUs that the TLBs are invalid now.
+	for(u32 i=0;i<255;i++)
+		if(virtual_machine->vcpu[i])
+			virtual_machine->vcpu[i]->header.state_cache.tl_valid=false;
+	return st;
+}
+
+bool static nvc_svmc_clear_gpa_accessing_bit(noir_svm_custom_npt_manager_p nptm,u64 gpa)
+{
+	// Start from PML4E.
+	amd64_addr_translator trans;
+	trans.value=gpa;
+	if(nptm->ncr3.virt[trans.pml4e_offset].present)
+	{
+		// Traverse the linked list to check the nested paging.
+		noir_npt_pdpte_descriptor_p pdpte_p=nptm->pdpte.head;
+		while(pdpte_p)
+		{
+			if(gpa>=pdpte_p->gpa_start && gpa<pdpte_p->gpa_start+page_512gb_size && pdpte_p->virt[trans.pdpte_offset].present)
+			{
+				amd64_npt_huge_pdpte_p pdpte_t=(amd64_npt_huge_pdpte_p)&pdpte_p->virt[trans.pdpte_offset];
+				if(pdpte_t->huge_pdpte)
+				{
+					pdpte_t->accessed=pdpte_t->dirty=false;
+					return true;
+				}
+				else
+				{
+					noir_npt_pde_descriptor_p pde_p=nptm->pde.head;
+					while(pde_p)
+					{
+						if(gpa>=pde_p->gpa_start && gpa<pde_p->gpa_start+page_1gb_size && pde_p->virt[trans.pde_offset].present)
+						{
+							amd64_npt_large_pde_p pde_t=(amd64_npt_large_pde_p)&pde_p->virt[trans.pde_offset];
+							if(pde_t->large_pde)
+							{
+								pde_t->accessed=pde_t->dirty=false;
+								return true;
+							}
+							else
+							{
+								noir_npt_pte_descriptor_p pte_p=nptm->pte.head;
+								while(pte_p)
+								{
+									if(gpa>=pte_p->gpa_start && gpa<pte_p->gpa_start+page_2mb_size && pte_p->virt[trans.pte_offset].present)
+									{
+										pte_p->virt[trans.pte_offset].accessed=pte_p->virt[trans.pte_offset].dirty=false;
+										return true;
+									}
+									pte_p=pte_p->next;
+								}
+							}
+						}
+						pde_p=pde_p->next;
+					}
+				}
+			}
+			pdpte_p=pdpte_p->next;
+		}
+	}
+	return false;
+}
+
+noir_status nvc_svmc_clear_gpa_accessing_bits(noir_svm_custom_vm_p virtual_machine,u64 gpa_start,u32 page_count)
+{
+	noir_status st=noir_success;
+	for(u32 i=0;i<page_count;i++)
+	{
+		bool r=nvc_svmc_clear_gpa_accessing_bit(&virtual_machine->nptm,gpa_start+(i<<page_4kb_shift));
+		if(r==false)
+		{
+			st=noir_guest_page_absent;
+			break;
+		}
+	}
+	return st;
+}
+
+u8 static nvc_svmc_query_gpa_accessing_bit(noir_svm_custom_npt_manager_p nptm,u64 gpa)
+{
+	// Start from PML4E.
+	amd64_addr_translator trans;
+	trans.value=gpa;
+	if(nptm->ncr3.virt[trans.pml4e_offset].present)
+	{
+		// Traverse the linked list to check the nested paging.
+		noir_npt_pdpte_descriptor_p pdpte_p=nptm->pdpte.head;
+		while(pdpte_p)
+		{
+			if(gpa>=pdpte_p->gpa_start && gpa<pdpte_p->gpa_start+page_512gb_size && pdpte_p->virt[trans.pdpte_offset].present)
+			{
+				amd64_npt_huge_pdpte_p pdpte_t=(amd64_npt_huge_pdpte_p)&pdpte_p->virt[trans.pdpte_offset];
+				if(pdpte_t->huge_pdpte)
+					return (u8)((pdpte_t->dirty<<1)+pdpte_t->accessed);
+				else
+				{
+					noir_npt_pde_descriptor_p pde_p=nptm->pde.head;
+					while(pde_p)
+					{
+						if(gpa>=pde_p->gpa_start && gpa<pde_p->gpa_start+page_1gb_size && pde_p->virt[trans.pde_offset].present)
+						{
+							amd64_npt_large_pde_p pde_t=(amd64_npt_large_pde_p)&pde_p->virt[trans.pde_offset];
+							if(pde_t->large_pde)
+								return (u8)((pde_t->dirty<<1)+pde_t->accessed);
+							else
+							{
+								noir_npt_pte_descriptor_p pte_p=nptm->pte.head;
+								while(pte_p)
+								{
+									if(gpa>=pte_p->gpa_start && gpa<pte_p->gpa_start+page_2mb_size && pte_p->virt[trans.pte_offset].present)
+										return (u8)((pte_p->virt[trans.pte_offset].dirty<<1)+pte_p->virt[trans.pte_offset].accessed);
+									pte_p=pte_p->next;
+								}
+							}
+						}
+					}
+					pde_p=pde_p->next;
+				}
+			}
+			pdpte_p=pdpte_p->next;
+		}
+	}
+	return 0xff;
+}
+
+noir_status nvc_svmc_query_gpa_accessing_bitmap(noir_svm_custom_vm_p virtual_machine,u64 gpa_start,u32 page_count,void* bitmap,u32 bitmap_size)
+{
+	noir_status st=noir_buffer_too_small;
+	if(page_count<=(bitmap_size<<2))
+	{
+		// Acquire the vCPU list lock. No vCPUs should be running.
+		st=noir_success;
+		for(u32 i=0;i<page_count;i++)
+		{
+			u8 r=nvc_svmc_query_gpa_accessing_bit(&virtual_machine->nptm,gpa_start+(i<<page_4kb_shift));
+			if(r==0xff)
+			{
+				st=noir_guest_page_absent;
+				break;
+			}
+			else
+			{
+				if(noir_bt(&r,0))
+					noir_set_bitmap(bitmap,i<<1);
+				else
+					noir_reset_bitmap(bitmap,i<<1);
+				if(noir_bt(&r,1))
+					noir_set_bitmap(bitmap,(i<<1)+1);
+				else
+					noir_reset_bitmap(bitmap,(i<<1)+1);
+			}
+		}
+	}
 	return st;
 }
 
@@ -956,7 +1115,7 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 			noir_free_nonpg_memory(vm->vcpu);
 			vm->vcpu=null;
 		}
-		noir_release_reslock(vm->header.vcpu_list_lock);\
+		noir_release_reslock(vm->header.vcpu_list_lock);
 		// Release Nested Paging Structure.
 		if(vm->nptm.ncr3.virt)
 			noir_free_contd_memory(vm->nptm.ncr3.virt,page_size);
@@ -1008,7 +1167,11 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 		}
 		// Release ASID.
 		noir_acquire_reslock_exclusive(hvm_p->tlb_tagging.asid_pool_lock);
-		noir_reset_bitmap(hvm_p->tlb_tagging.asid_pool,vm->asid-hvm_p->tlb_tagging.start);
+		for(u32 i=0;i<vm->asid_total;i++)
+		{
+			if(vm->asid_list[i]==0xffffffff)break;
+			noir_reset_bitmap(hvm_p->tlb_tagging.asid_pool,vm->asid_list[i]-hvm_p->tlb_tagging.start);
+		}
 		noir_release_reslock(hvm_p->tlb_tagging.asid_pool_lock);
 		// Release VM Structure.
 		noir_free_nonpg_memory(vm);
@@ -1016,20 +1179,23 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 }
 
 // Creating a CVM does not create corresponding vCPUs and lower paging structures!
-noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine)
+noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine,u32 asid_total)
 {
 	noir_status st=noir_invalid_parameter;
-	if(virtual_machine)
+	if(virtual_machine && asid_total)
 	{
-		noir_svm_custom_vm_p vm=noir_alloc_nonpg_memory(sizeof(noir_svm_custom_vm));
+		noir_svm_custom_vm_p vm=noir_alloc_nonpg_memory(sizeof(noir_svm_custom_vm)+(asid_total<<2)-4);
 		st=noir_insufficient_resources;
 		*virtual_machine=vm;
 		if(vm)
 		{
 			// Allocate ASID for CVM.
-			vm->asid=nvc_svmc_alloc_asid();
-			if(vm->asid==0xffffffff)
-				goto alloc_failure;
+			vm->asid_total=asid_total;
+			for(u32 i=0;i<asid_total;i++)
+			{
+				vm->asid_list[i]=nvc_svmc_alloc_asid();
+				if(vm->asid_list[i]==0xffffffff)goto alloc_failure;
+			}
 			// Create a generic Page Map Level 4 (PML4) Table.
 			vm->nptm.ncr3.virt=noir_alloc_contd_memory(page_size);
 			if(vm->nptm.ncr3.virt)

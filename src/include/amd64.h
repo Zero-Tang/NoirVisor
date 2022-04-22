@@ -280,6 +280,7 @@
 
 // This is used for defining APIC BAR definitions
 #define amd64_apic_bsc	8
+#define amd64_apic_extd	10
 #define amd64_apic_ae	11
 
 // This is used for defining APIC Interrupt Command Register

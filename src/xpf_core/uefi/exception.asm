@@ -20,7 +20,7 @@ extern NoirDebugFaultTrapHandler:proc
 extern NoirBreakpointTrapHandler:proc
 extern NoirOverflowTrapHandler:proc
 extern NoirBoundRangeFaultHandler:proc
-extern NoirInvalidOpcodeFaultHandle:proc
+extern NoirInvalidOpcodeFaultHandler:proc
 extern NoirUnavailableDeviceFaultHandler:proc
 extern NoirDoubleFaultAbortHandler:proc
 extern NoirInvalidTssFaultHandler:proc

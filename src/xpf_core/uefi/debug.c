@@ -16,7 +16,6 @@
 #include <Library/BaseMemoryLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/UefiLib.h>
-#include <intrin.h>
 #include "debug.h"
 
 void NoirDivideErrorFaultHandler(IN OUT X64_GPR_STATE *State,IN OUT X64_EXCEPTION_STACK_WITHOUT_ERROR_CODE *ExceptionStack)

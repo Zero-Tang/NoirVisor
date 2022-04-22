@@ -117,6 +117,8 @@ void static fastcall nvc_svm_cr4_read_cvexit_handler(noir_gpr_state_p gpr_state,
 	gpr_array[info.gpr]=noir_svm_vmread(cvcpu->vmcb.virt,guest_cr4);
 	if(!cvcpu->shadowed_bits.mce)noir_btr((u32*)&gpr_array[info.gpr],amd64_cr4_mce);
 	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	// Profiler: CR4 handler is Hypervisor's emulation.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 void static fastcall nvc_svm_cr4_write_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
@@ -129,6 +131,8 @@ void static fastcall nvc_svm_cr4_write_cvexit_handler(noir_gpr_state_p gpr_state
 	cvcpu->shadowed_bits.mce=noir_bt((u32*)&gpr_array[info.gpr],amd64_cr4_mce);
 	noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr4,gpr_array[info.gpr]|amd64_cr4_mce_bit);
 	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	// Profiler: CR4 handler is Hypervisor's emulation.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 void static fastcall nvc_svm_cr_access_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
@@ -147,6 +151,8 @@ void static fastcall nvc_svm_cr_access_cvexit_handler(noir_gpr_state_p gpr_state
 	cvcpu->header.exit_context.cr_access.gpr_number=(u32)info.gpr;
 	cvcpu->header.exit_context.cr_access.mov_instruction=(u32)info.mov;
 	cvcpu->header.exit_context.cr_access.write=noir_bt(&code,4);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.cr;
 }
 
 // Expected Intercept Code: 0x20~0x3F
@@ -165,6 +171,8 @@ void static fastcall nvc_svm_dr_access_cvexit_handler(noir_gpr_state_p gpr_state
 	cvcpu->header.exit_context.dr_access.dr_number=code&0xf;
 	cvcpu->header.exit_context.dr_access.gpr_number=(u32)info.gpr;
 	cvcpu->header.exit_context.dr_access.write=noir_bt(&code,4);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.dr;
 }
 
 // Expected Intercept Code: 0x40~0x5F, except 0x52 and 0x5E.
@@ -192,6 +200,8 @@ void static fastcall nvc_svm_exception_cvexit_handler(noir_gpr_state_p gpr_state
 		cvcpu->header.exit_context.exception.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
 		noir_movsb(cvcpu->header.exit_context.exception.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
 	}
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.exception;
 }
 
 // Expected Intercept Code: 0x52
@@ -219,7 +229,9 @@ void static fastcall nvc_svm_sx_cvexit_handler(noir_gpr_state_p gpr_state,noir_s
 		{
 			// This is #SX is induced by an arrived INIT signal conversion.
 			nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
-			cvcpu->header.exit_context.intercept_code=cv_init_signal;
+			cvcpu->header.exit_context.intercept_code=cv_scheduler_exit;
+			// Although unlikely to be happening, emulate the INIT Signal.
+			nvc_svm_emulate_init_signal(gpr_state,vcpu->vmcb.virt,vcpu->cpuid_fms);
 			break;
 		}
 		default:
@@ -277,6 +289,8 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 		cvcpu->header.exit_context.intercept_code=cv_cpuid_instruction;
 		cvcpu->header.exit_context.cpuid.leaf.a=(u32)cvcpu->header.gpr.rax;
 		cvcpu->header.exit_context.cpuid.leaf.c=(u32)cvcpu->header.gpr.rcx;
+		// Profiler: Classify the interception.
+		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.cpuid;
 	}
 	else
 	{
@@ -344,6 +358,8 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 		*(u32*)&gpr_state->rcx=info.ecx;
 		*(u32*)&gpr_state->rdx=info.edx;
 		noir_svm_advance_rip(cvcpu->vmcb.virt);
+		// Profiler: Classify the interception.
+		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 	}
 	// DO NOT advance the rip unless cpuid is handled by NoirVisor.
 }
@@ -370,6 +386,8 @@ void static fastcall nvc_svm_iret_cvexit_handler(noir_gpr_state_p gpr_state,noir
 		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,intercept_instruction1,nvc_svm_intercept_vector1_iret);
 		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
 	}
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 // Expected Intercept Code: 0x76
@@ -379,6 +397,8 @@ void static fastcall nvc_svm_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir
 	// Execute wbinvd to protect global cache.
 	noir_wbinvd();
 	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 // Expected Intercept Code: 0x78
@@ -388,6 +408,8 @@ void static fastcall nvc_svm_hlt_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 	// In this regard, schedule the host to the processor.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_hlt_instruction;
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.halt;
 }
 
 // Expected Intercept Code: 0x7A
@@ -396,6 +418,8 @@ void static fastcall nvc_svm_invlpga_cvexit_handler(noir_gpr_state_p gpr_state,n
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
 	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 // Expected Intercept Code: 0x7B
@@ -424,6 +448,8 @@ void static fastcall nvc_svm_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_s
 	cvcpu->header.exit_context.io.es.attrib=svm_attrib_inverse(noir_svm_vmread16(cvcpu->vmcb.virt,guest_es_attrib));
 	cvcpu->header.exit_context.io.es.limit=noir_svm_vmread32(cvcpu->vmcb.virt,guest_es_limit);
 	cvcpu->header.exit_context.io.es.base=noir_svm_vmread64(cvcpu->vmcb.virt,guest_es_base);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.io;
 }
 
 // Expected Intercept Code: 0x7C
@@ -492,11 +518,15 @@ void static fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 		cvcpu->header.exit_context.msr.eax=(u32)cvcpu->header.gpr.rax;
 		cvcpu->header.exit_context.msr.edx=(u32)cvcpu->header.gpr.rdx;
 		cvcpu->header.exit_context.msr.ecx=(u32)cvcpu->header.gpr.rcx;
+		// Profiler: Classify the interception.
+		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.msr;
 	}
 	else
 	{
 		// NoirVisor will be handling CVM's MSR Interception.
 		bool advance=op_write?nvc_svm_wrmsr_cvexit_handler(gpr_state,cvcpu):nvc_svm_rdmsr_cvexit_handler(gpr_state,cvcpu);
+		// Profiler: Classify the interception as hypervisor's emulation.
+		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 		if(advance)
 			noir_svm_advance_rip(cvcpu);
 		else
@@ -513,6 +543,8 @@ void static fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 				cvcpu->header.exit_context.exception.ev_valid=true;
 				cvcpu->header.exit_context.exception.reserved=0;
 				cvcpu->header.exit_context.exception.error_code=0;
+				// Profiler: Classify the interception as exception interception.
+				cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 			}
 		}
 	}
@@ -524,6 +556,8 @@ void static fastcall nvc_svm_shutdown_cvexit_handler(noir_gpr_state_p gpr_state,
 	// The shutdown condition occured. Deliver to the subverted host.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_shutdown_condition;
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 // Expected Intercept Code: 0x80
@@ -532,6 +566,8 @@ void static fastcall nvc_svm_vmrun_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
 	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 // Expected Intercept Code: 0x81
@@ -540,6 +576,8 @@ void static fastcall nvc_svm_vmmcall_cvexit_handler(noir_gpr_state_p gpr_state,n
 	// The Guest invoked a hypercall. Deliver to the subverted host.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_hypercall;
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.hypercall;
 }
 
 // Expected Intercept Code: 0x82
@@ -548,6 +586,8 @@ void static fastcall nvc_svm_vmload_cvexit_handler(noir_gpr_state_p gpr_state,no
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
 	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 // Expected Intercept Code: 0x83
@@ -556,6 +596,8 @@ void static fastcall nvc_svm_vmsave_cvexit_handler(noir_gpr_state_p gpr_state,no
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
 	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 // Expected Intercept Code: 0x84
@@ -564,6 +606,8 @@ void static fastcall nvc_svm_stgi_cvexit_handler(noir_gpr_state_p gpr_state,noir
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
 	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 // Expected Intercept Code: 0x85
@@ -572,6 +616,8 @@ void static fastcall nvc_svm_clgi_cvexit_handler(noir_gpr_state_p gpr_state,noir
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
 	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 // Expected Intercept Code: 0x86
@@ -580,6 +626,8 @@ void static fastcall nvc_svm_skinit_cvexit_handler(noir_gpr_state_p gpr_state,no
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
 	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
 // Expected Intercept Code: 0x400
@@ -597,6 +645,8 @@ void static fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state_p gpr_state
 	cvcpu->header.exit_context.memory_access.access.user=(u8)fault.user;
 	cvcpu->header.exit_context.memory_access.access.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
 	noir_movsb(cvcpu->header.exit_context.memory_access.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.npf;
 }
 
 // Expected Intercept Code: 0x401

@@ -53,6 +53,9 @@ typedef ULONG32 NOIR_STATUS;
 #define IOCTL_CvmCreateVm		CTL_CODE_GEN(0x880)
 #define IOCTL_CvmDeleteVm		CTL_CODE_GEN(0x881)
 #define IOCTL_CvmSetMapping		CTL_CODE_GEN(0x882)
+#define IOCTL_CvmQueryGpaAdMap	CTL_CODE_GEN(0x883)
+#define IOCTL_CvmClearGpaAdBit	CTL_CODE_GEN(0x884)
+#define IOCTL_CvmCreateVmEx		CTL_CODE_GEN(0x885)
 #define IOCTL_CvmQueryHvStatus	CTL_CODE_GEN(0x88F)
 #define IOCTL_CvmCreateVcpu		CTL_CODE_GEN(0x890)
 #define IOCTL_CvmDeleteVcpu		CTL_CODE_GEN(0x891)
@@ -88,6 +91,15 @@ typedef struct _NOIR_ADDRESS_MAPPING
 	}Attributes;
 }NOIR_ADDRESS_MAPPING,*PNOIR_ADDRESS_MAPPING;
 
+typedef struct _NOIR_QUERY_ADBITMAP_CONTEXT
+{
+	CVM_HANDLE VirtualMachine;
+	ULONG64 GpaStart;
+	ULONG64 BitmapBuffer;
+	ULONG32 BitmapLength;
+	ULONG32 NumberOfPages;
+}NOIR_QUERY_ADBITMAP_CONTEXT,*PNOIR_QUERY_ADBITMAP_CONTEXT;
+
 typedef enum _NOIR_CVM_REGISTER_TYPE
 {
 	NoirCvmGeneralPurposeRegister,
@@ -118,10 +130,13 @@ typedef struct _NOIR_VIEW_EDIT_REGISTER_CONTEXT
 }NOIR_VIEW_EDIT_REGISTER_CONTEXT,*PNOIR_VIEW_EDIT_REGISTER_CONTEXT;
 
 NOIR_STATUS NoirCreateVirtualMachine(OUT PCVM_HANDLE VirtualMachine);
+NOIR_STATUS NoirCreateVirtualMachineEx(OUT PCVM_HANDLE VirtualMachine,IN ULONG32 Properties,IN ULONG32 NumberOfAsid);
 NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine);
 NOIR_STATUS NoirCreateVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
 NOIR_STATUS NoirReleaseVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
 NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation);
+NOIR_STATUS NoirQueryGpaAccessingBitmap(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages,OUT PVOID Bitmap,IN ULONG32 BitmapSize);
+NOIR_STATUS NoirClearGpaAccessingBits(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages);
 NOIR_STATUS NoirViewVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG64 InjectedEvent);

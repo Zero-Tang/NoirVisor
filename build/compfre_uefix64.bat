@@ -1,9 +1,11 @@
 @echo off
+set ddkpath=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.28.29910
+set path=%ddkpath%\bin\Hostx64\x64;%path%
 set edkpath=C:\UefiDKII
 set mdepath=C:\UefiDKII\MdePkg
 set libpath=C:\UefiDKII\Bin\MdePkg
-set binpath=..\bin\compfre_uefix64
-set objpath=..\bin\compfre_uefix64\Intermediate
+set binpath=..\bin\compchk_uefix64
+set objpath=..\bin\compchk_uefix64\Intermediate
 
 title Compiling NoirVisor, Checked Build, UEFI (AMD64 Architecture)
 echo Project: NoirVisor
@@ -11,43 +13,41 @@ echo Platform: Unified Extensible Firmware Interface
 echo Preset: Debug/Checked Build
 echo Powered by zero.tangptr@gmail.com
 echo Copyright (c) 2018-2022, zero.tangptr@gmail.com. All Rights Reserved.
-clang-cl --version
-lld-link --version
 if "%~1"=="/s" (echo DO-NOT-PAUSE is activated!) else (pause)
 
 echo ============Start Compiling============
 echo Compiling UEFI Booting Facility...
-clang-cl ..\src\booting\efiapp\efimain.c /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /O2 /D"_efi_boot" /Fa"%objpath%\efiapp\efimain.cod" /Fo"%objpath%\efiapp\efimain.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-int-to-pointer-cast -Wno-microsoft-static-assert
+cl ..\src\booting\efiapp\efimain.c /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /nologo /Zi /W3 /WX /O2 /Oi /D"_efi_boot" /Fa"%objpath%\efiapp\efimain.cod" /Fo"%objpath%\efiapp\efimain.obj" /GS- /Gr /TC /c
 
-clang-cl ..\src\booting\efiapp\driver.c /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /O2 /D"_efi_boot" /Fa"%objpath%\driver\driver.cod" /Fo"%objpath%\driver\driver.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-microsoft-static-assert
+cl ..\src\booting\efiapp\driver.c /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /nologo /Zi /W3 /WX /O2 /Oi /D"_efi_boot" /Fa"%objpath%\driver\driver.cod" /Fo"%objpath%\driver\driver.obj" /GS- /Gr /TC /c
 
 echo Compiling Core Engine of Intel VT-x...
-for %%1 in (..\src\vt_core\*.c) do (clang-cl %%1 /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_hv_type1" /D"_vt_core" /D"_%%~n1" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign)
+for %%1 in (..\src\vt_core\*.c) do (cl %%1 /I"..\src\include" /nologo /Zi /W3 /WX /O2 /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_vt_core" /D"_%%~n1" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gr /TC /c)
 
 echo Compiling Core Engine of AMD-V...
-for %%1 in (..\src\svm_core\*.c) do (clang-cl %%1 /I"..\src\include" /Zi  /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_hv_type1" /D"_svm_core" /D"_%%~n1" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign)
+for %%1 in (..\src\svm_core\*.c) do (cl %%1 /I"..\src\include" /nologo /Zi /W3 /WX /O2 /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_svm_core" /D"_%%~n1" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gr /TC /c)
 
 echo Compiling Core Engine of Microsoft Hypervisor (MSHV)...
-for %%1 in (..\src\mshv_core\*.c) do (clang-cl %%1 /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_hv_type1" /D"_mshv_core" /D"_%%~n1" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign)
+for %%1 in (..\src\mshv_core\*.c) do (cl %%1 /I"..\src\include" /nologo /Zi /W3 /WX /O2 /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_mshv_core" /D"_%%~n1" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gr /TC /c)
 
 echo Compiling Core of Cross-Platform Framework (XPF)...
-for %%1 in (..\src\xpf_core\uefi\*.c) do (clang-cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /Zi /W3 /WX /Od /Oi /D"_efi_boot" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gy /Gr /TC /c -Wno-microsoft-static-assert)
+for %%1 in (..\src\xpf_core\uefi\*.c) do (cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /I"%ddkpath%\include" /I"..\src\disasm\zydis\include" /I"..\src\disasm\zydis\dependencies\zycore\include" /nologo /Zi /W3 /WX /O2 /Oi /D"_efi_boot" /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /GS- /Gr /TC /c)
 
-llvm-ml /X /D"_amd64" /D"_llvm" /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\exception.obj" /c --m64 ..\src\xpf_core\uefi\exception.asm
+ml64 /X /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\exception.obj" /c ..\src\xpf_core\uefi\exception.asm
 
-for %%1 in (..\src\xpf_core\msvc\*.asm) do (llvm-ml /X /D"_amd64" /D"_llvm" /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\%%~n1.obj" /c --m64 %%1)
+for %%1 in (..\src\xpf_core\msvc\*.asm) do (ml64 /X /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\%%~n1.obj" /c %%1)
 
-clang-cl ..\src\xpf_core\noirhvm.c /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_hv_type1" /D"_central_hvm" /Fa"%objpath%\driver\noirhvm.cod" /Fo"%objpath%\driver\noirhvm.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign
+cl ..\src\xpf_core\noirhvm.c /I"..\src\include" /nologo /Zi /W3 /WX /O2 /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_central_hvm" /Fa"%objpath%\driver\noirhvm.cod" /Fo"%objpath%\driver\noirhvm.obj" /GS- /Gr /TC /c
 
-clang-cl ..\src\xpf_core\ci.c /I"..\src\include" /Zi /W3 /WX /O2 /D"_llvm" /D"_amd64" /D"_hv_type1" /D"_code_integrity" /Fa"%objpath%\driver\ci.cod" /Fo"%objpath%\driver\ci.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign
+cl ..\src\xpf_core\ci.c /I"..\src\include" /nologo /Zi /W3 /WX /O2 /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_code_integrity" /Fa"%objpath%\driver\ci.cod" /Fo"%objpath%\driver\ci.obj" /GS- /Gr /TC /c
 
-clang-cl ..\src\xpf_core\devkits.c /I"..\src\include" /Zi /W3 /WX /O2 /Oi /D"_llvm" /D"_amd64" /D"_hv_type1" /D"_devkits" /Fa"%objpath%\driver\devkits.cod" /Fo"%objpath%\driver\devkits.obj" /GS- /Gy /Gr /TC /c -Wno-incompatible-pointer-types -Wno-pointer-sign
+cl ..\src\xpf_core\devkits.c /I"..\src\include" /nologo /Zi /W3 /WX /O2 /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_devkits" /Fa"%objpath%\driver\devkits.cod" /Fo"%objpath%\driver\devkits.obj" /GS- /Gr /TC /c
 
 echo ============Start Linking============
 echo Linking NoirVisor EFI Loader Application...
-lld-link "%objpath%\efiapp\*.obj" /NODEFAULTLIB /LIBPATH:"%libpath%\compfre_uefix64" "BaseLib.lib" "BaseDebugPrintErrorLevelLib.lib" "BaseMemoryLib.lib" "BasePrintLib.lib" "UefiLib.lib" "UefiDebugLibConOut.lib" "UefiMemoryAllocationLib.lib" "UefiDevicePathLib.Lib" "UefiBootServicesTableLib.Lib" "UefiRuntimeServicesTableLib.Lib" /OUT:"%binpath%\bootx64.efi" /OPT:REF /SUBSYSTEM:EFI_APPLICATION /ENTRY:"NoirEfiEntry" /DEBUG /PDB:"%binpath%\bootx64.pdb" /Machine:X64
+link "%objpath%\efiapp\*.obj" /NODEFAULTLIB /LIBPATH:"%libpath%\compchk_uefix64" "BaseLib.lib" "BaseDebugPrintErrorLevelLib.lib" "BaseMemoryLib.lib" "BasePrintLib.lib" "UefiLib.lib" "UefiDebugLibConOut.lib" "UefiMemoryAllocationLib.lib" "UefiDevicePathLib.Lib" "UefiBootServicesTableLib.Lib" "UefiRuntimeServicesTableLib.Lib" /NOLOGO /OUT:"%binpath%\bootx64.efi" /SUBSYSTEM:EFI_APPLICATION /ENTRY:"NoirEfiEntry" /DEBUG /PDB:"%binpath%\bootx64.pdb" /Machine:X64
 
 echo Linking NoirVisor EFI Hypervisor Runtime Driver...
-lld-link "%objpath%\driver\*.obj" /NODEFAULTLIB /LIBPATH:"%libpath%\compfre_uefix64" "BaseLib.lib" "BaseDebugPrintErrorLevelLib.lib" "BaseMemoryLib.lib" "BasePrintLib.lib" "UefiLib.lib" "UefiDebugLibConOut.lib" "UefiMemoryAllocationLib.lib" "UefiDevicePathLib.Lib" "UefiBootServicesTableLib.Lib" "UefiRuntimeServicesTableLib.Lib" "..\src\disasm\bin\compfre_uefix64\zydis.lib" /OUT:"%binpath%\NoirVisor.efi" /OPT:REF /SUBSYSTEM:EFI_RUNTIME_DRIVER /ENTRY:"NoirDriverEntry" /DEBUG /PDB:"%binpath%\NoirVisor.pdb" /Machine:X64
+link "%objpath%\driver\*.obj"  /NODEFAULTLIB /LIBPATH:"%libpath%\compchk_uefix64" "BaseLib.lib" "BaseDebugPrintErrorLevelLib.lib" "BaseMemoryLib.lib" "BasePrintLib.lib" "UefiLib.lib" "UefiDebugLibConOut.lib" "UefiMemoryAllocationLib.lib" "UefiDevicePathLib.Lib" "UefiBootServicesTableLib.Lib" "UefiRuntimeServicesTableLib.Lib" "..\src\disasm\bin\compchk_uefix64\zydis.lib" /NOLOGO /OPT:REF /OPT:ICF /OUT:"%binpath%\NoirVisor.efi" /SUBSYSTEM:EFI_RUNTIME_DRIVER /ENTRY:"NoirDriverEntry" /DEBUG /PDB:"%binpath%\NoirVisor.pdb" /Machine:X64
 
 if "%~1"=="/s" (echo Completed!) else (pause)

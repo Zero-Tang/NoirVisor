@@ -15,7 +15,6 @@
 #include <Uefi.h>
 #include <Library/PrintLib.h>
 #include <Library/UefiLib.h>
-#include <intrin.h>
 #include "serial.h"
 
 // Warning: Port-I/O for Serial communication is not guaranteed to be working in UEFI!

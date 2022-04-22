@@ -424,6 +424,9 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	// Guest State Area - Debug Controls
 	noir_vt_vmwrite(guest_dr7,state_p->dr7);
 	noir_vt_vmwrite64(guest_msr_ia32_debug_ctrl,state_p->debug_ctrl);
+	// Guest State Area - Processor Trace
+	if(hvm_p->options.hide_from_pt)
+		noir_vt_vmwrite(guest_msr_ia32_rtit_ctrl,noir_rdmsr(ia32_rtit_ctrl));
 	// VMCS Link Pointer - Essential for Accelerated VMX Nesting
 	noir_vt_vmwrite64(vmcs_link_pointer,0xffffffffffffffff);
 	// Guest State Area - Flags, Stack Pointer, Instruction Pointer
@@ -524,7 +527,8 @@ void static nvc_vt_setup_procbased_controls(bool true_msr)
 		proc_ctrl2.unrestricted_guest=1;	// Allows the guest to enter unpaged mode.
 		proc_ctrl2.enable_invpcid=1;
 		proc_ctrl2.enable_xsaves_xrstors=1;
-		proc_ctrl2.use_gpa_for_intel_pt=1;	// Don't allow Intel Processor Trace to bypass EPT.
+		if(hvm_p->options.hide_from_pt)		// Don't allow Intel Processor Trace to bypass EPT.
+			proc_ctrl2.use_gpa_for_intel_pt=1;
 		proc_ctrl2.enable_user_wait_and_pause=1;
 		// Filter unsupported fields.
 		proc_ctrl2.value|=proc_ctrl2_msr.allowed0_settings.value;
@@ -545,12 +549,18 @@ void static nvc_vt_setup_vmexit_controls(bool true_msr)
 		exit_ctrl_msr.value=noir_rdmsr(ia32_vmx_exit_ctrl);
 	// Setup VM-Exit Controls
 	exit_ctrl.value=0;
+	exit_ctrl.save_debug_controls=1;
 #if defined(_amd64)
 	// This field should be set if NoirVisor is in 64-Bit mode.
 	exit_ctrl.host_address_space_size=1;
 #endif
 	// EFER is to be saved and loaded on exit.
 	exit_ctrl.load_ia32_efer=exit_ctrl.save_ia32_efer=1;
+	if(hvm_p->options.hide_from_pt)
+	{
+		exit_ctrl.conceal_vmexit_from_pt=1;
+		exit_ctrl.clear_ia32_rtit_ctrl=1;
+	}
 	// Filter unsupported fields.
 	exit_ctrl.value|=exit_ctrl_msr.allowed0_settings.value;
 	exit_ctrl.value&=exit_ctrl_msr.allowed1_settings.value;
@@ -569,11 +579,17 @@ void static nvc_vt_setup_vmentry_controls(bool true_msr)
 		entry_ctrl_msr.value=noir_rdmsr(ia32_vmx_entry_ctrl);
 	// Setup VM-Exit Controls
 	entry_ctrl.value=0;
+	entry_ctrl.load_debug_controls=1;
 #if defined(_amd64)
 	// This field should be set if NoirVisor is in 64-Bit mode.
 	entry_ctrl.ia32e_mode_guest=1;
 #endif
 	entry_ctrl.load_ia32_efer=1;		// EFER is to be loaded on entry.
+	if(hvm_p->options.hide_from_pt)
+	{
+		entry_ctrl.conceal_vmentry_from_pt=1;
+		entry_ctrl.load_ia32_rtit_ctrl=1;
+	}
 	// Filter unsupported fields.
 	entry_ctrl.value|=entry_ctrl_msr.allowed0_settings.value;
 	entry_ctrl.value&=entry_ctrl_msr.allowed1_settings.value;
@@ -825,6 +841,13 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 	hvm->options.tlfs_passthrough=noir_is_under_hvm();
 	if(hvm->options.tlfs_passthrough && hvm->options.cpuid_hv_presence)
 		nv_dprintf("Note: Hypervisor is detected! The cpuid presence will be in pass-through mode!\n");
+	if(hvm->options.hide_from_pt)
+	{
+		u32 sextid_ebx;
+		noir_cpuid(ia32_cpuid_std_struct_extid,0,null,&sextid_ebx,null,null);
+		// Remove the "Hide from Processor Trace" if it is not supported at all.
+		hvm->options.hide_from_pt=noir_bt(&sextid_ebx,ia32_cpuid_pt);
+	}
 	nvc_vt_set_mshv_handler(hvm->options.tlfs_passthrough?false:hvm_p->options.cpuid_hv_presence);
 	hvm->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();
 	if(hvm->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;

@@ -573,6 +573,13 @@ ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress)
 	return pa.QuadPart;
 }
 
+ULONG64 noir_get_system_time()
+{
+	LARGE_INTEGER Time;
+	KeQuerySystemTime(&Time);
+	return Time.QuadPart;
+}
+
 void static NoirHostEnvironmentBuilder(IN OUT PVOID Context,IN ULONG ProcessorNumber)
 {
 	BYTE IdtR[sizeof(ULONG_PTR)+2];

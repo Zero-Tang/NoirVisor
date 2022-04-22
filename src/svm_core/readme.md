@@ -411,6 +411,16 @@ Exception interception is optional: it is only intercepted if the User Hyperviso
 ### Nested Page Fault
 Nested Page Fault, usually abbreviated as `#NPF`, indicates that a wrong physical address is accessed. NoirVisor would not handle `#NPF` itself, but transfer the interception to the host. In addition, information like fetched instruction bytes, access information, etc., would be recorded.
 
+## Page Translation Callback
+NoirVisor does not keep GPA-to-HVA translation on track. Therefore, when NoirVisor has to operate the guest pages, there are no appropriate addresses for NoirVisor to get access. Note that this is only necessary for NoirVisor loaded as a Type-II hypervisor. Type-I hypervisor, nevertheless, can directly access the HPA after translating the GPA. <br>
+Situations that require NoirVisor to access guest pages include:
+
+- VMCBs for Nested Virtualization.
+- APIC Pages if there is no AVIC support.
+
+In `GIF=0` context, we cannot perform the mapping in that synchronization is infeasible here. Therefore, we must issue a VM-Entry to map the guest pages into host kernel pages. <br>
+The VM-Entry to subvert host for this purpose is called the Page-Translation Callback.
+
 ## APIC Virtualization
 APIC, acronym that stands for Advance Programmable Interrupt Controller, is a standard x86 component to utilize multi-core processing. Although Customizable VM does not necessarily need APIC to call other cores - hypercalls can be used instead - virtualization of APIC is favorable at best. <br>
 AMD-V supports a special feature called AVIC (Advanced Virtual Interrupt Controller) to accelerate APIC virtualization. NoirVisor may consult whether AVIC is supported. <br>
@@ -432,7 +442,7 @@ When NoirVisor schedules a vCPU onto the physical core, the `Is Running` bit and
 When NoirVisor schedules a vCPU out of the physical core, the `Is Running` bit should be cleared so AVIC will not deliver IPI to a wrong physical core but will trigger a VM-Exit instead.
 
 ### APIC Virtualization without AVIC
-Without AVIC hardware, APIC can be virtualized via MSR interception and Nested Paging.
+Currently implementation of NoirVisor requires the User Hypervisor to emulate the behavior of APIC accesses.
 
 #### MSR Interception and Nested Paging
 When write to the APIC Base Address Register `MSR[0x1B]` is intercepted, set the APIC page to be uncacheable and unwritable (read and execution are allowed) via nested paging mechanism. <br>
@@ -441,8 +451,22 @@ In that paging structure is being revised, halt all vCPUs before revising the NP
 #### Nested Paging Interception
 When `#NPF` is intercepted, check the address being written. Something needs to be checked:
 
-- Is the address to be written 4-byte aligned?
+- Is the address to be written 16-byte aligned?
 - Is the APIC register valid?
 
 If the address is unaligned, according to AMD64 architecture, it may cause undefined behavior. We may ignore it. <br>
 If the APIC register is invalid, transfer the VM-Exit to the guest, and indicate that an invalid APIC access is intercepted.
+
+## Encrypted Virtual Machine
+AMD-V provides a mechanism for encrypted guests. This mechanism enables a guest to run in a manner where codes and data are encrypted and the only decrypted version of them are only available within the guest itself. It would require the hypervisor to enable the `SEV` (Secure Encrypted Virtualization) feature. Please note that, as the hypervisor is no longer able to inspect or alter all guest code or data, the hypervisor model is departing from the standard x86 virtualization model. <br>
+Running a VM with SEV-enabled must have coordination with AMD Secure Processor, often abbreviated as AMD-SP, which is an external PCI device. Please note that VT-Core and SVM-Core of NoirVisor are considered to be CPU-driving. As such, coordination with AMD-SP is not included as a part of SVM-Core.
+
+### Encrypted State
+Optionally, the user hypervisor may choose to encrypt the state of vCPU. This would require the hypervisor to enable the `SEV-ES` (Secure Encrypted Virtualization: Encrypted State) feature. If this feature is enabled, the state of vCPU is no longer able to be directly inspected or altered, like the way of encrypted memory with `SEV` enabled. In order to properly emulate the instructions that may trigger NAEs (Non-Automatic Exits, e.g: interception of `cpuid` instruction), the secure processor would first issue a `#VC` exception - namely the VMM Communication exception, a contributory fault with vector 29 - to the guest so that the guest may copy necessary state to a decrypted memory area called GHCB, acronym that stands for Guest-Host Communication Block. The layout of GHCB can be custom because hardware would never access it directly. When the state of vCPU is copied successfully, the guest should execute the `vmgexit` instruction, an AE (Automatic Exit) which does not trigger `#VC` exception, to notify the hypervisor about the exit. \
+To enable `SEV-ES`, an additional page must be allocated for `VMSA` (VM Save Area for Encrypted States). Coordination with AMD-SP is also required so that the initial encrypted image of vCPU state can be created properly.
+
+### Secure Nested Paging
+Optionally, the user hypervisor may choose to secure the nested paging. This would require the hypervisor to enable the `SEV-SNP` (Secure Encrypted Virtualization: Secure Nested Paging) feature.
+
+### Interception Settings
+For guests that have `SEV-ES` enabled, there are differences of AE and NAE. NoirVisor can handle AEs (e.g: physical interrupts) itself, but NAEs (e.g: `cpuid` instructions) must be properly handled by user hypervisors. Therefore, interceptions of physical interrupts, NMIs, etc. can be done normally. However, interceptions of `cpuid` instructions, interceptions of `MSR` operations, etc. must be handled by User Hypervisor.

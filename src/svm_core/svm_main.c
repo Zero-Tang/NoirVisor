@@ -25,7 +25,9 @@
 
 void nvc_query_svm_capability()
 {
-	noir_cpuid(amd64_cpuid_ext_svm_features,0,null,&hvm_p->relative_hvm->virt_cap.asid_limit,null,&hvm_p->relative_hvm->virt_cap.capabilities);
+	noir_svm_hvm_p rhvm=hvm_p->relative_hvm;
+	noir_cpuid(amd64_cpuid_ext_svm_features,0,null,&rhvm->virt_cap.asid_limit,null,&rhvm->virt_cap.capabilities);
+	noir_cpuid(amd64_cpuid_ext_mem_crypting,0,&rhvm->sev_cap.capabilities,&rhvm->sev_cap.mem_virt_cap,&rhvm->sev_cap.simultaneous,&rhvm->sev_cap.minimum_asid);
 }
 
 bool nvc_is_svm_supported()
@@ -534,8 +536,8 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 					vcpu->nested_hvm.nested_vmcb[j].vmcb_c.phys=0xffffffffffffffff;		// Use -1 to indicate unused VMCB.
 				}
 			}
-#if !defined(_hv_type1)
 			if(nvc_npt_initialize_ci(vcpu->primary_nptm)==false)goto alloc_failure;
+#if !defined(_hv_type1)
 			if(hvm_p->options.stealth_msr_hook)vcpu->enabled_feature|=noir_svm_syscall_hook;
 			if(hvm_p->options.stealth_inline_hook)vcpu->enabled_feature|=noir_svm_npt_with_hooks;
 			if(hvm_p->options.kva_shadow_presence)

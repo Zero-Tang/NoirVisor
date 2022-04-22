@@ -20,7 +20,6 @@
 #include <Pi/PiMultiPhase.h>
 #include <Protocol/MpService.h>
 #include <Register/Intel/Cpuid.h>
-#include <intrin.h>
 #include <stdarg.h>
 #include "host.h"
 
@@ -412,7 +411,7 @@ UINT32 noir_get_current_processor()
 	{
 		UINTN Num;
 		EFI_STATUS st=MpServices->WhoAmI(MpServices,&Num);
-		if(st==EFI_SUCCESS)return Num;
+		if(st==EFI_SUCCESS)return (UINT32)Num;
 	}
 	return 0;
 }
@@ -423,7 +422,7 @@ UINT32 noir_get_processor_count()
 	{
 		UINTN Num1,Num2;
 		EFI_STATUS st=MpServices->GetNumberOfProcessors(MpServices,&Num1,&Num2);
-		if(st==EFI_SUCCESS)return Num1;
+		if(st==EFI_SUCCESS)return (UINT32)Num1;
 	}
 	return 1;
 }
@@ -469,6 +468,14 @@ UINT32 noir_disasm_instruction(IN VOID* Code,OUT CHAR8 *Mnemonic,IN UINTN Mnemon
 	default:
 		return 0;
 	}
+}
+
+UINT64 noir_get_system_time()
+{
+	// FIXME: Use HPET to get the time.
+	// The return value has unit of 100ns.
+	// Do not use Runtime Service by virtue of complex calendar calculation.
+	return 0;
 }
 
 void NoirDisplayProcessorState()

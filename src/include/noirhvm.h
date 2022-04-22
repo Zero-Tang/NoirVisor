@@ -127,7 +127,8 @@ typedef struct _noir_hypervisor
 			u64 nested_virtualization:1;
 			u64 kva_shadow_presence:1;
 			u64 tlfs_passthrough:1;
-			u64 reserved:57;
+			u64 hide_from_pt:1;
+			u64 reserved:56;
 		};
 		u64 value;
 	}options;		// Enable certain features.

@@ -273,9 +273,12 @@ PVOID NoirLocateExportedProcedureByName(IN PVOID ImageBase,IN PSTR ProcedureName
 // Functions from NoirVisor XPF-Core for CVM.
 ULONG32 nvc_query_physical_asid_limit(IN PSTR vendor_string);
 void noir_get_vendor_string(OUT PSTR vendor_string);
-NOIR_STATUS nvc_create_vm(OUT PVOID *VirtualMachine,HANDLE ProcessId);
+NOIR_STATUS nvc_create_vm(OUT PVOID *VirtualMachine,IN HANDLE ProcessId);
+NOIR_STATUS nvc_create_vm_ex(OUT PVOID *VirtualMachine,IN HANDLE ProcessId,IN ULONG32 Properties,IN ULONG32 NumberOfAsid);
 NOIR_STATUS nvc_release_vm(IN PVOID VirtualMachine);
 NOIR_STATUS nvc_set_mapping(IN PVOID VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation);
+NOIR_STATUS nvc_query_gpa_accessing_bitmap(IN PVOID VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages,OUT PVOID Bitmap,IN ULONG32 BitmapSize);
+NOIR_STATUS nvc_clear_gpa_accessing_bits(IN PVOID VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages);
 NOIR_STATUS nvc_create_vcpu(IN PVOID VirtualMachine,OUT PVOID *VirtualProcessor,IN ULONG32 VpIndex);
 NOIR_STATUS nvc_release_vcpu(IN PVOID VirtualProcessor);
 NOIR_STATUS nvc_run_vcpu(IN PVOID VirtualProcessor,OUT PVOID ExitContext);

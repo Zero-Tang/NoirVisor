@@ -17,7 +17,6 @@
 #include <Library/BaseMemoryLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/MemoryAllocationLib.h>
-#include <intrin.h>
 #include "efimain.h"
 
 INT32 NoirCompareGuid(EFI_GUID *Guid1,EFI_GUID *Guid2)
@@ -70,7 +69,7 @@ void NoirPrintSystemMemoryInformation()
 		if(NoirCompareGuid(&gEfiSmBiosTableGuid,&gST->ConfigurationTable[i].VendorGuid)==0)
 		{
 			SMBIOS_TABLE_ENTRY_POINT *SmBiosConfigTable=(SMBIOS_TABLE_ENTRY_POINT*)gST->ConfigurationTable[i].VendorTable;
-			SMBIOS_STRUCTURE *SmBiosHeader=(SMBIOS_STRUCTURE*)SmBiosConfigTable->TableAddress;
+			SMBIOS_STRUCTURE *SmBiosHeader=(SMBIOS_STRUCTURE*)((UINTN)SmBiosConfigTable->TableAddress);
 			UINT64 MemorySize=0;		// Total Memory Size. Granularity at 1 KiB
 			Print(L"Located SMBIOS Configuration Table! Address=0x%p\n",SmBiosConfigTable);
 			Print(L"Anchor: %.4a Version: %d.%d\n",SmBiosConfigTable->AnchorString,SmBiosConfigTable->MajorVersion,SmBiosConfigTable->MinorVersion);

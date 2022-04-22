@@ -162,6 +162,7 @@
 #define ia32_vmx_true_entry_ctrl		0x490
 #define ia32_vmx_vmfunc					0x491
 #define ia32_vmx_3rdproc_ctrl			0x492
+#define ia32_rtit_ctrl					0x570
 #define ia32_efer						0xC0000080
 #define ia32_star						0xC0000081
 #define ia32_lstar						0xC0000082
@@ -232,6 +233,8 @@
 #define ia32_cpuid_vmx_bit			0x20
 #define ia32_cpuid_hv_presence		31
 #define ia32_cpuid_hv_presence_bit	0x80000000
+#define ia32_cpuid_pt				25
+#define ia32_cpuid_pt_bit			0x2000000
 
 // Segment Descriptor Types
 #define ia32_segment_data_ro				0x0

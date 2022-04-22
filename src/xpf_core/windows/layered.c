@@ -65,7 +65,7 @@ PVOID NoirReferenceVirtualMachineByHandleUnsafe(IN CVM_HANDLE Handle,IN ULONG_PT
 
 // This function does not acquire lock itself.
 // Therefore, acquire the table lock with Exclusive Access prior to invoking this function!
-NOIR_STATUS NoirCreateHandle(IN ULONG_PTR TableCode,OUT PCVM_HANDLE Handle,IN PVOID ReferencedEntry)
+NOIR_STATUS NoirCreateHandleUnsafe(IN ULONG_PTR TableCode,OUT PCVM_HANDLE Handle,IN PVOID ReferencedEntry)
 {
 	// Check if this is a multi-level table.
 	ULONG Levels=BYTE_OFFSET((PVOID)TableCode);
@@ -79,7 +79,7 @@ NOIR_STATUS NoirCreateHandle(IN ULONG_PTR TableCode,OUT PCVM_HANDLE Handle,IN PV
 			if(Base[i])
 			{
 				// Search this available table.
-				st=NoirCreateHandle(Base[i],Handle,ReferencedEntry);
+				st=NoirCreateHandleUnsafe(Base[i],Handle,ReferencedEntry);
 				// Check if creation is successful.
 				if(st==NOIR_SUCCESS)
 				{
@@ -100,7 +100,7 @@ NOIR_STATUS NoirCreateHandle(IN ULONG_PTR TableCode,OUT PCVM_HANDLE Handle,IN PV
 				RtlZeroMemory((PVOID)Base[i],PAGE_SIZE);
 				Base[i]|=Levels-1;	// Set the level of the underlying table.
 				// Create handle based on this new table.
-				st=NoirCreateHandle(Base[i],Handle,ReferencedEntry);
+				st=NoirCreateHandleUnsafe(Base[i],Handle,ReferencedEntry);
 				// Usually, if creation fails, there is insufficient resources to allocate.
 				if(st!=NOIR_SUCCESS)return st;
 				// Adjust the handle value by current table level.
@@ -131,6 +131,51 @@ NOIR_STATUS NoirCreateHandle(IN ULONG_PTR TableCode,OUT PCVM_HANDLE Handle,IN PV
 	}
 }
 
+// Note that this function acquires the lock, so do what you should do to circumvent deadlocking.
+NOIR_STATUS NoirCreateHandle(OUT PCVM_HANDLE Handle,IN PVOID ReferencedEntry)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	// Acquire the resource lock in order to add the entry
+	KeEnterCriticalRegion();
+	ExAcquireResourceExclusiveLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	// Create Handle.
+	st=NoirCreateHandleUnsafe(NoirCvmHandleTable.TableCode,Handle,ReferencedEntry);
+	if(st==NOIR_UNSUCCESSFUL)
+	{
+		// The handle table is full. Increase the table level and retry.
+		ULONG Levels=BYTE_OFFSET((PVOID)NoirCvmHandleTable.TableCode);
+		ULONG_PTR NewBase=(ULONG_PTR)NoirAllocateNonPagedMemory(PAGE_SIZE);
+		if(NewBase)
+		{
+			NoirCvmTracePrint("Adding the level %u table...\n",++Levels);
+			RtlZeroMemory((PVOID)NewBase,PAGE_SIZE);
+			// Make the top-level table to be underlain.
+			*(PULONG_PTR)NewBase=NoirCvmHandleTable.TableCode;
+			NoirCvmHandleTable.TableCode=NewBase|Levels;
+			// Retry creation.
+			st=NoirCreateHandleUnsafe(NoirCvmHandleTable.TableCode,Handle,ReferencedEntry);
+		}
+		else
+		{
+			NoirCvmTracePrint("Failed to increase the level of tables!\n");
+			st=NOIR_INSUFFICIENT_RESOURCES;
+		}
+	}
+	if(st==NOIR_SUCCESS)	// Increment the handle counter if success.
+	{
+		NoirCvmHandleTable.HandleCount++;
+		NoirCvmTracePrint("New VM is created successfully! Handle=0x%p\t Object=0x%p\n",*Handle,ReferencedEntry);
+	}
+	if(*Handle>NoirCvmHandleTable.MaximumHandleValue)
+		NoirCvmHandleTable.MaximumHandleValue=*Handle;
+	// Release the resource lock for other accesses.
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	// Finally, return the status.
+	return st;
+}
+	
+
 // This function does not acquire lock itself.
 // Therefore, acquire the table lock with Exclusive Access prior to invoking this function!
 void NoirDeleteHandle(IN CVM_HANDLE Handle,IN ULONG_PTR TableCode)
@@ -150,46 +195,15 @@ NOIR_STATUS NoirCreateVirtualMachine(OUT PCVM_HANDLE VirtualMachine)
 {
 	PVOID VM=NULL;
 	NOIR_STATUS st=nvc_create_vm(&VM,PsGetCurrentProcessId());		// Create a Virtual Machine.
-	if(st==NOIR_SUCCESS)
-	{
-		// If success, create a handle for VM.
-		// Acquire the resource lock to add the entry.
-		KeEnterCriticalRegion();
-		ExAcquireResourceExclusiveLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-		// Create Handle.
-		st=NoirCreateHandle(NoirCvmHandleTable.TableCode,VirtualMachine,VM);
-		if(st==NOIR_UNSUCCESSFUL)
-		{
-			// The handle table is full. Increase the table level and retry.
-			ULONG Levels=BYTE_OFFSET((PVOID)NoirCvmHandleTable.TableCode);
-			ULONG_PTR NewBase=(ULONG_PTR)NoirAllocateNonPagedMemory(PAGE_SIZE);
-			if(NewBase)
-			{
-				NoirCvmTracePrint("Adding the level %u table...\n",++Levels);
-				RtlZeroMemory((PVOID)NewBase,PAGE_SIZE);
-				// Make the top-level table to be underlain.
-				*(PULONG_PTR)NewBase=NoirCvmHandleTable.TableCode;
-				NoirCvmHandleTable.TableCode=NewBase|Levels;
-				// Retry creation.
-				st=NoirCreateHandle(NoirCvmHandleTable.TableCode,VirtualMachine,VM);
-			}
-			else
-			{
-				NoirCvmTracePrint("Failed to increase the level of tables!\n");
-				st=NOIR_INSUFFICIENT_RESOURCES;
-			}
-		}
-		if(st==NOIR_SUCCESS)	// Increment the handle counter if success.
-		{
-			NoirCvmHandleTable.HandleCount++;
-			NoirCvmTracePrint("New VM is created successfully! Handle=0x%p\t Object=0x%p\n",*VirtualMachine,VM);
-		}
-		if(*VirtualMachine>NoirCvmHandleTable.MaximumHandleValue)
-			NoirCvmHandleTable.MaximumHandleValue=*VirtualMachine;
-		// Release the resource lock for other accesses.
-		ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-		KeLeaveCriticalRegion();
-	}
+	if(st==NOIR_SUCCESS)st=NoirCreateHandle(VirtualMachine,VM);		// If success, create a handle for VM.
+	return st;
+}
+
+NOIR_STATUS NoirCreateVirtualMachineEx(OUT PCVM_HANDLE VirtualMachine,IN ULONG32 Properties,IN ULONG32 NumberOfAsid)
+{
+	PVOID VM=NULL;
+	NOIR_STATUS st=nvc_create_vm_ex(&VM,PsGetCurrentProcessId(),Properties,NumberOfAsid);
+	if(st==NOIR_SUCCESS)st=NoirCreateHandle(VirtualMachine,VM);
 	return st;
 }
 
@@ -214,6 +228,32 @@ NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine)
 	return st;
 }
 
+NOIR_STATUS NoirQueryGpaAccessingBitmap(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages,OUT PVOID Bitmap,IN ULONG32 BitmapSize)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	if(VM)st=nvc_query_gpa_accessing_bitmap(VM,GpaStart,NumberOfPages,Bitmap,BitmapSize);
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return st;
+}
+
+NOIR_STATUS NoirClearGpaAccessingBits(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	if(VM)st=nvc_clear_gpa_accessing_bits(VM,GpaStart,NumberOfPages);
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return st;
+}
+
 NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
@@ -221,11 +261,7 @@ NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING
 	KeEnterCriticalRegion();
 	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
 	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
-	if(VM)
-	{
-		st=nvc_set_mapping(VM,MappingInformation);
-		NoirCvmTracePrint("Mapping Status: 0x%X\n",st);
-	}
+	if(VM)st=nvc_set_mapping(VM,MappingInformation);
 	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
 	KeLeaveCriticalRegion();
 	return st;

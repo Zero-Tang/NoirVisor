@@ -169,6 +169,28 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			st=STATUS_SUCCESS;
 			break;
 		}
+		case IOCTL_CvmQueryGpaAdMap:
+		{
+			PNOIR_QUERY_ADBITMAP_CONTEXT Param=(PNOIR_QUERY_ADBITMAP_CONTEXT)InputBuffer;
+			*(PULONG32)OutputBuffer=NoirQueryGpaAccessingBitmap(Param->VirtualMachine,Param->GpaStart,Param->NumberOfPages,(PVOID)Param->BitmapBuffer,Param->BitmapLength);
+			st=STATUS_SUCCESS;
+			break;
+		}
+		case IOCTL_CvmClearGpaAdBit:
+		{
+			PNOIR_QUERY_ADBITMAP_CONTEXT Param=(PNOIR_QUERY_ADBITMAP_CONTEXT)InputBuffer;
+			*(PULONG32)OutputBuffer=NoirClearGpaAccessingBits(Param->VirtualMachine,Param->GpaStart,Param->NumberOfPages);
+			st=STATUS_SUCCESS;
+			break;
+		}
+		case IOCTL_CvmCreateVmEx:
+		{
+			PULONG32 Input=(PULONG32)InputBuffer;
+			PCVM_HANDLE VmHandle=(PCVM_HANDLE)((ULONG_PTR)OutputBuffer+sizeof(CVM_HANDLE));
+			*(PULONG32)OutputBuffer=NoirCreateVirtualMachineEx(VmHandle,Input[0],Input[1]);
+			st=STATUS_SUCCESS;
+			break;
+		}
 		case IOCTL_CvmQueryHvStatus:
 		{
 			break;

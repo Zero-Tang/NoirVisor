@@ -13,7 +13,6 @@
 */
 
 #include <Uefi.h>
-#include <intrin.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/MemoryAllocationLib.h>
@@ -83,13 +82,21 @@ EFI_STATUS EFIAPI NoirEfiInitialize(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABL
 	return gBS->LocateProtocol(&gEfiMpServicesProtocolGuid,NULL,(VOID**)&MpServices);
 }
 
+void NoirPrintCompilerVersion()
+{
+	UINT32 Build=_MSC_FULL_VER%100000;
+	UINT32 Minor=_MSC_VER%100;
+	UINT32 Major=_MSC_VER/100;
+	Print(L"Compiler Version: MSVC %02d.%02d.%05d\n",Major,Minor,Build);
+	Print(L"NoirVisor Compliation Date: %a %a\n",__DATE__,__TIME__);
+}
+
 EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable)
 {
 	EFI_STATUS st=NoirEfiInitialize(ImageHandle,SystemTable);
 	EFI_LOADED_IMAGE_PROTOCOL* ImageInfo=NULL;
 	Print(L"Welcome to NoirVisor Runtime Driver!\r\n");
-	Print(L"NoirVisor's Compiler Version: LLVM Clang %a\r\n",__clang_version__);
-	Print(L"NoirVisor's Date of Compilation: %a\n",__TIMESTAMP__);
+	NoirPrintCompilerVersion();
 	gBS->CreateEvent(EVT_SIGNAL_EXIT_BOOT_SERVICES,TPL_NOTIFY,NoirNotifyExitBootServices,NULL,&NoirEfiExitBootServicesNotification);
 	st=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocolGuid,&ImageInfo);
 	if(st==EFI_SUCCESS)ImageInfo->Unload=NoirDriverUnload;
