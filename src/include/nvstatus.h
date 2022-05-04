@@ -168,6 +168,14 @@ typedef u32 noir_status;
 #define noir_guest_page_absent			0xC000000A
 
 /*
+  Status Indicator: noir_access_denied
+  If a procedure is accessing something protected,
+  then this value is supposed to be returned.
+*/
+
+#define noir_access_denied				0xC000000B
+
+/*
   Status Indicator: noir_not_intel
   If a procedure is specific for Intel Processor,
   and the processor is not manufactured by Intel,

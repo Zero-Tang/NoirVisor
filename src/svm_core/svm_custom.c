@@ -34,8 +34,6 @@ void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu
 	noir_movsp(&cvcpu->header.gpr,gpr_state,sizeof(void*)*2);
 	cvcpu->header.rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip);
 	cvcpu->header.rflags=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rflags);
-	// Save x87 FPU and SSE/AVX State...
-	noir_xsave(cvcpu->header.xsave_area);
 	// Save Extended Control Registers...
 	cvcpu->header.xcrs.xcr0=noir_xgetbv(0);
 	// Save Debug Registers...
@@ -69,8 +67,10 @@ void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu
 	noir_movsp(gpr_state,&vcpu->cvm_state.gpr,sizeof(void*)*2);
 	// Load Extended Control Registers...
 	noir_xsetbv(0,vcpu->cvm_state.xcrs.xcr0);
+	// Save x87 FPU and SSE/AVX State...
+	noir_xsave(cvcpu->header.xsave_area,maxu64);
 	// Load x87 FPU and SSE/AVX State...
-	noir_xrestore(vcpu->cvm_state.xsave_area);
+	noir_xrestore(vcpu->cvm_state.xsave_area,maxu64);
 	// Load Debug Registers...
 	noir_writedr0(vcpu->cvm_state.drs.dr0);
 	noir_writedr1(vcpu->cvm_state.drs.dr1);
@@ -98,7 +98,7 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 	// Save Extended Control Registers...
 	vcpu->cvm_state.xcrs.xcr0=noir_xgetbv(0);
 	// Save x87 FPU and SSE State...
-	noir_xsave(vcpu->cvm_state.xsave_area);
+	noir_xsave(vcpu->cvm_state.xsave_area,maxu64);
 	// Save Debug Registers...
 	vcpu->cvm_state.drs.dr0=noir_readdr0();
 	vcpu->cvm_state.drs.dr1=noir_readdr1();
@@ -116,7 +116,7 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		cvcpu->header.state_cache.gprvalid=true;
 	}
 	// Load x87 FPU and SSE State...
-	noir_xrestore(cvcpu->header.xsave_area);
+	noir_xrestore(cvcpu->header.xsave_area,maxu64);
 	// Load Extended Control Registers...
 	noir_xsetbv(0,cvcpu->header.xcrs.xcr0);
 	// Load Debug Registers...
@@ -139,6 +139,8 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr4,cvcpu->header.crs.cr4);
 		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_control_reg);
 		cvcpu->header.state_cache.cr_valid=true;
+		// Change to control registers can cause TLBs to be invalid.
+		noir_svm_vmwrite8(cvcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
 	}
 	if(!cvcpu->header.state_cache.cr2valid)
 	{
@@ -504,6 +506,8 @@ void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu)
 	noir_svm_vmwrite32(vmcb,intercept_access_dr,vcpu->header.vcpu_options.intercept_drx?0xFFFFFFFF:0);
 	// MSR Interceptions
 	noir_svm_vmwrite64(vmcb,msrpm_physical_address,vcpu->header.vcpu_options.intercept_msr?vcpu->vm->msrpm_full.phys:vcpu->vm->msrpm.phys);
+	// RSM Interception
+	vector1.intercept_rsm=vcpu->header.vcpu_options.intercept_rsm;
 	// FIXME: Implement NPIEP and Pause-Filters.
 	noir_svm_vmwrite32(vmcb,intercept_instruction1,vector1.value);
 	// Invalidate VMCB Cache.

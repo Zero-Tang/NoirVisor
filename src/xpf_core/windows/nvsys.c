@@ -70,6 +70,36 @@ void __cdecl nvci_panicf(const char* format,...)
 	va_end(arg_list);
 }
 
+void __cdecl nv_dprintf2(IN BOOL DateTime,IN BOOL ProcessorNumber,IN PCSTR Format,...)
+{
+	CHAR Buffer[512];
+	PSTR ContentBuffer,TimeBuffer;
+	SIZE_T ContentSize,TimeSize;
+	va_list ArgList;
+	if(ProcessorNumber)
+		RtlStringCbPrintfExA(Buffer,sizeof(Buffer),&TimeBuffer,&TimeSize,STRSAFE_FILL_BEHIND_NULL,"[NoirVisor - Core %03u] ",KeGetCurrentProcessorNumber());
+	else
+		RtlStringCbCopyExA(Buffer,sizeof(Buffer),"[NoirVisor] ",&TimeBuffer,&TimeSize,STRSAFE_FILL_BEHIND_NULL);
+	if(DateTime)
+	{
+		LARGE_INTEGER SystemTime,LocalTime;
+		TIME_FIELDS Time;
+		KeQuerySystemTime(&SystemTime);
+		ExSystemTimeToLocalTime(&SystemTime,&LocalTime);
+		RtlTimeToTimeFields(&LocalTime,&Time);
+		RtlStringCbPrintfExA(TimeBuffer,TimeSize,&ContentBuffer,&ContentSize,STRSAFE_FILL_BEHIND_NULL,"%04d-%02d-%02d %02d:%02d:%02d.%03d | ",Time.Year,Time.Month,Time.Day,Time.Hour,Time.Minute,Time.Second,Time.Milliseconds);
+	}
+	else
+	{
+		ContentBuffer=TimeBuffer;
+		ContentSize=TimeSize;
+	}
+	va_start(ArgList,Format);
+	RtlStringCbVPrintfA(ContentBuffer,ContentSize,Format,ArgList);
+	va_end(ArgList);
+	DbgPrintEx(DPFLTR_IHVDRIVER_ID,DPFLTR_ERROR_LEVEL,Buffer);
+}
+
 void __cdecl nv_dprintf(const char* format,...)
 {
 	va_list arg_list;

@@ -477,6 +477,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	nvc_query_svm_capability();
 	// Query Extended State Enumeration - Useful for xsetbv handler, CVM scheduler, etc.
 	noir_cpuid(amd64_cpuid_std_pestate_enum,0,&hvm_p->xfeat.support_mask.low,&hvm_p->xfeat.enabled_size_max,&hvm_p->xfeat.supported_size_max,&hvm_p->xfeat.support_mask.high);
+	noir_cpuid(amd64_cpuid_std_pestate_enum,1,&hvm_p->xfeat.supported_instructions,null,&hvm_p->xfeat.supported_xss_bits,null);
 	// Initialize vCPUs.
 	hvm_p->virtual_cpu=noir_alloc_nonpg_memory(hvm_p->cpu_count*sizeof(noir_svm_vcpu));
 	// Implementation of Generic Call might differ.

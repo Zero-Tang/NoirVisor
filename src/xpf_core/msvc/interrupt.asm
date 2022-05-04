@@ -59,4 +59,15 @@ nvc_svm_host_ready_nmi proc
 
 nvc_svm_host_ready_nmi endp
 
+noir_general_protection_handler proc
+
+	; #GP might occur when switching to invalid Guest state.
+	pushaq
+	popaq
+	; #GP has an error code. It must be popped out before the exception returns.
+	add rsp,8
+	iret
+
+noir_general_protection_handler endp
+
 end

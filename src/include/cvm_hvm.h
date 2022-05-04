@@ -35,7 +35,7 @@ typedef enum _noir_cvm_intercept_code
 	cv_invalid_state=0,
 	cv_shutdown_condition=1,
 	cv_memory_access=2,
-	cv_reserved0=3,
+	cv_rsm_instruction=3,
 	cv_hlt_instruction=4,
 	cv_io_instruction=5,
 	cv_cpuid_instruction=6,
@@ -61,6 +61,7 @@ typedef enum _noir_cvm_scheduler_mapping_class
 	cv_scheduler_map_class_hsave,
 	cv_scheduler_map_class_vmcb,
 	cv_scheduler_map_class_unmap,
+	cv_scheduler_map_class_emulate,
 	cv_scheduler_map_class_max
 }noir_cvm_scheduler_mapping_class,*noir_cvm_scheduler_mapping_class_p;
 
@@ -93,7 +94,8 @@ typedef enum _noir_cvm_vcpu_option_type
 {
 	noir_cvm_guest_vcpu_options,
 	noir_cvm_exception_bitmap,
-	noir_cvm_vcpu_priority
+	noir_cvm_vcpu_priority,
+	noir_cvm_msr_interception
 }noir_cvm_vcpu_option_type,*noir_cvm_vcpu_option_type_p;
 
 typedef union _noir_cvm_invalid_state_context
@@ -287,18 +289,18 @@ typedef struct _noir_msr_state
 	u64 sysenter_eip;
 	u64 pat;
 	u64 efer;
-	u64 gsswap;
 	u64 star;
 	u64 lstar;
 	u64 cstar;
 	u64 sfmask;
 	u64 ststar;
-	u64 debug_ctrl;
+	u64 gsswap;
 	struct
 	{
 		memory_descriptor host_page;
 		u64 value;
 	}apic;
+	u64 debug_ctrl;
 	// The LBR virtualization is in draft-stage.
 	u64 last_branch_from_ip;
 	u64 last_branch_to_ip;
@@ -326,10 +328,29 @@ typedef union _noir_cvm_vcpu_options
 		u32 intercept_pause:1;
 		u32 npiep:1;
 		u32 intercept_nmi_window:1;
-		u32 reserved:23;
+		u32 intercept_rsm:1;
+		u32 reserved:22;
 	};
 	u32 value;
 }noir_cvm_vcpu_options,*noir_cvm_vcpu_options_p;
+
+typedef union _noir_cvm_vcpu_msr_interceptions
+{
+	struct
+	{
+		u32 intercept_syscall:1;		// Bit	0
+		u32 intercept_sysenter:1;		// Bit	1
+		u32 intercept_smm:1;			// Bit	2
+		u32 intercept_apic:1;			// Bit	3
+		u32 intercept_mtrr:1;			// Bit	4
+		u32 intercept_mca:1;			// Bit	5
+		u32 intercept_cet:1;			// Bit	6
+		u32 reserved:24;				// Bits	7-30
+		// Set this bit to intercept MSR accesses by classes.
+		u32 valid:1;					// Bit	31
+	};
+	u32 value;
+}noir_cvm_vcpu_msr_interceptions,*noir_cvm_vcpu_msr_interceptions_p;
 
 typedef union _noir_cvm_vcpu_state_cache
 {
@@ -350,6 +371,7 @@ typedef union _noir_cvm_vcpu_state_cache
 		u32 pa_valid:1;		// Includes pat.
 		u32 lb_valid:1;		// Includes debugctl,br_from/to,ex_from/to.
 		u32 ap_valid:1;		// Includes apic-base.
+		u32 ss_valid:1;		// Includes ssp,pln_ssp,u/s_cet,isst
 		u32 reserved:16;
 		u32 tl_valid:1;		// Includes TLB of EPT/NPT.
 		// This field indicates whether the state in VMCS/VMCB is
@@ -399,6 +421,7 @@ typedef struct _noir_cvm_vcpu_statistics
 		noir_cvm_interception_counter hypercall;
 		noir_cvm_interception_counter exception;
 		noir_cvm_interception_counter emulation;
+		noir_cvm_interception_counter rsm;
 	}interceptions;
 	u64 runtime;
 }noir_cvm_vcpu_statistics,*noir_cvm_vcpu_statistics_p;
@@ -417,6 +440,7 @@ typedef struct _noir_cvm_virtual_cpu
 	noir_cvm_event_injection injected_event;
 	noir_cvm_exit_context exit_context;
 	noir_cvm_vcpu_options vcpu_options;
+	noir_cvm_vcpu_msr_interceptions msr_interceptions;
 	noir_cvm_vcpu_state_cache state_cache;
 	noir_cvm_vcpu_statistics statistics;
 	struct
@@ -511,24 +535,25 @@ u32 noir_cvm_exit_context_size=sizeof(noir_cvm_exit_context);
 
 u32 noir_cvm_register_buffer_limit[noir_cvm_maximum_register_type]=
 {
-	sizeof(noir_gpr_state),		// General-Purpose Register
-	sizeof(u64),				// rflags register
-	sizeof(u64),				// rip register
-	sizeof(u64*)*3,				// CR0,CR3,CR4 register
-	sizeof(u64),				// CR2 register
-	sizeof(u64)*4,				// DR0,DR1,DR2,DR3 register
-	sizeof(u64)*2,				// DR6,DR7 register
-	sizeof(segment_register)*4,	// cs,ds,es,ss register
-	sizeof(segment_register)*2,	// fs,gs register
-	sizeof(segment_register)*2,	// tr, ldtr register
-	sizeof(u64)*4,				// syscall MSRs.
-	sizeof(u64)*3,				// sysenter MSRs.
-	sizeof(u64),				// CR8 register
-	sizeof(noir_fx_state),		// x87 FPU and XMM state.
-	0,							// Extended State.
-	8,							// XCR0 Register
-	8,							// EFER Register
-	8							// PAT Register
+	sizeof(noir_gpr_state),			// General-Purpose Register
+	sizeof(u64),					// rflags register
+	sizeof(u64),					// rip register
+	sizeof(u64*)*3,					// CR0,CR3,CR4 register
+	sizeof(u64),					// CR2 register
+	sizeof(u64)*4,					// DR0,DR1,DR2,DR3 register
+	sizeof(u64)*2,					// DR6,DR7 register
+	sizeof(segment_register)*4,		// cs,ds,es,ss register
+	sizeof(segment_register)*2,		// fs,gs register and gsswap.
+	sizeof(segment_register)*2,		// tr, ldtr register
+	sizeof(u64)*4,					// syscall MSRs.
+	sizeof(u64)*3,					// sysenter MSRs.
+	sizeof(u64),					// CR8 register
+	sizeof(noir_fx_state),			// x87 FPU and XMM state.
+	0,								// Extended State.
+	8,								// XCR0 Register
+	8,								// EFER Register
+	8,								// PAT Register
+	sizeof(u64)*5					// LBR Register
 };
 #else
 extern noir_cvm_virtual_machine noir_idle_vm;

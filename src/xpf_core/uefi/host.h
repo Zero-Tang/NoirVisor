@@ -310,6 +310,7 @@ void NoirInitializeSerialPort(IN UINTN ComPort,IN UINT16 PortBase);
 void NoirSerialRead(IN UINTN ComPort,OUT UINT8 *Buffer,IN UINTN Length);
 void NoirSerialWrite(IN UINTN ComPort,IN UINT8 *Buffer,IN UINTN Length);
 void NoirSetupDebugSupportPerProcessor(IN VOID *ProcedureArgument);
+UINT64 NoirReadHpetCounter();
 
 UINT8 NoirGetInstructionLength16(IN UINT8 *Code,IN UINTN CodeLength);
 UINT8 NoirGetInstructionLength32(IN UINT8 *Code,IN UINTN CodeLength);
@@ -323,6 +324,7 @@ extern EFI_BOOT_SERVICES *gBS;
 extern EFI_SYSTEM_TABLE *gST;
 
 extern BOOLEAN NoirEfiInRuntimeStage;
+extern UINT32 NoirHpetIncrementingPeriod;
 
 extern UINT64 system_cr3;
 

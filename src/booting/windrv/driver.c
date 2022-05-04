@@ -276,6 +276,16 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			st=STATUS_SUCCESS;
 			break;
 		}
+		case IOCTL_CvmQueryVcpuStats:
+		{
+			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
+			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
+			ULONG32 BufferSize=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE)+4);
+			PVOID StatsBuffer=*(PVOID*)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE)+8);
+			*(PULONG32)OutputBuffer=NoirQueryVirtualProcessorStatistics(VmHandle,VpIndex,StatsBuffer,BufferSize);
+			st=STATUS_SUCCESS;
+			break;
+		}
 		default:
 		{
 			break;

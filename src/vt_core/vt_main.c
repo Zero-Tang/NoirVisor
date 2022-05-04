@@ -255,8 +255,6 @@ void static nvc_vt_setup_msr_hook(noir_hypervisor_p hvm)
 	void* read_bitmap_high=(void*)((ulong_ptr)hvm->relative_hvm->msr_bitmap.virt+0x400);
 	void* write_bitmap_low=(void*)((ulong_ptr)hvm->relative_hvm->msr_bitmap.virt+0x800);
 	void* write_bitmap_high=(void*)((ulong_ptr)hvm->relative_hvm->msr_bitmap.virt+0xC00);
-	unref_var(write_bitmap_low);
-	unref_var(write_bitmap_high);
 	// Setup custom MSR-Interception.
 #if !defined(_hv_type1)
 	if(hvm->options.stealth_msr_hook)

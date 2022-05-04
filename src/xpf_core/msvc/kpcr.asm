@@ -21,6 +21,8 @@ ifdef _amd64
 
 noir_xsave proc
 
+	mov eax,edx
+	shr rdx,32
 	xsave [rcx]
 	ret
 
@@ -28,10 +30,30 @@ noir_xsave endp
 
 noir_xrestore proc
 
+	mov eax,edx
+	shr rdx,32
 	xrstor [rcx]
 	ret
 
 noir_xrestore endp
+
+noir_xsaves proc
+
+	mov eax,edx
+	shr rdx,32
+	xsaves [rcx]
+	ret
+
+noir_xsaves endp
+
+noir_xrestores proc
+
+	mov eax,edx
+	shr rdx,32
+	xrstors [rcx]
+	ret
+
+noir_xrestores endp
 
 noir_xmmsave proc
 
@@ -162,27 +184,6 @@ non_ffxr:
 	ret
 
 noir_fxrestore endp
-
-ifdef _llvm
-
-__inbyte proc
-
-	mov dx,cx
-	in al,dx
-	ret
-
-__inbyte endp
-
-__outbyte proc
-
-	mov al,dl
-	mov dx,cx
-	out dx,al
-	ret
-
-__outbyte endp
-
-endif
 
 noir_lgdt proc
 

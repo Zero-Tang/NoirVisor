@@ -56,6 +56,7 @@ typedef ULONG32 NOIR_STATUS;
 #define IOCTL_CvmQueryGpaAdMap	CTL_CODE_GEN(0x883)
 #define IOCTL_CvmClearGpaAdBit	CTL_CODE_GEN(0x884)
 #define IOCTL_CvmCreateVmEx		CTL_CODE_GEN(0x885)
+#define IOCTL_CvmSetMappingEx	CTL_CODE_GEN(0x886)
 #define IOCTL_CvmQueryHvStatus	CTL_CODE_GEN(0x88F)
 #define IOCTL_CvmCreateVcpu		CTL_CODE_GEN(0x890)
 #define IOCTL_CvmDeleteVcpu		CTL_CODE_GEN(0x891)
@@ -65,6 +66,7 @@ typedef ULONG32 NOIR_STATUS;
 #define IOCTL_CvmRescindVcpu	CTL_CODE_GEN(0x895)
 #define IOCTL_CvmInjectEvent	CTL_CODE_GEN(0x896)
 #define IOCTL_CvmSetVcpuOptions	CTL_CODE_GEN(0x897)
+#define IOCTL_CvmQueryVcpuStats	CTL_CODE_GEN(0x898)
 
 // Layered Hypervisor Functions
 typedef ULONG64 CVM_HANDLE;
@@ -139,6 +141,7 @@ NOIR_STATUS NoirQueryGpaAccessingBitmap(IN CVM_HANDLE VirtualMachine,IN ULONG64 
 NOIR_STATUS NoirClearGpaAccessingBits(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages);
 NOIR_STATUS NoirViewVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
+NOIR_STATUS NoirQueryVirtualProcessorStatistics(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG64 InjectedEvent);
 NOIR_STATUS NoirSetVirtualProcessorOptions(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 OptionType,IN ULONG32 Options);
 NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID ExitContext);

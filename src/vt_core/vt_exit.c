@@ -1285,8 +1285,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noi
 			// The violated page is found. Perform page-substitution
 			ia32_ept_pte_p pte_p=(ia32_ept_pte_p)nhp->pte_descriptor;
 			u32 proc_num=noir_get_current_processor();
-			noir_vt_vcpu_p vcpu=&hvm_p->virtual_cpu[proc_num];
-			noir_ept_manager_p eptm=(noir_ept_manager_p)vcpu->ept_manager;
+			noir_ept_manager_p eptm=hvm_p->virtual_cpu[proc_num].ept_manager;
 			noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&info);
 			if(info.read || info.write)
 			{

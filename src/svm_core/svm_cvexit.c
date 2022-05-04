@@ -364,6 +364,17 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	// DO NOT advance the rip unless cpuid is handled by NoirVisor.
 }
 
+// Expected Intercept Code: 0x73
+void static fastcall nvc_svm_rsm_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+{
+	// NoirVisor does not know if the vCPU is running in SMM.
+	// Let the User Hypervisor emulate the SMM for the Guest.
+	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+	cvcpu->header.exit_context.intercept_code=cv_rsm_instruction;
+	// Profiler: Classify the interception.
+	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.rsm;
+}
+
 // Expected Intercept Code: 0x74
 void static fastcall nvc_svm_iret_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
@@ -490,11 +501,70 @@ bool static fastcall nvc_svm_wrmsr_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	val.high=(u32)gpr_state->rdx;
 	switch(index)
 	{
+		case amd64_sysenter_cs:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_cs,val.value);
+			break;
+		}
+		case amd64_sysenter_esp:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_esp,val.value);
+			break;
+		}
+		case amd64_sysenter_eip:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_eip,val.value);
+			break;
+		}
+		case amd64_pat:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_pat,val.value);
+			// Guest PAT is cached as NPT fields in VMCB.
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_npt);
+			break;
+		}
 		case amd64_efer:
 		{
 			// Perform SVME shadowing...
 			cvcpu->shadowed_bits.svme=noir_bt(&val.low,amd64_efer_svme);
 			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_efer,val.value|amd64_efer_svme_bit);
+			// Guest EFER is cached as Control Register in VMCB.
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_control_reg);
+			break;
+		}
+		case amd64_star:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_star,val.value);
+			break;
+		}
+		case amd64_lstar:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_lstar,val.value);
+			break;
+		}
+		case amd64_cstar:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cstar,val.value);
+			break;
+		}
+		case amd64_sfmask:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sfmask,val.value);
+			break;
+		}
+		case amd64_fs_base:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_fs_base,val.value);
+			break;
+		}
+		case amd64_gs_base:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_gs_base,val.value);
+			break;
+		}
+		case amd64_kernel_gs_base:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_kernel_gs_base,val.value);
 			break;
 		}
 		default:
@@ -510,18 +580,122 @@ void static fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 {
 	// Determine whether MSR-Interception is subject to be delivered to subverted host.
 	bool op_write=noir_svm_vmread8(cvcpu->vmcb.virt,exit_info1);
-	if(cvcpu->header.vcpu_options.intercept_msr)
+	bool emulate=false;
+	if(cvcpu->header.vcpu_options.intercept_msr && !cvcpu->header.msr_interceptions.valid)
 	{
-		// Switch to subverted host in order to handle the MSR instruction.
-		nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
-		cvcpu->header.exit_context.intercept_code=op_write?cv_wrmsr_instruction:cv_rdmsr_instruction;
-		cvcpu->header.exit_context.msr.eax=(u32)cvcpu->header.gpr.rax;
-		cvcpu->header.exit_context.msr.edx=(u32)cvcpu->header.gpr.rdx;
-		cvcpu->header.exit_context.msr.ecx=(u32)cvcpu->header.gpr.rcx;
-		// Profiler: Classify the interception.
-		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.msr;
+		bool intercept=!cvcpu->header.msr_interceptions.valid;
+		u32 index=(u32)gpr_state->rcx;
+		if(cvcpu->header.msr_interceptions.valid)
+		{
+			// User Hypervisor wants to intercept only a portion of MSRs.
+			switch(index)
+			{
+				case amd64_apic_base:
+				{
+					intercept=cvcpu->header.msr_interceptions.intercept_apic;
+					break;
+				}
+				case amd64_mtrr_cap:
+				case amd64_mtrr_phys_base0:
+				case amd64_mtrr_phys_mask0:
+				case amd64_mtrr_phys_base1:
+				case amd64_mtrr_phys_mask1:
+				case amd64_mtrr_phys_base2:
+				case amd64_mtrr_phys_mask2:
+				case amd64_mtrr_phys_base3:
+				case amd64_mtrr_phys_mask3:
+				case amd64_mtrr_phys_base4:
+				case amd64_mtrr_phys_mask4:
+				case amd64_mtrr_phys_base5:
+				case amd64_mtrr_phys_mask5:
+				case amd64_mtrr_phys_base6:
+				case amd64_mtrr_phys_mask6:
+				case amd64_mtrr_phys_base7:
+				case amd64_mtrr_phys_mask7:
+				case amd64_mtrr_fix64k_00000:
+				case amd64_mtrr_fix16k_80000:
+				case amd64_mtrr_fix16k_a0000:
+				case amd64_mtrr_fix4k_c0000:
+				case amd64_mtrr_fix4k_c8000:
+				case amd64_mtrr_fix4k_d0000:
+				case amd64_mtrr_fix4k_d8000:
+				case amd64_mtrr_fix4k_e0000:
+				case amd64_mtrr_fix4k_e8000:
+				case amd64_mtrr_fix4k_f0000:
+				case amd64_mtrr_fix4k_f8000:
+				case amd64_pat:
+				case amd64_mtrr_def_type:
+				{
+					intercept=cvcpu->header.msr_interceptions.intercept_mtrr;
+					break;
+				}
+				case amd64_sysenter_cs:
+				case amd64_sysenter_esp:
+				case amd64_sysenter_eip:
+				{
+					intercept=cvcpu->header.msr_interceptions.intercept_sysenter;
+					break;
+				}
+				case amd64_u_cet:
+				case amd64_s_cet:
+				case amd64_pl0_ssp:
+				case amd64_pl1_ssp:
+				case amd64_pl2_ssp:
+				case amd64_pl3_ssp:
+				case amd64_isst_addr:
+				{
+					intercept=cvcpu->header.msr_interceptions.intercept_cet;
+					break;
+				}
+				case amd64_star:
+				case amd64_lstar:
+				case amd64_cstar:
+				case amd64_sfmask:
+				case amd64_fs_base:
+				case amd64_gs_base:
+				case amd64_kernel_gs_base:
+				{
+					intercept=cvcpu->header.msr_interceptions.intercept_syscall;
+					break;
+				}
+				case amd64_smi_trig_io_cycle:
+				case amd64_pstate_current_limit:
+				case amd64_pstate_control:
+				case amd64_pstate_status:
+				case amd64_smbase:
+				case amd64_smm_addr:
+				case amd64_smm_mask:
+				case amd64_local_smi_status:
+				{
+					intercept=cvcpu->header.msr_interceptions.intercept_smm;
+					break;
+				}
+				default:
+				{
+					// There are too many MSRs for x2APIC. Use a range to determine them.
+					if(index>=amd64_x2apic_msr_start && index<=amd64_x2apic_msr_end)
+						intercept=cvcpu->header.msr_interceptions.intercept_apic;
+					else
+						intercept=false;
+					break;
+				}
+			}
+		}
+		if(intercept)
+		{
+			// Switch to subverted host in order to handle the MSR instruction.
+			nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+			cvcpu->header.exit_context.intercept_code=op_write?cv_wrmsr_instruction:cv_rdmsr_instruction;
+			cvcpu->header.exit_context.msr.eax=(u32)cvcpu->header.gpr.rax;
+			cvcpu->header.exit_context.msr.edx=(u32)cvcpu->header.gpr.rdx;
+			cvcpu->header.exit_context.msr.ecx=(u32)cvcpu->header.gpr.rcx;
+			// Profiler: Classify the interception.
+			cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.msr;
+		}
+		// If interception is not going to be passed to User Hypervisor, let NoirVisor emulate the MSR access.
+		emulate=!intercept;
 	}
-	else
+	if(emulate)
 	{
 		// NoirVisor will be handling CVM's MSR Interception.
 		bool advance=op_write?nvc_svm_wrmsr_cvexit_handler(gpr_state,cvcpu):nvc_svm_rdmsr_cvexit_handler(gpr_state,cvcpu);
@@ -544,7 +718,7 @@ void static fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 				cvcpu->header.exit_context.exception.reserved=0;
 				cvcpu->header.exit_context.exception.error_code=0;
 				// Profiler: Classify the interception as exception interception.
-				cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
+				cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.exception;
 			}
 		}
 	}

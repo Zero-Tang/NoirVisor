@@ -63,6 +63,17 @@ PVOID NoirReferenceVirtualMachineByHandleUnsafe(IN CVM_HANDLE Handle,IN ULONG_PT
 	return NoirReferenceVirtualMachineByHandleUnsafe(Handle,Base[RefIndex]);
 }
 
+PVOID NoirReferenceVirtualMachineByHandle(IN CVM_HANDLE Handle)
+{
+	PVOID VM=NULL;
+	KeEnterCriticalRegion();
+	ExAcquireResourceExclusiveLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	VM=NoirReferenceVirtualMachineByHandleUnsafe(Handle,NoirCvmHandleTable.TableCode);
+	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	KeLeaveCriticalRegion();
+	return VM;
+}
+
 // This function does not acquire lock itself.
 // Therefore, acquire the table lock with Exclusive Access prior to invoking this function!
 NOIR_STATUS NoirCreateHandleUnsafe(IN ULONG_PTR TableCode,OUT PCVM_HANDLE Handle,IN PVOID ReferencedEntry)
@@ -178,7 +189,7 @@ NOIR_STATUS NoirCreateHandle(OUT PCVM_HANDLE Handle,IN PVOID ReferencedEntry)
 
 // This function does not acquire lock itself.
 // Therefore, acquire the table lock with Exclusive Access prior to invoking this function!
-void NoirDeleteHandle(IN CVM_HANDLE Handle,IN ULONG_PTR TableCode)
+void NoirDeleteHandleUnsafe(IN CVM_HANDLE Handle,IN ULONG_PTR TableCode)
 {
 	PULONG_PTR Base=(PULONG_PTR)PAGE_ALIGN(TableCode);	// Get the base of current table.
 	ULONG32 Levels=BYTE_OFFSET(TableCode);				// Get the level of current table.
@@ -188,7 +199,7 @@ void NoirDeleteHandle(IN CVM_HANDLE Handle,IN ULONG_PTR TableCode)
 	if(!Levels)
 		Base[RefIndex]=0;
 	else
-		NoirDeleteHandle(Handle,Base[RefIndex]);
+		NoirDeleteHandleUnsafe(Handle,Base[RefIndex]);
 }
 
 NOIR_STATUS NoirCreateVirtualMachine(OUT PCVM_HANDLE VirtualMachine)
@@ -220,7 +231,7 @@ NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine)
 		if(st==NOIR_SUCCESS)
 		{
 			NoirCvmHandleTable.HandleCount--;
-			NoirDeleteHandle(VirtualMachine,NoirCvmHandleTable.TableCode);
+			NoirDeleteHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
 		}
 	}
 	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
@@ -231,176 +242,133 @@ NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine)
 NOIR_STATUS NoirQueryGpaAccessingBitmap(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages,OUT PVOID Bitmap,IN ULONG32 BitmapSize)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
-	PVOID VM=NULL;
-	KeEnterCriticalRegion();
-	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)st=nvc_query_gpa_accessing_bitmap(VM,GpaStart,NumberOfPages,Bitmap,BitmapSize);
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-	KeLeaveCriticalRegion();
 	return st;
 }
 
 NOIR_STATUS NoirClearGpaAccessingBits(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
-	PVOID VM=NULL;
-	KeEnterCriticalRegion();
-	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)st=nvc_clear_gpa_accessing_bits(VM,GpaStart,NumberOfPages);
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-	KeLeaveCriticalRegion();
 	return st;
 }
 
 NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
-	PVOID VM=NULL;
-	KeEnterCriticalRegion();
-	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)st=nvc_set_mapping(VM,MappingInformation);
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-	KeLeaveCriticalRegion();
+	return st;
+}
+
+NOIR_STATUS NoirQueryVirtualProcessorStatistics(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID Buffer,IN ULONG32 BufferSize)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_query_vcpu_statistics(VP,Buffer,BufferSize);
+	}
 	return st;
 }
 
 NOIR_STATUS NoirViewVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
-	PVOID VM=NULL;
-	KeEnterCriticalRegion();
-	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)
 	{
 		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
 		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_view_vcpu_registers(VP,RegisterType,Buffer,BufferSize);
 	}
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-	KeLeaveCriticalRegion();
 	return st;
 }
 
 NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
-	PVOID VM=NULL;
-	KeEnterCriticalRegion();
-	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)
 	{
 		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
 		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_edit_vcpu_registers(VP,RegisterType,Buffer,BufferSize);
 	}
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-	KeLeaveCriticalRegion();
 	return st;
 }
 
 NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG64 InjectedEvent)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
-	PVOID VM=NULL;
-	KeEnterCriticalRegion();
-	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)
 	{
 		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
 		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_set_event_injection(VP,InjectedEvent);
 	}
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-	KeLeaveCriticalRegion();
 	return st;
 }
 
 NOIR_STATUS NoirSetVirtualProcessorOptions(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 OptionType,IN ULONG32 Options)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
-	PVOID VM=NULL;
-	KeEnterCriticalRegion();
-	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)
 	{
 		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
 		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_set_guest_vcpu_options(VP,OptionType,Options);
 	}
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-	KeLeaveCriticalRegion();
 	return st;
 }
 
 NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID ExitContext)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
-	PVOID VM=NULL;
-	KeEnterCriticalRegion();
-	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)
 	{
 		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
 		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_run_vcpu(VP,ExitContext);
 	}
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-	KeLeaveCriticalRegion();
 	return st;
 }
 
 NOIR_STATUS NoirRescindVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
-	PVOID VM=NULL;
-	KeEnterCriticalRegion();
-	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)
 	{
 		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
 		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_rescind_vcpu(VP);
 	}
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-	KeLeaveCriticalRegion();
 	return st;
 }
 
 NOIR_STATUS NoirCreateVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
-	PVOID VM=NULL;
-	KeEnterCriticalRegion();
-	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)
 	{
 		PVOID VP=NULL;
 		st=nvc_create_vcpu(VM,&VP,VpIndex);
 		NoirCvmTracePrint("vCPU Creation Status: 0x%X\t vCPU: 0x%p\n",st,VP);
 	}
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-	KeLeaveCriticalRegion();
 	return st;
 }
 
 NOIR_STATUS NoirReleaseVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
-	PVOID VM=NULL;
-	KeEnterCriticalRegion();
-	ExAcquireResourceSharedLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
-	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)
 	{
 		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
 		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_release_vcpu(VP);
 	}
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
-	KeLeaveCriticalRegion();
 	return st;
 }
 
@@ -439,10 +407,10 @@ void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessI
 				HANDLE Pid=NoirGetVirtualMachineProcessIdByPointer(VirtualMachine);
 				if(Pid==ProcessId)
 				{
-					NoirCvmTracePrint("[Handle Recycle] Terminated PID=%d has created CVM Handle=%d! Terminating VM...\n",Pid,Handle);
+					NoirCvmTracePrint("[Handle Recycle] Terminated PID=%u has created CVM Handle=%llu! Terminating VM...\n",(ULONG)Pid,Handle);
 					nvc_release_vm(VirtualMachine);
 					NoirCvmHandleTable.HandleCount--;
-					NoirDeleteHandle(Handle,NoirCvmHandleTable.TableCode);
+					NoirDeleteHandleUnsafe(Handle,NoirCvmHandleTable.TableCode);
 				}
 			}
 		}

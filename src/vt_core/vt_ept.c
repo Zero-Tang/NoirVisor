@@ -59,7 +59,7 @@ bool nvc_ept_insert_pte(noir_ept_manager_p eptm,noir_hook_page_p nhp)
 				cur_d->virt[i].read=1;
 				cur_d->virt[i].write=1;
 				cur_d->virt[i].execute=1;
-				cur_d->virt[i].memory_type=ia32_write_back;
+				cur_d->virt[i].memory_type=pde_p->reserved0&7;
 				cur_d->virt[i].page_offset=cur_d->gpa_start+i;
 			}
 			cur_d->gpa_start<<=12;
@@ -139,7 +139,7 @@ bool nvc_ept_update_pde_memory_type(noir_ept_manager_p eptm,u64 hpa,u8 memory_ty
 		// If set, EPT Misconfiguration would occur.
 		if(eptm->pde.virt[index].large_pde)
 		{
-			if(regardless || eptm->pde.virt[index].ignored || memory_type<eptm->pde.virt[index].memory_type)
+			if(regardless || eptm->pde.virt[index].ignored0 || memory_type<eptm->pde.virt[index].memory_type)
 				eptm->pde.virt[index].memory_type=memory_type;
 			eptm->pde.virt[index].ignored0=true;				// Use the ignored bit to indicate that this page is marked by MTRR.
 		}
@@ -318,10 +318,9 @@ void static nvc_ept_update_per_var_mtrr(noir_ept_manager_p eptm,u32 mtrr_msr_ind
 		if(phys_base.type!=eptm->def_type.type)
 		{
 			u32 min_bitp1,min_bitp2;
-			u8 b1,b2;
 			// Determine the length of range.
-			b1=noir_bsf64(&min_bitp1,phys_mask.phys_mask);
-			b2=noir_bsf64(&min_bitp2,phys_base.phys_base);
+			u8 b1=noir_bsf64(&min_bitp1,phys_mask.phys_mask);
+			u8 b2=noir_bsf64(&min_bitp2,phys_base.phys_base);
 			// If the MTRR specified a range that aligned under 2MiB, we can't proceed.
 			if((b1 && min_bitp1<page_shift_diff) || (b2 && min_bitp2<page_shift_diff))
 			{
@@ -338,7 +337,7 @@ void static nvc_ept_update_per_var_mtrr(noir_ept_manager_p eptm,u32 mtrr_msr_ind
 				for(u64 mask_addr=0;mask_addr<(1i64<<page_512gb_shift);mask_addr+=page_2mb_size)
 				{
 					const u64 mask_target=mask_phys&mask_addr;
-					if(mask_target==mask_base)nvc_ept_update_pde_memory_type(eptm,mask_addr,(u8)phys_base.type,false);
+					if(mask_target==mask_base)nvc_ept_update_pde_memory_type(eptm,mask_addr,(u8)phys_base.type,true);
 				}
 			}
 		}

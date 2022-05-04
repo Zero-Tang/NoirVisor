@@ -508,8 +508,10 @@ void noir_xmmsave(noir_xmm_state_p state);
 void noir_xmmrestore(noir_xmm_state_p state);
 void noir_ymmsave(noir_ymm_state_p state);
 void noir_ymmrestore(noir_ymm_state_p state);
-void noir_xsave(void* state);
-void noir_xrestore(void* state);
+void noir_xsave(void* state,u64 bv_mask);
+void noir_xrestore(void* state,u64 bv_mask);
+void noir_xsaves(void* state,u64 bv_mask);
+void noir_xrestores(void* state,u64 bv_mask);
 
 // Memory Facility
 void* noir_alloc_contd_memory(size_t length);
@@ -536,6 +538,7 @@ void cdecl nv_panicf(const char* format,...);
 void cdecl nv_async_dprintf(const char* format,...);
 void cdecl nvci_tracef(const char* format,...);
 void cdecl nvci_panicf(const char* format,...);
+void cdecl nv_dprintf2(bool datetime,bool proc_id,const char* format,...);
 
 // Threading Facility
 typedef u32 (stdcall *noir_thread_procedure)(void* context);

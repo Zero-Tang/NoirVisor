@@ -22,6 +22,7 @@
 #include <Protocol/UgaDraw.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Protocol/MpService.h>
+#include <Guid/Acpi.h>
 #include <Guid/GlobalVariable.h>
 #include <Library/UefiLib.h>
 
@@ -80,6 +81,8 @@ EFI_GUID gEfiDevicePathUtilitiesProtocolGuid=EFI_DEVICE_PATH_UTILITIES_PROTOCOL_
 EFI_GUID gEfiDevicePathToTextProtocolGuid=EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID;
 EFI_GUID gEfiDevicePathFromTextProtocolGuid=EFI_DEVICE_PATH_FROM_TEXT_PROTOCOL_GUID;
 EFI_GUID gEfiLoadedImageProtocolGuid=EFI_LOADED_IMAGE_PROTOCOL_GUID;
+EFI_GUID gEfiAcpi10TableGuid=ACPI_10_TABLE_GUID;
+EFI_GUID gEfiAcpi20TableGuid=EFI_ACPI_20_TABLE_GUID;
 EFI_GUID gEfiNoirVisorVendorGuid=EFI_NOIRVISOR_VENDOR_GUID;
 
 HYPERVISOR_SYSTEM_IDENTITY HvSysId={0};

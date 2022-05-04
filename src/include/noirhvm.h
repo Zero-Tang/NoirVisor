@@ -137,6 +137,8 @@ typedef struct _noir_hypervisor
 		large_integer support_mask;
 		u32 supported_size_max;
 		u32 enabled_size_max;
+		u32 supported_instructions;
+		u32 supported_xss_bits;
 	}xfeat;
 	union
 	{

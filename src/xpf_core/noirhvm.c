@@ -146,6 +146,11 @@ noir_status nvc_set_guest_vcpu_options(noir_cvm_virtual_cpu_p vcpu,noir_cvm_vcpu
 				vcpu->scheduling_priority=data;
 				break;
 			}
+			case noir_cvm_msr_interception:
+			{
+				vcpu->msr_interceptions.value=data;
+				break;
+			}
 			default:
 			{
 				valid=false;
@@ -167,6 +172,8 @@ noir_status nvc_set_guest_vcpu_options(noir_cvm_virtual_cpu_p vcpu,noir_cvm_vcpu
 			else
 				st=noir_unknown_processor;
 		}
+		else
+			st=noir_invalid_parameter;
 	}
 	return st;
 }
@@ -247,6 +254,9 @@ noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 				segment_register_p sr_list=(segment_register_p)buffer;
 				vcpu->seg.fs=sr_list[0];
 				vcpu->seg.gs=sr_list[1];
+				// Compatibility purpose for Kernel-GS-Base settings.
+				if(buffer_size-noir_cvm_register_buffer_limit[noir_cvm_fgseg_register]>=sizeof(u64))
+					vcpu->msrs.gsswap=*(u64p)((ulong_ptr)buffer+32);
 				vcpu->state_cache.fg_valid=0;
 				break;
 			}
@@ -293,7 +303,7 @@ noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 			}
 			case noir_cvm_xsave_area:
 			{
-				if(buffer_size>=hvm_p->xfeat.supported_size_max)
+				if(buffer_size<hvm_p->xfeat.supported_size_max)
 					noir_copy_memory(vcpu->xsave_area,buffer,hvm_p->xfeat.supported_size_max);
 				else
 					st=noir_buffer_too_small;
@@ -314,6 +324,12 @@ noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 			{
 				vcpu->msrs.pat=*(u64*)buffer;
 				vcpu->state_cache.pa_valid=0;
+				break;
+			}
+			case noir_cvm_last_branch_record_register:
+			{
+				noir_copy_memory(&vcpu->msrs.debug_ctrl,buffer,sizeof(u64)*5);
+				vcpu->state_cache.lb_valid=0;
 				break;
 			}
 			default:
@@ -398,6 +414,7 @@ noir_status nvc_view_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 					nvc_synchronize_vcpu_state(vcpu);
 				sr_list[0]=vcpu->seg.fs;
 				sr_list[1]=vcpu->seg.gs;
+				*(u64p)((ulong_ptr)buffer+32)=vcpu->msrs.gsswap;
 				break;
 			}
 			case noir_cvm_descriptor_table:

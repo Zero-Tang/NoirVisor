@@ -162,6 +162,44 @@
 #define amd64_mtrr_fix4k_f8000			0x26F
 #define amd64_pat						0x277
 #define amd64_mtrr_def_type				0x2FF
+#define amd64_u_cet						0x6A0
+#define amd64_s_cet						0x6A2
+#define amd64_pl0_ssp					0x6A4
+#define amd64_pl1_ssp					0x6A5
+#define amd64_pl2_ssp					0x6A6
+#define amd64_pl3_ssp					0x6A7
+#define amd64_isst_addr					0x6A8
+#define amd64_x2apic_msr_start			0x800
+#define amd64_x2apic_id					0x802
+#define amd64_x2apic_version			0x803
+#define amd64_x2apic_tpr				0x808
+#define amd64_x2apic_apr				0x809
+#define amd64_x2apic_ppr				0x80A
+#define amd64_x2apic_eoi				0x80B
+#define amd64_x2apic_ldr				0x80D
+#define amd64_x2apic_spur_int_vector	0x80F
+#define amd64_x2apic_isr(n)				(0x810+n)
+#define amd64_x2apic_tmr(n)				(0x818+n)
+#define amd64_x2apic_irr(n)				(0x820+n)
+#define amd64_x2apic_esr				0x828
+#define amd64_x2apic_icr				0x830
+#define amd64_x2apic_timer_lvt			0x832
+#define amd64_x2apic_thermal_lvt		0x833
+#define amd64_x2apic_perfcnt_lvt		0x834
+#define amd64_x2apic_lint0_lvt			0x835
+#define amd64_x2apic_lint1_lvt			0x836
+#define amd64_x2apic_evt				0x837
+#define amd64_x2apic_timer_init_count	0x838
+#define amd64_x2apic_timer_cur_count	0x839
+#define amd64_x2apic_timer_div_conf		0x83E
+#define amd64_x2apic_self_ipi			0x83F
+#define amd64_x2apic_ext_feat			0x840
+#define amd64_x2apic_ext_ctrl			0x841
+#define amd64_x2apic_seoi				0x842
+#define amd64_x2apic_ier(n)				(0x848+n)
+#define amd64_x2apic_extint_lvt(n)		(0x850+n)
+#define amd64_x2apic_msr_end			0x8FF
+#define amd64_xss						0xDA0
 #define amd64_efer						0xC0000080
 #define amd64_star						0xC0000081
 #define amd64_lstar						0xC0000082
@@ -170,10 +208,14 @@
 #define amd64_fs_base					0xC0000100
 #define amd64_gs_base					0xC0000101
 #define amd64_kernel_gs_base			0xC0000102
-#define amd64_tsc_ratio					0xC0000104
 #define amd64_hwcr						0xC0010015
 
 // SVM/SMM Related MSRs
+#define amd64_smi_trig_io_cycle			0xC0010056
+#define amd64_pstate_current_limit		0xC0010061
+#define amd64_pstate_control			0xC0010062
+#define amd64_pstate_status				0xC0010063
+#define amd64_tsc_ratio					0xC0010104
 #define amd64_smbase					0xC0010111
 #define amd64_smm_addr					0xC0010112
 #define amd64_smm_mask					0xC0010113
@@ -186,10 +228,12 @@
 #define amd64_local_smi_status			0xC001011A
 #define amd64_apic_doorbell				0xC001011B
 #define amd64_vmpage_flush				0xC001011E
+#define amd64_virt_spec_ctrl			0xC001011F
 #define amd64_svm_ghcb_pa				0xC0010130
 #define amd64_sev_status				0xC0010131
 #define amd64_rmp_base					0xC0010132
 #define amd64_rmp_end					0xC0010133
+#define amd64_guest_tsc_freq			0xC0010134
 
 // Index of Standard Leaves
 #define amd64_cpuid_std_max_num_vstr		0x0

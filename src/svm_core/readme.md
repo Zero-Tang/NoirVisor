@@ -367,6 +367,7 @@ The condition to switch the processor context from the guest to the host is cert
 - Processor Halt. (The `hlt` instruction)
 - Shutdown Condition. (Includes Triple-Fault, etc.)
 - Hypercall (The `vmmcall` instruction)
+- Return from SMM (The `rsm` instruction)
 - User-defined interceptions (Exceptions, `cpuid` instruction, etc.)
 
 Only vCPU states not saved into VMCB should be saved for Guest and loaded for Host.
@@ -389,6 +390,9 @@ However, intercepting the `iret` instruction could be an accurate approach of ca
 
 ### CPUID Interception
 The `cpuid` instruction must be intercepted by NoirVisor, even though host may choose not to intercept it. If the host chooses not to intercept `cpuid` instruction, NoirVisor would handle the `cpuid` instruction itself. Otherwise, switch the world to the host so that host will be handling Guest's `cpuid` instruction.
+
+### RSM Interception
+The `rsm` instruction is optionally intercepted by NoirVisor. If the host chooses not to intercept `rsm` instruction, NoirVisor would not specify the intercept bit in VMCB.
 
 ### INVD Interception
 The `invd` instruction must be intercepted by NoirVisor. The `invd` instruction invalidates all caches without writing them back to the main memory. In this regard, NoirVisor must take responsibility to prevent the guest purposefully corrupting the global memory. Virtualization of `invd` instruction is actually simple: execute `wbinvd` instruction on exit of `invd`. At least this is what Hyper-V would do.
@@ -417,9 +421,37 @@ Situations that require NoirVisor to access guest pages include:
 
 - VMCBs for Nested Virtualization.
 - APIC Pages if there is no AVIC support.
+- Instruction Emulation. (NPIEP, etc.)
 
 In `GIF=0` context, we cannot perform the mapping in that synchronization is infeasible here. Therefore, we must issue a VM-Entry to map the guest pages into host kernel pages. <br>
 The VM-Entry to subvert host for this purpose is called the Page-Translation Callback.
+
+## Memory-Mapping Swapping Facility
+In order to accelerate special memory virtualizations in CVM, NoirVisor provides a facility to swap memory mapping. User Hypervisor may specify at most 512 sets of memory mapping per VM. <br>
+User Hypervisor may use this facility to hook into the guest, to accelerate entrances and exits of SMM, and even to specify different mappings per vCPU, etc.
+
+## SMM Virtualization
+SMM, abbreviation that stands for System Management Mode, is a standard x86 component to handle critical system-control activities (e.g.: Power Management, Interactions with NVRAM on motherboard, etc.). <br>
+NoirVisor does not emulate System Management Mode. It is User Hypervisor's responsibility to emulate SMM for the Guest.
+
+### SMRAM Virtualization
+SMRAM is a special memory area consists of 64KiB of memory. It is an independent RAM storage and is not located on the main system memory. For example, if the `SMBASE` is pointed to 0x00030000, memory accesses to `0x00030000-0x0003FFFF` are different from inside and outside of SMM. By virtue of this, User Hypervisor is responsible to set up a different mapping when the vCPU is entering SMM. <br>
+
+### Guidelines for SMM Emulation
+As previously pointed out, SMM Emulation is User Hypervisor's responsibility. NoirVisor is completely unaware of whether the vCPU is running in SMM or not. <br>
+
+1. User Hypervisor must specify to intercept `rsm` instruction. Otherwise, any execution of `rsm` instruction will be treated as `#UD` exception and thereby guest can not leave `SMM`.
+2. User Hypervisor must emulate the entrance and exit of `SMM`.
+	- For entrance to SMM, User Hypervisor must map the SMRAM to the guest. Then save and initialize the processor state for the guest.
+	- For exit from SMM, User Hypervisor must unmap the SMRAM from the guest. Then restore the processor state for the guest.
+	- User Hypervisor may use Memory-Mapping Swapping Facility to accelerate the remappings of SMRAM.
+3. User Hypervisor must intercept accesses to MSRs for SMM. Note that definitions for System Management Mode MSRs on AMD are different from Intel.
+4. User Hypervisor must revoke any pending interrupts when emulating the entrance of SMM.
+	- SMM is a highly atomic execution environment. No external interrupts should be taken while in SMM.
+	- Guest may purposefully execute `iret` instruction in order to allow NMIs to be taken in SMM. User Hypervisors must intercept NMI-window in order to emulate this aspect.
+	- SMIs must be held pending while the vCPU is in SMM.
+5. User Hypervisor must treat `rsm` as undefined instruction outside SMM. User Hypervisors may cancel the interception of `rsm` instructions outside SMM. Unintercepted `rsm` instructions will be automatically treated as unrecognizable instructions (i.e.: trigger `#UD` exception).
+6. Some fields in SMRAM State Save Area are read-only. According to the processor manual, writing them would cause unpredictable results. It is User Hypervisor's responsibility to emulate the "unpredictable results". Because the State Save Area is smaller than a page (512 bytes), use integrity-cryptographical validation approach (e.g.: CRC32C, MD5, SHA, SM3, etc.) is recommended rather than intercepting the writes.
 
 ## APIC Virtualization
 APIC, acronym that stands for Advance Programmable Interrupt Controller, is a standard x86 component to utilize multi-core processing. Although Customizable VM does not necessarily need APIC to call other cores - hypercalls can be used instead - virtualization of APIC is favorable at best. <br>
