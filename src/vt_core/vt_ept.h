@@ -233,6 +233,10 @@ typedef struct _noir_ept_manager
 	ia32_mtrr_def_type_msr def_type;
 	u8 phys_addr_size;
 	u8 virt_addr_size;
+#if !defined(_hv_type1)
+	u32 pending_hook_index;
+	noir_hook_page hook_pages[1];
+#endif
 }noir_ept_manager,*noir_ept_manager_p;
 
 typedef union _ia32_ept_violation_qualification

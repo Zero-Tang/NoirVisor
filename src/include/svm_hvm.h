@@ -41,7 +41,7 @@
 #define noir_svm_issuing_ipi				3
 
 // Number of nested VMCBs to be cached.
-#define noir_svm_cached_nested_vmcb			32
+#define noir_svm_cached_nested_vmcb			31
 
 // When synchronizing nested VMCB for nested VM-Exits,
 // most fields in VMCB requires synchronization.
@@ -98,17 +98,32 @@ typedef struct _noir_svm_virtual_msr
 
 typedef struct _noir_svm_nested_vcpu_node
 {
+	struct
+	{
+		struct _noir_svm_nested_vcpu_node *prev;
+		struct _noir_svm_nested_vcpu_node *next;
+	}cache_list;
+	struct
+	{
+		struct _noir_svm_nested_vcpu_node *left;
+		struct _noir_svm_nested_vcpu_node *right;
+		i32 height;
+	}avl;
 	memory_descriptor vmcb_t;
-	memory_descriptor vmcb_c;
-	u64 last_tsc;
-	u64 entry_counter;
+	u64 l2_vmcb;
 }noir_svm_nested_vcpu_node,*noir_svm_nested_vcpu_node_p;
 
 typedef struct _noir_svm_nested_vcpu
 {
 	u64 hsave_gpa;
 	void* hsave_hva;
-	noir_svm_nested_vcpu_node nested_vmcb[noir_svm_cached_nested_vmcb];
+	struct
+	{
+		noir_svm_nested_vcpu_node pool[noir_svm_cached_nested_vmcb];
+		noir_svm_nested_vcpu_node_p head;
+		noir_svm_nested_vcpu_node_p tail;
+		noir_svm_nested_vcpu_node_p root;
+	}nodes;
 	struct
 	{
 		u64 svme:1;
@@ -186,6 +201,7 @@ typedef struct _noir_svm_custom_npt_manager
 		struct _noir_npt_pte_descriptor *head;
 		struct _noir_npt_pte_descriptor *tail;
 	}pte;
+	u32 asid;
 }noir_svm_custom_npt_manager,*noir_svm_custom_npt_manager_p;
 
 // Some bits are host-owned. Therefore, Guest's bit must be saved accordingly.
@@ -195,6 +211,7 @@ typedef union _noir_svm_shadowed_bits
 	{
 		u64 mce:1;
 		u64 svme:1;
+		u64 tf:1;
 		u64 reserved:62;
 	};
 	u64 value;
@@ -220,6 +237,7 @@ typedef struct _noir_svm_custom_vcpu
 		u64 value;
 	}special_state;
 	u64 lasted_tsc;
+	u32 selected_mapping;
 	u32 proc_id;
 	u32 vcpu_id;
 }noir_svm_custom_vcpu,*noir_svm_custom_vcpu_p;
@@ -235,8 +253,7 @@ typedef struct _noir_svm_custom_vm
 	memory_descriptor msrpm_full;
 	memory_descriptor avic_logical;
 	memory_descriptor avic_physical;
-	struct _noir_svm_custom_npt_manager nptm;
-	u32 asid_list[1];
+	struct _noir_svm_custom_npt_manager *nptm;
 }noir_svm_custom_vm,*noir_svm_custom_vm_p;
 
 // Virtual Processor defined for Encrypted CVM.
@@ -255,7 +272,7 @@ typedef struct _noir_svm_secure_vm
 {
 	noir_cvm_virtual_machine header;
 	noir_svm_secure_vcpu_p vcpu;
-	struct _noir_svm_custom_npt_manager nptm;
+	noir_svm_custom_npt_manager_p nptm;
 	u32 vcpu_count;
 	u32 asid;
 	memory_descriptor iopm;
@@ -293,11 +310,13 @@ void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid_fms);
-void nvc_svmn_synchronize_to_l2t_vmcb(noir_svm_nested_vcpu_node_p nvcpu);
-void nvc_svmn_synchronize_to_l2c_vmcb(noir_svm_nested_vcpu_node_p nvcpu);
+void nvc_svm_initialize_nested_vcpu_node_pool(noir_svm_nested_vcpu_p nvcpu);
+void nvc_svmn_virtualize_exit_vmcb(noir_svm_vcpu_p vcpu,void* l1_vmcb,void* l2_vmcb);
+void nvc_svmn_virtualize_entry_vmcb(noir_svm_vcpu_p vcpu,void* l2_vmcb,void* l1_vmcb);
+noir_svm_nested_vcpu_node_p nvc_svm_search_nested_vcpu_node(noir_svm_nested_vcpu_p nvcpu,u64 vmcb);
+noir_svm_nested_vcpu_node_p nvc_svm_insert_nested_vcpu_node(noir_svm_nested_vcpu_p nvcpu,u64 vmcb);
 void nvc_svmn_set_gif(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,void* target_vmcb);
 void nvc_svmn_clear_gif(noir_svm_vcpu_p vcpu);
-void nvc_svmn_insert_nested_vmcb(noir_svm_vcpu_p vcpu,memory_descriptor_p vmcb);
 u8 nvc_npt_get_host_pat_index(u8 type);
 noir_status nvc_svmc_initialize_cvm_module();
 void nvc_svmc_finalize_cvm_module();

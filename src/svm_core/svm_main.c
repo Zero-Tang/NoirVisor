@@ -281,7 +281,7 @@ void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu)
 	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_tr_limit,state.tr.limit);
 	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_tr_base,state.tr.base);
 	// Load Host Control Registers.
-	noir_writecr3(state.cr3);
+	noir_writecr3(hvm_p->host_memmap.hcr3.phys);
 	noir_writecr4(state.cr4|amd64_cr4_osfxsr_bit|amd64_cr4_osxsave_bit);
 }
 
@@ -422,6 +422,56 @@ void static nvc_svm_subvert_processor_thunk(void* context,u32 processor_id)
 	nvc_svm_subvert_processor(&vcpu[processor_id]);
 }
 
+// This function builds an identity map for NoirVisor, as Type-II hypervisor, to access physical addresses.
+bool nvc_svm_build_host_page_table(noir_hypervisor_p hvm_p)
+{
+#if defined(_hv_type1)
+	hvm_p->host_memmap.hcr3.phys=system_cr3;
+	hvm_p->host_memmap.hcr3.virt=(void*)system_cr3;
+	return true;
+#else
+	void* scr3_virt=noir_find_virt_by_phys(page_base(system_cr3));
+	nv_dprintf("System CR3 Virtual Address: 0x%p\tPhysical Address: 0x%p\n",scr3_virt,system_cr3);
+	if(scr3_virt)
+	{
+		hvm_p->host_memmap.hcr3.virt=noir_alloc_contd_memory(page_size);
+		if(hvm_p->host_memmap.hcr3.virt)
+		{
+			hvm_p->host_memmap.hcr3.phys=noir_get_physical_address(hvm_p->host_memmap.hcr3.virt);
+			// Copy the PML4Es from system CR3.
+			noir_copy_memory(hvm_p->host_memmap.hcr3.virt,scr3_virt,page_size);
+			// Allocate the PDPTE page for the first PML4E.
+			hvm_p->host_memmap.pdpt.virt=noir_alloc_contd_memory(page_size);
+			if(hvm_p->host_memmap.pdpt.virt)
+			{
+				amd64_pml4e_p pml4e_p=(amd64_pml4e_p)hvm_p->host_memmap.hcr3.virt;
+				amd64_huge_pdpte_p pdpte_p=(amd64_huge_pdpte_p)hvm_p->host_memmap.pdpt.virt;
+				for(u32 i=0;i<512;i++)
+				{
+					// Set up identity mappings.
+					pdpte_p[i].value=0;
+					pdpte_p[i].present=1;
+					pdpte_p[i].write=1;
+					pdpte_p[i].huge_pdpte=1;		// Use 1GiB Huge Page.
+					pdpte_p[i].no_execute=1;		// Do not grant execution permission.
+					pdpte_p[i].page_base=i;
+				}
+				// The first PML4E points to PDPTEs.
+				hvm_p->host_memmap.pdpt.phys=noir_get_physical_address(hvm_p->host_memmap.pdpt.virt);
+				// Load to first PML4E.
+				pml4e_p->value=page_base(hvm_p->host_memmap.pdpt.phys);
+				pml4e_p->present=1;
+				pml4e_p->write=1;
+				pml4e_p->no_execute=1;
+				nv_dprintf("Host CR3: 0x%llX\n",hvm_p->host_memmap.hcr3.phys);
+				return true;
+			}
+		}
+	}
+	return false;
+#endif
+}
+
 void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 {
 	if(hvm_p->virtual_cpu)
@@ -450,8 +500,8 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 				nvc_npt_cleanup(vcpu->secondary_nptm);
 #endif
 			for(u32 j=0;j<noir_svm_cached_nested_vmcb;j++)
-				if(vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt)
-					noir_free_contd_memory(vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt,page_size);
+				if(vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt)
+					noir_free_contd_memory(vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt,page_size);
 		}
 		noir_free_nonpg_memory(hvm_p->virtual_cpu);
 	}
@@ -466,6 +516,10 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 		noir_finalize_reslock(hvm_p->tlb_tagging.asid_pool_lock);
 	if(hvm_p->tlb_tagging.asid_pool)
 		noir_free_nonpg_memory(hvm_p->tlb_tagging.asid_pool);
+	if(hvm_p->host_memmap.hcr3.virt)
+		noir_free_contd_memory(hvm_p->host_memmap.hcr3.virt,page_size);
+	if(hvm_p->host_memmap.pdpt.virt)
+		noir_free_contd_memory(hvm_p->host_memmap.pdpt.virt,page_size);
 #endif
 }
 
@@ -526,16 +580,17 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			if(nvc_npt_build_apic_shadowing(vcpu)==false)
 				goto alloc_failure;
 #endif
-			if(hvm_p->options.nested_virtualization)
+			if(hvm_p->options.nested_virtualization)		// Setup Nested Hypervisor
 			{
-				// Setup Nested Hypervisor
 				for(u32 j=0;j<noir_svm_cached_nested_vmcb;j++)
 				{
-					vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt=noir_alloc_contd_memory(page_size);
-					if(vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt==null)goto alloc_failure;
-					vcpu->nested_hvm.nested_vmcb[j].vmcb_t.phys=noir_get_physical_address(vcpu->nested_hvm.nested_vmcb[j].vmcb_t.virt);
-					vcpu->nested_hvm.nested_vmcb[j].vmcb_c.phys=0xffffffffffffffff;		// Use -1 to indicate unused VMCB.
+					vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt=noir_alloc_contd_memory(page_size);
+					if(vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt)
+						vcpu->nested_hvm.nodes.pool[j].vmcb_t.phys=noir_get_physical_address(vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt);
+					else
+						goto alloc_failure;
 				}
+				nvc_svm_initialize_nested_vcpu_node_pool(&vcpu->nested_hvm);
 			}
 			if(nvc_npt_initialize_ci(vcpu->primary_nptm)==false)goto alloc_failure;
 #if !defined(_hv_type1)
@@ -589,6 +644,11 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	if(hvm_p->tlb_tagging.asid_pool==null)goto alloc_failure;
 	hvm_p->tlb_tagging.asid_pool_lock=noir_initialize_reslock();
 	if(hvm_p->tlb_tagging.asid_pool_lock==null)goto alloc_failure;
+	// Build Host CR3 in order to operate physical addresses directly.
+	if(nvc_svm_build_host_page_table(hvm_p))
+		nv_dprintf("Hypervisor's paging structure is initialized successfully!\n");
+	else
+		nv_dprintf("Failed to build hypervisor's paging structure...\n");
 #endif
 	nvc_svm_setup_msr_hook(hvm_p);
 	if(nvc_npt_protect_critical_hypervisor(hvm_p)==false)goto alloc_failure;

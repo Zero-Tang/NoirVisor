@@ -109,6 +109,13 @@ typedef void (fastcall *noir_svm_cvexit_handler_routine)
  noir_svm_custom_vcpu_p cvcpu
 );
 
+typedef void (fastcall *noir_svm_nvexit_handler_routine)
+(
+ noir_gpr_state_p gpr_state,
+ noir_svm_vcpu_p vcpu,
+ noir_svm_nested_vcpu_node_p nvcpu
+);
+
 typedef union _amd64_event_injection
 {
 	struct
@@ -277,6 +284,8 @@ noir_svm_cpuid_exit_handler nvcp_svm_cpuid_handler=null;
 
 extern noir_svm_cvexit_handler_routine* svm_cvexit_handlers[];
 extern noir_svm_cvexit_handler_routine svm_cvexit_handler_negative[];
+extern noir_svm_nvexit_handler_routine* svm_nvexit_handlers[];
+extern noir_svm_nvexit_handler_routine svm_nvexit_handler_negative[];
 #elif defined(_svm_cvexit)
 void static fastcall nvc_svm_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_invalid_state_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
@@ -419,6 +428,122 @@ noir_svm_cvexit_handler_routine* svm_cvexit_handlers[4]=
 {
 	svm_cvexit_handler_group1,
 	svm_cvexit_handler_group2,
+	null,null
+};
+#elif defined(_svm_nvcpu)
+void static fastcall nvc_svm_nvexit_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu);
+void static fastcall nvc_svm_nvexit_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu);
+
+noir_svm_nvexit_handler_routine svm_nvexit_handler_group1[noir_svm_maximum_code1]=
+{
+	// 16 Control-Register Read & Write Handlers.
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	// 16 Debug-Register Read & Write Handlers.
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	// 32 Exception Handlers.
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	// 32 Interceptions Handlers for Vector 1.
+	nvc_svm_nvexit_default_handler,			// Physical Interrupts
+	nvc_svm_nvexit_default_handler,			// Non-Maskable Interrupts
+	nvc_svm_nvexit_default_handler,			// System Management Interrupts
+	nvc_svm_nvexit_default_handler,			// INIT Signals
+	nvc_svm_nvexit_default_handler,			// Virtual Interrupts
+	nvc_svm_nvexit_default_handler,			// Write to CR0 other than TS/MP bits.
+	nvc_svm_nvexit_default_handler,			// sidt Instruction
+	nvc_svm_nvexit_default_handler,			// sgdt Instruction
+	nvc_svm_nvexit_default_handler,			// sldt Instruction
+	nvc_svm_nvexit_default_handler,			// str Instruction
+	nvc_svm_nvexit_default_handler,			// lidt Instruction
+	nvc_svm_nvexit_default_handler,			// lgdt Instruction
+	nvc_svm_nvexit_default_handler,			// lldt Instruction
+	nvc_svm_nvexit_default_handler,			// ltr Instruction
+	nvc_svm_nvexit_default_handler,			// rdtsc Instruction
+	nvc_svm_nvexit_default_handler,			// rdpmc Instruction
+	nvc_svm_nvexit_default_handler,			// pushf Instruction
+	nvc_svm_nvexit_default_handler,			// popf Instruction
+	nvc_svm_nvexit_default_handler,			// cpuid Instruction
+	nvc_svm_nvexit_default_handler,			// rsm Instruction
+	nvc_svm_nvexit_default_handler,			// iret Instruction
+	nvc_svm_nvexit_default_handler,			// int Instruction
+	nvc_svm_nvexit_default_handler,			// invd Instruction
+	nvc_svm_nvexit_default_handler,			// pause Instruction
+	nvc_svm_nvexit_default_handler,			// hlt Instruction
+	nvc_svm_nvexit_default_handler,			// invlpg Instruction
+	nvc_svm_nvexit_default_handler,			// invlpga Instruction
+	nvc_svm_nvexit_default_handler,			// I/O Instruction
+	nvc_svm_nvexit_default_handler,			// MSR Instruction
+	nvc_svm_nvexit_default_handler,			// Task Switches
+	nvc_svm_nvexit_default_handler,			// FP Error Freezing
+	nvc_svm_nvexit_default_handler,			// Shutdown Condition
+	// 16 Interception Handlers for Vector 2.
+	nvc_svm_nvexit_default_handler,			// vmrun Instruction
+	nvc_svm_nvexit_default_handler,			// vmmcall Instruction
+	nvc_svm_nvexit_default_handler,			// vmload Instruction
+	nvc_svm_nvexit_default_handler,			// vmsave Instruction
+	nvc_svm_nvexit_default_handler,			// stgi Instruction
+	nvc_svm_nvexit_default_handler,			// clgi Instruction
+	nvc_svm_nvexit_default_handler,			// skinit Instruction
+	nvc_svm_nvexit_default_handler,			// rdtscp Instruction
+	nvc_svm_nvexit_default_handler,			// icebp Instruction
+	nvc_svm_nvexit_default_handler,			// wb(no)invd Instruction
+	nvc_svm_nvexit_default_handler,			// monitor(x) Instruction
+	nvc_svm_nvexit_default_handler,			// mwait(x) Instruction
+	nvc_svm_nvexit_default_handler,			// Conditional mwait(x) Instruction
+	nvc_svm_nvexit_default_handler,			// rdpru Instruction
+	nvc_svm_nvexit_default_handler,			// xsetbv Instruction
+	nvc_svm_nvexit_default_handler,			// wrmsr EFER Trap
+	// 16 Control Register Write Trap Handlers.
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
+	// 5 Interception Handlers for Vector 3.
+	nvc_svm_nvexit_default_handler,			// invlpgb Instruction
+	nvc_svm_nvexit_default_handler,			// Illegal invlpgb Instruction
+	nvc_svm_nvexit_default_handler,			// invpcid Instruction
+	nvc_svm_nvexit_default_handler,			// mcommit Instruction
+	nvc_svm_nvexit_default_handler,			// tlbsync Instruction
+};
+
+noir_svm_nvexit_handler_routine svm_nvexit_handler_group2[noir_svm_maximum_code2]=
+{
+	nvc_svm_nvexit_default_handler,					// Nested Page Fault
+	nvc_svm_nvexit_default_handler,					// AVIC Incomplete Virtual IPI Delivery
+	nvc_svm_nvexit_default_handler,					// Virtual APIC Access Unhandled by AVIC Hardware
+	nvc_svm_nvexit_default_handler					// vmgexit Instruction
+};
+
+noir_svm_nvexit_handler_routine svm_nvexit_handler_negative[noir_svm_maximum_negative]=
+{
+	nvc_svm_nvexit_default_handler,			// Invalid State
+	nvc_svm_nvexit_default_handler			// VMSA is busy
+};
+
+noir_svm_nvexit_handler_routine* svm_nvexit_handlers[4]=
+{
+	svm_nvexit_handler_group1,
+	svm_nvexit_handler_group2,
 	null,null
 };
 #endif

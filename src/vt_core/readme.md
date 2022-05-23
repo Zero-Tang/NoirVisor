@@ -62,6 +62,11 @@ In this regard, NoirVisor requires that Intel EPT should supports execution-only
 Hooked page includes the hook code, whereas the original page includes the original code. <br>
 On VM-Exit, NoirVisor should locate the hook page by GPA (Guest Physical Address) then swap the PTE entry.
 
+## Hide Read and Write Accesses from the Same Page
+If an instruction in the hooked page accesses some data in the same page, it would infinitely trigger EPT violations. Therefore, care must be taken when the `rip` and `GPA` are in the same page. <br>
+Intel VT-x provides the `Monitor Trap Flags` feature that triggers VM-Exits per instruction. We may use this feature to circumvent the this possibility. <br>
+When EPT violation handler detects that `GPA` and `rip` are in the same page, grant `R+/W+/X+` permission, map to the original page and enable MTF. An MTF VM-Exit will be immediately triggered after this instruction completes. In this MTF VM-Exit, revoke `R+/W+` permissions, map to the hooked page, and disable the MTF.
+
 # Critical Hypervisor Protection
 This feature is an essential security feature. I found this feature missing in most open-source light-weight hypervisor project. The key is that VMCS and other essential pages are not protected through Intel EPT even if they enabled Intel EPT. It should be pointed out that a malware can be aware of the format of VMCS of a specific processor. In this regard, malware may corrupt the VMCS through memory access instruction.
 
@@ -75,7 +80,7 @@ Unlike the GIF mechanism in AMD-V, Intel VT-x does not prevent the NMI to be tri
 If NoirVisor is loaded as a Type-I Hypervisor, the NMI will be taken in a wrong context. The approach of MiniVisor, written by Satoshi Tanda, is to discard the NMIs. However, if some messages are to be delivered through NMI, loss of message may cause incorrect behavior in the system and may trigger kernel panicking (e.g: NMI watchdog).
 
 ## Type-II Hypervisor
-If NoirVisor is loaded as a Type-II Hypervisor, the NMI will be taken in an out-of-monitor context. If malicious software hijacked the NMI handler of the OS, then the malicious software can circumvent the monitoring of hypervisor by issuing NMIs over APIC ICR.
+If NoirVisor is loaded as a Type-II Hypervisor, the NMI will be taken in an out-of-monitor context. If malicious software hijacked the NMI handler of the OS (e.g: registered an NMI callback through `KeRegisterNmiCallback`), then the malicious software can circumvent the monitoring of hypervisor by issuing NMIs over APIC ICR.
 
 ## Solution
 The straight-forward solution is to set up hypervisor's own NMI handler for the host. The handler will inject NMI to the guest. However, in terms of returning from NMI, there is something worth discussing:

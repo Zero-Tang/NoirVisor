@@ -26,6 +26,21 @@
 #define noir_svm_vmwrite32(v,o,d)		*(u32*)((ulong_ptr)v+o)=(u32)d
 #define noir_svm_vmwrite64(v,o,d)		*(u64*)((ulong_ptr)v+o)=(u64)d
 
+#define noir_svm_vmcb_and8(v,o,d)		*(u8*)((ulong_ptr)v+o)&=(u8)d
+#define noir_svm_vmcb_and16(v,o,d)		*(u16*)((ulong_ptr)v+o)&=(u16)d
+#define noir_svm_vmcb_and32(v,o,d)		*(u32*)((ulong_ptr)v+o)&=(u32)d
+#define noir_svm_vmcb_and64(v,o,d)		*(u32*)((ulong_ptr)v+o)&=(u64)d
+
+#define noir_svm_vmcb_or8(v,o,d)		*(u8*)((ulong_ptr)v+o)|=(u8)d
+#define noir_svm_vmcb_or16(v,o,d)		*(u16*)((ulong_ptr)v+o)|=(u16)d
+#define noir_svm_vmcb_or32(v,o,d)		*(u32*)((ulong_ptr)v+o)|=(u32)d
+#define noir_svm_vmcb_or64(v,o,d)		*(u32*)((ulong_ptr)v+o)|=(u64)d
+
+#define noir_svm_vmcb_xor8(v,o,d)		*(u8*)((ulong_ptr)v+o)^=(u8)d
+#define noir_svm_vmcb_xor16(v,o,d)		*(u16*)((ulong_ptr)v+o)^=(u16)d
+#define noir_svm_vmcb_xor32(v,o,d)		*(u32*)((ulong_ptr)v+o)^=(u32)d
+#define noir_svm_vmcb_xor64(v,o,d)		*(u32*)((ulong_ptr)v+o)^=(u64)d
+
 #define noir_svm_vmcb_bt32(v,o,d)		noir_bt((u32*)((ulong_ptr)v+o),d)
 #define noir_svm_vmcb_bts32(v,o,d)		noir_bts((u32*)((ulong_ptr)v+o),d)
 #define noir_svm_vmcb_btr32(v,o,d)		noir_btr((u32*)((ulong_ptr)v+o),d)

@@ -427,6 +427,20 @@ typedef union _amd64_apic_register_icr_hi
 #define amd64_cpuid_vgif				16
 #define amd64_cpuid_vgif_bit			0x10000
 
+typedef union _amd64_addr_translator
+{
+	struct
+	{
+		u64 page_offset:12;
+		u64 pte_offset:9;
+		u64 pde_offset:9;
+		u64 pdpte_offset:9;
+		u64 pml4e_offset:9;
+		u64 canonical:16;
+	};
+	u64 value;
+}amd64_addr_translator,*amd64_addr_translator_p;
+
 typedef union _amd64_page_fault_error_code
 {
 	struct
@@ -443,3 +457,124 @@ typedef union _amd64_page_fault_error_code
 	};
 	u32 value;
 }amd64_page_fault_error_code,*amd64_page_fault_error_code_p;
+
+typedef union _amd64_pml4e
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 reserved1:6;	// Bits 6-11
+		u64 pdpte_base:40;	// Bits	12-51
+		u64 reserved2:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}amd64_pml4e,*amd64_pml4e_p;
+
+typedef union _amd64_huge_pdpte
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 dirty:1;		// Bit	6
+		u64 huge_pdpte:1;	// Bit	7
+		u64 global:1;		// Bit	8
+		u64 reserved1:3;	// Bits 9-11
+		u64 pat:1;			// Bit	12
+		u64 reserved2:17;	// Bits 13-29
+		u64 page_base:22;	// Bits	30-51
+		u64 reserved3:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}amd64_huge_pdpte,*amd64_huge_pdpte_p;
+
+typedef union _amd64_pdpte
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 reserved1:6;	// Bits 6-11
+		u64 pde_base:40;	// Bits	12-51
+		u64 reserved2:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}amd64_pdpte,*amd64_pdpte_p;
+
+typedef union _amd64_large_pde
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 dirty:1;		// Bit	6
+		u64 large_pde:1;	// Bit	7
+		u64 global:1;		// Bit	8
+		u64 reserved1:3;	// Bits	9-11
+		u64 pat:1;			// Bit	12
+		u64 reserved2:8;	// Bits 13-20
+		u64 page_base:31;	// Bits	21-51
+		u64 reserved3:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}amd64_large_pde,*amd64_large_pde_p;
+
+typedef union _amd64_pde
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 reserved1:6;	// Bits 6-11
+		u64 pte_base:40;	// Bits	12-51
+		u64 reserved2:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}amd64_pde,*amd64_pde_p;
+
+typedef union _amd64_pte
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 dirty:1;		// Bit	6
+		u64 pat:1;			// Bit	7
+		u64 global:1;		// Bit	8
+		u64 reserved1:3;	// Bits 9-11
+		u64 page_base:40;	// Bits	12-51
+		u64 reserved2:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}amd64_pte,*amd64_pte_p;

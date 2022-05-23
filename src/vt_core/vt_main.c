@@ -522,6 +522,7 @@ void static nvc_vt_setup_procbased_controls(bool true_msr)
 		proc_ctrl2.enable_ept=1;			// Use Intel EPT.
 		proc_ctrl2.enable_rdtscp=1;
 		proc_ctrl2.enable_vpid=1;			// Avoid unnecessary TLB flushing with VPID
+		// If you wish to turn off EPT, you must turn off Unrestricted Guest as well.
 		proc_ctrl2.unrestricted_guest=1;	// Allows the guest to enter unpaged mode.
 		proc_ctrl2.enable_invpcid=1;
 		proc_ctrl2.enable_xsaves_xrstors=1;
@@ -657,8 +658,8 @@ void static nvc_vt_setup_control_area(bool true_msr)
 	nvc_vt_setup_procbased_controls(true_msr);
 	nvc_vt_setup_vmexit_controls(true_msr);
 	nvc_vt_setup_vmentry_controls(true_msr);
-	noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_pe_bit|ia32_cr0_ne_bit|ia32_cr0_pg_bit|ia32_cr0_cd_bit);	// Monitor PE, NE, CD and PG flags
-	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_vmxe_bit);													// Monitor VMXE flags
+	noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_cd_bit);			// Monitor CD flags
+	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_vmxe_bit);			// Monitor VMXE flags
 }
 
 u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp)

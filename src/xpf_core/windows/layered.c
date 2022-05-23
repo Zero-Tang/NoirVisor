@@ -247,6 +247,14 @@ NOIR_STATUS NoirQueryGpaAccessingBitmap(IN CVM_HANDLE VirtualMachine,IN ULONG64 
 	return st;
 }
 
+NOIR_STATUS NoirQueryGpaAccessingBitmapEx(IN CVM_HANDLE VirtualMachine,IN ULONG32 MappingId,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages,OUT PVOID Bitmap,IN ULONG32 BitmapSize)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)st=nvc_query_gpa_accessing_bitmap_ex(VM,MappingId,GpaStart,NumberOfPages,Bitmap,BitmapSize);
+	return st;
+}
+
 NOIR_STATUS NoirClearGpaAccessingBits(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
@@ -255,11 +263,27 @@ NOIR_STATUS NoirClearGpaAccessingBits(IN CVM_HANDLE VirtualMachine,IN ULONG64 Gp
 	return st;
 }
 
+NOIR_STATUS NoirClearGpaAccessingBitsEx(IN CVM_HANDLE VirtualMachine,IN ULONG32 MappingId,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)st=nvc_clear_gpa_accessing_bits_ex(VM,MappingId,GpaStart,NumberOfPages);
+	return st;
+}
+
 NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
 	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
 	if(VM)st=nvc_set_mapping(VM,MappingInformation);
+	return st;
+}
+
+NOIR_STATUS NoirSetMappingEx(IN CVM_HANDLE VirtualMachine,IN ULONG32 MappingId,IN PNOIR_ADDRESS_MAPPING MappingInformation)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)st=nvc_set_mapping_ex(VM,MappingId,MappingInformation);
 	return st;
 }
 
@@ -347,6 +371,30 @@ NOIR_STATUS NoirRescindVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 
 	return st;
 }
 
+NOIR_STATUS NoirSelectMappingForVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 MappingId)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_select_mapping_for_vcpu(VP,MappingId);
+	}
+	return st;
+}
+
+NOIR_STATUS NoirRetrieveMappingIdForVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PULONG32 MappingId)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_retrieve_mapping_id_for_vcpu(VP,MappingId);
+	}
+	return st;
+}
+
 NOIR_STATUS NoirCreateVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
@@ -370,6 +418,11 @@ NOIR_STATUS NoirReleaseVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 
 		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_release_vcpu(VP);
 	}
 	return st;
+}
+
+NOIR_STATUS NoirQueryHypervisorStatus(IN ULONG64 StatusType,OUT PVOID Status)
+{
+	return nvc_query_hypervisor_status(StatusType,Status);
 }
 
 // Use recursion to traverse as many levels of tables as possible.

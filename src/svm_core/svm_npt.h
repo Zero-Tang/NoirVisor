@@ -14,20 +14,6 @@
 
 #include <nvdef.h>
 
-typedef union _amd64_addr_translator
-{
-	struct
-	{
-		u64 page_offset:12;
-		u64 pte_offset:9;
-		u64 pde_offset:9;
-		u64 pdpte_offset:9;
-		u64 pml4e_offset:9;
-		u64 canonical:16;
-	};
-	u64 value;
-}amd64_addr_translator,*amd64_addr_translator_p;
-
 typedef union _amd64_npt_pml4e
 {
 	struct
@@ -209,6 +195,9 @@ typedef struct _noir_npt_manager
 		}apic;
 #endif
 	}pte;
+#if !defined(_hv_type1)
+	noir_hook_page hook_pages[1];
+#endif
 }noir_npt_manager,*noir_npt_manager_p;
 
 typedef union _amd64_npt_fault_code

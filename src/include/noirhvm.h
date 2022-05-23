@@ -132,6 +132,22 @@ typedef struct _noir_hypervisor
 		};
 		u64 value;
 	}options;		// Enable certain features.
+	union
+	{
+		struct
+		{
+			u64 msr_quick_path:1;
+			u64 cpuid_quick_path:1;
+			u64 hidden_tf:1;
+			u64 multi_memmap:1;
+			u64 builtin_apic:1;
+			u64 builtin_x2apic:1;
+			u64 large_page:1;
+			u64 huge_page:1;
+			u64 reserved:56;
+		};
+		u64 value;
+	}cvm_cap;
 	struct
 	{
 		large_integer support_mask;
@@ -145,6 +161,11 @@ typedef struct _noir_hypervisor
 		u64 value;
 		u8 list[8];
 	}host_pat;
+	struct
+	{
+		memory_descriptor hcr3;
+		memory_descriptor pdpt;
+	}host_memmap;
 	u32 cpu_count;
 	char vendor_string[13];
 	u8 cpu_manuf;

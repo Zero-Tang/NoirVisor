@@ -1019,57 +1019,42 @@ void static fastcall nvc_svm_vmrun_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	{
 		// Get the Nested VMCB.
 		const ulong_ptr nested_vmcb_pa=gpr_state->rax;
-		void* nested_vmcb_va=noir_find_virt_by_phys(nested_vmcb_pa);
-		noir_svm_nested_vcpu_node_p nvcpu=loader_stack->nested_vcpu;
-		// Search for cached VMCBs.
-		if(nvcpu)
+		if(page_4kb_offset(nested_vmcb_pa))				// VMCB must be aligned on 4KiB boundary.
+			noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
+		else
 		{
-retry_search:
-			u32 lo=0,hi=noir_svm_cached_nested_vmcb;
-			// Use binary-search to look for cached VMCB.
-			while(hi>=lo)
+			void* nested_vmcb_va=(void*)nested_vmcb_pa;
+			// Search for cached copy of L1 VMCB.
+			noir_svm_nested_vcpu_node_p nvcpu=nvc_svm_search_nested_vcpu_node(&vcpu->nested_hvm,nested_vmcb_pa);
+			// If cached copy is not found, build the new cache.
+			if(nvcpu==null)
 			{
-				u32 mid=(hi+lo)>>1;
-				if(vcpu->nested_hvm.nested_vmcb[mid].vmcb_c.phys>nested_vmcb_pa)
-					hi=mid-1;
-				else if(vcpu->nested_hvm.nested_vmcb[mid].vmcb_c.phys<nested_vmcb_pa)
-					lo=mid+1;
-				else
-				{
-					nvcpu=&vcpu->nested_hvm.nested_vmcb[mid];
-					nested_vmcb_va=nvcpu->vmcb_c.virt;
-					nvcpu->last_tsc=noir_rdtsc();
-					nvcpu->entry_counter++;
-					break;
-				}
+				nvcpu=nvc_svm_insert_nested_vcpu_node(&vcpu->nested_hvm,nested_vmcb_pa);
+				// Flush any processor cache associated with this VMCB.
+				noir_svm_vmwrite32(nvcpu->vmcb_t.virt,vmcb_clean_bits,0);
 			}
-		}
-		if(!nvcpu)
-		{
-			memory_descriptor temp;
-			temp.virt=nested_vmcb_va;
-			temp.phys=nested_vmcb_pa;
-			nvc_svmn_insert_nested_vmcb(vcpu,&temp);
-			goto retry_search;
-		}
-		// Some essential information for hypervisor-specific consistency check.
-		const u32 nested_asid=noir_svm_vmread32(nested_vmcb_va,guest_asid);
-		// ASID must not equal to zero or exceed the limit.
-		if(nested_asid==0 || nested_asid>hvm_p->tlb_tagging.start-2)goto invalid_nested_vmcb;
-		// Consistency check complete. Switching to L2 Guest.
-		nvc_svmn_synchronize_to_l2t_vmcb(nvcpu);
-		// GIF is set on vmrun instruction.
-		nvc_svmn_set_gif(gpr_state,vcpu,nvcpu->vmcb_t.virt);
-		loader_stack->guest_vmcb_pa=nvcpu->vmcb_t.phys;
-		loader_stack->nested_vcpu=nvcpu;
-		noir_svm_advance_rip(vmcb);
-		return;
-invalid_nested_vmcb:
-		{
-			// Inconsistency found by Hypervisor. Issue VM-Exit immediately.
-			nvc_svmn_clear_gif(vcpu);
-			noir_svm_vmwrite64(nested_vmcb_va,exit_code,invalid_guest_state);
+			// Some essential information for hypervisor-specific consistency check.
+			const u32 nested_asid=noir_svm_vmread32(nested_vmcb_va,guest_asid);
+			// ASID must not equal to zero or exceed the limit.
+			if(nested_asid==0 || nested_asid>hvm_p->tlb_tagging.start-2)goto invalid_nested_vmcb;
+			// Currently there are no other fields required to be checked by NoirVisor.
+			// Consistency check complete. Switching to L2 Guest.
+			nvc_svmn_virtualize_entry_vmcb(vcpu,nested_vmcb_va,nvcpu->vmcb_t.virt);
+			loader_stack->guest_vmcb_pa=nvcpu->vmcb_t.phys;
+			loader_stack->nested_vcpu=nvcpu;
+			// GIF is set on vmrun instruction.
+			nvc_svmn_set_gif(gpr_state,vcpu,nvcpu->vmcb_t.virt);
+			loader_stack->guest_vmcb_pa=nvcpu->vmcb_t.phys;
+			loader_stack->nested_vcpu=nvcpu;
 			noir_svm_advance_rip(vmcb);
+			return;
+invalid_nested_vmcb:
+			{
+				// Inconsistency found by Hypervisor. Issue VM-Exit immediately.
+				nvc_svmn_clear_gif(vcpu);
+				noir_svm_vmwrite64(nested_vmcb_va,exit_code,invalid_guest_state);
+				noir_svm_advance_rip(vmcb);
+			}
 		}
 	}
 	else
@@ -1146,7 +1131,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 			u64 gcr3k=noir_get_current_process_cr3();
 			noir_writecr3(gcr3k);			// Switch to the Guest Address Space.
 			disasm->instruction_length=noir_get_instruction_length_ex(disasm->buffer,disasm->bits);
-			noir_writecr3(system_cr3);		// Switch back to Host Address Space.
+			noir_writecr3(hvm_p->host_memmap.hcr3.phys);		// Switch back to Host Address Space.
 #endif
 			break;
 		}
@@ -1161,7 +1146,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 			u64 gcr3k=noir_get_current_process_cr3();
 			noir_writecr3(gcr3k);			// Switch to the Guest Address Space.
 			disasm->instruction_length=noir_disasm_instruction(disasm->buffer,disasm->mnemonic,disasm->mnemonic_limit,disasm->bits,disasm->va);
-			noir_writecr3(system_cr3);		// Switch back to Host Address Space.
+			noir_writecr3(hvm_p->host_memmap.hcr3.phys);		// Switch back to Host Address Space.
 #endif
 			break;
 		}
@@ -1251,38 +1236,43 @@ void static fastcall nvc_svm_vmload_handler(noir_gpr_state_p gpr_state,noir_svm_
 	{
 		// Get Address of Nested VMCB.
 		const ulong_ptr nested_vmcb_pa=gpr_state->rax;
-		void* nested_vmcb=noir_find_virt_by_phys(nested_vmcb_pa);
-		// Load to Current VMCB - FS.
-		noir_svm_vmwrite16(vmcb,guest_fs_selector,noir_svm_vmread16(nested_vmcb,guest_fs_selector));
-		noir_svm_vmwrite16(vmcb,guest_fs_attrib,noir_svm_vmread16(nested_vmcb,guest_fs_attrib));
-		noir_svm_vmwrite32(vmcb,guest_fs_limit,noir_svm_vmread32(nested_vmcb,guest_fs_limit));
-		noir_svm_vmwrite64(vmcb,guest_fs_base,noir_svm_vmread64(nested_vmcb,guest_fs_base));
-		// Load to Current VMCB - GS.
-		noir_svm_vmwrite16(vmcb,guest_gs_selector,noir_svm_vmread16(nested_vmcb,guest_gs_selector));
-		noir_svm_vmwrite16(vmcb,guest_gs_attrib,noir_svm_vmread16(nested_vmcb,guest_gs_attrib));
-		noir_svm_vmwrite32(vmcb,guest_gs_limit,noir_svm_vmread32(nested_vmcb,guest_gs_limit));
-		noir_svm_vmwrite64(vmcb,guest_gs_base,noir_svm_vmread64(nested_vmcb,guest_gs_base));
-		// Load to Current VMCB - TR.
-		noir_svm_vmwrite16(vmcb,guest_tr_selector,noir_svm_vmread16(nested_vmcb,guest_tr_selector));
-		noir_svm_vmwrite16(vmcb,guest_tr_attrib,noir_svm_vmread16(nested_vmcb,guest_tr_attrib));
-		noir_svm_vmwrite32(vmcb,guest_tr_limit,noir_svm_vmread32(nested_vmcb,guest_tr_limit));
-		noir_svm_vmwrite64(vmcb,guest_tr_base,noir_svm_vmread64(nested_vmcb,guest_tr_base));
-		// Load to Current VMCB - LDTR.
-		noir_svm_vmwrite16(vmcb,guest_ldtr_selector,noir_svm_vmread16(nested_vmcb,guest_ldtr_selector));
-		noir_svm_vmwrite16(vmcb,guest_ldtr_attrib,noir_svm_vmread16(nested_vmcb,guest_ldtr_attrib));
-		noir_svm_vmwrite32(vmcb,guest_ldtr_limit,noir_svm_vmread32(nested_vmcb,guest_ldtr_limit));
-		noir_svm_vmwrite64(vmcb,guest_ldtr_base,noir_svm_vmread64(nested_vmcb,guest_ldtr_base));
-		// Load to Current VMCB - MSR.
-		noir_svm_vmwrite64(vmcb,guest_sysenter_cs,noir_svm_vmread64(nested_vmcb,guest_sysenter_cs));
-		noir_svm_vmwrite64(vmcb,guest_sysenter_esp,noir_svm_vmread64(nested_vmcb,guest_sysenter_esp));
-		noir_svm_vmwrite64(vmcb,guest_sysenter_eip,noir_svm_vmread64(nested_vmcb,guest_sysenter_eip));
-		noir_svm_vmwrite64(vmcb,guest_star,noir_svm_vmread64(nested_vmcb,guest_star));
-		noir_svm_vmwrite64(vmcb,guest_lstar,noir_svm_vmread64(nested_vmcb,guest_lstar));
-		noir_svm_vmwrite64(vmcb,guest_cstar,noir_svm_vmread64(nested_vmcb,guest_cstar));
-		noir_svm_vmwrite64(vmcb,guest_sfmask,noir_svm_vmread64(nested_vmcb,guest_sfmask));
-		noir_svm_vmwrite64(vmcb,guest_kernel_gs_base,noir_svm_vmread64(nested_vmcb,guest_kernel_gs_base));
-		// Everything are loaded to Current VMCB. Return to guest.
-		noir_svm_advance_rip(vmcb);
+		if(page_4kb_offset(nested_vmcb_pa))				// VMCB must be aligned on 4KiB boundary.
+			noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
+		else
+		{
+			void* nested_vmcb=noir_find_virt_by_phys(nested_vmcb_pa);
+			// Load to Current VMCB - FS.
+			noir_svm_vmwrite16(vmcb,guest_fs_selector,noir_svm_vmread16(nested_vmcb,guest_fs_selector));
+			noir_svm_vmwrite16(vmcb,guest_fs_attrib,noir_svm_vmread16(nested_vmcb,guest_fs_attrib));
+			noir_svm_vmwrite32(vmcb,guest_fs_limit,noir_svm_vmread32(nested_vmcb,guest_fs_limit));
+			noir_svm_vmwrite64(vmcb,guest_fs_base,noir_svm_vmread64(nested_vmcb,guest_fs_base));
+			// Load to Current VMCB - GS.
+			noir_svm_vmwrite16(vmcb,guest_gs_selector,noir_svm_vmread16(nested_vmcb,guest_gs_selector));
+			noir_svm_vmwrite16(vmcb,guest_gs_attrib,noir_svm_vmread16(nested_vmcb,guest_gs_attrib));
+			noir_svm_vmwrite32(vmcb,guest_gs_limit,noir_svm_vmread32(nested_vmcb,guest_gs_limit));
+			noir_svm_vmwrite64(vmcb,guest_gs_base,noir_svm_vmread64(nested_vmcb,guest_gs_base));
+			// Load to Current VMCB - TR.
+			noir_svm_vmwrite16(vmcb,guest_tr_selector,noir_svm_vmread16(nested_vmcb,guest_tr_selector));
+			noir_svm_vmwrite16(vmcb,guest_tr_attrib,noir_svm_vmread16(nested_vmcb,guest_tr_attrib));
+			noir_svm_vmwrite32(vmcb,guest_tr_limit,noir_svm_vmread32(nested_vmcb,guest_tr_limit));
+			noir_svm_vmwrite64(vmcb,guest_tr_base,noir_svm_vmread64(nested_vmcb,guest_tr_base));
+			// Load to Current VMCB - LDTR.
+			noir_svm_vmwrite16(vmcb,guest_ldtr_selector,noir_svm_vmread16(nested_vmcb,guest_ldtr_selector));
+			noir_svm_vmwrite16(vmcb,guest_ldtr_attrib,noir_svm_vmread16(nested_vmcb,guest_ldtr_attrib));
+			noir_svm_vmwrite32(vmcb,guest_ldtr_limit,noir_svm_vmread32(nested_vmcb,guest_ldtr_limit));
+			noir_svm_vmwrite64(vmcb,guest_ldtr_base,noir_svm_vmread64(nested_vmcb,guest_ldtr_base));
+			// Load to Current VMCB - MSR.
+			noir_svm_vmwrite64(vmcb,guest_sysenter_cs,noir_svm_vmread64(nested_vmcb,guest_sysenter_cs));
+			noir_svm_vmwrite64(vmcb,guest_sysenter_esp,noir_svm_vmread64(nested_vmcb,guest_sysenter_esp));
+			noir_svm_vmwrite64(vmcb,guest_sysenter_eip,noir_svm_vmread64(nested_vmcb,guest_sysenter_eip));
+			noir_svm_vmwrite64(vmcb,guest_star,noir_svm_vmread64(nested_vmcb,guest_star));
+			noir_svm_vmwrite64(vmcb,guest_lstar,noir_svm_vmread64(nested_vmcb,guest_lstar));
+			noir_svm_vmwrite64(vmcb,guest_cstar,noir_svm_vmread64(nested_vmcb,guest_cstar));
+			noir_svm_vmwrite64(vmcb,guest_sfmask,noir_svm_vmread64(nested_vmcb,guest_sfmask));
+			noir_svm_vmwrite64(vmcb,guest_kernel_gs_base,noir_svm_vmread64(nested_vmcb,guest_kernel_gs_base));
+			// Everything are loaded to Current VMCB. Return to guest.
+			noir_svm_advance_rip(vmcb);
+		}
 	}
 	else
 	{
@@ -1299,38 +1289,43 @@ void static fastcall nvc_svm_vmsave_handler(noir_gpr_state_p gpr_state,noir_svm_
 	{
 		// Get Address of Nested VMCB.
 		const ulong_ptr nested_vmcb_pa=gpr_state->rax;
-		void* nested_vmcb=noir_find_virt_by_phys(nested_vmcb_pa);
-		// Save to Nested VMCB - FS.
-		noir_svm_vmwrite16(nested_vmcb,guest_fs_selector,noir_svm_vmread16(vmcb,guest_fs_selector));
-		noir_svm_vmwrite16(nested_vmcb,guest_fs_attrib,noir_svm_vmread16(vmcb,guest_fs_attrib));
-		noir_svm_vmwrite32(nested_vmcb,guest_fs_limit,noir_svm_vmread32(vmcb,guest_fs_limit));
-		noir_svm_vmwrite64(nested_vmcb,guest_fs_base,noir_svm_vmread64(vmcb,guest_fs_base));
-		// Save to Nested VMCB - GS.
-		noir_svm_vmwrite16(nested_vmcb,guest_gs_selector,noir_svm_vmread16(vmcb,guest_gs_selector));
-		noir_svm_vmwrite16(nested_vmcb,guest_gs_attrib,noir_svm_vmread16(vmcb,guest_gs_attrib));
-		noir_svm_vmwrite32(nested_vmcb,guest_gs_limit,noir_svm_vmread32(vmcb,guest_gs_limit));
-		noir_svm_vmwrite64(nested_vmcb,guest_gs_base,noir_svm_vmread64(vmcb,guest_gs_base));
-		// Save to Nested VMCB - TR.
-		noir_svm_vmwrite16(nested_vmcb,guest_tr_selector,noir_svm_vmread16(vmcb,guest_tr_selector));
-		noir_svm_vmwrite16(nested_vmcb,guest_tr_attrib,noir_svm_vmread16(vmcb,guest_tr_attrib));
-		noir_svm_vmwrite32(nested_vmcb,guest_tr_limit,noir_svm_vmread32(vmcb,guest_tr_limit));
-		noir_svm_vmwrite64(nested_vmcb,guest_tr_base,noir_svm_vmread64(vmcb,guest_tr_base));
-		// Save to Nested VMCB - LDTR.
-		noir_svm_vmwrite16(nested_vmcb,guest_ldtr_selector,noir_svm_vmread16(vmcb,guest_ldtr_selector));
-		noir_svm_vmwrite16(nested_vmcb,guest_ldtr_attrib,noir_svm_vmread16(vmcb,guest_ldtr_attrib));
-		noir_svm_vmwrite32(nested_vmcb,guest_ldtr_limit,noir_svm_vmread32(vmcb,guest_ldtr_limit));
-		noir_svm_vmwrite64(nested_vmcb,guest_ldtr_base,noir_svm_vmread64(vmcb,guest_ldtr_base));
-		// Save to Nested VMCB - MSR.
-		noir_svm_vmwrite64(nested_vmcb,guest_sysenter_cs,noir_svm_vmread64(vmcb,guest_sysenter_cs));
-		noir_svm_vmwrite64(nested_vmcb,guest_sysenter_esp,noir_svm_vmread64(vmcb,guest_sysenter_esp));
-		noir_svm_vmwrite64(nested_vmcb,guest_sysenter_eip,noir_svm_vmread64(vmcb,guest_sysenter_eip));
-		noir_svm_vmwrite64(nested_vmcb,guest_star,noir_svm_vmread64(vmcb,guest_star));
-		noir_svm_vmwrite64(nested_vmcb,guest_lstar,noir_svm_vmread64(vmcb,guest_lstar));
-		noir_svm_vmwrite64(nested_vmcb,guest_cstar,noir_svm_vmread64(vmcb,guest_cstar));
-		noir_svm_vmwrite64(nested_vmcb,guest_sfmask,noir_svm_vmread64(vmcb,guest_sfmask));
-		noir_svm_vmwrite64(nested_vmcb,guest_kernel_gs_base,noir_svm_vmread64(vmcb,guest_kernel_gs_base));
-		// Everything are saved to Nested VMCB. Return to guest.
-		noir_svm_advance_rip(vmcb);
+		if(page_4kb_offset(nested_vmcb_pa))				// VMCB must be aligned on 4KiB boundary.
+			noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
+		else
+		{
+			void* nested_vmcb=noir_find_virt_by_phys(nested_vmcb_pa);
+			// Save to Nested VMCB - FS.
+			noir_svm_vmwrite16(nested_vmcb,guest_fs_selector,noir_svm_vmread16(vmcb,guest_fs_selector));
+			noir_svm_vmwrite16(nested_vmcb,guest_fs_attrib,noir_svm_vmread16(vmcb,guest_fs_attrib));
+			noir_svm_vmwrite32(nested_vmcb,guest_fs_limit,noir_svm_vmread32(vmcb,guest_fs_limit));
+			noir_svm_vmwrite64(nested_vmcb,guest_fs_base,noir_svm_vmread64(vmcb,guest_fs_base));
+			// Save to Nested VMCB - GS.
+			noir_svm_vmwrite16(nested_vmcb,guest_gs_selector,noir_svm_vmread16(vmcb,guest_gs_selector));
+			noir_svm_vmwrite16(nested_vmcb,guest_gs_attrib,noir_svm_vmread16(vmcb,guest_gs_attrib));
+			noir_svm_vmwrite32(nested_vmcb,guest_gs_limit,noir_svm_vmread32(vmcb,guest_gs_limit));
+			noir_svm_vmwrite64(nested_vmcb,guest_gs_base,noir_svm_vmread64(vmcb,guest_gs_base));
+			// Save to Nested VMCB - TR.
+			noir_svm_vmwrite16(nested_vmcb,guest_tr_selector,noir_svm_vmread16(vmcb,guest_tr_selector));
+			noir_svm_vmwrite16(nested_vmcb,guest_tr_attrib,noir_svm_vmread16(vmcb,guest_tr_attrib));
+			noir_svm_vmwrite32(nested_vmcb,guest_tr_limit,noir_svm_vmread32(vmcb,guest_tr_limit));
+			noir_svm_vmwrite64(nested_vmcb,guest_tr_base,noir_svm_vmread64(vmcb,guest_tr_base));
+			// Save to Nested VMCB - LDTR.
+			noir_svm_vmwrite16(nested_vmcb,guest_ldtr_selector,noir_svm_vmread16(vmcb,guest_ldtr_selector));
+			noir_svm_vmwrite16(nested_vmcb,guest_ldtr_attrib,noir_svm_vmread16(vmcb,guest_ldtr_attrib));
+			noir_svm_vmwrite32(nested_vmcb,guest_ldtr_limit,noir_svm_vmread32(vmcb,guest_ldtr_limit));
+			noir_svm_vmwrite64(nested_vmcb,guest_ldtr_base,noir_svm_vmread64(vmcb,guest_ldtr_base));
+			// Save to Nested VMCB - MSR.
+			noir_svm_vmwrite64(nested_vmcb,guest_sysenter_cs,noir_svm_vmread64(vmcb,guest_sysenter_cs));
+			noir_svm_vmwrite64(nested_vmcb,guest_sysenter_esp,noir_svm_vmread64(vmcb,guest_sysenter_esp));
+			noir_svm_vmwrite64(nested_vmcb,guest_sysenter_eip,noir_svm_vmread64(vmcb,guest_sysenter_eip));
+			noir_svm_vmwrite64(nested_vmcb,guest_star,noir_svm_vmread64(vmcb,guest_star));
+			noir_svm_vmwrite64(nested_vmcb,guest_lstar,noir_svm_vmread64(vmcb,guest_lstar));
+			noir_svm_vmwrite64(nested_vmcb,guest_cstar,noir_svm_vmread64(vmcb,guest_cstar));
+			noir_svm_vmwrite64(nested_vmcb,guest_sfmask,noir_svm_vmread64(vmcb,guest_sfmask));
+			noir_svm_vmwrite64(nested_vmcb,guest_kernel_gs_base,noir_svm_vmread64(vmcb,guest_kernel_gs_base));
+			// Everything are saved to Nested VMCB. Return to guest.
+			noir_svm_advance_rip(vmcb);
+		}
 	}
 	else
 	{
@@ -1403,7 +1398,7 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 		while(hi>=lo)
 		{
 			i32 mid=(lo+hi)>>1;
-			noir_hook_page_p nhp=&noir_hook_pages[mid];
+			noir_hook_page_p nhp=&vcpu->secondary_nptm->hook_pages[mid];
 			if(gpa>=nhp->orig.phys+page_size)
 				lo=mid+1;
 			else if(gpa<nhp->orig.phys)
@@ -1587,12 +1582,40 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 		cvcpu->header.statistics_internal.selector->time+=noir_get_system_time()-profiler_time;
 		cvcpu->header.statistics_internal.selector->count++;
 	}
-	else
+	else if(gpr_state->rax==loader_stack->nested_vcpu->vmcb_t.phys)
 	{
+		// Read the intercept code.
+		i64 intercept_code=noir_svm_vmread64(loader_stack->nested_vcpu->vmcb_t.virt,exit_code);
+		// Determine the group and number of interception.
+		u8 code_group=(u8)((intercept_code&0xC00)>>10);
+		u16 code_num=(u16)(intercept_code&0x3FF);
+		// FIXME: Add additional filtering by NoirVisor.
+		void* l2_vmcb=(void*)loader_stack->nested_vcpu->l2_vmcb;
+		// Cache L1 VMCB for nested guest.
+		noir_svm_vmwrite32(loader_stack->nested_vcpu->vmcb_t.virt,vmcb_clean_bits,0xffffffff);
 		// Nested VM is exiting, switch to L1 Guest.
 		nvc_svmn_clear_gif(vcpu);
-		nvc_svmn_synchronize_to_l2c_vmcb(loader_stack->nested_vcpu);
+		nvc_svmn_virtualize_exit_vmcb(vcpu,loader_stack->nested_vcpu->vmcb_t.virt,l2_vmcb);
+		// Forces CR0.PE=1 and RFLAGS.VM=0
+		noir_svm_vmcb_bts64(vcpu->vmcb.virt,guest_cr0,amd64_cr0_pe);
+		noir_svm_vmcb_btr64(vcpu->vmcb.virt,guest_rflags,amd64_rflags_vm);
+		// Disable all breakpoints in DR7.
+		noir_svm_vmcb_and64(vcpu->vmcb.virt,guest_dr7,0xffffffffffffff00);
+		// Invalid cached states in VMCB.
+		noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_control_reg);
+		noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_debug_reg);
+		// Do additional filtering. Note that the rax register is not processed.
+		if(unlikely(intercept_code<0))
+			svm_nvexit_handler_negative[-intercept_code-1](gpr_state,vcpu,loader_stack->nested_vcpu);
+		else
+			svm_nvexit_handlers[code_group][code_num](gpr_state,vcpu,loader_stack->nested_vcpu);
+		// Switch to Nested Hypervisor.
 		loader_stack->guest_vmcb_pa=vcpu->vmcb.phys;
+	}
+	else
+	{
+		// Reserved branch.
+		noir_int3();
 	}
 	// The rax in GPR state should be the physical address of VMCB
 	// in order to execute the vmrun instruction properly.

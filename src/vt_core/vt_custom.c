@@ -128,6 +128,7 @@ void nvc_vt_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,
 	if(!cvcpu->header.state_cache.cr_valid)
 	{
 		u64 cr4=cvcpu->header.crs.cr4;
+		// Do not use CR0_FIXED_BITS_MSR because Unrestricted Guest is enabled.
 		noir_vt_vmwrite(guest_cr0,cvcpu->header.crs.cr0);
 		noir_vt_vmwrite(guest_cr3,cvcpu->header.crs.cr3);
 		// Intel VT-x requires VMXE to be set.
@@ -437,7 +438,6 @@ void static nvc_vt_initialize_cvm_proc_based_controls(bool true_msr)
 	proc_ctrl2.unrestricted_guest=1;			// Required for Real-Mode Guests.
 	proc_ctrl2.enable_invpcid=1;				// Must be set to allow invpcid instruction.
 	proc_ctrl2.enable_xsaves_xrstors=1;			// Must be set to allow xsaves/xrstors instructions.
-	proc_ctrl2.use_gpa_for_intel_pt=1;			// Must be set so that Intel PT would not corrupt Hypervisor Regions.
 	proc_ctrl2.enable_user_wait_and_pause=1;	// Must be set to allow certain user TSX instructions.
 	// Filter unsupported fields.
 	proc_ctrl1.value|=proc_ctrl1_msr.allowed0_settings.value;
@@ -573,7 +573,7 @@ void nvc_vt_initialize_cvm_vmcs(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 			noir_vt_vmwrite64(ept_pointer,cvcpu->vm->eptm.eptp.phys);
 			noir_vt_vmwrite64(vmcs_link_pointer,maxu64);
 			noir_vt_vmwrite(virtual_processor_identifier,cvcpu->vm->vpid);
-			noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_et_bit);
+			noir_vt_vmwrite(cr0_guest_host_mask,0);
 			noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_vmxe_bit);
 			noir_vt_vmwrite(guest_interruptibility_state,0);
 			noir_vt_vmwrite(guest_activity_state,guest_is_active);

@@ -140,8 +140,10 @@ NTSTATUS NoirConstructHook(IN PVOID Address,IN PVOID Proxy,OUT PVOID* Detour)
 		HookPage=&HookPages[HookPageCount++];
 		HookPage->HookedPage.VirtualAddress=NoirAllocateContiguousMemory(PAGE_SIZE);
 		if(HookPage->HookedPage.VirtualAddress==NULL)return st;
-		HookPage->OriginalPage.VirtualAddress=NoirGetPageBase(Address);
+		HookPage->HookedPage.PhysicalAddress=NoirGetPhysicalAddress(HookPage->HookedPage.VirtualAddress);
+		HookPage->OriginalPage.VirtualAddress=PAGE_ALIGN(Address);
 		HookPage->OriginalPage.PhysicalAddress=NoirGetPhysicalAddress(HookPage->OriginalPage.VirtualAddress);
+		RtlCopyMemory(HookPage->HookedPage.VirtualAddress,HookPage->OriginalPage.VirtualAddress,PAGE_SIZE);
 		// The hooked page is not guaranteed to always be resident, so lock it.
 		HookPage->Mdl=IoAllocateMdl(HookPage->OriginalPage.VirtualAddress,PAGE_SIZE,FALSE,FALSE,NULL);
 		if(HookPage->Mdl)
@@ -152,19 +154,17 @@ NTSTATUS NoirConstructHook(IN PVOID Address,IN PVOID Proxy,OUT PVOID* Detour)
 			}
 			__except(EXCEPTION_EXECUTE_HANDLER)
 			{
+				NoirDebugPrint("Warning: failed to lock the page [0x%p] to be hooked! Stealthy Inline Hook may be unstable on this page!\n",HookPage->OriginalPage.VirtualAddress);
 				IoFreeMdl(HookPage->Mdl);
 				HookPage->Mdl=NULL;			// Purposefully set MDL to null to avoid re-unlock and re-free.
 				st=GetExceptionCode();
 			}
 		}
-		if(HookPage->Mdl==NULL)return st;
-		HookPage->HookedPage.PhysicalAddress=NoirGetPhysicalAddress(HookPage->HookedPage.VirtualAddress);
-		RtlCopyMemory(HookPage->HookedPage.VirtualAddress,HookPage->OriginalPage.VirtualAddress,PAGE_SIZE);
 	}
 	if(HookPage->HookedPage.VirtualAddress)
 	{
 		PVOID HookedAddress=NULL;
-		USHORT PageOffset=(USHORT)((ULONG_PTR)Address & 0xFFF);
+		ULONG PageOffset=BYTE_OFFSET(Address);
 		/*
 		  I have checked the methods by tandasat, who wrote the DdiMon and SimpleSvmHook.
 		  His way of rip redirecting somewhat lacks robustness.

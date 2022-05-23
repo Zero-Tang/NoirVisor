@@ -303,7 +303,7 @@ noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 			}
 			case noir_cvm_xsave_area:
 			{
-				if(buffer_size<hvm_p->xfeat.supported_size_max)
+				if(buffer_size>=hvm_p->xfeat.supported_size_max)
 					noir_copy_memory(vcpu->xsave_area,buffer,hvm_p->xfeat.supported_size_max);
 				else
 					st=noir_buffer_too_small;
@@ -601,6 +601,38 @@ noir_status nvc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu)
 	return st;
 }
 
+noir_status nvc_select_mapping_for_vcpu(noir_cvm_virtual_cpu_p vcpu,u32 mapping_id)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		st=noir_success;
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			st=nvc_svmc_select_mapping_for_vcpu(vcpu,mapping_id);
+		else
+			st=noir_unknown_processor;
+	}
+	return st;
+}
+
+noir_status nvc_retrieve_mapping_id_for_vcpu(noir_cvm_virtual_cpu_p vcpu,u32p mapping_id)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		st=noir_success;
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			st=nvc_svmc_retrieve_mapping_id_for_vcpu(vcpu,mapping_id);
+		else
+			st=noir_unknown_processor;
+	}
+	return st;
+}
+
 noir_cvm_virtual_cpu_p nvc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id)
 {
 	noir_cvm_virtual_cpu_p vcpu=null;
@@ -648,56 +680,77 @@ noir_status nvc_create_vcpu(noir_cvm_virtual_machine_p vm,noir_cvm_virtual_cpu_p
 	return st;
 }
 
-noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info)
+noir_status nvc_set_mapping_ex(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,noir_cvm_address_mapping_p mapping_info)
 {
 	noir_status st=noir_hypervision_absent;
 	if(hvm_p)
 	{
-		st=noir_success;
 		noir_acquire_reslock_exclusive(virtual_machine->vcpu_list_lock);
 		if(hvm_p->selected_core==use_vt_core)
 			st=nvc_vtc_set_mapping(virtual_machine,mapping_info);
 		else if(hvm_p->selected_core==use_svm_core)
-			st=nvc_svmc_set_mapping(virtual_machine,mapping_info);
+			st=nvc_svmc_set_mapping(virtual_machine,mapping_id,mapping_info);
 		else
 			st=noir_unknown_processor;
 		noir_release_reslock(virtual_machine->vcpu_list_lock);
+	}
+	return st;
+}
+
+noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info)
+{
+	return nvc_set_mapping_ex(virtual_machine,0,mapping_info);
+}
+
+noir_status nvc_query_gpa_accessing_bitmap_ex(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,u64 gpa_start,u32 page_count,void* bitmap,u32 bitmap_size)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		st=noir_invalid_parameter;
+		if(mapping_id<noir_cvm_mapping_limit)
+		{
+			noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
+			if(hvm_p->selected_core==use_vt_core)
+				st=noir_not_implemented;
+			else if(hvm_p->selected_core==use_svm_core)
+				st=nvc_svmc_query_gpa_accessing_bitmap(virtual_machine,mapping_id,gpa_start,page_count,bitmap,bitmap_size);
+			else
+				st=noir_unknown_processor;
+			noir_release_reslock(virtual_machine->vcpu_list_lock);
+		}
 	}
 	return st;
 }
 
 noir_status nvc_query_gpa_accessing_bitmap(noir_cvm_virtual_machine_p virtual_machine,u64 gpa_start,u32 page_count,void* bitmap,u32 bitmap_size)
 {
+	return nvc_query_gpa_accessing_bitmap_ex(virtual_machine,0,gpa_start,page_count,bitmap,bitmap_size);
+}
+
+noir_status nvc_clear_gpa_accessing_bits_ex(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,u64 gpa_start,u32 page_count)
+{
 	noir_status st=noir_hypervision_absent;
 	if(hvm_p)
 	{
-		noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
-		if(hvm_p->selected_core==use_vt_core)
-			st=noir_not_implemented;
-		else if(hvm_p->selected_core==use_svm_core)
-			st=nvc_svmc_query_gpa_accessing_bitmap(virtual_machine,gpa_start,page_count,bitmap,bitmap_size);
-		else
-			st=noir_unknown_processor;
-		noir_release_reslock(virtual_machine->vcpu_list_lock);
+		if(mapping_id<noir_cvm_mapping_limit)
+		{
+			noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
+			if(hvm_p->selected_core==use_vt_core)
+				st=noir_not_implemented;
+			else if(hvm_p->selected_core==use_svm_core)
+				st=nvc_svmc_clear_gpa_accessing_bits(virtual_machine,mapping_id,gpa_start,page_count);
+			else
+				st=noir_unknown_processor;
+			noir_release_reslock(virtual_machine->vcpu_list_lock);
+		}
 	}
 	return st;
 }
 
 noir_status nvc_clear_gpa_accessing_bits(noir_cvm_virtual_machine_p virtual_machine,u64 gpa_start,u32 page_count)
 {
-	noir_status st=noir_hypervision_absent;
-	if(hvm_p)
-	{
-		noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
-		if(hvm_p->selected_core==use_vt_core)
-			st=noir_not_implemented;
-		else if(hvm_p->selected_core==use_svm_core)
-			st=nvc_svmc_clear_gpa_accessing_bits(virtual_machine,gpa_start,page_count);
-		else
-			st=noir_unknown_processor;
-		noir_release_reslock(virtual_machine->vcpu_list_lock);
-	}
-	return st;
+	return nvc_clear_gpa_accessing_bits_ex(virtual_machine,0,gpa_start,page_count);
 }
 
 noir_status nvc_release_vm(noir_cvm_virtual_machine_p vm)
@@ -792,6 +845,63 @@ u32 nvc_get_vm_asid(noir_cvm_virtual_machine_p vm)
 	}
 	// Zero indicates failure.
 	return 0;
+}
+
+noir_status nvc_query_hypervisor_status(u64 status_type,void* result)
+{
+	noir_status st=noir_invalid_parameter;
+	if(result)
+	{
+		switch(status_type)
+		{
+			case noir_cvm_hvstatus_presence:
+			{
+				*(u64p)result=hvm_p==null?0:1;
+				st=noir_success;
+				break;
+			}
+			case noir_cvm_hvstatus_capabilities:
+			{
+				if(hvm_p==null)
+					st=noir_hypervision_absent;
+				else
+				{
+					*(u64p)result=hvm_p->cvm_cap.value;
+					st=noir_success;
+				}
+				break;
+			}
+			case noir_cvm_hvstatus_hypercall_instruction:
+			{
+				if(hvm_p)
+				{
+					u8p output=(u8p)result;
+					if(hvm_p->selected_core==use_vt_core)
+					{
+						output[0]=3;
+						output[1]=0x0F;
+						output[2]=0x01;
+						output[3]=0xC1;
+						st=noir_success;
+					}
+					else if(hvm_p->selected_core==use_svm_core)
+					{
+						output[0]=3;
+						output[1]=0x0F;
+						output[2]=0x01;
+						output[3]=0xD9;
+						st=noir_success;
+					}
+					else
+						st=noir_unknown_processor;
+				}
+				else
+					st=noir_hypervision_absent;
+				break;
+			}
+		}
+	}
+	return st;
 }
 
 void nvc_print_vm_list()

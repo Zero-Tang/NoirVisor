@@ -161,6 +161,8 @@ Steps are given in the following:
 - Virtualize GIF. We emulate that vGIF is cleared.
 - Finally, execute vmrun instruction with address of L1 VMCB, concluding the VM-Exit.
 
+## Differentiate Hypercall Source
+
 ## Virtualize ASID
 In NoirVisor, the L0 context use ASID=0, and L1 context use ASID=1. To virtualize ASID, we should use ASID>1 for any L2 context. For a simple algorithm, we increment ASID by 1 to virtualize it. If L2 ASID<2, then the VMCB is inconsistent. In CPUID, we decrement the ASID range by 1. <br>
 If nested virtualization is disabled, all ASIDs are reserved for Customizable VMs.
@@ -415,24 +417,22 @@ Exception interception is optional: it is only intercepted if the User Hyperviso
 ### Nested Page Fault
 Nested Page Fault, usually abbreviated as `#NPF`, indicates that a wrong physical address is accessed. NoirVisor would not handle `#NPF` itself, but transfer the interception to the host. In addition, information like fetched instruction bytes, access information, etc., would be recorded.
 
-## Page Translation Callback
-NoirVisor does not keep GPA-to-HVA translation on track. Therefore, when NoirVisor has to operate the guest pages, there are no appropriate addresses for NoirVisor to get access. Note that this is only necessary for NoirVisor loaded as a Type-II hypervisor. Type-I hypervisor, nevertheless, can directly access the HPA after translating the GPA. <br>
-Situations that require NoirVisor to access guest pages include:
-
-- VMCBs for Nested Virtualization.
-- APIC Pages if there is no AVIC support.
-- Instruction Emulation. (NPIEP, etc.)
-
-In `GIF=0` context, we cannot perform the mapping in that synchronization is infeasible here. Therefore, we must issue a VM-Entry to map the guest pages into host kernel pages. <br>
-The VM-Entry to subvert host for this purpose is called the Page-Translation Callback.
+## Accessing Guest Physical Pages
+NoirVisor does not keep GPA-to-HVA translation on track. However, NoirVisor, if installed as a Type-II hypervisor, loads a special page table that maps both an identity map of physical memory and regular system memory. Therefore, when NoirVisor has to operate the guest pages, the only required actions are translating the GVA to HPA. Not to mention if NoirVisor is installed as a Type-I hypervisor, only HPA can be accessed.
 
 ## Memory-Mapping Swapping Facility
 In order to accelerate special memory virtualizations in CVM, NoirVisor provides a facility to swap memory mapping. User Hypervisor may specify at most 512 sets of memory mapping per VM. <br>
 User Hypervisor may use this facility to hook into the guest, to accelerate entrances and exits of SMM, and even to specify different mappings per vCPU, etc.
 
+## Hidden Single-Stepping
+For Intel VT-x, this feature is simple: utilize the `Monitor Trap Flag` feature. However, AMD-V lacks this feature. <br>
+In order to single-step, we can set `RFLAGS.TF` bit for the guest and intercept `#DB` exception in the guest. <br>
+Also, in order to hide the `RFLAGS.TF` bit, we should intercept `pushf` instruction and push a shadowed RFLAGS onto the guest's stack. <br>
+However, `RFLAGS.TF` is automatically cleared in any interrupts, so exceptions must be intercepted. All interrupts must be emulated instead of using hardware-accelerated event injections.
+
 ## SMM Virtualization
 SMM, abbreviation that stands for System Management Mode, is a standard x86 component to handle critical system-control activities (e.g.: Power Management, Interactions with NVRAM on motherboard, etc.). <br>
-NoirVisor does not emulate System Management Mode. It is User Hypervisor's responsibility to emulate SMM for the Guest.
+Current implementation of NoirVisor does not emulate System Management Mode. It is User Hypervisor's responsibility to emulate SMM for the Guest. Support to NoirVisor's virtualization will be implemented in future.
 
 ### SMRAM Virtualization
 SMRAM is a special memory area consists of 64KiB of memory. It is an independent RAM storage and is not located on the main system memory. For example, if the `SMBASE` is pointed to 0x00030000, memory accesses to `0x00030000-0x0003FFFF` are different from inside and outside of SMM. By virtue of this, User Hypervisor is responsible to set up a different mapping when the vCPU is entering SMM. <br>
@@ -487,7 +487,8 @@ When `#NPF` is intercepted, check the address being written. Something needs to 
 - Is the APIC register valid?
 
 If the address is unaligned, according to AMD64 architecture, it may cause undefined behavior. We may ignore it. <br>
-If the APIC register is invalid, transfer the VM-Exit to the guest, and indicate that an invalid APIC access is intercepted.
+If the APIC register is invalid, transfer the VM-Exit to the guest, and indicate that an invalid APIC access is intercepted. <br>
+If the APIC register is valid, we may emulate the behavior of register. If NoirVisor cannot emulate the behavior (e.g.: writing APIC timer), exit to the User Hypervisor.
 
 ## Encrypted Virtual Machine
 AMD-V provides a mechanism for encrypted guests. This mechanism enables a guest to run in a manner where codes and data are encrypted and the only decrypted version of them are only available within the guest itself. It would require the hypervisor to enable the `SEV` (Secure Encrypted Virtualization) feature. Please note that, as the hypervisor is no longer able to inspect or alter all guest code or data, the hypervisor model is departing from the standard x86 virtualization model. <br>

@@ -122,7 +122,7 @@ void static fastcall nvc_vt_default_handler(noir_gpr_state_p gpr_state,noir_vt_v
 }
 
 // Expected Exit Reason: 0
-// If this handler is invoked, it should be #PF due to syscall.
+// If this handler is invoked, it should be #PF due to syscall under KVA-shadowing.
 void static fastcall nvc_vt_exception_nmi_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	ia32_vmexit_interruption_information_field exit_int_info;
@@ -151,6 +151,7 @@ void static fastcall nvc_vt_exception_nmi_handler(noir_gpr_state_p gpr_state,noi
 					{
 						invvpid_descriptor ivd={0};
 						ivd.vpid=1;
+						// A write to CR3 does not invalidate global TLB entries.
 						noir_vt_invvpid(vpid_sicrgb_invd,&ivd);
 					}
 				}
@@ -1122,6 +1123,31 @@ void static fastcall nvc_vt_invalid_msr_loading(noir_gpr_state_p gpr_state,noir_
 	nv_dprintf("VM-Entry failed! Check the MSR-Auto list in VMCS!\n");
 }
 
+// Expected Exit Reason: 37
+void static fastcall nvc_vt_monitor_trap_flag_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
+{
+#if !defined(_hv_type1)
+	// Current implementation of NoirVisor would only use MTF to step over
+	// instructions that accesses data in the same page to the instruction.
+	noir_ept_manager_p eptm=vcpu->ept_manager;
+	noir_hook_page_p nhp=&eptm->hook_pages[eptm->pending_hook_index];
+	ia32_ept_pte_p pte_p=(ia32_ept_pte_p)nhp->pte_descriptor;
+	invept_descriptor ied;
+	ia32_vmx_priproc_controls proc_ctrl;
+	// Revoke the read/write accesses and map to the hooked page.
+	pte_p->read=pte_p->write=0;
+	pte_p->page_offset=nhp->hook.phys>>page_shift;
+	// Invalidate the TLBs in EPT.
+	ied.reserved=0;
+	ied.eptp=eptm->eptp.phys.value;
+	noir_vt_invept(ept_single_invd,&ied);
+	// We no longer have to step over the instructions. Disable MTF.
+	noir_vt_vmread(primary_processor_based_vm_execution_controls,&proc_ctrl);
+	proc_ctrl.monitor_trap_flag=0;
+	noir_vt_vmwrite(primary_processor_based_vm_execution_controls,proc_ctrl.value);
+#endif
+}
+
 // Expected Exit Reason: 46
 void static fastcall nvc_vt_access_gdtr_idtr_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
@@ -1265,6 +1291,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noi
 {
 	bool advance=true;
 #if !defined(_hv_type1)
+	noir_ept_manager_p eptm=vcpu->ept_manager;
 	i32 lo=0,hi=noir_hook_pages_count;
 	u64 gpa;
 	noir_vt_vmread64(guest_physical_address,&gpa);
@@ -1273,7 +1300,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noi
 	while(hi>=lo)
 	{
 		i32 mid=(lo+hi)>>1;
-		noir_hook_page_p nhp=&noir_hook_pages[mid];
+		noir_hook_page_p nhp=&eptm->hook_pages[mid];
 		if(gpa>=nhp->orig.phys+page_size)
 			lo=mid+1;
 		else if(gpa<nhp->orig.phys)
@@ -1281,21 +1308,40 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noi
 		else
 		{
 			ia32_ept_violation_qualification info;
-			invept_descriptor ied;
 			// The violated page is found. Perform page-substitution
 			ia32_ept_pte_p pte_p=(ia32_ept_pte_p)nhp->pte_descriptor;
-			u32 proc_num=noir_get_current_processor();
-			noir_ept_manager_p eptm=hvm_p->virtual_cpu[proc_num].ept_manager;
 			noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&info);
 			if(info.read || info.write)
 			{
-				// If the access is read or write, we grant
-				// read/write permission but revoke execute permission
-				// and substitute the page to be original page
-				pte_p->read=1;
-				pte_p->write=1;
-				pte_p->execute=0;
-				pte_p->page_offset=nhp->orig.phys>>12;
+				// If the access is read or write, we should check if
+				// the instruction pointer is located in the same page
+				// to the data to be referenced.
+				ulong_ptr gip;
+				noir_vt_vmread(guest_rip,&gip);
+				if(page_base(gip)==(ulong_ptr)nhp->orig.virt)
+				{
+					ia32_vmx_priproc_controls proc_ctrl;
+					// They are in the same page. Grant all permissions
+					// and substitute the page to be original page.
+					pte_p->read=pte_p->write=pte_p->execute=1;
+					// Enable MTF at the same time.
+					noir_vt_vmread(primary_processor_based_vm_execution_controls,&proc_ctrl);
+					proc_ctrl.monitor_trap_flag=1;
+					noir_vt_vmwrite(primary_processor_based_vm_execution_controls,proc_ctrl.value);
+					// Indicate which hook page is pending to be stepped over.
+					eptm->pending_hook_index=mid;
+					nv_dprintf("Instruction in hooked page is referencing data the hooked page. Enabling MTF...\n");
+				}
+				else
+				{
+					// They are in different pages. We may grant the
+					// read/write permission but revoke execute permission
+					// and substitute the page to be original page.
+					pte_p->read=1;
+					pte_p->write=1;
+					pte_p->execute=0;
+				}
+				pte_p->page_offset=nhp->orig.phys>>page_shift;
 			}
 			else if(info.execute)
 			{
@@ -1305,13 +1351,12 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noi
 				pte_p->read=0;
 				pte_p->write=0;
 				pte_p->execute=1;
-				pte_p->page_offset=nhp->hook.phys>>12;
+				pte_p->page_offset=nhp->hook.phys>>page_shift;
 			}
 			advance=false;
-			// Since Paging Structure is revised, invalidate the EPT TLB.
-			ied.reserved=0;
-			ied.eptp=eptm->eptp.phys.value;
-			noir_vt_invept(ept_single_invd,&ied);
+			// According to Intel SDM, an EPT Violation invalidates any guest-physical mappings (associated
+			// with the current EP4TA) that would be used to translate the GPA that caused EPT Violation.
+			// In other words, there is no need to invalidate the TLB via invept instruction.
 			break;
 		}
 	}
@@ -1448,6 +1493,7 @@ void fastcall nvc_vt_resume_failure(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vc
 				noir_vt_vmread(vm_instruction_error,&err_code);
 				nv_panicf("Error Code of VM-Entry Failure: %u\n",err_code);
 				nv_panicf("Explanation to VM-Entry Failure: %s\n",vt_error_message[err_code]);
+				nvc_vt_dump_vmcs_guest_state();
 				break;
 			}
 			case vmx_fail_invalid:

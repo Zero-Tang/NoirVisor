@@ -67,6 +67,8 @@ typedef ULONG32 NOIR_STATUS;
 #define IOCTL_CvmInjectEvent	CTL_CODE_GEN(0x896)
 #define IOCTL_CvmSetVcpuOptions	CTL_CODE_GEN(0x897)
 #define IOCTL_CvmQueryVcpuStats	CTL_CODE_GEN(0x898)
+#define IOCTL_CvmGetVcpuVmMap	CTL_CODE_GEN(0x89A)
+#define IOCTL_CvmSetVcpuVmMap	CTL_CODE_GEN(0x89B)
 
 // Layered Hypervisor Functions
 typedef ULONG64 CVM_HANDLE;
@@ -131,14 +133,18 @@ typedef struct _NOIR_VIEW_EDIT_REGISTER_CONTEXT
 	PVOID DummyBuffer;
 }NOIR_VIEW_EDIT_REGISTER_CONTEXT,*PNOIR_VIEW_EDIT_REGISTER_CONTEXT;
 
+NOIR_STATUS NoirQueryHypervisorStatus(IN ULONG64 StatusType,OUT PULONG64 Status);
 NOIR_STATUS NoirCreateVirtualMachine(OUT PCVM_HANDLE VirtualMachine);
 NOIR_STATUS NoirCreateVirtualMachineEx(OUT PCVM_HANDLE VirtualMachine,IN ULONG32 Properties,IN ULONG32 NumberOfAsid);
 NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine);
 NOIR_STATUS NoirCreateVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
 NOIR_STATUS NoirReleaseVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
 NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation);
+NOIR_STATUS NoirSetMappingEx(IN CVM_HANDLE VirtualMachine,IN ULONG32 MappingId,IN PNOIR_ADDRESS_MAPPING MappingInformation);
 NOIR_STATUS NoirQueryGpaAccessingBitmap(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages,OUT PVOID Bitmap,IN ULONG32 BitmapSize);
+NOIR_STATUS NoirQueryGpaAccessingBitmapEx(IN CVM_HANDLE VirtualMachine,IN ULONG32 MappingId,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages,OUT PVOID Bitmap,IN ULONG32 BitmapSize);
 NOIR_STATUS NoirClearGpaAccessingBits(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages);
+NOIR_STATUS NoirClearGpaAccessingBitsEx(IN CVM_HANDLE VirtualMachine,IN ULONG32 MappingId,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages);
 NOIR_STATUS NoirViewVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS NoirQueryVirtualProcessorStatistics(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID Buffer,IN ULONG32 BufferSize);
@@ -146,6 +152,8 @@ NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpInde
 NOIR_STATUS NoirSetVirtualProcessorOptions(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 OptionType,IN ULONG32 Options);
 NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID ExitContext);
 NOIR_STATUS NoirRescindVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
+NOIR_STATUS NoirRetrieveMappingIdForVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PULONG32 MappingId);
+NOIR_STATUS NoirSelectMappingForVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 MappingId);
 
 void NoirInitializeDisassembler();
 NTSTATUS NoirReportWindowsVersion();
@@ -182,3 +190,5 @@ extern ULONG_PTR system_cr3;
 extern ULONG_PTR orig_system_call;
 extern PSTR virtual_vstr;
 extern PSTR virtual_nstr;
+
+PEPROCESS SubversionProcess=NULL;

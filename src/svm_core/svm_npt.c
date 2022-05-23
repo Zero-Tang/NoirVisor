@@ -238,7 +238,7 @@ void nvc_npt_build_hook_mapping(noir_svm_vcpu_p vcpu)
 		for(i=0;i<512;i++)
 			pte_p->virt[i].no_execute=true;
 	// Select PTEs that should be X.
-	for(nhp=noir_hook_pages,i=0;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
+	for(nhp=sec_nptm->hook_pages,i=0;i<noir_hook_pages_count;nhp=&sec_nptm->hook_pages[++i])
 	{
 		amd64_addr_translator trans;
 		trans.value=nhp->orig.phys;
@@ -310,7 +310,11 @@ void nvc_npt_setup_apic_shadowing(noir_svm_vcpu_p vcpu)
 noir_npt_manager_p nvc_npt_build_identity_map()
 {
 	bool alloc_success=false;
+#if defined(_hv_type1)
 	noir_npt_manager_p nptm=noir_alloc_nonpg_memory(sizeof(noir_npt_manager));
+#else
+	noir_npt_manager_p nptm=noir_alloc_nonpg_memory(sizeof(noir_npt_manager)+sizeof(noir_hook_page)*noir_hook_pages_count);
+#endif
 	if(nptm)
 	{
 		nptm->ncr3.virt=noir_alloc_contd_memory(page_size);
@@ -358,6 +362,10 @@ noir_npt_manager_p nvc_npt_build_identity_map()
 		nptm->ncr3.virt->write=1;
 		nptm->ncr3.virt->user=1;
 		nptm->ncr3.virt->pdpte_base=nptm->pdpt.phys>>12;
+#if !defined(_hv_type1)
+		// Distribute the hook pages to each vCPU.
+		noir_copy_memory(&nptm->hook_pages,noir_hook_pages,sizeof(noir_hook_page)*noir_hook_pages_count);
+#endif
 	}
 	else
 	{

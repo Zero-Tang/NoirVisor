@@ -30,6 +30,12 @@
 
 #define ncvm_cpuid_leaf_limit		0x40000001
 
+#define noir_cvm_mapping_limit		16
+
+#define noir_cvm_hvstatus_presence				0
+#define noir_cvm_hvstatus_capabilities			1
+#define noir_cvm_hvstatus_hypercall_instruction	2
+
 typedef enum _noir_cvm_intercept_code
 {
 	cv_invalid_state=0,
@@ -48,6 +54,7 @@ typedef enum _noir_cvm_intercept_code
 	cv_rescission=13,
 	cv_interrupt_window=14,
 	cv_task_switch=15,
+	cv_single_step=16,
 	// The rest are scheduler-relevant.
 	cv_scheduler_exit=0x80000000,
 	cv_scheduler_pause=0x80000001,
@@ -329,7 +336,10 @@ typedef union _noir_cvm_vcpu_options
 		u32 npiep:1;
 		u32 intercept_nmi_window:1;
 		u32 intercept_rsm:1;
-		u32 reserved:22;
+		u32 blocking_by_nmi:1;
+		u32 hidden_tf:1;
+		u32 interrupt_shadow:1;
+		u32 reserved:19;
 	};
 	u32 value;
 }noir_cvm_vcpu_options,*noir_cvm_vcpu_options_p;
@@ -372,7 +382,8 @@ typedef union _noir_cvm_vcpu_state_cache
 		u32 lb_valid:1;		// Includes debugctl,br_from/to,ex_from/to.
 		u32 ap_valid:1;		// Includes apic-base.
 		u32 ss_valid:1;		// Includes ssp,pln_ssp,u/s_cet,isst
-		u32 reserved:16;
+		u32 reserved:15;
+		u32 as_valid:1;		// Includes ASID/VPID.
 		u32 tl_valid:1;		// Includes TLB of EPT/NPT.
 		// This field indicates whether the state in VMCS/VMCB is
 		// updated to the state save area in the vCPU structure.
@@ -503,10 +514,12 @@ noir_status nvc_svmc_create_vcpu(noir_cvm_virtual_cpu_p* virtual_cpu,noir_cvm_vi
 void nvc_svmc_release_vcpu(noir_cvm_virtual_cpu_p vcpu);
 noir_status nvc_svmc_run_vcpu(noir_cvm_virtual_cpu_p vcpu);
 noir_status nvc_svmc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu);
+noir_status nvc_svmc_select_mapping_for_vcpu(noir_cvm_virtual_cpu_p vcpu,u32 mapping_id);
+noir_status nvc_svmc_retrieve_mapping_id_for_vcpu(noir_cvm_virtual_cpu_p vcpu,u32p mapping_id);
 noir_cvm_virtual_cpu_p nvc_svmc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id);
-noir_status nvc_svmc_set_mapping(noir_cvm_virtual_machine_p vm,noir_cvm_address_mapping_p mapping_info);
-noir_status nvc_svmc_query_gpa_accessing_bitmap(noir_cvm_virtual_machine_p virtual_machine,u64 gpa_start,u32 page_count,void* bitmap,u32 bitmap_size);
-noir_status nvc_svmc_clear_gpa_accessing_bits(noir_cvm_virtual_machine_p virtual_machine,u64 gpa_start,u32 page_count);
+noir_status nvc_svmc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,noir_cvm_address_mapping_p mapping_info);
+noir_status nvc_svmc_query_gpa_accessing_bitmap(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,u64 gpa_start,u32 page_count,void* bitmap,u32 bitmap_size);
+noir_status nvc_svmc_clear_gpa_accessing_bits(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,u64 gpa_start,u32 page_count);
 u32 nvc_svmc_get_vm_asid(noir_cvm_virtual_machine_p vm);
 // CVM Functions from VT-Core
 noir_status nvc_vtc_create_vm(noir_cvm_virtual_machine_p *virtual_machine);
@@ -544,6 +557,7 @@ u32 noir_cvm_register_buffer_limit[noir_cvm_maximum_register_type]=
 	sizeof(u64)*2,					// DR6,DR7 register
 	sizeof(segment_register)*4,		// cs,ds,es,ss register
 	sizeof(segment_register)*2,		// fs,gs register and gsswap.
+	sizeof(segment_register)*2,		// gdtr, ldtr register
 	sizeof(segment_register)*2,		// tr, ldtr register
 	sizeof(u64)*4,					// syscall MSRs.
 	sizeof(u64)*3,					// sysenter MSRs.

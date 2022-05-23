@@ -19,11 +19,9 @@
 #define MSR_SYSENTER_EIP	0x176
 
 #if defined(_WIN64)
-#define NoirGetPageBase(va)		(PVOID)((ULONG64)va&0xfffffffffffff000)
 #define HookLength				16
 #define DetourLength			14
 #else
-#define NoirGetPageBase(va)		(PVOID)((ULONG)va&0xfffff000)
 #define HookLength				5
 #define DetourLength			5
 #endif

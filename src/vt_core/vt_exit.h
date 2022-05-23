@@ -415,6 +415,7 @@ void static fastcall nvc_vt_rdmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void static fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void static fastcall nvc_vt_invalid_msr_loading(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
+void static fastcall nvc_vt_monitor_trap_flag_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void static fastcall nvc_vt_access_gdtr_idtr_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void static fastcall nvc_vt_access_ldtr_tr_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
@@ -460,7 +461,7 @@ noir_vt_exit_handler_routine vt_exit_handlers[vmx_maximum_exit_reason]=
 	nvc_vt_invalid_msr_loading,			// MSR-Loading Failure
 	nvc_vt_default_handler,				// Reserved (35)
 	nvc_vt_default_handler,				// MWAIT Instruction
-	nvc_vt_default_handler,				// Monitor Trap Flag
+	nvc_vt_monitor_trap_flag_handler,	// Monitor Trap Flag
 	nvc_vt_default_handler,				// Reserved (38)
 	nvc_vt_default_handler,				// MONITOR Instruction
 	nvc_vt_default_handler,				// PAUSE Instruction

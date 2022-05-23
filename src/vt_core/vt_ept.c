@@ -549,7 +549,12 @@ bool nvc_ept_protect_hypervisor(noir_hypervisor_p hvm,noir_ept_manager_p eptm)
 noir_ept_manager_p nvc_ept_build_identity_map()
 {
 	bool alloc_success=false;
+	// Allocate structures for EPT Manager.
+#if defined(_hv_type1)
 	noir_ept_manager_p eptm=noir_alloc_nonpg_memory(sizeof(noir_ept_manager));
+#else
+	noir_ept_manager_p eptm=noir_alloc_nonpg_memory(sizeof(noir_ept_manager)+sizeof(noir_hook_page)*noir_hook_pages_count);
+#endif
 	if(eptm)
 	{
 		eptm->eptp.virt=noir_alloc_contd_memory(page_size);
@@ -616,8 +621,10 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 			eptm->pte.head->virt[i].page_offset=i;
 		}
 #if !defined(_hv_type1)
+		// Make Hooked Pages.
+		noir_copy_memory(eptm->hook_pages,noir_hook_pages,sizeof(noir_hook_page)*noir_hook_pages_count);
 		if(hvm_p->options.stealth_inline_hook)
-			if(nvc_ept_insert_pte(eptm,noir_hook_pages)==false)
+			if(nvc_ept_insert_pte(eptm,eptm->hook_pages)==false)
 				goto alloc_failure;
 #endif
 		if(nvc_ept_initialize_ci(eptm)==false)

@@ -34,6 +34,8 @@ Algorithm regarding the Nested Virtualization was stated down in the readme file
 For Nested Intel VT-x Algorithm, visit [here](src/vt_core/readme.md#vmx-nesting-algorithm-incomplete-version). <br>
 For Nested AMD-V Algorithm, visit [here](src/svm_core/readme.md#svm-nesting-algorithm-incomplete-version).
 
+Nested AMD-V is now in debugging stage.
+
 # Announcement to all contributors
 NoirVisor is coded in the C programming language and the assembly since it is procedure-oriented designed. <br>
 Contributing Guidelines are available in repository. For details, see the markdown file in the root directory of repository. <br>
@@ -60,7 +62,8 @@ You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases.
 NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) on GitHub in order to build them.
 
 ## Disassembler
-Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should pre-compile Zydis as a static library. Visit the [documents for disassembler](src/disasm/readme.md) for further details.
+Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should pre-compile Zydis as a static library. Visit the [documents for disassembler](src/disasm/readme.md) for further details. <br>
+In that Zydis is included as a submodule, you must clone this repository recursively.
 
 # Test
 
@@ -87,6 +90,9 @@ Copy EFI Runtime Driver to `\NoirVisor.efi` <br>
 As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system. Disable Secure Boot feature unless you can sign the executable. <br>
 NoirVisor has defined its own vendor GUID `{2B1F2A1E-DBDF-44AC-DABCC7A130E2E71E}`. Developments regarding Layered Hypervisor would require accessing NoirVisor's UEFI variables.
 
+# Documents
+This repository provides [additional documents](/doc/readme.md) which help new developers to join development.
+
 # Detection of NoirVisor
 As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]` indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors defines leaf 0x40000000 is used to identify hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is `VMwareVMware`. In NoirVisor, hypervisor vendor string is defined as `NoirVisor ZT`.
 
@@ -98,7 +104,7 @@ reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 0
 ```
 
 ## NoirVisor as a Nested Hypervisor
-If NoirVisor is subverting a system under a virtualized environment with exposed detection (e.g: VMware virtual machines with `hypervisor.cpuid.v0 = TRUE` configuration,) as a Type-II hypervisor, the operating system may have already been using functionalities provided by the hypervisor. In this regard, NoirVisor should pass-through the access to hypervisor functionalities (e.g: `cpuid` instructions, accesses to Microsoft Synthetic MSRs, hypercalls, etc.)
+If NoirVisor is subverting a system under a virtualized environment with exposed detection (e.g: VMware virtual machines with `hypervisor.cpuid.v0 = TRUE` configuration) as a Type-II hypervisor, the operating system may have already been using functionalities provided by the hypervisor. In this regard, NoirVisor should pass-through the access to hypervisor functionalities (e.g: `cpuid` instructions, accesses to Microsoft Synthetic MSRs, hypercalls, etc.)
 
 ## TSC-Omission
 Since the end of 2020, NoirVisor implemented a simple Time-Profiler Countermeasure. According to the half-year test, this technique is deemed unstable with multiprocessing systems. For example, TSC-omission may cause external hardwares to trigger drivers resetting themselves. Everything could be messed up: Timer, Graphics Card, NIC, etc. In a nutshell, system may go haywire. <br>

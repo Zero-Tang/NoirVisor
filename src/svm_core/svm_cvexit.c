@@ -182,23 +182,37 @@ void static fastcall nvc_svm_exception_cvexit_handler(noir_gpr_state_p gpr_state
 	// We don't have to determine whether Exception is subject to be delivered to subverted
 	// host, in that Exceptions are intercepted only if the subverted host specifies so.
 	// Switch to subverted host in order to handle this instruction.
-	amd64_event_injection int_info;
 	u64 code=noir_svm_vmread32(cvcpu->vmcb.virt,exit_code);
-	u64 err_code=noir_svm_vmread32(cvcpu->vmcb.virt,exit_info1);
 	u64 vector=code&0x1f;
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
-	int_info.value=noir_svm_vmread64(cvcpu->vmcb.virt,exit_interrupt_info);
 	// Deliver Exception Context...
 	cvcpu->header.exit_context.intercept_code=cv_exception;
 	cvcpu->header.exit_context.exception.vector=(u32)vector;
-	cvcpu->header.exit_context.exception.ev_valid=(u32)int_info.error_valid;
-	cvcpu->header.exit_context.exception.error_code=(u32)err_code;
-	// Page-Fault has more info to save.
-	if(vector==amd64_page_fault)
+	switch(vector)
 	{
-		cvcpu->header.exit_context.exception.pf_addr=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info2);
-		cvcpu->header.exit_context.exception.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
-		noir_movsb(cvcpu->header.exit_context.exception.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
+		case amd64_page_fault:
+		{
+			// Page-Fault has more info to save.
+			cvcpu->header.exit_context.exception.pf_addr=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info2);
+			cvcpu->header.exit_context.exception.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
+			noir_movsb(cvcpu->header.exit_context.exception.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
+		}
+		case amd64_segment_not_present:
+		case amd64_stack_segment_fault:
+		case amd64_general_protection:
+		case amd64_alignment_check:
+		case amd64_control_protection:
+		{
+			cvcpu->header.exit_context.exception.ev_valid=true;
+			cvcpu->header.exit_context.exception.error_code=noir_svm_vmread32(cvcpu->vmcb.virt,exit_info1);
+			break;
+		}
+		default:
+		{
+			cvcpu->header.exit_context.exception.ev_valid=false;
+			cvcpu->header.exit_context.exception.error_code=0;
+			break;
+		}
 	}
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.exception;
@@ -471,11 +485,66 @@ bool static fastcall nvc_svm_rdmsr_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	bool advance=true;
 	switch(index)
 	{
+		case amd64_sysenter_cs:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_sysenter_cs);
+			break;
+		}
+		case amd64_sysenter_esp:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_sysenter_esp);
+			break;
+		}
+		case amd64_sysenter_eip:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_sysenter_eip);
+			break;
+		}
+		case amd64_pat:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_pat);
+			break;
+		}
 		case amd64_efer:
 		{
 			// Perform SVME shadowing...
 			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_efer);
 			if(!cvcpu->shadowed_bits.svme)noir_btr(&val.low,amd64_efer_svme);
+			break;
+		}
+		case amd64_star:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_star);
+			break;
+		}
+		case amd64_lstar:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_lstar);
+			break;
+		}
+		case amd64_cstar:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_cstar);
+			break;
+		}
+		case amd64_sfmask:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_sfmask);
+			break;
+		}
+		case amd64_fs_base:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_fs_base);
+			break;
+		}
+		case amd64_gs_base:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_gs_base);
+			break;
+		}
+		case amd64_kernel_gs_base:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_kernel_gs_base);
 			break;
 		}
 		default:
