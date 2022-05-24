@@ -1443,6 +1443,11 @@ void fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu
 		else
 			nvc_vt_default_cvexit_handler(gpr_state,vcpu,cvcpu);
 	}
+	else
+	{
+		nv_dprintf("VM-Exit occured from an unexpected source! VMCS Physical Address=0x%llX, Exit Reason=%u\n",vmcs_phys,exit_reason);
+		noir_int3();
+	}
 	// Guest RIP is supposed to be advanced in specific handlers, not here.
 	// Do not execute vmresume here. It will be done as this function returns.
 }

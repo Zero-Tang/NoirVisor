@@ -462,6 +462,7 @@ void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu)
 	state.cr0&=noir_rdmsr(ia32_vmx_cr0_fixed1);
 	state.cr4|=noir_rdmsr(ia32_vmx_cr4_fixed0);
 	state.cr4&=noir_rdmsr(ia32_vmx_cr4_fixed1);
+	noir_btr(&state.cr4,ia32_cr4_cet);			// Turn off CET in host mode.
 	noir_vt_vmwrite(host_cr0,state.cr0);
 	noir_vt_vmwrite(host_cr3,state.cr3);
 	noir_vt_vmwrite(host_cr4,state.cr4);

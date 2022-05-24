@@ -8,6 +8,9 @@ NoirVisor - The Grimoire Hypervisor solution for x86 Processors.
     </a>
     <img src="https://img.shields.io/github/stars/Zero-Tang/NoirVisor?color=orange">
     <img src="https://img.shields.io/github/forks/Zero-Tang/NoirVisor?color=silver">
+    <a target="_blank" href="https://qm.qq.com/cgi-bin/qm/qr?k=ly7ROfTm6VD9pBuw6zI85TuYaWCu3li8&jump_from=webapi">
+        <img border="0" src="//pub.idqqimg.com/wpa/images/group.png" alt="NoirVisor虚拟化交流群" title="NoirVisor虚拟化交流群">
+    </a>
 </p>
 
 # Introduction
@@ -45,6 +48,11 @@ Contributing Guidelines are available in repository. For details, see the markdo
 To build NoirVisor, using batch is essential. <br>
 Note that you should execute the `build_prep.bat` to make directories for first-time compilation. <br>
 Once NoirVisor is updated, it is recommended to execute `cleanup.bat` script before building.
+
+If you use terminal, you may add `/s` option in order to bypass the `pause` command. For example:
+```
+.\build\compchk_win7x64.bat /s
+```
 
 ## Windows Driver
 To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 11 (Visual Studio Build Tools 16.9.2) ISO file to T disk. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. <br>

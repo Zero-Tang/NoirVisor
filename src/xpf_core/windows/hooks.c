@@ -110,22 +110,20 @@ NTSTATUS static fake_NtSetInformationFile(IN HANDLE FileHandle,OUT PIO_STATUS_BL
 	return Old_NtSetInformationFile(FileHandle,IoStatusBlock,FileInformation,Length,FileInformationClass);
 }
 
-NTSTATUS NoirConstructHook(IN PVOID Address,IN PVOID Proxy,OUT PVOID* Detour)
+NTSTATUS NoirConstructHookPage(IN PVOID Address,IN PBYTE HookCode,IN ULONG Length,OUT PULONG RemainingLength OPTIONAL,OUT PULONG CopiedLength OPTIONAL)
 {
-	BOOLEAN NewPage=TRUE;
-	PNOIR_HOOK_PAGE HookPage=NULL;
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
+	PVOID HookCodeEnd=(PVOID)((ULONG_PTR)Address+Length);
+	ULONG RemainderLength=ADDRESS_AND_SIZE_TO_SPAN_PAGES(Address,Length)>1?BYTE_OFFSET(HookCodeEnd):0;
+	PNOIR_HOOK_PAGE HookPage=NULL;
 	ULONG64 FPA=NoirGetPhysicalAddress(Address);
 	ULONG PatchSize=GetPatchSize(Address,HookLength);
-	*Detour=NoirAllocateNonPagedMemory(PatchSize+DetourLength);
-	if(*Detour==NULL)return st;
 	// Search if there is a hooked page containing the function.
 	for(ULONG i=0;i<HookPageCount;i++)
 	{
 		if(FPA>=HookPages[i].OriginalPage.PhysicalAddress && FPA<HookPages[i].OriginalPage.PhysicalAddress+PAGE_SIZE)
 		{
 			HookPage=&HookPages[i];
-			NewPage=FALSE;
 			break;
 		}
 	}
@@ -163,46 +161,71 @@ NTSTATUS NoirConstructHook(IN PVOID Address,IN PVOID Proxy,OUT PVOID* Detour)
 	}
 	if(HookPage->HookedPage.VirtualAddress)
 	{
-		PVOID HookedAddress=NULL;
 		ULONG PageOffset=BYTE_OFFSET(Address);
-		/*
-		  I have checked the methods by tandasat, who wrote the DdiMon and SimpleSvmHook.
-		  His way of rip redirecting somewhat lacks robustness.
-		  He uses a byte CC to inject a debug-break and intercept it with a VM-Exit.
-		  This would significantly increase performance consumption in high-rate functions.
-		  My implementation aims to reduce such performance consumption, where VM-Exit is avoided.
-		*/
-#if defined(_WIN64)
-		// This shellcode can breach the 4GB-limit in AMD64 architecture.
-		// No register would be destroyed.
-		/*
-		  ShellCode Overview:
-		  push rax			-- 50
-		  mov rax, proxy	-- 48 B8 XX XX XX XX XX XX XX XX
-		  xchg [rsp],rax	-- 48 87 04 24
-		  ret				-- C3
-		  16 bytes in total. This shellcode is provided By AyalaRs.
-		  This could be perfect ShellCode in my opinion.
-		  Note that all functions in Windows Kernel are 16-bytes aligned.
-		  Thus, this shellcode would not break next function or overflow to next page.
-		*/
-		BYTE HookCode[16]={0x50,0x48,0xB8,0,0,0,0,0,0,0,0,0x48,0x87,0x04,0x24,0xC3};
-		BYTE DetourCode[14]={0xFF,0x25,0x0,0x0,0x0,0x0,0,0,0,0,0,0,0,0};
-		*(PULONG64)((ULONG64)HookCode+3)=(ULONG64)Proxy;
-		*(PULONG64)((ULONG64)DetourCode+6)=(ULONG64)Address+PatchSize;
-#else
-		//In Win32, this is a common trick of eip redirecting.
-		BYTE HookCode[5]={0xE9,0,0,0,0};
-		BYTE DetourCode[5]={0xE9,0,0,0,0};
-		*(PULONG)((ULONG)HookCode+1)=(ULONG)Proxy-(ULONG)Address-5;
-		*(PULONG)((ULONG)DetourCode+1)=(ULONG)Address-(ULONG)Detour-5;
-#endif
-		HookedAddress=(PVOID)((ULONG_PTR)HookPage->HookedPage.VirtualAddress+PageOffset);
-		NoirDebugPrint("Patch Size: %d\t 0x%p\n",PatchSize,Address);
-		RtlCopyMemory(*Detour,Address,PatchSize);
-		RtlCopyMemory((PVOID)((ULONG_PTR)*Detour+PatchSize),DetourCode,DetourLength);
-		RtlCopyMemory(HookedAddress,HookCode,HookLength);
+		PVOID HookedAddress=(PVOID)((ULONG_PTR)HookPage->HookedPage.VirtualAddress+PageOffset);
+		ULONG CopySize=Length-RemainderLength;
+		// Copy the hook code to the hooked page.
+		RtlCopyMemory(HookedAddress,HookCode,CopySize);
 		st=STATUS_SUCCESS;
+		if(ARGUMENT_PRESENT(CopiedLength))*CopiedLength=CopySize;
+	}
+	if(ARGUMENT_PRESENT(RemainingLength))*RemainingLength=RemainderLength;
+	return st;
+}
+
+NTSTATUS NoirConstructHook(IN PVOID Address,IN PVOID Proxy,OUT PVOID* Detour)
+{
+	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
+	ULONG AffectedPages=ADDRESS_AND_SIZE_TO_SPAN_PAGES(Address,HookLength);
+	ULONG PatchSize=GetPatchSize(Address,HookLength);
+	PVOID TargetAddress=Address;
+	ULONG HookCodeIndex=0;
+	*Detour=NoirAllocateNonPagedMemory(PatchSize+DetourLength);
+	if(*Detour==NULL)return st;
+	/*
+		I have checked the methods by tandasat, who wrote the DdiMon and SimpleSvmHook.
+		His way of rip redirecting somewhat lacks robustness.
+		He uses a byte CC to inject a debug-break and intercept it with a VM-Exit.
+		This would significantly increase performance consumption in high-rate functions.
+		My implementation aims to reduce such performance consumption, where VM-Exit is avoided.
+	*/
+#if defined(_WIN64)
+	// This shellcode can breach the 4GB-limit in AMD64 architecture.
+	// No register would be destroyed.
+	/*
+		ShellCode Overview:
+		push rax						50
+		mov rax,proxy					48 B8 XX XX XX XX XX XX XX XX
+		xchg rax,qword ptr [rsp]		48 87 04 24
+		add rsp,8						48 83 C4 08
+		jmp qword ptr [rsp-8]			FF 64 24 F8
+		23 bytes in total. This shellcode is provided By AyalaRs, improved by Zero Tang.
+		Original implementation is not compatible with Control-Flow Enforcement.
+	*/
+	BYTE HookCode[23]={0x50,0x48,0xB8,0,0,0,0,0,0,0,0,0x48,0x87,0x04,0x24,0xC3};
+	BYTE DetourCode[14]={0xFF,0x25,0x0,0x0,0x0,0x0,0,0,0,0,0,0,0,0};
+	*(PULONG64)((ULONG64)HookCode+3)=(ULONG64)Proxy;
+	*(PULONG64)((ULONG64)DetourCode+6)=(ULONG64)Address+PatchSize;
+#else
+	// In Win32, this is a common trick of eip redirecting.
+	BYTE HookCode[5]={0xE9,0,0,0,0};
+	BYTE DetourCode[5]={0xE9,0,0,0,0};
+	*(PULONG)((ULONG)HookCode+1)=(ULONG)Proxy-(ULONG)Address-5;
+	*(PULONG)((ULONG)DetourCode+1)=(ULONG)Address-(ULONG)Detour-5;
+#endif
+	NoirDebugPrint("Patch Size: %d\t 0x%p\n",PatchSize,Address);
+	RtlCopyMemory(*Detour,Address,PatchSize);
+	RtlCopyMemory((PVOID)((ULONG_PTR)*Detour+PatchSize),DetourCode,DetourLength);
+	st=STATUS_SUCCESS;
+	// Copy the hook code to shadow pages.
+	for(ULONG i=0;i<AffectedPages;i++)
+	{
+		ULONG CopiedLength;
+		st=NoirConstructHookPage(TargetAddress,&HookCode[HookCodeIndex],HookLength-HookCodeIndex,NULL,&CopiedLength);
+		if(NT_ERROR(st))break;
+		// Increment the addressing.
+		HookCodeIndex+=CopiedLength;
+		TargetAddress=(PVOID)((ULONG_PTR)TargetAddress+CopiedLength);
 	}
 	return st;
 }
@@ -267,6 +290,7 @@ void NoirTeardownHookedPages()
 		NoirFreeNonPagedMemory(Old_NtSetInformationFile);
 		Old_NtSetInformationFile=NULL;
 	}
+	// Add your code here to release detour functions for additional hooks.
 }
 
 void NoirGetNtOpenProcessIndex()

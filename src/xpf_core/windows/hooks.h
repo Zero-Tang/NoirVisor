@@ -19,7 +19,7 @@
 #define MSR_SYSENTER_EIP	0x176
 
 #if defined(_WIN64)
-#define HookLength				16
+#define HookLength				23
 #define DetourLength			14
 #else
 #define HookLength				5

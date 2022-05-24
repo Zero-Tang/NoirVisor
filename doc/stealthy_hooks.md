@@ -23,8 +23,8 @@ As you see, there is no guarantee that hooking via NPT can hide instructions fro
 It is extremely recommended to emulate the hooked function (i.e.: do not detour back to the hooked function) for the best performance. By doing so, #NPF VM-Exits for hiding hooks can be significantly reduced. \
 Regardless, it is significantly unrecommended to implement stealthy inline hooks via AMD-V/NPT.
 
-### Weak Point of NoirVisor's Stealthy Inline Hooks
-For 64-bit codes, NoirVisor uses the following instruction sequence to perform control-flow redirection:
+### Compatibility with Control-Flow Enforcement
+For 64-bit codes, older versions of NoirVisor use the following instruction sequence to perform control-flow redirection:
 
 ```Assembly
 push rax
@@ -33,6 +33,35 @@ xchg rax,[rsp]
 ret
 ```
 
-This approach offers significant performance by virtue of using minimal amount of instructions for redirecting the control-flow. \
+This approach offers significant performance boost by virtue of no VM-Exits would occur just in order redirect the control-flow. \
 The problem is that, if the Control-Flow Enforcement (CET) is enabled, the `ret` instruction could trigger `#CP(1)` exception due to the returning address being different from what was stored in the shadow stack. \
-Future implementation of NoirVisor might intercept `#CP` exceptions in order to be compatible with `CET`, or use the `int 3` hypervisor-assisted control-flow redirection approach when CET is detected. Performance cost should be considered.
+In order to be compatible with CET, the `ret` instruction must be circumvented. We will emulate the behavior of `ret` instruction by adding the `rsp` and jumping by pointer. The drawback is the even longer shellcode.
+
+```Assembly
+push rax                    ; 50
+mov rax,proxy               ; 48 B8 XX XX XX XX XX XX XX XX
+xchg rax,qword ptr [rsp]    ; 48 87 04 24
+add rsp,8                   ; 48 83 C4 F8
+jmp qword ptr[rsp-8]        ; FF 64 24 F8
+```
+
+This shellcode for jumping has 23 bytes in total, 7 bytes longer than the shellcode which does not consider the CET.
+
+## Install Your Own Stealthy Inline Hooks
+You may add install your own stealthy Inline Hooks for your own specific purposes. \
+Keep in mind that NoirVisor's approach to install hooks requires overwriting a sequence of bytes. Overlapped hooks can cause undefined behavior.
+
+### Windows
+The `/src/xpf_core/windows/hooks.c` file is subject to be revised if you wish to add your own hooks. Locate the `NoirBuildHookedPages` function. This is the function you should revise. <br>
+Generally, installing a stealthy inline hook requires the following procedure:
+
+1. Locate the image. You can skip this step if you can locate the function without locating the image.
+2. Locate the function address.
+3. Invoke the `NoirConstructHook` function to construct hook pages. Note that NoirVisor uses a sequence of instructions to perform control-flow redirection, so the hook code can span to two pages. In addition, the constant `HookPageLimit` does not imply the maximum amount of hooks can be installed. Therefore, it is possible you can only install less number of hooks than the limit of hooked pages, yet it is also possible to install more number of hooks than the limit of hooked pages if the hooks are gathered in the same pages.
+
+Note:
+
+1. NoirVisor provides some functions to help locating the kernel-mode modules and exported procedures. Use them wisely to reduce your effort.
+2. Unexported procedures, or private procedures, must be located by your own effort.
+
+When you uninstall a hook, only one additional step is required: release the detour function pointer you received from the `NoirConstructHook` function. Do this in `NoirTeardownHookPages` function.
