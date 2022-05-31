@@ -8,8 +8,8 @@ NoirVisor - The Grimoire Hypervisor solution for x86 Processors.
     </a>
     <img src="https://img.shields.io/github/stars/Zero-Tang/NoirVisor?color=orange">
     <img src="https://img.shields.io/github/forks/Zero-Tang/NoirVisor?color=silver">
-    <a target="_blank" href="https://qm.qq.com/cgi-bin/qm/qr?k=ly7ROfTm6VD9pBuw6zI85TuYaWCu3li8&jump_from=webapi">
-        <img border="0" src="//pub.idqqimg.com/wpa/images/group.png" alt="NoirVisor虚拟化交流群" title="NoirVisor虚拟化交流群">
+    <a href="https://qm.qq.com/cgi-bin/qm/qr?k=ly7ROfTm6VD9pBuw6zI85TuYaWCu3li8&jump_from=webapi">
+        <img border="0" src="https://pub.idqqimg.com/wpa/images/group.png" alt="NoirVisor虚拟化交流群" title="NoirVisor虚拟化交流群">
     </a>
 </p>
 
@@ -55,15 +55,17 @@ If you use terminal, you may add `/s` option in order to bypass the `pause` comm
 ```
 
 ## Windows Driver
-To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 11 (Visual Studio Build Tools 16.9.2) ISO file to T disk. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. <br>
+To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 11 (Visual Studio Build Tools 16.9.2 and 17.1.5) ISO file to T: and V: drives. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. <br>
 Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. If you use WinCDEmu, however, you may order the system to mount EWDK10 and specify its drive letter during startup. <br>
 You may download the EWDK11 (with VS Build Tools 16.9.2) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019-New <br>
+You may download the EWDK11 (with VS Build Tools 17.1.5) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022 <br>
 Make sure you have downloaded the correct version. NoirVisor would continue updating. If not using correct version, you might fail to compile the latest version of NoirVisor. <br>
+Note that EWDK11 with VS Build Tools **newer than 16.9.2 has removed import library for Windows 7**. <br>
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
 ## EFI Application and Runtime Driver
 Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. <br>
-To build a EFI Runtime Driver and Application, you should install LLVM, NASM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. <br>
+To build a EFI Runtime Driver and Application, you should NASM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. Also, you should mount [EWDK11 with VS Build Tools 17.1.5](https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022) to V: drive. <br>
 You may download NASM from its official website: https://www.nasm.us/pub/nasm/stable/win64/. Make sure you have added the directory to the `PATH` environment variable. <br>
 You may download LLVM from GitHub: https://github.com/llvm/llvm-project/releases. Download the Win64 option. <br>
 You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases. Download the source code. <br>
@@ -89,6 +91,20 @@ You may enable Stealth Inline Hook by setting up registry:
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "StealthInlineHook" /t REG_DWORD /d 1 /f
 ```
 You may set the values to 0, or remove the value key, in order to disable these features again.
+
+You may load NoirVisor by using command-line or batch script:
+```bat
+reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "SubvertOnDriverLoad" /t REG_DWORD /d 1 /f
+sc create NoirVisor type= kernel binPath= <Path to NoirVisor driver file>
+sc start NoirVisor
+```
+You may unload NoirVisor by using command-line or batch script as well:
+```bat
+sc stop NoirVisor
+sc delete NoirVisor
+reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "SubvertOnDriverLoad" /t REG_DWORD /d 0 /f
+```
+The `SubvertOnDriverLoad` registry key value specifies whether the driver should subvert the system or not on the entry. This key value conflicts with NoirVisor Loader. You must delete or disable this key value in order to use NoirVisor Loader.
 
 ## EFI Application and Runtime Driver
 Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a partition and format it info FAT32 file system. After you successfully build the image, you should see two images: `bootx64.efi` and `NoirVisor.efi` <br> 

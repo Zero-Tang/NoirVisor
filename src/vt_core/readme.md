@@ -42,7 +42,7 @@ For example, if `pfec_mask` and `pfec_match` are both 0 and page-fault intercept
 Therefore, we can set `pfec_match` to be "instruction-fetch only", and set `pfec_mask` to be masking both "user-mode access" and "instruction-fetch" so that only kernel-mode instruction fetch faults will be intercepted.
 
 ## The New PatchGuard Mechanism
-Recently, there is a new PatchGuard Mechanism which detects LSTAR MSR-Hook. This mechanism would write a temporary address to the LSTAR MSR then execute `syscall` instruction to verify the result. This is a hypervisor-specific technique to detect hooks in that writing a temporary address to LSTAR could unhook LSTAR permanently. In order to mitigate this mechanism, we should intercept writes to LSTAR MSR. If the value to be written equal to the original `syscall` handler, set the MSR to be the proxy handler. Otherwise, set the MSR as is. On interception upon reads from LSTAR MSR, return the original `syscall` handler if current LSTAR is set to the proxy handler, and otherwise return the value previously written to LSTAR MSR.
+Recently, there is a new PatchGuard Mechanism which detects LSTAR MSR-Hook. It is called `KiErrata704Present`. This mechanism would write a temporary address to the LSTAR MSR then execute `syscall` instruction to verify the result. This is a hypervisor-specific technique to detect hooks in that writing a temporary address to LSTAR could unhook LSTAR permanently. In order to mitigate this mechanism, we should intercept writes to LSTAR MSR. If the value to be written equal to the original `syscall` handler, set the MSR to be the proxy handler. Otherwise, set the MSR as is. On interception upon reads from LSTAR MSR, return the original `syscall` handler if current LSTAR is set to the proxy handler, and otherwise return the value previously written to LSTAR MSR.
 
 ## Supervisor-Mode Access Prevention Problem
 SMAP, acronym that stands for Supervisor-Mode Access Prevention, is an (Should it be "an" or "a"? Do you pronounce "x" in "x86" as "eks" or "cross"?) x86 processor feature that prevents supervisor-mode code from accessing user-mode data. It should be noticed that SMAP does not aim to prevent malicious privileged program from stealing or tampering user-mode data. It, instead, prevents benevolent supervisor-mode code from accessing malevolent user-mode data. For example, the infamous [CVE-2018-8897 vulnerability](https://everdox.net/popss.pdf) deceives the OS `#DB` handler that the `fs`/`gs` segment is pointing to kernel-mode data (e.g: `KPCR` structure in Windows) while, in fact, the `fs`/`gs` segment is pointing to user-mode data (e.g: `TEB` structure in Windows). <br>
@@ -66,6 +66,19 @@ On VM-Exit, NoirVisor should locate the hook page by GPA (Guest Physical Address
 If an instruction in the hooked page accesses some data in the same page, it would infinitely trigger EPT violations. Therefore, care must be taken when the `rip` and `GPA` are in the same page. <br>
 Intel VT-x provides the `Monitor Trap Flags` feature that triggers VM-Exits per instruction. We may use this feature to circumvent the this possibility. <br>
 When EPT violation handler detects that `GPA` and `rip` are in the same page, grant `R+/W+/X+` permission, map to the original page and enable MTF. An MTF VM-Exit will be immediately triggered after this instruction completes. In this MTF VM-Exit, revoke `R+/W+` permissions, map to the hooked page, and disable the MTF.
+
+## The New PatchGuard Mechanism
+The `KiErrata671Present` is a new mechanism that detects hooks concealed by EPT. It looks like:
+
+```Assembly
+xor eax,eax
+inc eax
+ret
+```
+
+The invoker of `KiErrata671Present` would replace the `inc eax,eax` instruction with `ret` instruction. Then calls this function to see the result. <br>
+If the `KiErrata671Present` locates in the same page with our hooked function, then the `KiErrata671Present` function would return one, in that the write was redirected to the original page instead of the hooked page. <br>
+This becomes a dilemma in that there is always a spot to detect inconsistency no matter where we redirect the hook.
 
 # Critical Hypervisor Protection
 This feature is an essential security feature. I found this feature missing in most open-source light-weight hypervisor project. The key is that VMCS and other essential pages are not protected through Intel EPT even if they enabled Intel EPT. It should be pointed out that a malware can be aware of the format of VMCS of a specific processor. In this regard, malware may corrupt the VMCS through memory access instruction.

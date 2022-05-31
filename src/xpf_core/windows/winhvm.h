@@ -115,6 +115,11 @@ EXGETFIRMWAREENVIRONMENTVARIABLE NoirExGetFirmwareEnvironmentVariable=NULL;
 PVOID NoirLocateImageBaseByName(IN PWSTR ImageName);
 PVOID NoirLocateExportedProcedureByName(IN PVOID ImageBase,IN PSTR ProcedureName);
 
+PVOID NoirAllocateNonPagedMemory(IN SIZE_T Length);
+void NoirFreeNonPagedMemory(IN PVOID VirtualAddress);
+PVOID NoirAllocatePagedMemory(IN SIZE_T Length);
+void NoirFreePagedMemory(IN PVOID VirtualAddress);
+
 BOOLEAN NoirDetectKvaShadow();
 NTSTATUS NoirInitializeCvmModule();
 NTSTATUS NoirFinalizeCvmModule();

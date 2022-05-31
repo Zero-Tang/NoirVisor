@@ -185,6 +185,7 @@ NTSTATUS NoirBuildHostEnvironment();
 void NoirFreeHostEnvironment();
 void NoirBuildHookedPages();
 void NoirTeardownHookedPages();
+NTSTATUS NoirSubvertSystemOnDriverLoad(OUT PBOOLEAN Subvert);
 extern ULONG32 noir_cvm_exit_context_size;
 extern ULONG_PTR system_cr3;
 extern ULONG_PTR orig_system_call;
@@ -192,3 +193,4 @@ extern PSTR virtual_vstr;
 extern PSTR virtual_nstr;
 
 PEPROCESS SubversionProcess=NULL;
+BOOLEAN SubvertOnDriverLoad=FALSE;

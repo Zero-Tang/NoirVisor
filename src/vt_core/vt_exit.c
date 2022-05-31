@@ -545,27 +545,7 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 		}
 		default:
 		{
-			// If vmcall is not inside the NoirVisor's image,
-			// we consider this is a regular VMX instruction
-			// execution not in VMX Non-Root Operation.
-			// Note that this is Nested VMX scenario.
-			// Check status of vCPU.
-			if(vcpu->status==noir_virt_nesting)
-			{
-				u64 linked_vmcs;
-				noir_vt_vmread64(vmcs_link_pointer,&linked_vmcs);
-				if(linked_vmcs==0xffffffffffffffff)
-					noir_vt_vmfail_invalid();		// At this moment, valid VMCS is not loaded.
-				else
-					noir_vt_vmfail_valid();			// At this moment, valid VMCS is loaded.
-				noir_vt_advance_rip();
-			}
-			else
-			{
-				// At this moment, vCPU did not enter VMX operation.
-				// Issue a #UD exception to Guest.
-				noir_vt_inject_event(ia32_invalid_opcode,ia32_hardware_exception,false,0,0);
-			}
+			// Unexpected vmcall occured. This could be possible when NoirVisor is loaded as nested hypervisor.
 			break;
 		}
 	}
@@ -1330,7 +1310,6 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noi
 					noir_vt_vmwrite(primary_processor_based_vm_execution_controls,proc_ctrl.value);
 					// Indicate which hook page is pending to be stepped over.
 					eptm->pending_hook_index=mid;
-					nv_dprintf("Instruction in hooked page is referencing data the hooked page. Enabling MTF...\n");
 				}
 				else
 				{

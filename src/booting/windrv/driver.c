@@ -49,6 +49,7 @@ PVOID static NoirGetOutputBuffer(IN PIRP Irp)
 void NoirDriverUnload(IN PDRIVER_OBJECT DriverObject)
 {
 	UNICODE_STRING uniLinkName=RTL_CONSTANT_STRING(LINK_NAME);
+	NoirTeardownHypervisor();
 	NoirTeardownHookedPages();
 	NoirTeardownProtectedFile();
 	NoirFinalizeCodeIntegrity();
@@ -354,6 +355,8 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	NoirBuildProtectedFile();
 	NoirBuildHostEnvironment();
 	NoirInitializePowerStateCallback();
+	NoirSubvertSystemOnDriverLoad(&SubvertOnDriverLoad);
+	if(SubvertOnDriverLoad)NoirBuildHypervisor();
 }
 
 NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING RegistryPath)

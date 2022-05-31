@@ -124,20 +124,119 @@ void __cdecl nv_panicf(const char* format,...)
 	va_end(arg_list);
 }
 
+void NoirReportMemoryIntrospectionCounter()
+{
+	NoirDebugPrint("============NoirVisor Memory Introspection Report Start============\n");
+	NoirDebugPrint("Unreleased NonPaged Pools: %d\n",NoirAllocatedNonPagedPools);
+	NoirDebugPrint("Unreleased Paged Pools: %d\n",NoirAllocatedPagedPools);
+	NoirDebugPrint("Unreleased Contiguous Memory Count: %d\n",NoirAllocatedContiguousMemoryCount);
+	if(NoirAllocatedNonPagedPools || NoirAllocatedPagedPools || NoirAllocatedContiguousMemoryCount)
+		NoirDebugPrint("Memory Leak is detected!\n");
+	else
+		NoirDebugPrint("No Memory Leaks...\n");
+	NoirDebugPrint("=============NoirVisor Memory Introspection Report End=============\n");
+}
+
 // Asynchronous Debug-Printer Implementation...
 // In the context of VM-Exit, debug-printing is not permitted.
 // FIXME: Some debug log messages are missing.
 
 PVOID NoirAllocateLoggerBuffer(IN ULONG Size)
 {
+#if _MSC_FULL_VER>192829913
+	return ExAllocatePool2(POOL_FLAG_NON_PAGED,Size,'gLvN');
+#else
 	PVOID p=ExAllocatePoolWithTag(NonPagedPool,Size,'gLvN');
 	if(p)RtlZeroMemory(p,Size);
 	return p;
+#endif
+}
+
+PVOID NoirAllocateContiguousMemory(IN SIZE_T Length)
+{
+	PHYSICAL_ADDRESS H={0xFFFFFFFFFFFFFFFF};
+	PVOID p=MmAllocateContiguousMemory(Length,H);
+	if(p)
+	{
+		RtlZeroMemory(p,Length);
+		InterlockedIncrement(&NoirAllocatedContiguousMemoryCount);
+	}
+	return p;
+}
+
+PVOID NoirAllocateNonPagedMemory(IN SIZE_T Length)
+{
+#if _MSC_FULL_VER>192829913
+	PVOID p=ExAllocatePool2(POOL_FLAG_NON_PAGED_EXECUTE,Length,'pNvN');
+	if(p)InterlockedIncrement(&NoirAllocatedNonPagedPools);
+#else
+	PVOID p=ExAllocatePoolWithTag(NonPagedPool,Length,'pNvN');
+	if(p)
+	{
+		RtlZeroMemory(p,Length);
+		InterlockedIncrement(&NoirAllocatedNonPagedPools);
+	}
+#endif
+	return p;
+}
+
+PVOID NoirAllocatePagedMemory(IN SIZE_T Length)
+{
+#if _MSC_FULL_VER>192829913
+	PVOID p=ExAllocatePool2(POOL_FLAG_PAGED,Length,'gPvN');
+	if(p)InterlockedIncrement(&NoirAllocatedPagedPools);
+#else
+	PVOID p=ExAllocatePoolWithTag(PagedPool,Length,'gPvN');
+	if(p)
+	{
+		RtlZeroMemory(p,Length);
+		InterlockedIncrement(&NoirAllocatePagedPools);
+	}
+#endif
+	return p;
+}
+
+void NoirFreeContiguousMemory(PVOID VirtualAddress)
+{
+#if defined(_WINNT5)
+	// It is recommended to release contiguous memory at APC level on NT5.
+	KIRQL f_oldirql;
+	KeRaiseIrql(APC_LEVEL,&f_oldirql);
+#endif
+	MmFreeContiguousMemory(VirtualAddress);
+	InterlockedDecrement(&NoirAllocatedContiguousMemoryCount);
+#if defined(_WINNT5)
+	KeLowerIrql(f_oldirql);
+#endif
+}
+
+void NoirFreeNonPagedMemory(IN PVOID VirtualAddress)
+{
+#if _MSC_FULL_VER>192829913
+	ExFreePool2(VirtualAddress,'pNvN',NULL,0);
+#else
+	ExFreePoolWithTag(VirtualAddress,'pNvN');
+#endif
+	InterlockedDecrement(&NoirAllocatedNonPagedPools);
+}
+
+void NoirFreePagedMemory(IN PVOID VirtualAddress)
+{
+#if _MSC_FULL_VER>192829913
+	ExFreePool2(VirtualAddress,'gPvN',NULL,0);
+#else
+	ExFreePoolWithTag(VirtualAddress,'gPvN');
+#endif
+	InterlockedDecrement(&NoirAllocatedPagedPools);
 }
 
 void NoirFreeLoggerBuffer(IN PVOID Buffer)
 {
+#if _MSC_FULL_VER>192829913
+	ExFreePool2(Buffer,'gLvN',NULL,0);
+#else
 	ExFreePoolWithTag(Buffer,'gLvN');
+#endif
 }
 
 void NoirAsyncDebugLogThreadWorker(IN PVOID StartContext)
@@ -293,7 +392,7 @@ void static NoirDpcRT(IN PKDPC Dpc,IN PVOID DeferedContext OPTIONAL,IN PVOID Sys
 void noir_generic_call(noir_broadcast_worker worker,void* context)
 {
 	ULONG32 Num=noir_get_processor_count();
-	PVOID IpbBuffer=ExAllocatePool(NonPagedPool,Num*sizeof(KDPC)+4);
+	PVOID IpbBuffer=NoirAllocateNonPagedMemory(Num*sizeof(KDPC)+4);
 	if(IpbBuffer)
 	{
 		PLONG32 volatile GlobalOperatingNumber=(PULONG32)((ULONG_PTR)IpbBuffer+Num*sizeof(KDPC));
@@ -309,7 +408,7 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 		// Use TTAS-Spinning Semaphore here for better performance.
 		while(InterlockedCompareExchange(GlobalOperatingNumber,0,0))
 			_mm_pause();		// Optimized Processor Relax.
-		ExFreePool(IpbBuffer);
+		NoirFreeNonPagedMemory(IpbBuffer);
 	}
 }
 
@@ -350,79 +449,6 @@ ULONG32 noir_disasm_instruction(IN PVOID Code,OUT PSTR Mnemonic,IN SIZE_T Mnemon
 	}
 }
 
-void NoirReportMemoryIntrospectionCounter()
-{
-	NoirDebugPrint("============NoirVisor Memory Introspection Report Start============\n");
-	NoirDebugPrint("Unreleased NonPaged Pools: %d\n",NoirAllocatedNonPagedPools);
-	NoirDebugPrint("Unreleased Paged Pools: %d\n",NoirAllocatedPagedPools);
-	NoirDebugPrint("Unreleased Contiguous Memory Count: %d\n",NoirAllocatedContiguousMemoryCount);
-	if(NoirAllocatedNonPagedPools || NoirAllocatedPagedPools || NoirAllocatedContiguousMemoryCount)
-		NoirDebugPrint("Memory Leak is detected!\n");
-	else
-		NoirDebugPrint("No Memory Leaks...\n");
-	NoirDebugPrint("=============NoirVisor Memory Introspection Report End=============\n");
-}
-
-PVOID NoirAllocateContiguousMemory(IN SIZE_T Length)
-{
-	PHYSICAL_ADDRESS H={0xFFFFFFFFFFFFFFFF};
-	PVOID p=MmAllocateContiguousMemory(Length,H);
-	if(p)
-	{
-		RtlZeroMemory(p,Length);
-		InterlockedIncrement(&NoirAllocatedContiguousMemoryCount);
-	}
-	return p;
-}
-
-PVOID NoirAllocateNonPagedMemory(IN SIZE_T Length)
-{
-	PVOID p=ExAllocatePoolWithTag(NonPagedPool,Length,'pNvN');
-	if(p)
-	{
-		RtlZeroMemory(p,Length);
-		InterlockedIncrement(&NoirAllocatedNonPagedPools);
-	}
-	return p;
-}
-
-PVOID NoirAllocatePagedMemory(IN SIZE_T Length)
-{
-	PVOID p=ExAllocatePoolWithTag(PagedPool,Length,'gPvN');
-	if(p)
-	{
-		RtlZeroMemory(p,Length);
-		InterlockedIncrement(&NoirAllocatedPagedPools);
-	}
-	return p;
-}
-
-void NoirFreeContiguousMemory(PVOID VirtualAddress)
-{
-#if defined(_WINNT5)
-	// It is recommended to release contiguous memory at APC level on NT5.
-	KIRQL f_oldirql;
-	KeRaiseIrql(APC_LEVEL,&f_oldirql);
-#endif
-	MmFreeContiguousMemory(VirtualAddress);
-	InterlockedDecrement(&NoirAllocatedContiguousMemoryCount);
-#if defined(_WINNT5)
-	KeLowerIrql(f_oldirql);
-#endif
-}
-
-void NoirFreeNonPagedMemory(IN PVOID VirtualAddress)
-{
-	ExFreePoolWithTag(VirtualAddress,'pNvN');
-	InterlockedDecrement(&NoirAllocatedNonPagedPools);
-}
-
-void NoirFreePagedMemory(IN PVOID VirtualAddress)
-{
-	ExFreePoolWithTag(VirtualAddress,'gPvN');
-	InterlockedDecrement(&NoirAllocatedPagedPools);
-}
-
 void* noir_alloc_contd_memory(size_t length)
 {
 	// PHYSICAL_ADDRESS L={0};
@@ -440,24 +466,12 @@ void* noir_alloc_contd_memory(size_t length)
 
 void* noir_alloc_nonpg_memory(size_t length)
 {
-	PVOID p=ExAllocatePoolWithTag(NonPagedPool,length,'pNvN');
-	if(p)
-	{
-		RtlZeroMemory(p,length);
-		InterlockedIncrement(&NoirAllocatedNonPagedPools);
-	}
-	return p;
+	return NoirAllocateNonPagedMemory(length);
 }
 
 void* noir_alloc_paged_memory(size_t length)
 {
-	PVOID p=ExAllocatePoolWithTag(PagedPool,length,'gPvN');
-	if(p)
-	{
-		RtlZeroMemory(p,length);
-		InterlockedIncrement(&NoirAllocatedPagedPools);
-	}
-	return p;
+	return NoirAllocatePagedMemory(length);
 }
 
 void noir_free_contd_memory(void* virtual_address,size_t length)
@@ -476,14 +490,12 @@ void noir_free_contd_memory(void* virtual_address,size_t length)
 
 void noir_free_nonpg_memory(void* virtual_address)
 {
-	ExFreePoolWithTag(virtual_address,'pNvN');
-	InterlockedDecrement(&NoirAllocatedNonPagedPools);
+	NoirFreeNonPagedMemory(virtual_address);
 }
 
 void noir_free_paged_memory(void* virtual_address)
 {
-	ExFreePoolWithTag(virtual_address,'gPvN');
-	InterlockedDecrement(&NoirAllocatedPagedPools);
+	NoirFreePagedMemory(virtual_address);
 }
 
 ULONG64 noir_get_physical_address(void* virtual_address)

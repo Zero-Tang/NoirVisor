@@ -142,9 +142,9 @@ typedef union _ia32_vmx_2ndproc_controls
 		u32 use_gpa_for_intel_pt:1;				// bit	24
 		u32 use_tsc_scaling:1;					// bit	25
 		u32 enable_user_wait_and_pause:1;		// bit	26
-		u32 reserved1:1;						// bit	27
+		u32 enable_pconfig:1;					// bit	27
 		u32 enclv_exiting:1;					// bit	28
-		u32 reserved2:3;						// bits	29-31
+		u32 reserved1:3;						// bits	29-31
 	};
 	u32 value;
 }ia32_vmx_2ndproc_controls,*ia32_vmx_2ndproc_controls_p;
@@ -164,7 +164,10 @@ typedef union _ia32_vmx_3rdproc_controls
 	struct
 	{
 		u64 loadiwkey_exiting:1;				// bit	0
-		u64 reserved:63;						// bits	1-63
+		u64 enable_hlat:1;						// bit	1
+		u64 ept_paging_write_control:1;			// bit	2
+		u64 guest_paging_verification:1;		// bit	3
+		u64 reserved:60;						// bits	4-63
 	};
 	u64 value;
 }ia32_vmx_3rdproc_controls,*ia32_vmx_3rdproc_controls_p;
@@ -190,10 +193,12 @@ typedef union _ia32_vmx_exit_controls
 		u32 clear_ia32_bound_cfg:1;				// bit	23
 		u32 conceal_vmexit_from_pt:1;			// bit	24
 		u32 clear_ia32_rtit_ctrl:1;				// bit	25
-		u32 reserved5:2;						// bits	26-27
+		u32 clear_ia32_lbr_ctrl:1;				// bit	26
+		u32 reserved5:1;						// bit	27
 		u32 load_cet_state:1;					// bit	28
 		u32 load_pkrs:1;						// bit	29
-		u32 reserved6:2;						// bits	30-31
+		u32 save_ia32_perf_global_ctrl:1;		// bit	30
+		u32 activate_secondary_controls:1;		// bit	31
 	};
 	u32 value;
 }ia32_vmx_exit_controls,*ia32_vmx_exit_controls_p;
@@ -227,7 +232,7 @@ typedef union _ia32_vmx_entry_controls
 		u32 load_ia32_rtit_ctrl:1;			// bit	18
 		u32 reserved3:1;					// bit	19
 		u32 load_cet_state:1;				// bit	20
-		u32 reserved4:1;					// bit	21
+		u32 load_ia32_lbr_ctrl:1;			// bit	21
 		u32 load_pkrs:1;					// bit	22
 		u32 reserved5:9;					// bits	23-31
 	};

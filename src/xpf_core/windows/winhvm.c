@@ -179,6 +179,31 @@ void NoirPrintCompilerVersion()
 	NoirDebugPrint("NoirVisor Compliation Date: %s %s\n",__DATE__,__TIME__);
 }
 
+NTSTATUS NoirSubvertSystemOnDriverLoad(OUT PBOOLEAN Subvert)
+{
+	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
+	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=NoirAllocatePagedMemory(PAGE_SIZE);
+	*Subvert=FALSE;
+	if(KvPartInf)
+	{
+		HANDLE hKey=NULL;
+		UNICODE_STRING uniKeyName=RTL_CONSTANT_STRING(L"\\Registry\\Machine\\Software\\Zero-Tang\\NoirVisor");
+		OBJECT_ATTRIBUTES oa;
+		InitializeObjectAttributes(&oa,&uniKeyName,OBJ_CASE_INSENSITIVE|OBJ_KERNEL_HANDLE,NULL,NULL);
+		st=ZwOpenKey(&hKey,GENERIC_READ,&oa);
+		if(NT_SUCCESS(st))
+		{
+			UNICODE_STRING uniKvName=RTL_CONSTANT_STRING(L"SubvertOnDriverLoad");
+			ULONG RetLen;
+			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+			if(NT_SUCCESS(st))*Subvert=(*(PULONG32)KvPartInf->Data)!=0;
+			ZwClose(hKey);
+		}
+		NoirFreePagedMemory(KvPartInf);
+	}
+	return st;
+}
+
 NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 {
 	// Setup default values. Hooking becomes a very unstable feature in Windows with post-2018 updates!
@@ -190,7 +215,7 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 	BOOLEAN KvaShadowPresence=NoirDetectKvaShadow();
 	// Initialize.
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
-	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=ExAllocatePool(PagedPool,PAGE_SIZE);
+	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=NoirAllocatePagedMemory(PAGE_SIZE);
 	if(KvPartInf)
 	{
 		HANDLE hKey=NULL;
@@ -230,7 +255,7 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 			// Close the registry key handle.
 			ZwClose(hKey);
 		}
-		ExFreePool(KvPartInf);
+		NoirFreePagedMemory(KvPartInf);
 	}
 	// Summarize
 	*Features|=(CpuidPresence!=0)<<NOIR_HVM_FEATURE_CPUID_PRESENCE_BIT;
@@ -252,7 +277,7 @@ ULONG64 noir_query_enabled_features_in_system()
 NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength)
 {
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
-	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=ExAllocatePool(PagedPool,PAGE_SIZE);
+	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=NoirAllocatePagedMemory(PAGE_SIZE);
 	if(KvPartInf)
 	{
 		HANDLE hKey=NULL;
@@ -289,7 +314,7 @@ NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength)
 			NoirDebugPrint("System Version: %ws\n",VersionString);
 			ZwClose(hKey);
 		}
-		ExFreePool(KvPartInf);
+		NoirFreePagedMemory(KvPartInf);
 	}
 	return st;
 }

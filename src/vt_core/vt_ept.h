@@ -43,11 +43,25 @@ typedef union _ia32_ept_pointer
 		u64 memory_type:3;		// bits	0-2
 		u64 walk_length:3;		// bits	3-5
 		u64 dirty_flag:1;		// bit	6
-		u64 reserved:5;			// bits	7-11
+		u64 enable_sss:1;		// bit	7
+		u64 reserved:4;			// bits	8-11
 		u64 pml4e_offset:52;	// bits	12-63
 	};
 	u64 value;
 }ia32_ept_pointer,*ia32_ept_pointer_p;
+
+typedef union _ia32_hlat_pointer
+{
+	struct
+	{
+		u64 reserved0:3;			// bits	0-2
+		u64 pwt:1;				// bit	3
+		u64 pcd:1;				// bit	4
+		u64 reserved1:7;			// bits	5-11
+		u64 pml4e_offset:52;	// bits	12-63
+	};
+	u64 value;
+}ia32_hlat_pointer,*ia32_hlat_pointer_p;
 
 typedef union _ia32_ept_pml4e
 {
