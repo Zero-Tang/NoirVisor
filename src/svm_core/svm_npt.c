@@ -274,7 +274,8 @@ void nvc_npt_setup_apic_shadowing(noir_svm_vcpu_p vcpu)
 	amd64_npt_pte_p pte_p=vcpu->primary_nptm->pte.apic.virt;
 	amd64_npt_pde_p pde_base=null;
 	vcpu->apic_base=trans.value=page_base(noir_rdmsr(amd64_apic_base));
-	pde_base=(amd64_npt_pde_p)&vcpu->primary_nptm->pde.virt[trans.pde_offset];
+	nv_dprintf("APIC Base=0x%llX\n",vcpu->apic_base);
+	pde_base=(amd64_npt_pde_p)&vcpu->primary_nptm->pde.virt[(trans.pdpte_offset<<page_shift_diff)+trans.pde_offset];
 	pde_base->reserved1=0;
 	pde_base->pte_base=vcpu->primary_nptm->pte.apic.phys>>page_shift;
 	for(u32 i=0;i<512;i++)
@@ -283,7 +284,7 @@ void nvc_npt_setup_apic_shadowing(noir_svm_vcpu_p vcpu)
 		pte_p[i].present=1;
 		pte_p[i].write=1;
 		pte_p[i].user=1;
-		pte_p[i].page_base=(trans.pde_offset<<page_shift_diff)+i;
+		pte_p[i].page_base=(trans.pdpte_offset<<(page_shift_diff*2))+(trans.pde_offset<<page_shift_diff)+i;
 	}
 	vcpu->apic_pte=&pte_p[trans.pte_offset];
 	vcpu->apic_pte->write=0;

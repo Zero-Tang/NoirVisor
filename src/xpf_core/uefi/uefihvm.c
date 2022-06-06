@@ -24,7 +24,7 @@ void NoirTestCpuid()
 {
 	CPUID_VERSION_INFO_ECX VerInfoEcx;
 	AsmCpuid(CPUID_VERSION_INFO,NULL,NULL,(UINT32*)&VerInfoEcx,NULL);
-	if(VerInfoEcx.Bits.NotUsed)
+	if(VerInfoEcx.Bits.ParaVirtualized)
 	{
 		CHAR8 TempBuffer[512];
 		UINTN Length;
@@ -76,6 +76,20 @@ void NoirSaveImageInfo(IN EFI_LOADED_IMAGE_PROTOCOL *LoadedImageProtocol)
 	{
 		NvImageBase=LoadedImageProtocol->ImageBase;
 		NvImageSize=(UINT32)LoadedImageProtocol->ImageSize;
+	}
+}
+
+// When system enters runtime stage, the operating system may relocate the pointers
+// referenced by NoirVisor, and it may thereby results in unpredictable behaviors.
+// Most common errors would be #PF exceptions in Host Code.
+void NoirSuppressImageRelocation(IN VOID* ImageBase)
+{
+	EFI_IMAGE_DOS_HEADER *DosHead=(EFI_IMAGE_DOS_HEADER*)ImageBase;
+	if(DosHead->e_magic==EFI_IMAGE_DOS_SIGNATURE)
+	{
+		EFI_IMAGE_NT_HEADERS *NtHead=(EFI_IMAGE_NT_HEADERS*)((UINTN)ImageBase+DosHead->e_lfanew);
+		// Make the NT Header Signature invalid so the firmware won't relocate pointers referenced by NoirVisor.
+		NtHead->Signature=0;
 	}
 }
 

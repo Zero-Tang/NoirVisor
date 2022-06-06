@@ -20,7 +20,8 @@
 
 EFI_STATUS EFIAPI NoirDriverUnload(IN EFI_HANDLE ImageHandle)
 {
-	Print(L"NoirVisor is unloaded!\r\n");
+	NoirFinalizeCodeIntegrity();
+	NoirDebugPrint("NoirVisor is unloaded!\r\n");
 	return EFI_SUCCESS;
 }
 
@@ -48,7 +49,7 @@ EFI_STATUS EFIAPI NoirRegisterHypervisorVariables()
 	{
 		if(sizeof(LayeringPasscode)>255)
 		{
-			Print(L"Passcode for Layered Hypervisor is too long!\n");
+			NoirDebugPrint("Passcode for Layered Hypervisor is too long!\n");
 			st=EFI_BAD_BUFFER_SIZE;
 		}
 		else
@@ -87,27 +88,29 @@ void NoirPrintCompilerVersion()
 	UINT32 Build=_MSC_FULL_VER%100000;
 	UINT32 Minor=_MSC_VER%100;
 	UINT32 Major=_MSC_VER/100;
-	Print(L"Compiler Version: MSVC %02d.%02d.%05d\n",Major,Minor,Build);
-	Print(L"NoirVisor Compliation Date: %a %a\n",__DATE__,__TIME__);
+	NoirInitializeSerialPort(1,0);
+	NoirDebugPrint("Compiler Version: MSVC %02d.%02d.%05d\n",Major,Minor,Build);
+	NoirDebugPrint("NoirVisor Compliation Date: %a %a\n",__DATE__,__TIME__);
 }
 
 EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable)
 {
 	EFI_STATUS st=NoirEfiInitialize(ImageHandle,SystemTable);
 	EFI_LOADED_IMAGE_PROTOCOL* ImageInfo=NULL;
-	Print(L"Welcome to NoirVisor Runtime Driver!\r\n");
+	NoirDebugPrint("Welcome to NoirVisor Runtime Driver!\r\n");
 	NoirPrintCompilerVersion();
 	gBS->CreateEvent(EVT_SIGNAL_EXIT_BOOT_SERVICES,TPL_NOTIFY,NoirNotifyExitBootServices,NULL,&NoirEfiExitBootServicesNotification);
 	st=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocolGuid,&ImageInfo);
 	if(st==EFI_SUCCESS)ImageInfo->Unload=NoirDriverUnload;
-	Print(L"NoirVisor is loaded to base 0x%p, Size=0x%X\n",ImageInfo->ImageBase,ImageInfo->ImageSize);
+	NoirDebugPrint("NoirVisor is loaded to base 0x%p, Size=0x%X\n",ImageInfo->ImageBase,ImageInfo->ImageSize);
 	st=NoirRegisterHypervisorVariables();
-	Print(L"NoirVisor Variables Registration Status=0x%X\n",st);
+	NoirDebugPrint("NoirVisor Variables Registration Status=0x%X\n",st);
 	st=NoirBuildHostEnvironment();
-	Print(L"NoirVisor Runtime Driver Initialization Status: 0x%X\r\n",st);
-	NoirInitializeSerialPort(1,0);
+	NoirDebugPrint("NoirVisor Runtime Driver Initialization Status: 0x%X\r\n",st);
 	StdOut->OutputString(StdOut,L"Press Enter key to continue subversion!\r\n");
 	NoirBlockUntilKeyStroke(L'\r');
+	NoirInitializeCodeIntegrity(ImageInfo->ImageBase);
+	NoirSuppressImageRelocation(ImageInfo->ImageBase);
 	NoirBuildHypervisor();
 	return EFI_SUCCESS;
 }

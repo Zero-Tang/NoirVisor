@@ -154,16 +154,12 @@ void NoirPrepareHostProcedureAp(IN VOID *ProcedureArgument)
 	TssGdtEntry->Bits.Present=TRUE;
 	TssGdtEntry->Bits.BaseHi=(Pcr[CurProc].Core.Tr.Base>>24)&0xFF;
 	*(UINT32*)&TssGdtEntry[1]=Pcr[CurProc].Core.Tr.Base>>32;
-	// As a matter of fact, there is nothing special in TSS required to be set up.
 	// Debug Purpose: Overwrite the default IDT.
 	NoirSetupDebugSupportPerProcessor(NULL);
-	AsmWriteIdtr(&Pcr[CurProc].Core.IdtR);
-	AsmWriteGdtr(&Pcr[CurProc].Core.GdtR);
-	AsmWriteTr(Pcr[CurProc].Core.Tr.Selector);
 }
 
 // This function is invoked by Center HVM Core prior to subverting system,
-// but do not load host's special processor state
+// but does not load host's special processor state
 EFI_STATUS NoirBuildHostEnvironment()
 {
 	UINTN EnabledProcessors=0;
@@ -184,7 +180,7 @@ EFI_STATUS NoirBuildHostEnvironment()
 	{
 		// Initialize Host System.
 		Host.ProcessorBlocks=AllocateRuntimePages(EFI_SIZE_TO_PAGES(sizeof(NHPCRP)*Host.NumberOfProcessors));
-		if(sizeof(NHPCRP) & EFI_PAGE_MASK)Print(L"[Assertion] Size of NHPCR is not aligned at page! Size=0x%X\n",sizeof(NHPCRP));
+		if(sizeof(NHPCRP) & EFI_PAGE_MASK)NoirDebugPrint("[Assertion] Size of NHPCR (0x%X bytes) is not aligned at page!\n",sizeof(NHPCRP));
 		Host.Pml4Base=AllocateRuntimePages(1);
 		Host.PdptBase=AllocateRuntimePages(1);
 		if(Host.ProcessorBlocks && Host.Pml4Base && Host.PdptBase)
@@ -204,17 +200,18 @@ EFI_STATUS NoirBuildHostEnvironment()
 				// Let's use 1GiB Huge Pages for simplest implementation.
 				Host.PdptBase[i].PageSize=1;
 			}
-			Print(L"NoirVisor starts initialization per processor...\n");
+			system_cr3=(UINT64)Host.Pml4Base;
+			NoirDebugPrint("NoirVisor starts initialization per processor...\n");
 			// Initialize Per-Processor Blocks by broadcasting.
 			NoirPrepareHostProcedureAp(Host.ProcessorBlocks);
 			if(MpServices)MpServices->StartupAllAPs(MpServices,NoirPrepareHostProcedureAp,TRUE,NULL,0,Host.ProcessorBlocks,NULL);
 			// If it reaches here, the initialization is successful.
-			Print(L"NoirVisor Host Context is initialized successfully! Host System=0x%p\n",&Host);
-			system_cr3=(UINT64)Host.Pml4Base;
+			NoirDebugPrint("NoirVisor Host Context is initialized successfully! Host System=0x%p CR3=0x%p\n",&Host,system_cr3);
 			st=EFI_SUCCESS;
 		}
 		else
 		{
+			NoirDebugPrint("Failed to allocate host block for NoirVisor!\n");
 			NoirFreeHostEnvironment();
 			st=EFI_OUT_OF_RESOURCES;
 		}
@@ -300,7 +297,7 @@ void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...)
 		if(Format[i]=='\0')break;
 	}
 	AsmCpuid(CPUID_VERSION_INFO,NULL,NULL,&Ecx.Uint32,NULL);
-	AsciiSPrint(TempBuffer,sizeof(TempBuffer),"[NoirVisor - %a] ",Ecx.Bits.NotUsed?"Guest":"Host");
+	AsciiSPrint(TempBuffer,sizeof(TempBuffer),"[NoirVisor - %a] ",Ecx.Bits.ParaVirtualized?"Guest":"Host");
 	va_start(ArgList,Format);
 	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
 	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,FormatBuffer,ArgList);
@@ -491,18 +488,18 @@ void NoirDisplayProcessorState()
 {
 	NOIR_PROCESSOR_STATE State;
 	NoirSaveProcessorState(&State);
-	Print(L"CS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Cs.Selector,State.Cs.Attributes,State.Cs.Limit,State.Cs.Base);
-	Print(L"DS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Ds.Selector,State.Ds.Attributes,State.Ds.Limit,State.Ds.Base);
-	Print(L"ES Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Es.Selector,State.Es.Attributes,State.Es.Limit,State.Es.Base);
-	Print(L"FS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Fs.Selector,State.Fs.Attributes,State.Fs.Limit,State.Fs.Base);
-	Print(L"GS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Gs.Selector,State.Gs.Attributes,State.Gs.Limit,State.Gs.Base);
-	Print(L"SS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Ss.Selector,State.Ss.Attributes,State.Ss.Limit,State.Ss.Base);
-	Print(L"TR Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Tr.Selector,State.Tr.Attributes,State.Tr.Limit,State.Tr.Base);
-	Print(L"GDT Base=0x%p, Limit=0x%04X | IDT Base=0x%p, Limit=0x%04X\n",State.Gdtr.Base,State.Gdtr.Limit,State.Idtr.Base,State.Idtr.Limit);
-	Print(L"CR0=0x%p | CR2=0x%p | CR3=0x%p | CR4=0x%p | CR8=0x%p\n",State.Cr0,State.Cr2,State.Cr3,State.Cr4,State.Cr8);
-	Print(L"DR0=0x%p | DR1=0x%p | DR2=0x%p | DR3=0x%p | DR6=0x%p | DR7=0x%p\n",State.Dr0,State.Dr1,State.Dr2,State.Dr3,State.Dr6,State.Dr7);
-	Print(L"Debug Control MSR=0x%p | PAT MSR=0x%p | EFER MSR=0x%p\n",State.DebugControl,State.Pat,State.Efer);
-	Print(L"SysEnter_CS MSR=0x%p | SysEnter_ESP MSR=0x%p | SysEnter_EIP MSR=0x%p\n",State.SysEnter_Cs,State.SysEnter_Esp,State.SysEnter_Eip);
-	Print(L"Star MSR=0x%p | LStar MSR=0x%p | CStar MSR=0x%p | SfMask=0x%p\n",State.Star,State.LStar,State.CStar,State.SfMask);
-	Print(L"FS Base MSR=0x%p | GS Base MSR=0x%p | GS Swap Base MSR=0x%p\n",State.FsBase,State.GsBase,State.GsSwap);
+	NoirDebugPrint("CS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Cs.Selector,State.Cs.Attributes,State.Cs.Limit,State.Cs.Base);
+	NoirDebugPrint("DS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Ds.Selector,State.Ds.Attributes,State.Ds.Limit,State.Ds.Base);
+	NoirDebugPrint("ES Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Es.Selector,State.Es.Attributes,State.Es.Limit,State.Es.Base);
+	NoirDebugPrint("FS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Fs.Selector,State.Fs.Attributes,State.Fs.Limit,State.Fs.Base);
+	NoirDebugPrint("GS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Gs.Selector,State.Gs.Attributes,State.Gs.Limit,State.Gs.Base);
+	NoirDebugPrint("SS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Ss.Selector,State.Ss.Attributes,State.Ss.Limit,State.Ss.Base);
+	NoirDebugPrint("TR Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Tr.Selector,State.Tr.Attributes,State.Tr.Limit,State.Tr.Base);
+	NoirDebugPrint("GDT Base=0x%p, Limit=0x%04X | IDT Base=0x%p, Limit=0x%04X\n",State.Gdtr.Base,State.Gdtr.Limit,State.Idtr.Base,State.Idtr.Limit);
+	NoirDebugPrint("CR0=0x%p | CR2=0x%p | CR3=0x%p | CR4=0x%p | CR8=0x%p\n",State.Cr0,State.Cr2,State.Cr3,State.Cr4,State.Cr8);
+	NoirDebugPrint("DR0=0x%p | DR1=0x%p | DR2=0x%p | DR3=0x%p | DR6=0x%p | DR7=0x%p\n",State.Dr0,State.Dr1,State.Dr2,State.Dr3,State.Dr6,State.Dr7);
+	NoirDebugPrint("Debug Control MSR=0x%p | PAT MSR=0x%p | EFER MSR=0x%p\n",State.DebugControl,State.Pat,State.Efer);
+	NoirDebugPrint("SysEnter_CS MSR=0x%p | SysEnter_ESP MSR=0x%p | SysEnter_EIP MSR=0x%p\n",State.SysEnter_Cs,State.SysEnter_Esp,State.SysEnter_Eip);
+	NoirDebugPrint("Star MSR=0x%p | LStar MSR=0x%p | CStar MSR=0x%p | SfMask=0x%p\n",State.Star,State.LStar,State.CStar,State.SfMask);
+	NoirDebugPrint("FS Base MSR=0x%p | GS Base MSR=0x%p | GS Swap Base MSR=0x%p\n",State.FsBase,State.GsBase,State.GsSwap);
 }

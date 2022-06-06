@@ -24,14 +24,6 @@ mkdir ..\bin\compfre_win7x64\Intermediate
 mkdir ..\bin\compfre_win11x64
 mkdir ..\bin\compfre_win11x64\Intermediate
 
-echo Making Directories for NoirVisor Checked Build, 32-Bit Windows
-mkdir ..\bin\compchk_win7x86
-mkdir ..\bin\compchk_win7x86\Intermediate
-
-echo Making Directories for NoirVisor Free Build, 32-Bit Windows
-mkdir ..\bin\compfre_win7x86
-mkdir ..\bin\compfre_win7x86\Intermediate
-
 echo Making Directories for NoirVisor Checked Build, 64-Bit UEFI
 mkdir ..\bin\compchk_uefix64
 mkdir ..\bin\compchk_uefix64\Intermediate

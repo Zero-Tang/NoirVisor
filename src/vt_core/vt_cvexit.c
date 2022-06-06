@@ -765,6 +765,7 @@ void static fastcall nvc_vt_invalid_guest_state_cvexit_handler(noir_gpr_state_p 
 
 	// Deliver to subverted host.
 	nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
+	nvc_vt_dump_vmcs_guest_state();
 	cvcpu->header.exit_context.intercept_code=cv_invalid_state;
 }
 

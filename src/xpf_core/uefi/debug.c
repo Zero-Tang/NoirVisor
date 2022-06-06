@@ -18,6 +18,14 @@
 #include <Library/UefiLib.h>
 #include "debug.h"
 
+void NoirPrintGprState(IN X64_GPR_STATE *State)
+{
+	NoirDebugPrint("rax=0x%016X rcx=0x%016X rdx=0x%016X rbx=0x%016X\n",State->Rax,State->Rcx,State->Rdx,State->Rbx);
+	NoirDebugPrint("rsp=0x%016X rbp=0x%016X rsi=0x%016X rdi=0x%016X\n",State->Rsp,State->Rbp,State->Rsi,State->Rdi);
+	NoirDebugPrint("r8 =0x%016X r9 =0x%016X r10=0x%016X r11=0x%016X\n",State->R8,State->R9,State->R10,State->R11);
+	NoirDebugPrint("r12=0x%016X r13=0x%016X r14=0x%016X r15=0x%016X\n",State->R12,State->R13,State->R14,State->R15);
+}
+
 void NoirDivideErrorFaultHandler(IN OUT X64_GPR_STATE *State,IN OUT X64_EXCEPTION_STACK_WITHOUT_ERROR_CODE *ExceptionStack)
 {
 	NoirDebugPrint("Divide Error Fault occured!\n");
@@ -32,7 +40,7 @@ void NoirDebugFaultTrapHandler(IN OUT X64_GPR_STATE *State,IN OUT X64_EXCEPTION_
 
 void NoirBreakpointTrapHandler(IN OUT X64_GPR_STATE *State,IN OUT X64_EXCEPTION_STACK_WITHOUT_ERROR_CODE *ExceptionStack)
 {
-	NoirDebugPrint("Breakpoint Trap occured!\n");
+	NoirDebugPrint("Breakpoint Trap occured! Rip=0x%p\n",ExceptionStack->ReturnRip);
 	CpuDeadLoop();
 }
 
@@ -94,9 +102,13 @@ void NoirGeneralProtectionFaultHandler(IN OUT X64_GPR_STATE *State,IN OUT X64_EX
 
 void NoirPageFaultHandler(IN OUT X64_GPR_STATE *State,IN OUT X64_EXCEPTION_STACK_WITH_ERROR_CODE *ExceptionStack)
 {
+	CHAR8 Mnemonic[64];
 	NoirDebugPrint("Page Fault occured!\n");
 	NoirDebugPrint("Faulting RIP=0x%p, Rsp=0x%p\n",ExceptionStack->ReturnRip,ExceptionStack->ReturnRsp);
 	NoirDebugPrint("Faulting Address=0x%p, Error Code=0x%X\n",AsmReadCr2(),ExceptionStack->ErrorCode);
+	NoirPrintGprState(State);
+	NoirDisasmCode64(Mnemonic,sizeof(Mnemonic),(UINT8*)ExceptionStack->ReturnRip,15,ExceptionStack->ReturnRip);
+	NoirDebugPrint("Faulting Instruction: %a\n",Mnemonic);
 	CpuDeadLoop();
 }
 

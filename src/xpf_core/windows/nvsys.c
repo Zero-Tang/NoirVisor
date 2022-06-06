@@ -190,7 +190,7 @@ PVOID NoirAllocatePagedMemory(IN SIZE_T Length)
 	if(p)
 	{
 		RtlZeroMemory(p,Length);
-		InterlockedIncrement(&NoirAllocatePagedPools);
+		InterlockedIncrement(&NoirAllocatedPagedPools);
 	}
 #endif
 	return p;

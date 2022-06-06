@@ -25,7 +25,7 @@
 
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	noir_svm_initial_stack_p loader_stack=(noir_svm_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack));
+	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
 	noir_svm_custom_vcpu_p cvcpu=loader_stack->custom_vcpu;
 	// Step 1: Save State of the Customizable VM.
 	// Save General-Purpose Registers...
@@ -84,7 +84,7 @@ void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu
 
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	noir_svm_initial_stack_p loader_stack=(noir_svm_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack));
+	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
 	bool asid_updated=false;
 	// IMPORTANT: If vCPU is scheduled to a different processor, resetting the VMCB cache state is required.
 	if(cvcpu->proc_id!=loader_stack->proc_id)

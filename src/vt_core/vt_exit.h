@@ -85,6 +85,7 @@ typedef enum _vmx_vmexit_reason
 	pml_full=62,
 	intercept_xsaves=63,
 	intercept_xrstors=64,
+	intercept_pconfig=65,
 	spp_related_event=66,
 	intercept_umwait=67,
 	intercept_tpause=68,
@@ -125,6 +126,27 @@ typedef union _ia32_vmexit_interruption_information_field
 	};
 	u32 value;
 }ia32_vmexit_interruption_information_field,*ia32_vmexit_interruption_information_field_p;
+
+typedef union _ia32_debug_exception_qualification
+{
+	struct
+	{
+		ulong_ptr b0:1;				// Bit	0
+		ulong_ptr b1:1;				// Bit	1
+		ulong_ptr b2:1;				// Bit	2
+		ulong_ptr b3:1;				// Bit	3
+		ulong_ptr reserved0:9;		// Bits	4-12
+		ulong_ptr bd:1;				// Bit	13
+		ulong_ptr bs:1;				// Bit	14
+		ulong_ptr reserved1:1;		// Bit	15
+		ulong_ptr rtm:1;			// Bit	16
+		ulong_ptr reserved2:15;		// Bits	17-31
+#if defined(_amd64)
+		u64 reserved3:32;
+#endif
+	};
+	ulong_ptr value;
+}ia32_debug_exception_qualification,*ia32_debug_exception_qualification_p;
 
 typedef union _ia32_cr_access_qualification
 {
@@ -192,6 +214,39 @@ typedef union _ia32_task_switch_qualification
 	};
 	ulong_ptr value;
 }ia32_task_switch_qualification,*ia32_task_switch_qualification_p;
+
+typedef union _ia32_io_instruction_qualification
+{
+	struct
+	{
+		ulong_ptr size:3;			// Bits	0-2
+		ulong_ptr direction:1;		// Bit	3
+		ulong_ptr string:1;			// Bit	4
+		ulong_ptr repeat:1;			// Bit	5
+		ulong_ptr immediate:1;		// Bit	6
+		ulong_ptr reserved0:9;		// Bits	7-15
+		ulong_ptr port_number:16;	// Bits	16-31
+#if defined(_amd64)
+		u64 reserved1:32;
+#endif
+	};
+	ulong_ptr value;
+}ia32_io_instruction_qualification,*ia32_io_instruction_qualification_p;
+
+typedef union _ia32_apic_access_qualification
+{
+	struct
+	{
+		ulong_ptr apic_offset:12;	// Bits	0-11
+		ulong_ptr access_type:4;	// Bits	12-15
+		ulong_ptr asynchronous:1;	// Bit	16
+		ulong_ptr reserved0:15;		// Bits	17-31
+#if defined(_amd64)
+		u64 reserved1:32;
+#endif
+	};
+	ulong_ptr value;
+}ia32_apic_access_qualification,*ia32_apic_access_qualification_p;
 
 typedef union _ia32_vmexit_instruction_information
 {
@@ -295,6 +350,14 @@ typedef union _ia32_vmexit_instruction_information
 		u32 base_invalid:1;			// Bit	27
 		u32 reg2:4;					// Bits	28-31
 	}f6;
+	// loadiwkey instruction use this field.
+	struct
+	{
+		u32 reserved0:3;			// Bits	0-2
+		u32 reg1:4;					// Bits	3-6
+		u32 reserved1:21;			// Bits	7-27
+		u32 reg2:4;					// Bits	28-31
+	};
 	u32 value;
 }ia32_vmexit_instruction_information,*ia32_vmexit_instruction_information_p;
 
@@ -382,7 +445,7 @@ const char* vmx_exit_msg[vmx_maximum_exit_reason]=
 	"APIC write is intercepted!",							// Reason=56
 	"RDRAND instruction is intercepted!",					// Reason=57
 	"INVPCID instruction is intercepted!",					// Reason=58
-	"WBINVD instruction is intercepted!",					// Reason=59
+	"VMFUNC instruction is intercepted!",					// Reason=59
 	"ENCLS instruction is intercepted!",					// Reason=60
 	"RDSEED instruction is intercepted!",					// Reason=61
 	"Page-Modification Log is full!",						// Reason=62

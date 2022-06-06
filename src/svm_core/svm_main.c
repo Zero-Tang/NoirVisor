@@ -128,6 +128,14 @@ u8 nvc_svm_disable()
 	return noir_virt_trans;
 }
 
+void static nvc_svm_setup_io_hook(noir_hypervisor_p hvm_p)
+{
+	void* bitmap=hvm_p->relative_hvm->iopm.virt;
+	// Setup interceptions to Port I/O that may interfere with NoirVisor's operations.
+	// e.g.: Protect Serial Port communications in order to transmit debug messages.
+	// If you can't add your I/O ports into the predefined array, add the ports here.
+}
+
 void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 {
 	void* bitmap1=(void*)((ulong_ptr)hvm_p->relative_hvm->msrpm.virt+0);
@@ -181,6 +189,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	list1.value=0;
 	list1.intercept_cpuid=1;
 	list1.intercept_invlpga=1;
+	list1.intercept_io=1;
 	list1.intercept_msr=1;
 	list1.intercept_shutdown=1;
 	list2.value=0;
@@ -248,9 +257,6 @@ void nvc_svm_setup_host_idt(ulong_ptr idtr_base)
 	idt_base[amd64_nmi_interrupt].offset_lo=(u16)((u64)nvc_svm_host_nmi_handler&0xFFFF);
 	idt_base[amd64_nmi_interrupt].offset_mid=(u16)((u64)nvc_svm_host_nmi_handler>>16);
 	idt_base[amd64_nmi_interrupt].offset_hi=(u32)((u64)nvc_svm_host_nmi_handler>>32);
-#if defined(_hv_type1)
-	// If NoirVisor is to be loaded as Type-I hypervisor, exception handlers must be prepared for debugging purpose.
-#endif
 }
 
 void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu)
@@ -397,8 +403,7 @@ void static nvc_svm_subvert_processor(noir_svm_vcpu_p vcpu)
 	vcpu->status=nvc_svm_enable();
 	if(vcpu->status==noir_virt_trans)
 	{
-		ulong_ptr estimated_stack=(ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack);
-		noir_svm_initial_stack_p stack=(noir_svm_initial_stack_p)(estimated_stack&0xFFFFFFFFFFFFFFF0);
+		noir_svm_initial_stack_p stack=noir_svm_get_loader_stack(vcpu->hv_stack);
 		// Initialize Hypervisor Context Stack.
 		stack->guest_vmcb_pa=vcpu->vmcb.phys;
 		stack->host_vmcb_pa=vcpu->hvmcb.phys;
@@ -564,6 +569,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			vcpu->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
 			vcpu->primary_nptm=nvc_npt_build_identity_map();
 			if(vcpu->primary_nptm==null)goto alloc_failure;
+			nv_dprintf("NPT Manager: 0x%p\n",vcpu->primary_nptm);
 #if !defined(_hv_type1)
 			// Only Type-II Hypervisor would hook into guest.
 			vcpu->secondary_nptm=nvc_npt_build_identity_map();
@@ -644,13 +650,14 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	if(hvm_p->tlb_tagging.asid_pool==null)goto alloc_failure;
 	hvm_p->tlb_tagging.asid_pool_lock=noir_initialize_reslock();
 	if(hvm_p->tlb_tagging.asid_pool_lock==null)goto alloc_failure;
+#endif
 	// Build Host CR3 in order to operate physical addresses directly.
 	if(nvc_svm_build_host_page_table(hvm_p))
 		nv_dprintf("Hypervisor's paging structure is initialized successfully!\n");
 	else
 		nv_dprintf("Failed to build hypervisor's paging structure...\n");
-#endif
 	nvc_svm_setup_msr_hook(hvm_p);
+	nvc_svm_setup_io_hook(hvm_p);
 	if(nvc_npt_protect_critical_hypervisor(hvm_p)==false)goto alloc_failure;
 	if(hvm_p->virtual_cpu==null)goto alloc_failure;
 	hvm_p->options.tlfs_passthrough=noir_is_under_hvm();

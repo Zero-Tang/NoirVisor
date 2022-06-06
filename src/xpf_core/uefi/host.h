@@ -256,6 +256,12 @@ typedef union _NHX64_HUGE_PDPTE
 #define NH_X64_DATA_ATTRIBUTES	0xC093
 #define NH_X64_TASK_ATTRIBUTES	0x8B
 
+typedef struct _NHX64_LBR_TRACE
+{
+	UINT64 BranchFrom;
+	UINT64 BranchTo;
+}NHX64_LBR_TRACE,*PNHX64_LBR_TRACE;
+
 // NoirVisor Host Processor Control Region
 typedef struct _NHPCR
 {
@@ -304,6 +310,7 @@ typedef struct _NV_MP_SERVICE_GENERIC_INFO
 #define NoirGetSegmentAttributes	noir_get_segment_attributes
 void noir_save_processor_state(OUT PNOIR_PROCESSOR_STATE State);
 UINT16 noir_get_segment_attributes(IN UINT16 Selector,IN PNHGDTENTRY64 GdtBase);
+void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 void NoirBlockUntilKeyStroke(IN CHAR16 Unicode);
 void NoirUnexpectedInterruptHandler(void);
 void NoirInitializeSerialPort(IN UINTN ComPort,IN UINT16 PortBase);

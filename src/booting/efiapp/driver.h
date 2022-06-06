@@ -68,6 +68,9 @@ void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 void NoirDisplayProcessorState();
 EFI_STATUS NoirBuildHostEnvironment();
 UINT32 NoirBuildHypervisor();
+BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase);
+void NoirFinalizeCodeIntegrity();
+void NoirSuppressImageRelocation(IN VOID* ImageBase);
 
 EFI_GUID gEfiMpServicesProtocolGuid=EFI_MP_SERVICES_PROTOCOL_GUID;
 EFI_GUID gEfiSimpleFileSystemProtocolGuid=EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;

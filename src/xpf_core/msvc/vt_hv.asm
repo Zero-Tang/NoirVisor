@@ -231,8 +231,8 @@ vmentry_failure:
 	; If it was Guest vCPU which failed to run, we may return to host.
 	popaq_fast 20h
 	vmresume
-	; The "ret" here is to let the WinDbg stop disassembling for the uf command.
-	ret
+	; Use dead loop if failed again, albeit this is unlikely to happen.
+	jmp vmentry_failure
 
 nvc_vt_exit_handler_a endp
 

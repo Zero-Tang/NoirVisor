@@ -289,7 +289,10 @@ typedef struct _noir_svm_initial_stack
 	noir_svm_custom_vcpu_p custom_vcpu;
 	noir_svm_nested_vcpu_node_p nested_vcpu;
 	u32 proc_id;
+	u32 reserved;
 }noir_svm_initial_stack,*noir_svm_initial_stack_p;
+
+#define noir_svm_get_loader_stack(p)	(noir_svm_initial_stack_p)(((ulong_ptr)p+nvc_stack_size-sizeof(noir_svm_initial_stack))&0xfffffffffffffff0)
 
 #if defined(_svm_exit)
 noir_svm_custom_vcpu nvc_svm_idle_cvcpu={0};

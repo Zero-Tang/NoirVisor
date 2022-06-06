@@ -11,3 +11,6 @@ The [hypervisor.md](/doc/hypervisor.md) file describes the overview of Project N
 
 ## Stealthy Hooks
 The [stealthy_hooks.md](/doc/stealthy_hooks.md) file describes the general algorithm of stealthy hooks implementations.
+
+## I/O Virtualization
+The [io_hook.md](/doc/io_virt.md) file describes the general architecture of how NoirVisor takes exclusive ownership to peripheral hardware.

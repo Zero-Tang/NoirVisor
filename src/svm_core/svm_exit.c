@@ -142,7 +142,7 @@ u32 static fastcall nvc_svm_convert_apic_id(u32 apic_id)
 void static fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
-	if(!vcpu->nested_hvm.gif)
+	if(!vcpu->nested_hvm.gif && vcpu->nested_hvm.svme)
 	{
 		// If the GIF is reset, then:
 		// Single-stepping #DBs should be held pending.
@@ -157,6 +157,7 @@ void static fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noi
 	// The guest might be accessing APIC. Clear the flag by the way.
 	if(noir_btr(&vcpu->global_state,noir_svm_apic_access))
 	{
+		nv_dprintf("Single-stepped on APIC-Access!\n");
 		// If the APIC-Access is issuing IPI, inspect what's inside.
 		if(noir_btr(&vcpu->global_state,noir_svm_issuing_ipi))
 		{
@@ -167,6 +168,7 @@ void static fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noi
 			// The value of ICR-Hi is in original APIC page.
 			// It does not matter if we read by physical address.
 			icr_hi.value=*(u32p)(vcpu->apic_base+amd64_apic_icr_hi);
+			nv_dprintf("ICR_LO: 0x%08X, ICR_HI: 0x%08X\n",icr_lo.value,icr_hi.value);
 			switch(icr_lo.msg_type)
 			{
 				case amd64_apic_icr_msg_init:
@@ -1013,7 +1015,7 @@ void static fastcall nvc_svm_shutdown_handler(noir_gpr_state_p gpr_state,noir_sv
 void static fastcall nvc_svm_vmrun_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	// Loader stack is required for world switching.
-	noir_svm_initial_stack_p loader_stack=(noir_svm_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack));
+	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
 	void* vmcb=vcpu->vmcb.virt;
 	if(vcpu->nested_hvm.svme)
 	{
@@ -1434,12 +1436,14 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 		if(gpa>=apic_base && gpa<apic_base+page_size)
 		{
 			const u64 offset=gpa-apic_base;
+			nv_dprintf("APIC-write is intercepted! Offset=0x%llX\n",offset);
+			noir_bts(&vcpu->global_state,noir_svm_apic_access);
 			switch(offset)
 			{
 				case amd64_apic_icr_lo:
 				{
 					// Write to Interrupt Control Register (Low) is intercepted.
-					// Deactivate APIC by redirecting to the shadowed page.
+					// Deactivate APIC by redirecting the APIC access to the shadowed page.
 					// Mark this vCPU is issuing IPI.
 					noir_bts(&vcpu->global_state,noir_svm_issuing_ipi);
 					vcpu->apic_pte->page_base=vcpu->sapic.phys>>page_shift;
@@ -1464,6 +1468,7 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 		// Hence we should advance rip by software analysis.
 		// Usually, if #NPF handler goes here, it might be induced by Hardware-Enforced CI.
 		// In this regard, we assume this instruction is writing protected page.
+		nv_dprintf("CI-event is intercepted! #NPF Code: 0x%X, GPA=0x%llX\n",fault.value,noir_svm_vmread64(vcpu->vmcb.virt,exit_info2));
 		void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
 		// Determine Long-Mode through CS.L bit.
 		u16* cs_attrib=(u16*)((ulong_ptr)vcpu->vmcb.virt+guest_cs_attrib);
@@ -1478,7 +1483,7 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	// Get the linear address of VMCB.
-	noir_svm_initial_stack_p loader_stack=(noir_svm_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_svm_initial_stack));
+	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
 	// Confirm which vCPU is exiting so that the correct handler is to be invoked...
 	if(likely(gpr_state->rax==vcpu->vmcb.phys))		// Let branch predictor favor subverted host.
 	{
@@ -1615,6 +1620,8 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 	else
 	{
 		// Reserved branch.
+		nv_dprintf("VMCB Exiting: 0x%p (0x%p), Host vCPU VMCB: 0x%p\n",gpr_state->rax,loader_stack->guest_vmcb_pa,vcpu->vmcb.phys);
+		nv_dprintf("vCPU pointer: 0x%p, GPR Base: 0x%p\n",vcpu,gpr_state);
 		noir_int3();
 	}
 	// The rax in GPR state should be the physical address of VMCB

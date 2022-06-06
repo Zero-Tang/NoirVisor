@@ -76,8 +76,8 @@ vmx_check:
 svm_check:
 	{
 		// Check through SVM-Core.
-		noir_cpuid(0x8000000A,0,&a,&b,&c,&d);
-		return noir_bt(&c,amd64_cpuid_npt);
+		noir_cpuid(amd64_cpuid_ext_svm_features,0,&a,&b,&c,&d);
+		return noir_bt(&d,amd64_cpuid_npt);
 	}
 	return false;
 }
@@ -124,9 +124,8 @@ i32 static cdecl noir_ci_sorting_comparator(const void* a,const void*b)
 
 bool noir_initialize_ci(void* section,u32 size,bool soft_ci,bool hard_ci)
 {
-	bool use_hard=hard_ci;
 	// Check Intel EPT/AMD NPT supportability.
-	use_hard&=noir_check_slat_paging();
+	bool use_hard=hard_ci&noir_check_slat_paging();
 	// Either Hardware-Level or Software-Level CI-Enforcement should be enabled.
 	// If both are disabled, fail the Code Integrity initialization.
 	if(use_hard || soft_ci)
@@ -155,7 +154,7 @@ bool noir_initialize_ci(void* section,u32 size,bool soft_ci,bool hard_ci)
 				noir_ci->page_ci[i].phys=noir_get_physical_address(noir_ci->page_ci[i].virt);
 			}
 			// Sort it to accelerate real-time CI.
-			// Do the sort only if we enable Hardware-Level CI. Sorting is unnecessary elsewise.
+			// Do the sort unless we enable Hardware-Level CI. Sorting is unnecessary elsewise.
 			if(use_hard)noir_qsort(noir_ci->page_ci,page_num,sizeof(noir_ci_page),noir_ci_sorting_comparator);
 #if !defined(_hv_type1)
 			// No need to trace-print in Type-I hypervisor.

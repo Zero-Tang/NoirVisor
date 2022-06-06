@@ -71,6 +71,9 @@ typedef enum _vmx_vmcs_encoding
 	tsc_multiplier=0x2032,
 	tertiary_processor_based_vm_execution_controls=0x2034,
 	enclv_exiting_bitmap=0x2036,
+	pconfig_exiting_bitmap=0x203E,
+	hlat_pointer=0x2040,
+	secondary_vmexit_controls=0x2044,
 	// 64-Bit Read-Only Fields
 	guest_physical_address=0x2400,
 	// 64-Bit Guest-State Fields
@@ -85,6 +88,7 @@ typedef enum _vmx_vmcs_encoding
 	guest_pdpte3=0x2810,
 	guest_msr_ia32_bound_config=0x2812,
 	guest_msr_ia32_rtit_ctrl=0x2814,
+	guest_msr_ia32_lbr_ctl=0x2816,
 	guest_msr_ia32_pkrs=0x2818,
 	// 64-Bit Host State Fields
 	host_msr_ia32_pat=0x2C00,
