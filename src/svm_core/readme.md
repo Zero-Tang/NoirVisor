@@ -377,6 +377,57 @@ Only vCPU states not saved into VMCB should be saved for Guest and loaded for Ho
 ## World Switch - vCPU Migration
 To migrate a vCPU to another logical processor, it is required to clear the VMCB clean bits before actually scheduling it onto the vCPU.
 
+## Emulation of MTF
+The `Monitor Trap Flag (MTF)` feature on Intel VT-x is a very powerful feature to emulate per-instruction. However, AMD-V lacks this feature, so this feature must be emulated. \
+This chapter discusses how to emulate the MTF in AMD-V.
+
+### Trap-Flag
+MTF is similar to Trap-Flag in standard x86. It will generate a `#DB` exception per instruction execution. However, in following conditions, the `#DB` instruction will not be generated:
+
+- An interrupt arrives, including exceptions, software interrupts and external interrupts.
+- The `BTF` flag in `DEBUG_CTRL` MSR is set.
+- The processor is under an interrupt shadow. (e.g.: `mov` to `ss` or `sti` instruction)
+
+### Hiding the Trap-Flag
+There are some conditions that may expose the `rflags` register to the software:
+
+- An interrupt arrives. This may copy the `rflags` register to the interrupt frame on the stack.
+- The `pushf` instruction may copy the content of `rflags` register to the stack.
+- The `syscall` instruction may copy the content of `rflags` register to the `r11` register.
+
+The following conditions may overwrite the `rflags.tf` bit:
+- An interrupt arrives. It would clear the `rflags.if` and `rflags.tf` bits.
+- The `iret`, `sysret` and `popf` instructions are executed.
+
+### Interception Settings for MTF Emulation
+The following interceptions must be set in order to emulate MTF. \
+MTF Emulation is not currently implemented in NoirVisor.
+
+#### Intercept Exceptions
+All exceptions must be intercepted because they will generate exception frames which includes the content of `rflags.tf` bit. \
+In addition to exception interceptions, the event injection field must be watched. No injection will be handled by the processor: event injection will be emulated by NoirVisor. \
+The `#DB` exception is triggered because the `rflags.tf` bit is set. If the `DR6.BS` bit is set but the shadowing `rflags.tf` bit is reset, then do not forward this exception in that this is actually an MTF VM-Exit.
+
+#### Intercept Instructions
+The `pushf`, `popf`, `int`, `icebp` and `iret` instructions will be intercepted because they can either read or write the `rflags` register. \
+Emulate the read/write to the stack. As the emulation completes, an MTF VM-Exit is onset. \
+The `syscall` and `sysret` instructions will be intercepted by clearing the `EFER.SCE` bit. Such interception is indicated by the interception to `#UD` exception.
+
+#### Intercept Interrupts
+This chapter only discusses the external interrupts. `NMI`s, exceptions and software interrupts are not included. \
+Set the interceptions to virtual interrupt in VMCB. When the interception to virtual interrupt is taken, emulate the virtual interrupt.
+
+#### Intercept MSRs
+The `Debug Control` MSR must be intercepted in that the `BTF` bit seriously affects the behavior of single-stepping. \
+The LBR register must be virtualized when emulating interrupts except `#DB` and `#MC` exceptions.
+
+### Shadowed Bits in MTF Emulation
+The following bits are shadowed in MTF Emulation.
+
+- The `RFLAGS.TF` bit is shadowed in that this is the cornerstone to single-stepping.
+- The `EFER.SCE` bit is shadowed in that `syscall` and `sysret` instructions must be intercepted.
+- The `DEBUG_CTRL.BTF` bit is shadowed in that `BTF` seriously changes the behavior of `RFLAGS.TF` bit.
+
 ## Interception Settings
 Certain interceptions must be set to ensure correct functionality of NoirVisor CVM.
 
@@ -393,6 +444,9 @@ However, intercepting the `iret` instruction could be an accurate approach of ca
 ### CPUID Interception
 The `cpuid` instruction must be intercepted by NoirVisor, even though host may choose not to intercept it. If the host chooses not to intercept `cpuid` instruction, NoirVisor would handle the `cpuid` instruction itself. Otherwise, switch the world to the host so that host will be handling Guest's `cpuid` instruction.
 
+#### CPUID Quick-Path
+The User Hypervisor may specify a pre-defined value for guest vCPU. Therefore, interception of `cpuid` instruction does not have to exit to user-mode, and thereby increases the performance of `cpuid` emulation.
+
 ### RSM Interception
 The `rsm` instruction is optionally intercepted by NoirVisor. If the host chooses not to intercept `rsm` instruction, NoirVisor would not specify the intercept bit in VMCB.
 
@@ -400,7 +454,8 @@ The `rsm` instruction is optionally intercepted by NoirVisor. If the host choose
 The `invd` instruction must be intercepted by NoirVisor. The `invd` instruction invalidates all caches without writing them back to the main memory. In this regard, NoirVisor must take responsibility to prevent the guest purposefully corrupting the global memory. Virtualization of `invd` instruction is actually simple: execute `wbinvd` instruction on exit of `invd`. At least this is what Hyper-V would do.
 
 ### I/O Interception
-I/O Interceptions are mandatory in that I/O operations in Guest are not supposed to go to real hardwares. Instead, they should go to virtual appliances, which Host is supposed to emulate. Switch the world to the host so that host will be handling Guest's I/O.
+I/O Interceptions are mandatory in that I/O operations in Guest are not supposed to go to real hardwares. Instead, they should go to virtual appliances, which Host is supposed to emulate. Switch the world to the host so that host will be handling Guest's I/O. \
+Future implementation of NoirVisor CVM may permit a guest to access the real hardware.
 
 ### MSR Interception
 Similar to the `cpuid` instruction, Host can choose whether to intercept this instruction or not. If the host does not intercept MSR-Related instructions, NoirVisor would handle them and masking certain operations (e.g: accessing the `EFER` MSR). Otherwise, NoirVisor would switch to the Host to handle the instructions.

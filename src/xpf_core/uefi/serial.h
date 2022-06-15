@@ -159,3 +159,6 @@ typedef union _IO_PORT_MODEM_STATUS
 	};
 	UINT8 Value;
 }IO_PORT_MODEM_STATUS;
+
+UINTN ComPortInUse=0;
+BOOLEAN UsingComPort=FALSE;

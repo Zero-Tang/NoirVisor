@@ -122,6 +122,22 @@ void noir_ltr(u16 src);
 #define noir_movsp		__movsd
 #endif
 
+// I/O instructions
+// Repeat-String I/O intrinsics provided by MSVC lack the direction functionality.
+#define noir_inb		__inbyte
+#define noir_inw		__inword
+#define noir_ind		__indword
+void noir_insb(u16 port,u8p buffer,size_t count,bool direction);
+void noir_insw(u16 port,u16p buffer,size_t count,bool direction);
+void noir_insd(u16 port,u32p buffer,size_t count,bool direction);
+
+#define noir_outb		__outbyte
+#define noir_outw		__outword
+#define noir_outd		__outdword
+void noir_outsb(u16 port,u8p buffer,size_t count,bool direction);
+void noir_outsw(u16 port,u16p buffer,size_t count,bool direction);
+void noir_outsd(u16 port,u32p buffer,size_t count,bool direction);
+
 // Processor TSC instruction
 #define noir_rdtsc		__rdtsc
 #define noir_rdtscp		__rdtscp

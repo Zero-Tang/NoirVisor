@@ -212,7 +212,9 @@ typedef union _noir_svm_shadowed_bits
 		u64 mce:1;
 		u64 svme:1;
 		u64 tf:1;
-		u64 reserved:62;
+		u64 btf:1;
+		u64 sce:1;
+		u64 reserved:59;
 	};
 	u64 value;
 }noir_svm_shadowed_bits,*noir_svm_shadowed_bits_p;
@@ -231,7 +233,8 @@ typedef struct _noir_svm_custom_vcpu
 		{
 			u64 prev_virq:1;	// Required for interrupt-window interception.
 			u64 prev_nmi:1;
-			u64 reserved:61;
+			u64 mtf_active:1;
+			u64 reserved:60;
 			u64 rescission:1;
 		};
 		u64 value;

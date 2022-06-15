@@ -215,24 +215,6 @@ typedef union _ia32_task_switch_qualification
 	ulong_ptr value;
 }ia32_task_switch_qualification,*ia32_task_switch_qualification_p;
 
-typedef union _ia32_io_instruction_qualification
-{
-	struct
-	{
-		ulong_ptr size:3;			// Bits	0-2
-		ulong_ptr direction:1;		// Bit	3
-		ulong_ptr string:1;			// Bit	4
-		ulong_ptr repeat:1;			// Bit	5
-		ulong_ptr immediate:1;		// Bit	6
-		ulong_ptr reserved0:9;		// Bits	7-15
-		ulong_ptr port_number:16;	// Bits	16-31
-#if defined(_amd64)
-		u64 reserved1:32;
-#endif
-	};
-	ulong_ptr value;
-}ia32_io_instruction_qualification,*ia32_io_instruction_qualification_p;
-
 typedef union _ia32_apic_access_qualification
 {
 	struct

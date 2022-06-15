@@ -357,6 +357,7 @@ void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noi
 					// in that INIT signal would not disappear on interception!
 					// We thereby have to redirect INIT signals into #SX exceptions.
 					// Emulate what a real INIT Signal would do.
+					nv_dprintf("INIT signal is intercepted!\n");
 					nvc_svm_emulate_init_signal(gpr_state,vmcb,vcpu->cpuid_fms);
 					// Emulate the Wait-for-SIPI state by spin-locking...
 					while(!noir_locked_btr(&vcpu->global_state,noir_svm_sipi_sent))noir_pause();
@@ -807,6 +808,67 @@ void static fastcall nvc_svm_invlpga_handler(noir_gpr_state_p gpr_state,noir_svm
 		// SVM is disabled in guest EFER. Inject #UD to guest.
 		noir_svm_inject_event(vmcb,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
 	}
+}
+
+ulong_ptr static fastcall nvc_svm_parse_io_string_pointer(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	const u64 mask[5]={0,maxu16,maxu32,0,maxu64};
+	nvc_svm_io_exit_info info;
+	ulong_ptr pointer;
+	info.value=noir_svm_vmread32(vcpu->vmcb.virt,exit_info1);
+	// If operand is register, it is rax to be operated.
+	if(!info.string)
+		pointer=(ulong_ptr)&gpr_state->rax;
+	else
+	{
+		// The segment could be overridden.
+		pointer=noir_svm_vmread(vcpu->vmcb.virt,(info.segment<<4)+guest_es_base);
+		if(info.type)		// If it is input, rdi is used.
+			pointer+=gpr_state->rdi;
+		else				// Otherwise, rsi is used.
+			pointer+=gpr_state->rsi;
+		// Mask out by address size.
+		pointer&=mask[info.addr_size];
+	}
+	// Return the pointer
+	return pointer;
+}
+
+void static fastcall nvc_svm_io_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	nvc_svm_io_exit_info info;
+	info.value=noir_svm_vmread32(vmcb,exit_info1);
+	// We need to hook into some I/O operations.
+	if(info.port>=hvm_p->protected_ports.serial && info.port<(u16)(hvm_p->protected_ports.serial+8))
+	{
+		// NoirVisor needs access to a serial port.
+		// Current implementation does not grant shared access. JUST DO NOTHING.
+		nv_dprintf("Access to protected serial port is intercepted!\n");
+		noir_svm_advance_rip(vmcb);
+	}
+#if defined(_hv_type1)
+	// In Type-I hypervisor, PM1 register access must be virtualized.
+	else if(info.port==hvm_p->protected_ports.pm1a)
+	{
+		nv_dprintf("PM1a register is intercepted!\n");
+		if(info.type)	// Input Operation is none of our business.
+			;
+		else
+		{
+			;
+		}
+	}
+	else if(info.port==hvm_p->protected_ports.pm1b)
+	{
+		nv_dprintf("PM1b register is intercepted!\n");
+	}
+	else
+	{
+		// Unexpected I/O operation, forward.
+		nv_dprintf("Unexpected I/O operation is intercepted!\n");
+	}
+#endif
 }
 
 // This is a branch of MSR-Exit. DO NOT ADVANCE RIP HERE!

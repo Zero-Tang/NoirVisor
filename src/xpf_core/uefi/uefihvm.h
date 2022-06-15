@@ -46,6 +46,7 @@
 VOID* NvImageBase=NULL;
 UINT32 NvImageSize=0;
 
+void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 void NoirSerialWrite(IN UINTN ComPort,IN UINT8 *Buffer,IN UINTN Length);
 
 BOOLEAN noir_initialize_ci(VOID* section,UINT32 size,BOOLEAN soft_ci,BOOLEAN hard_ci);

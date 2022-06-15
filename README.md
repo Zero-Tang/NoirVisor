@@ -151,6 +151,9 @@ NPIEP (a.k.a Non-Privileged Instruction Execution Prevention) is an important se
 
 For further details of NPIEP, visit [here](src/mshv_core/readme.md#non-privileged-instruction-execution-prevention).
 
+# Security Advisories
+You should not report security vulnerabilities through the GitHub issue. You should [read this document](./security.md) to check out the steps to report security vulnerability.
+
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. <br>
 Currently, NoirVisor supports the Windows Operating System newer than or same as Windows XP, running as a kernel-mode driver. <br>

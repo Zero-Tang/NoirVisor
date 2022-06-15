@@ -64,7 +64,9 @@ void NoirInitializeSerialPort(IN UINTN ComPort,IN UINT16 PortBase)
 		__outbyte(IO_PORT_COM[ComPort]+IO_PORT_OFFSET_MODEM_CTRL,ModemCtrl.Value);
 		// Send a dummy byte to check if the serial hardware works properly.
 		__outbyte(IO_PORT_COM[ComPort]+IO_PORT_OFFSET_DATA,0xA5);
-		if(__inbyte(IO_PORT_COM[ComPort]+IO_PORT_OFFSET_DATA)==0xA5)
+		UsingComPort=__inbyte(IO_PORT_COM[ComPort]+IO_PORT_OFFSET_DATA)==0xA5;
+		ComPortInUse=ComPort;
+		if(UsingComPort)
 			Print(L"COM Port %u is successfully initialized!\n",ComPort);
 		else
 			Print(L"COM Port %u is faulty!\n",ComPort);
@@ -106,4 +108,10 @@ BOOLEAN NoirSerialPoll(IN UINTN ComPort)
 	IO_PORT_LINE_STATUS LineStatus;
 	LineStatus.Value=__inbyte(IO_PORT_COM[ComPort]+IO_PORT_OFFSET_LINE_ST);
 	return LineStatus.DataReady;
+}
+
+BOOLEAN noir_query_serial_port_base(OUT UINT16 *PortBase)
+{
+	*PortBase=IO_PORT_COM[ComPortInUse];
+	return UsingComPort;
 }

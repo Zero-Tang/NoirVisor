@@ -19,6 +19,7 @@
 #include <Library/UefiLib.h>
 #include <Pi/PiMultiPhase.h>
 #include <Protocol/MpService.h>
+#include <Register/Intel/ArchitecturalMsr.h>
 #include <Register/Intel/Cpuid.h>
 #include <stdarg.h>
 #include "host.h"
@@ -156,6 +157,9 @@ void NoirPrepareHostProcedureAp(IN VOID *ProcedureArgument)
 	*(UINT32*)&TssGdtEntry[1]=Pcr[CurProc].Core.Tr.Base>>32;
 	// Debug Purpose: Overwrite the default IDT.
 	NoirSetupDebugSupportPerProcessor(NULL);
+	// Set up the FS/GS Segment for local NHPCR.
+	AsmWriteMsr64(MSR_IA32_GS_BASE,(UINT64)Pcr);
+	Pcr->Core.Self=(PNHPCR)&Pcr[CurProc];
 }
 
 // This function is invoked by Center HVM Core prior to subverting system,
@@ -404,6 +408,10 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 
 UINT32 noir_get_current_processor()
 {
+	if(NoirEfiInRuntimeStage)
+	{
+		return __readgsdword(OFFSET_OF(NHPCR,ProcessorNumber));
+	}
 	if(MpServices)
 	{
 		UINTN Num;

@@ -185,6 +185,108 @@ non_ffxr:
 
 noir_fxrestore endp
 
+noir_insb proc
+
+	push rdi
+	mov rdi,rdx
+	mov rdx,rcx
+	mov rcx,r8
+	cld
+	test r9b,r9b
+	jz do_insb
+	std
+do_insb:
+	rep insb
+	pop rdi
+	ret
+
+noir_insb endp
+
+noir_insw proc
+
+	push rdi
+	mov rdi,rdx
+	mov rdx,rcx
+	mov rcx,r8
+	cld
+	test r9b,r9b
+	jz do_insw
+	std
+do_insw:
+	rep insw
+	pop rdi
+	ret
+
+noir_insw endp
+
+noir_insd proc
+
+	push rdi
+	mov rdi,rdx
+	mov rdx,rcx
+	mov rcx,r8
+	cld
+	test r9b,r9b
+	jz do_insd
+	std
+do_insd:
+	rep insd
+	pop rdi
+	ret
+
+noir_insd endp
+
+noir_outsb proc
+
+	push rdi
+	mov rdi,rdx
+	mov rdx,rcx
+	mov rcx,r8
+	cld
+	test r9b,r9b
+	jz do_outsb
+	std
+do_outsb:
+	rep outsb
+	pop rdi
+	ret
+
+noir_outsb endp
+
+noir_outsw proc
+
+	push rdi
+	mov rdi,rdx
+	mov rdx,rcx
+	mov rcx,r8
+	cld
+	test r9b,r9b
+	jz do_outsw
+	std
+do_outsw:
+	rep outsw
+	pop rdi
+	ret
+
+noir_outsw endp
+
+noir_outsd proc
+
+	push rdi
+	mov rdi,rdx
+	mov rdx,rcx
+	mov rcx,r8
+	cld
+	test r9b,r9b
+	jz do_outsd
+	std
+do_outsd:
+	rep outsd
+	pop rdi
+	ret
+
+noir_outsd endp
+
 noir_lgdt proc
 
 	lgdt fword ptr [rcx]

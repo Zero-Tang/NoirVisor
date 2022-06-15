@@ -166,6 +166,14 @@ typedef struct _noir_hypervisor
 		memory_descriptor hcr3;
 		memory_descriptor pdpt;
 	}host_memmap;
+	struct
+	{
+#if defined(_hv_type1)
+		u16 pm1a;
+		u16 pm1b;
+#endif
+		u16 serial;
+	}protected_ports;
 	u32 cpu_count;
 	char vendor_string[13];
 	u8 cpu_manuf;
@@ -185,6 +193,12 @@ typedef struct _noir_hook_page
 extern noir_hook_page_p noir_hook_pages;
 extern u32 noir_hook_pages_count;
 #endif
+
+// Functions exclusive for Type-I hypervisors
+#if defined(_hv_type1)
+bool noir_query_pm1_port_address(u16p pm1a,u16p pm1b);
+#endif
+bool noir_query_serial_port_base(u16p base);
 
 #if defined(_central_hvm)
 // Functions from VT Core.
