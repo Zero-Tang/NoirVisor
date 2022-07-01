@@ -51,5 +51,7 @@ void NoirSerialWrite(IN UINTN ComPort,IN UINT8 *Buffer,IN UINTN Length);
 
 BOOLEAN noir_initialize_ci(VOID* section,UINT32 size,BOOLEAN soft_ci,BOOLEAN hard_ci);
 void noir_finalize_ci();
+UINT32 noir_get_virtualization_supportability();
+BOOLEAN noir_is_virtualization_enabled();
 UINT32 nvc_build_hypervisor();
 void nvc_teardown_hypervisor();

@@ -68,6 +68,8 @@ void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 void NoirDisplayProcessorState();
 EFI_STATUS NoirBuildHostEnvironment();
 UINT32 NoirBuildHypervisor();
+UINT32 NoirQueryVirtualizationSupportability();
+BOOLEAN NoirIsVirtualizationEnabled();
 BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase);
 void NoirFinalizeCodeIntegrity();
 void NoirSuppressImageRelocation(IN VOID* ImageBase);

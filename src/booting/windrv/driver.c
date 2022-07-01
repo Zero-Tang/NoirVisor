@@ -356,7 +356,10 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	NoirBuildHostEnvironment();
 	NoirInitializePowerStateCallback();
 	NoirSubvertSystemOnDriverLoad(&SubvertOnDriverLoad);
-	if(SubvertOnDriverLoad)NoirBuildHypervisor();
+	if(SubvertOnDriverLoad)
+		if(NoirQueryVirtualizationSupportability())
+			if(NoirIsVirtualizationEnabled())
+				NoirBuildHypervisor();
 }
 
 NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING RegistryPath)

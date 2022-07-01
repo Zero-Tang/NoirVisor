@@ -465,14 +465,10 @@ void static fastcall nvc_svm_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_s
 	cvcpu->header.exit_context.io.rcx=cvcpu->header.gpr.rcx;
 	cvcpu->header.exit_context.io.rsi=cvcpu->header.gpr.rsi;
 	cvcpu->header.exit_context.io.rdi=cvcpu->header.gpr.rdi;
-	cvcpu->header.exit_context.io.ds.selector=noir_svm_vmread16(cvcpu->vmcb.virt,guest_ds_selector);
-	cvcpu->header.exit_context.io.ds.attrib=svm_attrib_inverse(noir_svm_vmread16(cvcpu->vmcb.virt,guest_ds_attrib));
-	cvcpu->header.exit_context.io.ds.limit=noir_svm_vmread32(cvcpu->vmcb.virt,guest_ds_limit);
-	cvcpu->header.exit_context.io.ds.base=noir_svm_vmread64(cvcpu->vmcb.virt,guest_ds_base);
-	cvcpu->header.exit_context.io.es.selector=noir_svm_vmread16(cvcpu->vmcb.virt,guest_es_selector);
-	cvcpu->header.exit_context.io.es.attrib=svm_attrib_inverse(noir_svm_vmread16(cvcpu->vmcb.virt,guest_es_attrib));
-	cvcpu->header.exit_context.io.es.limit=noir_svm_vmread32(cvcpu->vmcb.virt,guest_es_limit);
-	cvcpu->header.exit_context.io.es.base=noir_svm_vmread64(cvcpu->vmcb.virt,guest_es_base);
+	cvcpu->header.exit_context.io.segment.selector=noir_svm_vmread16(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_selector);
+	cvcpu->header.exit_context.io.segment.attrib=noir_svm_vmread16(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_attrib);
+	cvcpu->header.exit_context.io.segment.limit=noir_svm_vmread32(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_limit);
+	cvcpu->header.exit_context.io.segment.base=noir_svm_vmread64(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_base);
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.io;
 }

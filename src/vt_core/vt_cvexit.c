@@ -596,21 +596,18 @@ void static fastcall nvc_vt_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt
 {
 	u16 size_array[8]={1,2,8,4,0,0,0,0};
 	ia32_io_access_qualification info;
-	u32 ds_ar,es_ar;
+	ia32_vmexit_instruction_information exit_info;
+	u32 seg_ar;
 	noir_vt_vmread(vmexit_qualification,&info.value);
+	noir_vt_vmread(vmexit_instruction_information,&exit_info.value);
 	// Deliver the I/O interception to subverted host.
 	nvc_vt_save_generic_cvexit_context(cvcpu);
 	// Before the VMCS is switched, read essential data from VMCS.
-	noir_vt_vmread(guest_ds_selector,&cvcpu->header.exit_context.io.ds.selector);
-	noir_vt_vmread(guest_ds_access_rights,&ds_ar);
-	*(u16*)&cvcpu->header.exit_context.io.ds.attrib=(u16)ds_ar;
-	noir_vt_vmread(guest_ds_limit,&cvcpu->header.exit_context.io.ds.limit);
-	noir_vt_vmread(guest_ds_base,&cvcpu->header.exit_context.io.ds.base);
-	noir_vt_vmread(guest_es_selector,&cvcpu->header.exit_context.io.es.selector);
-	noir_vt_vmread(guest_es_access_rights,&es_ar);
-	*(u16*)&cvcpu->header.exit_context.io.es.attrib=(u16)es_ar;
-	noir_vt_vmread(guest_es_limit,&cvcpu->header.exit_context.io.es.limit);
-	noir_vt_vmread(guest_es_base,&cvcpu->header.exit_context.io.es.base);
+	noir_vt_vmread(guest_es_selector+(exit_info.f0.segment<<1),&cvcpu->header.exit_context.io.segment.selector);
+	noir_vt_vmread(guest_es_access_rights+(exit_info.f0.segment<<1),&seg_ar);
+	*(u16p)&cvcpu->header.exit_context.io.segment.attrib=seg_ar;
+	noir_vt_vmread(guest_es_limit+(exit_info.f0.segment<<1),&cvcpu->header.exit_context.io.segment.limit);
+	noir_vt_vmread(guest_es_base+(exit_info.f0.segment<<1),&cvcpu->header.exit_context.io.segment.base);
 	// Switch the vCPU context.
 	nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_io_instruction;
@@ -618,12 +615,7 @@ void static fastcall nvc_vt_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt
 	cvcpu->header.exit_context.io.access.string=(u16)info.string;
 	cvcpu->header.exit_context.io.access.repeat=(u16)info.repeat;
 	cvcpu->header.exit_context.io.access.operand_size=size_array[info.access_size];
-	if(info.string)
-	{
-		ia32_vmexit_instruction_information exit_info;
-		noir_vt_vmread(vmexit_instruction_information,&exit_info);
-		cvcpu->header.exit_context.io.access.address_width=1<<(exit_info.f0.address_size+1);
-	}
+	cvcpu->header.exit_context.io.access.address_width=1<<(exit_info.f0.address_size+1);
 	cvcpu->header.exit_context.io.port=(u16)info.port;
 	cvcpu->header.exit_context.io.rax=cvcpu->header.gpr.rax;
 	cvcpu->header.exit_context.io.rcx=cvcpu->header.gpr.rcx;

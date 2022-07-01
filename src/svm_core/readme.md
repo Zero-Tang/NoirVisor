@@ -479,12 +479,6 @@ NoirVisor does not keep GPA-to-HVA translation on track. However, NoirVisor, if 
 In order to accelerate special memory virtualizations in CVM, NoirVisor provides a facility to swap memory mapping. User Hypervisor may specify at most 512 sets of memory mapping per VM. <br>
 User Hypervisor may use this facility to hook into the guest, to accelerate entrances and exits of SMM, and even to specify different mappings per vCPU, etc.
 
-## Hidden Single-Stepping
-For Intel VT-x, this feature is simple: utilize the `Monitor Trap Flag` feature. However, AMD-V lacks this feature. <br>
-In order to single-step, we can set `RFLAGS.TF` bit for the guest and intercept `#DB` exception in the guest. <br>
-Also, in order to hide the `RFLAGS.TF` bit, we should intercept `pushf` instruction and push a shadowed RFLAGS onto the guest's stack. <br>
-However, `RFLAGS.TF` is automatically cleared in any interrupts, so exceptions must be intercepted. All interrupts must be emulated instead of using hardware-accelerated event injections.
-
 ## SMM Virtualization
 SMM, abbreviation that stands for System Management Mode, is a standard x86 component to handle critical system-control activities (e.g.: Power Management, Interactions with NVRAM on motherboard, etc.). <br>
 Current implementation of NoirVisor does not emulate System Management Mode. It is User Hypervisor's responsibility to emulate SMM for the Guest. Support to NoirVisor's virtualization will be implemented in future.

@@ -555,7 +555,7 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 		st=noir_success;
 		if(valid_state)
 		{
-			while(1)
+			while(st==noir_success)
 			{
 				if(hvm_p->selected_core==use_svm_core)
 					st=nvc_svmc_run_vcpu(vcpu);
@@ -563,21 +563,7 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 					st=nvc_vtc_run_vcpu(vcpu);
 				else
 					st=noir_unknown_processor;
-				if(vcpu->exit_context.intercept_code==cv_scheduler_map)
-				{
-					memory_descriptor_p mrq=vcpu->exit_context.mapping_request.requested_address;
-					if(mrq->virt)noir_unmap_physical_memory(mrq->virt,page_size);
-					if(vcpu->exit_context.mapping_request.mapping_reason!=cv_scheduler_map_class_unmap)
-					{
-						mrq->virt=noir_map_physical_memory(mrq->phys,page_size);
-						if(mrq->virt==null)
-						{
-							nv_panicf("Failed to map CVM guest pages! HPA=0x%llX\t Mapping Purpose: %s\n",mrq->phys,noir_cvm_mapping_purpose[vcpu->exit_context.mapping_request.mapping_reason]);
-							noir_int3();
-						}
-					}
-				}
-				else if(vcpu->exit_context.intercept_code!=cv_scheduler_exit)break;
+				if(vcpu->exit_context.intercept_code!=cv_scheduler_exit)break;
 			}
 		}
 		if(st==noir_success)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));

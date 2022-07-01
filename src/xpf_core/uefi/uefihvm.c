@@ -94,6 +94,16 @@ void NoirSuppressImageRelocation(IN VOID* ImageBase)
 	}
 }
 
+UINT32 NoirQueryVirtualizationSupportability()
+{
+	return noir_get_virtualization_supportability();
+}
+
+BOOLEAN NoirIsVirtualizationEnabled()
+{
+	return noir_is_virtualization_enabled();
+}
+
 BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)
 {
 	// Locate Section List

@@ -561,6 +561,8 @@ void static nvc_vt_setup_vmexit_controls(bool true_msr)
 		exit_ctrl.conceal_vmexit_from_pt=1;
 		exit_ctrl.clear_ia32_rtit_ctrl=1;
 	}
+	// In order to prevent the guest from recording the LBR in host, clear LBR_CTRL.
+	exit_ctrl.clear_ia32_lbr_ctrl=1;
 	// Filter unsupported fields.
 	exit_ctrl.value|=exit_ctrl_msr.allowed0_settings.value;
 	exit_ctrl.value&=exit_ctrl_msr.allowed1_settings.value;
@@ -590,6 +592,8 @@ void static nvc_vt_setup_vmentry_controls(bool true_msr)
 		entry_ctrl.conceal_vmentry_from_pt=1;
 		entry_ctrl.load_ia32_rtit_ctrl=1;
 	}
+	// In order to prevent the guest from recording LBR in host, virtualize LBR_CTRL.
+	entry_ctrl.load_ia32_lbr_ctrl=1;
 	// Filter unsupported fields.
 	entry_ctrl.value|=entry_ctrl_msr.allowed0_settings.value;
 	entry_ctrl.value&=entry_ctrl_msr.allowed1_settings.value;

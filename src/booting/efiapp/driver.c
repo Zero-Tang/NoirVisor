@@ -97,8 +97,19 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 {
 	EFI_STATUS st=NoirEfiInitialize(ImageHandle,SystemTable);
 	EFI_LOADED_IMAGE_PROTOCOL* ImageInfo=NULL;
+	UINT32 Supportability=NoirQueryVirtualizationSupportability();
 	NoirDebugPrint("Welcome to NoirVisor Runtime Driver!\r\n");
 	NoirPrintCompilerVersion();
+	if((Supportability&3)!=3)
+	{
+		StdOut->OutputString(StdOut,L"Required features of Hardware Accelerated Virtualization is unsupported!\r\n");
+		return EFI_UNSUPPORTED;
+	}
+	if(NoirIsVirtualizationEnabled()==FALSE)
+	{
+		StdOut->OutputString(StdOut,L"Hardware Accelerated Virtualization is disabled! Check your firmware settings!\r\n");
+		return EFI_UNSUPPORTED;
+	}
 	gBS->CreateEvent(EVT_SIGNAL_EXIT_BOOT_SERVICES,TPL_NOTIFY,NoirNotifyExitBootServices,NULL,&NoirEfiExitBootServicesNotification);
 	st=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocolGuid,&ImageInfo);
 	if(st==EFI_SUCCESS)ImageInfo->Unload=NoirDriverUnload;

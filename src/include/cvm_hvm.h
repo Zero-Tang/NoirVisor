@@ -58,19 +58,8 @@ typedef enum _noir_cvm_intercept_code
 	// The rest are scheduler-relevant.
 	cv_scheduler_exit=0x80000000,
 	cv_scheduler_pause=0x80000001,
-	cv_scheduler_bug=0x80000002,
-	cv_scheduler_map=0x80000003
+	cv_scheduler_bug=0x80000002
 }noir_cvm_intercept_code,*noir_cvm_intercept_code_p;
-
-typedef enum _noir_cvm_scheduler_mapping_class
-{
-	cv_scheduler_map_class_apic,
-	cv_scheduler_map_class_hsave,
-	cv_scheduler_map_class_vmcb,
-	cv_scheduler_map_class_unmap,
-	cv_scheduler_map_class_emulate,
-	cv_scheduler_map_class_max
-}noir_cvm_scheduler_mapping_class,*noir_cvm_scheduler_mapping_class_p;
 
 typedef enum _noir_cvm_register_type
 {
@@ -169,8 +158,7 @@ typedef struct _noir_cvm_io_context
 	u64 rcx;
 	u64 rsi;
 	u64 rdi;
-	segment_register ds;
-	segment_register es;
+	segment_register segment;
 }noir_cvm_io_context,*noir_cvm_io_context_p;
 
 typedef struct _noir_cvm_msr_context
@@ -219,12 +207,6 @@ typedef struct _noir_cvm_cpuid_context
 	}leaf;
 }noir_cvm_cpuid_context,*noir_cvm_cpuid_context_p;
 
-typedef struct _noir_cvm_mapping_context
-{
-	memory_descriptor_p requested_address;
-	noir_cvm_scheduler_mapping_class mapping_reason;
-}noir_cvm_mapping_context,*noir_cvm_mapping_context_p;
-
 typedef struct _noir_cvm_exit_context
 {
 	noir_cvm_intercept_code intercept_code;
@@ -240,7 +222,6 @@ typedef struct _noir_cvm_exit_context
 		noir_cvm_cpuid_context cpuid;
 		noir_cvm_task_switch_context task_switch;
 		noir_cvm_interrupt_window_context interrupt_window;
-		noir_cvm_mapping_context mapping_request;
 	};
 	segment_register cs;
 	u64 rip;
@@ -535,14 +516,6 @@ u32 nvc_vtc_get_vm_asid(noir_cvm_virtual_machine_p vm);
 // Idle VM is to be considered as the List Head.
 noir_cvm_virtual_machine noir_idle_vm={0};
 noir_reslock noir_vm_list_lock=null;
-
-char* noir_cvm_mapping_purpose[cv_scheduler_map_class_max]=
-{
-	"Local APIC Page",
-	"VMXON Region/HSAVE Page",
-	"VMCS/VMCB",
-	"Unmapping"
-};
 
 u32 noir_cvm_exit_context_size=sizeof(noir_cvm_exit_context);
 
