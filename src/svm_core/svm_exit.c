@@ -211,6 +211,19 @@ void static fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noi
 #endif
 }
 
+// Expected Intercept Code: 0x46
+void static fastcall nvc_svm_ud_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+#if defined(_hv_type1)
+	// This exception handler is intended for kva-shadowing.
+	void* vmcb=vcpu->vmcb.virt;
+	u64 gcr3k=noir_get_current_process_cr3();
+	noir_writecr3(gcr3k);	// Switch to User CR3.
+	// Finally, switch back to Host CR3.
+	noir_writecr3(hvm_p->host_memmap.hcr3.phys);
+#endif
+}
+
 // Expected Intercept Code: 0x4E
 void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
@@ -1182,36 +1195,6 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 			// Just let the Guest know this is an invalid instruction.
 			else
 				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
-			break;
-		}
-		case noir_svm_disasm_length:
-		{
-#if defined(_hv_type1)
-#else
-			noir_disasm_request_p disasm=(noir_disasm_request_p)context;
-			// Get the page table base that maps both kernel mode address space
-			// and the user mode address space for the invoker's process.
-			// DO NOT USE THE GUEST CR3 FIELD IN VMCB!
-			u64 gcr3k=noir_get_current_process_cr3();
-			noir_writecr3(gcr3k);			// Switch to the Guest Address Space.
-			disasm->instruction_length=noir_get_instruction_length_ex(disasm->buffer,disasm->bits);
-			noir_writecr3(hvm_p->host_memmap.hcr3.phys);		// Switch back to Host Address Space.
-#endif
-			break;
-		}
-		case noir_svm_disasm_mnemonic:
-		{
-#if defined(_hv_type1)
-#else
-			noir_disasm_request_p disasm=(noir_disasm_request_p)context;
-			// Get the page table base that maps both kernel mode address space
-			// and the user mode address space for the invoker's process.
-			// DO NOT USE THE GUEST CR3 FIELD IN VMCB!
-			u64 gcr3k=noir_get_current_process_cr3();
-			noir_writecr3(gcr3k);			// Switch to the Guest Address Space.
-			disasm->instruction_length=noir_disasm_instruction(disasm->buffer,disasm->mnemonic,disasm->mnemonic_limit,disasm->bits,disasm->va);
-			noir_writecr3(hvm_p->host_memmap.hcr3.phys);		// Switch back to Host Address Space.
-#endif
 			break;
 		}
 		case noir_svm_init_custom_vmcb:

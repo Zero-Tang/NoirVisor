@@ -403,6 +403,7 @@ void static nvc_vt_initialize_cvm_pin_based_controls(bool true_msr)
 	// We should intercept external interrupts and non-maskable interrupts.
 	pin_ctrl.external_interrupt_exiting=1;
 	pin_ctrl.nmi_exiting=1;
+	pin_ctrl.virtual_nmi=1;
 	// Filter unsupported fields.
 	pin_ctrl.value|=pin_ctrl_msr.allowed0_settings.value;
 	pin_ctrl.value&=pin_ctrl_msr.allowed1_settings.value;

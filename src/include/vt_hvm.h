@@ -14,9 +14,8 @@
 
 #include <nvdef.h>
 
+// Definition of vmcall Codes
 #define noir_vt_callexit				0x1
-#define noir_vt_disasm_length			0x2
-#define noir_vt_disasm_mnemonic			0x3
 
 #define noir_vt_init_custom_vmcs		0x10000
 #define noir_vt_run_custom_vcpu			0x10001
@@ -84,7 +83,7 @@ typedef enum _noir_vt_consistency_check_failure_id
 	noir_vt_failure_invalid_ldtr,
 	noir_vt_failure_invalid_gdtr,
 	noir_vt_failure_invalid_idtr,
-	noir_vt_failrue_invalid_rip,
+	noir_vt_failure_invalid_rip,
 	noir_vt_failure_invalid_rflags
 }noir_vt_consistency_check_failure_id,*noir_vt_consistency_check_failure_id_p;
 
@@ -127,8 +126,18 @@ typedef struct _noir_vt_vcpu
 	memory_descriptor vmxon;
 	memory_descriptor vmcs;
 	memory_descriptor msr_auto;
+	struct _noir_vt_vcpu *self;
 	void* hv_stack;
 	noir_vt_hvm_p relative_hvm;
+	struct
+	{
+		bool valid;
+		u32 encoding;
+		u64 value;
+		ulong_ptr rip;
+		u32 fault_info;
+		u32 error_code;
+	}fallback;
 	struct _noir_ept_manager *ept_manager;
 	noir_vt_virtual_msr virtual_msr;
 	noir_vt_nested_vcpu nested_vcpu;
@@ -233,6 +242,7 @@ void nvc_vt_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void nvc_vt_dump_vcpu_state(noir_vt_custom_vcpu_p vcpu);
 void nvc_vt_set_guest_vcpu_options(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
 void nvc_vt_dump_vmcs_guest_state();
+void nvc_vt_host_nmi_handler(void);
 void nvc_vt_resume_without_entry(noir_gpr_state_p state);
 void nvc_vt_exit_handler_a(void);
 void nvc_vt_guest_start(void);

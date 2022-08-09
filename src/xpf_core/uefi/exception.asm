@@ -41,7 +41,7 @@ AsmDivideErrorFaultHandler proc
 	lea rdx,[rsp+gpr_stack_size]
 	call NoirDivideErrorFaultHandler
 	popaq
-	iret
+	iretq
 	
 AsmDivideErrorFaultHandler endp
 
@@ -52,7 +52,7 @@ AsmDebugFaultTrapHandler proc
 	lea rdx,[rsp+gpr_stack_size]
 	call NoirDebugFaultTrapHandler
 	popaq
-	iret
+	iretq
 
 AsmDebugFaultTrapHandler endp
 
@@ -63,7 +63,7 @@ AsmBreakpointTrapHandler proc
 	lea rdx,[rsp+gpr_stack_size]
 	call NoirBreakpointTrapHandler
 	popaq
-	iret
+	iretq
 
 AsmBreakpointTrapHandler endp
 
@@ -74,7 +74,7 @@ AsmOverflowTrapHandler proc
 	lea rdx,[rsp+gpr_stack_size]
 	call NoirOverflowTrapHandler
 	popaq
-	iret
+	iretq
 
 AsmOverflowTrapHandler endp
 
@@ -85,7 +85,7 @@ AsmBoundRangeFaultHandler proc
 	lea rdx,[rsp+gpr_stack_size]
 	call NoirBoundRangeFaultHandler
 	popaq
-	iret
+	iretq
 
 AsmBoundRangeFaultHandler endp
 
@@ -96,7 +96,7 @@ AsmInvalidOpcodeFaultHandler proc
 	lea rdx,[rsp+gpr_stack_size]
 	call NoirInvalidOpcodeFaultHandler
 	popaq
-	iret
+	iretq
 
 AsmInvalidOpcodeFaultHandler endp
 
@@ -107,7 +107,7 @@ AsmUnavailableDeviceFaultHandler proc
 	lea rdx,[rsp+gpr_stack_size]
 	call NoirUnavailableDeviceFaultHandler
 	popaq
-	iret
+	iretq
 
 AsmUnavailableDeviceFaultHandler endp
 
@@ -119,7 +119,7 @@ AsmDoubleFaultAbortHandler proc
 	call NoirDoubleFaultAbortHandler
 	popaq
 	add rsp,8	; There is an error code for this exception.
-	iret
+	iretq
 
 AsmDoubleFaultAbortHandler endp
 
@@ -131,7 +131,7 @@ AsmInvalidTssFaultHandler proc
 	call NoirInvalidTssFaultHandler
 	popaq
 	add rsp,8	; There is an error code for this exception.
-	iret
+	iretq
 
 AsmInvalidTssFaultHandler endp
 
@@ -143,7 +143,7 @@ AsmAbsentSegmentFaultHandler proc
 	call NoirAbsentSegmentFaultHandler
 	popaq
 	add rsp,8	; There is an error code for this exception.
-	iret
+	iretq
 
 AsmAbsentSegmentFaultHandler endp
 
@@ -155,7 +155,7 @@ AsmStackFaultHandler proc
 	call NoirStackFaultHandler
 	popaq
 	add rsp,8	; There is an error code for this exception.
-	iret
+	iretq
 
 AsmStackFaultHandler endp
 
@@ -167,7 +167,7 @@ AsmGeneralProtectionFaultHandler proc
 	call NoirGeneralProtectionFaultHandler
 	popaq
 	add rsp,8	; There is an error code for this exception.
-	iret
+	iretq
 
 AsmGeneralProtectionFaultHandler endp
 
@@ -179,7 +179,7 @@ AsmPageFaultHandler proc
 	call NoirPageFaultHandler
 	popaq
 	add rsp,8	; There is an error code for this exception.
-	iret
+	iretq
 
 AsmPageFaultHandler endp
 
@@ -190,7 +190,7 @@ AsmFloatingPointFaultHandler proc
 	lea rdx,[rsp+gpr_stack_size]
 	call NoirFloatingPointFaultHandler
 	popaq
-	iret
+	iretq
 
 AsmFloatingPointFaultHandler endp
 
@@ -202,7 +202,7 @@ AsmAlignmentCheckFaultHandler proc
 	call NoirAlignmentCheckFaultHandler
 	popaq
 	add rsp,8	; There is an error code for this exception.
-	iret
+	iretq
 
 AsmAlignmentCheckFaultHandler endp
 
@@ -213,7 +213,7 @@ AsmMachineCheckAbortHandler proc
 	lea rdx,[rsp+gpr_stack_size]
 	call NoirMachineCheckAbortHandler
 	popaq
-	iret
+	iretq
 
 AsmMachineCheckAbortHandler endp
 
@@ -224,7 +224,7 @@ AsmSimdFaultHandler proc
 	lea rdx,[rsp+gpr_stack_size]
 	call NoirSimdFaultHandler
 	popaq
-	iret
+	iretq
 
 AsmSimdFaultHandler endp
 
@@ -236,7 +236,7 @@ AsmControlProtectionFaultHandler proc
 	call NoirControlProtectionFaultHandler
 	popaq
 	add rsp,8	; There is an error code for this exception.
-	iret
+	iretq
 
 AsmControlProtectionFaultHandler endp
 

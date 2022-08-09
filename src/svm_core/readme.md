@@ -387,6 +387,7 @@ MTF is similar to Trap-Flag in standard x86. It will generate a `#DB` exception 
 - An interrupt arrives, including exceptions, software interrupts and external interrupts.
 - The `BTF` flag in `DEBUG_CTRL` MSR is set.
 - The processor is under an interrupt shadow. (e.g.: `mov` to `ss` or `sti` instruction)
+- The `syscall` is executed with `SFMASK.TF` bit set.
 
 ### Hiding the Trap-Flag
 There are some conditions that may expose the `rflags` register to the software:

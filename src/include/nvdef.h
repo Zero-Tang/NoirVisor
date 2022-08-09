@@ -100,6 +100,8 @@ typedef enum
 
 #define inline			__inline
 #define always_inline	__forceinline
+
+#define align_at(n)		__declspec(align(n))
 #endif
 
 #define null	(void*)0

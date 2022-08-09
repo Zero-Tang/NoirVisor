@@ -101,13 +101,17 @@ The straight-forward solution is to set up hypervisor's own NMI handler for the 
 1. If we emulate the `iret` instruction, the NMI-blocking will remain in the host so that no further NMIs will be fired.
 2. If we don't emulate the `iret` instruction, there could be multiple NMIs to be held pending in the same session of VM-Exit.
 
-Unlike the solution in AMD-V, for Intel VT-x, NoirVisor chooses option 2 in that it is arduous to emulate the `iret` instruction without breaking registers. AMD-V has a GIF mechanism that allows hypervisors to prepare to accept NMIs. Therefore, AMD-V hypervisors may use calling conventions to circumvent the non-volatility of registers in terms of interrupt handling.
+Unlike AMD-V, for Intel VT-x, it is arduous to emulate the `iret` instruction without breaking registers. AMD-V has a GIF mechanism that allows hypervisors to prepare to accept NMIs. Therefore, AMD-V hypervisors may use calling conventions to circumvent the non-volatility of registers in terms of interrupt handling. Even so, option 2 is still unacceptable by virtue of the incircumventable race condition of NMIs.
 
-Because there could be multiple NMIs to take place in a single session of VM-Exit, a counter must be set up. <br>
-When an NMI arrives, increment the counter by one. Also, enable NMI-window-exiting in VMCS. <br>
-At the end of VM-Exit handler, check the counter. If the counter is non-zero, this means there is a pending NMI. <br>
-Check the event injections. If there is an event with higher priority, leave the NMI pending. Only `#MC` exceptions and `#DB` exceptions have higher priorities than NMIs. <br>
-If an NMI is to be injected, decrement the counter by one. If the counter becomes zero, disable NMI-window-exiting in VMCS.
+In order to return from NMI without unblocking NMIs, following steps may be taken:
+
+1. Push a register (e.g.: the `rax` register) onto the stack in order to save it.
+2. Load this register with the value of `rsp`.
+3. Use `lss` instruction to load `rsp` and `ss` registers. Note that the stack is already switched!
+4. Use `popf` instruction to load `rflags` register.
+5. Push the `cs` and `rip` registers onto the stack using special memory-addressing operand (e.g.: the `rax` register).
+6. Restore the register with `mov` instruction.
+7. Execute `retf` instruction to load `cs` and `rip` registers.
 
 # MTRR Emulation
 According to Intel 64 Architecture Manual, the MTRRs have **no effect** on the memory type used for an access to a guest physical address. If we map all memory as write-back with EPT, there could be conflicts in that not all memory are defined as write-back by OS. For example, OS could define MMIO region as uncacheable memory. Similarly, graphics buffer could be mapped as write-combined by OS. Failure to map these memory accordingly could cause certain issues. For example, it is observed that some processors could encounter an `#MC` exception due to L2 cache data-read error. <br>

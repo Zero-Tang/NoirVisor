@@ -181,8 +181,6 @@ void NoirGetProcessorName(OUT PSTR ProcessorName);
 void NoirGetNtOpenProcessIndex();
 void NoirSaveImageInfo(IN PDRIVER_OBJECT DriverObject);
 void NoirSetProtectedPID(IN ULONG NewPID);
-NTSTATUS NoirBuildHostEnvironment();
-void NoirFreeHostEnvironment();
 void NoirBuildHookedPages();
 void NoirTeardownHookedPages();
 NTSTATUS NoirSubvertSystemOnDriverLoad(OUT PBOOLEAN Subvert);

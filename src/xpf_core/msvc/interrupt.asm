@@ -22,8 +22,10 @@ nvc_vt_host_nmi_handler proc
 	; Transfer the NMI to the guest if the host receives an NMI.
 	; In other words, no registers can be destroyed in NMI handler of Intel VT-x.
 	pushaq
+	call nvc_vt_inject_nmi_to_subverted_host
 	popaq
-	jmp fword ptr [rsp]
+	; Use a special macro to return from NMI but do not unblock NMIs.
+	nmiret
 
 nvc_vt_host_nmi_handler endp
 
@@ -34,15 +36,8 @@ nvc_svm_host_nmi_handler proc
 	; We do not handle NMI on ourself. NMI should be forwarded.
 	; First of all, immediately disable interrupts globally.
 	clgi
-	; Do not use the iret instruction to return in that it would
-	; remove the blocking of Non-Maskable Interrupts.
-	; Emulate the iret instruction instead.
-	mov rax,rsp
-	add rsp,10h
-	popf
-	mov ss,word ptr [rax+20h]
-	mov rsp,qword ptr [rax+18h]
-	jmp fword ptr [rax]
+	; Use a special macro to return from NMI but do not unblock NMIs.
+	nmiret
 
 nvc_svm_host_nmi_handler endp
 
@@ -63,11 +58,30 @@ noir_general_protection_handler proc
 
 	; #GP might occur when switching to invalid Guest state.
 	pushaq
+	; Construct parameters for the exception handler.
+	lea rcx,[rsp+gpr_stack_size]	; The first parameter stores the exception frame.
+	mov rdx,rsp						; The second parameter stores the GPR state.
+	; Call the handler.
 	popaq
 	; #GP has an error code. It must be popped out before the exception returns.
 	add rsp,8
-	iret
+	iretq
 
 noir_general_protection_handler endp
+
+noir_page_fault_handler proc
+
+	; #PF might occur when attempting to access guest memory.
+	pushaq	; Save Registers.
+	; Construct parameters for the exception handler.
+	lea rcx,[rsp+gpr_stack_size]	; The first parameter stores the exception frame.
+	mov rdx,rsp						; The second parameter stores the GPR state.
+	; Call the handler.
+	popaq	; Restore Registers.
+	; #PF has an error code. It must be popped out before the exception returns.
+	add rsp,8
+	iretq
+
+noir_page_fault_handler endp
 
 end

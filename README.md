@@ -9,7 +9,7 @@ NoirVisor - The Grimoire Hypervisor solution for AMD64 Processors.
     <img src="https://img.shields.io/github/stars/Zero-Tang/NoirVisor?color=orange">
     <img src="https://img.shields.io/github/forks/Zero-Tang/NoirVisor?color=silver">
     <a href="https://qm.qq.com/cgi-bin/qm/qr?k=ly7ROfTm6VD9pBuw6zI85TuYaWCu3li8&jump_from=webapi">
-        <img border="0" src="https://pub.idqqimg.com/wpa/images/group.png" alt="NoirVisor虚拟化交流群" title="NoirVisor虚拟化交流群">
+        <img border="0" src="https://pub.idqqimg.com/wpa/images/group.png" alt="NoirVisor虚拟化交流群" title="769616136">
     </a>
 </p>
 

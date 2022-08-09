@@ -16,6 +16,30 @@ ktrap_frame_size	equ 190h
 mach_frame_size		equ 28h
 gpr_stack_size		equ 80h
 
+; Macro for NMI-blocking iret.
+nmiret macro
+
+	; Emulate the iret instruction in order not to unblock NMIs.
+	push rax					; Save the rax
+	; Now the stack layout would be like:
+	; qword ptr [rsp+8*0]	rax
+	; qword ptr [rsp+8*1]	rip
+	; word ptr [rsp+8*2]	cs
+	; qword ptr [rsp+8*3]	rflags
+	; qword ptr [rsp+8*4]	rsp
+	; qword ptr [rsp+8*5]	ss
+	mov rax,rsp					; Save the NMI stack pointer.
+	lss rsp,[rax+8*4]			; Restore ss and rsp
+	; Note that rsp is switched to pre-NMI stack, so use rax for memory addressing.
+	push qword ptr [rax+18h]	; Store rflags to pre-NMI stack.
+	popf						; Restore rflags
+	push qword ptr [rax+10h]	; Store cs to pre-NMI stack.
+	push qword ptr [rax+8h]		; Store rip to pre-NMI stack.
+	mov rax,qword ptr [rax]		; Restore rax
+	retf						; Restore cs and rip
+
+endm
+
 ; Macro for pushing all GPRs to stack.
 pushaq_fast macro rsp_offset
 	

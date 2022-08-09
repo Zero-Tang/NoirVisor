@@ -190,6 +190,21 @@ void noir_outsd(u16 port,u32p buffer,size_t count,bool direction);
 #define noir_locked_bts64		_interlockedbittestandset64
 #define noir_locked_btr64		_interlockedbittestandreset64
 #endif
+
+// FS & GS Operations
+#if defined(_amd64)
+#define noir_rdvcpu8		__readgsbyte
+#define noir_rdvcpu16		__readgsword
+#define noir_rdvcpu32		__readgsdword
+#define noir_rdvcpu64		__readgsqword
+#define noir_rdvcpuptr		__readgsqword
+#else
+#define noir_rdvcpu8		__readfsbyte
+#define noir_rdvcpu16		__readfsword
+#define noir_rdvcpu32		__readfsdword
+#define noir_rdvcpu64		__readfsqword
+#define noir_rdvcpuptr		__readfsqword
+#endif
 #endif
 
 // Optimization Intrinsics for Branch-Prediction

@@ -64,6 +64,7 @@
 
 struct _noir_cvm_virtual_machine;
 
+// Hypervisor Structure
 typedef struct _noir_hypervisor
 {
 #if defined(_vt_core)

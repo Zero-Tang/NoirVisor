@@ -265,42 +265,45 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 void nvc_svm_setup_host_idt(ulong_ptr idtr_base)
 {
 	noir_gate_descriptor_p idt_base=(noir_gate_descriptor_p)idtr_base;
-	// Current implementation of NoirVisor only has to take care of NMI.
+	// NMI handler is intended for emulating cleared GIF for nested hypervisor.
 	idt_base[amd64_nmi_interrupt].offset_lo=(u16)((u64)nvc_svm_host_nmi_handler&0xFFFF);
 	idt_base[amd64_nmi_interrupt].offset_mid=(u16)((u64)nvc_svm_host_nmi_handler>>16);
 	idt_base[amd64_nmi_interrupt].offset_hi=(u32)((u64)nvc_svm_host_nmi_handler>>32);
 }
 
-void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu)
+void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu,noir_processor_state_p state)
 {
-	noir_processor_state state;
 	descriptor_register idtr,gdtr;
-	noir_get_prebuilt_host_processor_state(&state);
+	nvc_svm_setup_host_idt((ulong_ptr)vcpu->idt_buffer);
 	// Use vmsave instruction to save effort.
 	noir_svm_vmsave((ulong_ptr)vcpu->hvmcb.phys);
 	// Load IDTR and GDTR. They are not indicated in VMCB during vmsave.
-	idtr.limit=(u16)state.idtr.limit;
-	gdtr.limit=(u16)state.gdtr.limit;
-	idtr.base=state.idtr.base;
-	gdtr.base=state.gdtr.base;
-	// IDT requires some modification.
+	idtr.limit=(u16)state->idtr.limit;
+	gdtr.limit=(u16)state->gdtr.limit;
+	idtr.base=(ulong_ptr)vcpu->idt_buffer;
+	gdtr.base=(ulong_ptr)vcpu->gdt_buffer;
+	// Copy from host.
+	noir_copy_memory(vcpu->idt_buffer,(void*)state->idtr.base,state->idtr.limit+1);
+	noir_copy_memory(vcpu->gdt_buffer,(void*)state->gdtr.base,state->gdtr.limit+1);
+	noir_copy_memory(vcpu->tss_buffer,(void*)state->tr.base,state->tr.limit+1);
+	// IDT requires some modifications.
 	nvc_svm_setup_host_idt(idtr.base);
 	// Load them into processor.
 	noir_lidt(&idtr);
 	noir_lgdt(&gdtr);
 	// Load GS Segment.
-	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_gs_selector,state.gs.selector);
-	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_gs_attrib,svm_attrib(state.gs.attrib));
-	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_gs_limit,state.gs.limit);
-	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_gs_base,state.gs.base);
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_gs_selector,state->gs.selector);
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_gs_attrib,svm_attrib(state->gs.attrib));
+	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_gs_limit,sizeof(noir_svm_vcpu));
+	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_gs_base,(ulong_ptr)vcpu);
 	// Load Task State Segment.
-	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_selector,state.tr.selector);
-	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_attrib,svm_attrib(state.tr.attrib));
-	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_tr_limit,state.tr.limit);
-	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_tr_base,state.tr.base);
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_selector,state->tr.selector);
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_attrib,svm_attrib(state->tr.attrib));
+	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_tr_limit,state->tr.limit);
+	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_tr_base,(ulong_ptr)vcpu->tss_buffer);
 	// Load Host Control Registers.
 	noir_writecr3(hvm_p->host_memmap.hcr3.phys);
-	noir_writecr4(state.cr4|amd64_cr4_osfxsr_bit|amd64_cr4_osxsave_bit);
+	noir_writecr4(state->cr4|amd64_cr4_osfxsr_bit|amd64_cr4_osxsave_bit);
 }
 
 // This function has context of cleared GIF.
@@ -310,7 +313,7 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp)
 	noir_processor_state state;
 	noir_save_processor_state(&state);
 	// Setup Host State
-	nvc_svm_load_host_processor_state(vcpu);
+	nvc_svm_load_host_processor_state(vcpu,&state);
 	// Setup State-Save Area
 	// Save Segment State - CS
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_cs_selector,state.cs.selector);
@@ -581,7 +584,6 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			vcpu->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
 			vcpu->primary_nptm=nvc_npt_build_identity_map();
 			if(vcpu->primary_nptm==null)goto alloc_failure;
-			nv_dprintf("NPT Manager: 0x%p\n",vcpu->primary_nptm);
 #if !defined(_hv_type1)
 			// Only Type-II Hypervisor would hook into guest.
 			vcpu->secondary_nptm=nvc_npt_build_identity_map();
@@ -617,7 +619,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			if(hvm_p->options.kva_shadow_presence)
 			{
 				vcpu->enabled_feature|=noir_svm_kva_shadow_present;
-				nv_dprintf("Warning: KVA-Shadow is present! Stealth MSR-Hook on AMD Processors is untested in regards of KVA-Shadow!\n");
+				nv_dprintf("Warning: KVA-Shadow is present! Stealthy MSR-Hook on AMD Processors is untested in regards of KVA-Shadow!\n");
 			}
 #endif
 		}
@@ -638,7 +640,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 #if !defined(_hv_type1)
 	// Initialize CVM Module.
 	if(nvc_svmc_initialize_cvm_module()!=noir_success)goto alloc_failure;
-	// If nested virtualization is disabled, reserved all available ASIDs to CVMs.
+	// If nested virtualization is disabled, reserve all available ASIDs to CVMs.
 	// Otherwise, reserve half of ASIDs to CVMs.
 	if(hvm_p->options.nested_virtualization)
 	{

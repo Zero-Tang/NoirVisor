@@ -105,6 +105,11 @@ typedef enum _svm_vmcb_offset
 	avic_logical_table_pointer=0xF0,
 	avic_physical_table_pointer=0xF8,
 	vmsa_pointer=0x108,
+	// Following offset definitions would be available only if Microsoft enlightenments are enabled.
+	enlightenments_control=0x3E0,
+	vp_id=0x3E4,
+	vm_id=0x3E8,
+	partition_assist_page=0x3F0,
 	// Following offset definitions would be unusable if SEV-ES is enabled.
 	// State Save Area - SEV-ES Disabled
 	// ES

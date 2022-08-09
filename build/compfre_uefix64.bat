@@ -22,10 +22,10 @@ cl ..\src\booting\efiapp\efimain.c /I"%mdepath%\Include" /I"%mdepath%\Include\X6
 cl ..\src\booting\efiapp\driver.c /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /nologo /Zi /W3 /WX /O2 /Oi /D"_efi_boot" /FAcs /Fa"%objpath%\driver\driver.cod" /Fo"%objpath%\driver\driver.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c
 
 echo Compiling Core Engine of Intel VT-x...
-for %%1 in (..\src\vt_core\*.c) do (cl %%1 /I"..\src\include" /nologo /Zi /W3 /WX /O2 /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_vt_core" /D"_%%~n1" /FAcs /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c)
+for %%1 in (..\src\vt_core\*.c) do (cl %%1 /I"..\src\include" /nologo /Zi /W3 /WX /O2 /Oi /favor:INTEL64 /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_vt_core" /D"_%%~n1" /FAcs /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c)
 
 echo Compiling Core Engine of AMD-V...
-for %%1 in (..\src\svm_core\*.c) do (cl %%1 /I"..\src\include" /nologo /Zi /W3 /WX /O2 /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_svm_core" /D"_%%~n1" /FAcs /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c)
+for %%1 in (..\src\svm_core\*.c) do (cl %%1 /I"..\src\include" /nologo /Zi /W3 /WX /O2 /Oi /favor:AMD64 /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_svm_core" /D"_%%~n1" /FAcs /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c)
 
 echo Compiling Core Engine of Microsoft Hypervisor (MSHV)...
 for %%1 in (..\src\mshv_core\*.c) do (cl %%1 /I"..\src\include" /nologo /Zi /W3 /WX /O2 /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_mshv_core" /D"_%%~n1" /FAcs /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c)

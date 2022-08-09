@@ -433,40 +433,37 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	noir_vt_vmwrite(guest_rflags,2);		// That the essential bit is set is fine.
 }
 
-void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu)
+void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_state_p state)
 {
-	noir_processor_state state;
 	// Setup stack for Exit Handler.
 	noir_vt_initial_stack_p stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
 	stack->vcpu=vcpu;
 	stack->proc_id=noir_get_current_processor();
-	// Get the prebuilt state for host.
-	noir_get_prebuilt_host_processor_state(&state);
 	// Host State Area - Segment Selectors
-	noir_vt_vmwrite(host_cs_selector,state.cs.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_ds_selector,state.ds.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_es_selector,state.es.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_fs_selector,state.fs.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_gs_selector,state.gs.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_ss_selector,state.ss.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_tr_selector,state.tr.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_cs_selector,state->cs.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_ds_selector,state->ds.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_es_selector,state->es.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_fs_selector,state->fs.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_gs_selector,state->gs.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_ss_selector,state->ss.selector & selector_rplti_mask);
+	noir_vt_vmwrite(host_tr_selector,state->tr.selector & selector_rplti_mask);
 	// Host State Area - Segment Bases
-	noir_vt_vmwrite(host_fs_base,(ulong_ptr)state.fs.base);
-	noir_vt_vmwrite(host_gs_base,(ulong_ptr)state.gs.base);
-	noir_vt_vmwrite(host_tr_base,(ulong_ptr)state.tr.base);
+	noir_vt_vmwrite(host_fs_base,(ulong_ptr)state->fs.base);
+	noir_vt_vmwrite(host_gs_base,(ulong_ptr)state->gs.base);
+	noir_vt_vmwrite(host_tr_base,(ulong_ptr)state->tr.base);
 	// Host State Area - Descriptor Tables
-	noir_vt_vmwrite(host_gdtr_base,(ulong_ptr)state.gdtr.base);
-	noir_vt_vmwrite(host_idtr_base,(ulong_ptr)state.idtr.base);
+	noir_vt_vmwrite(host_gdtr_base,(ulong_ptr)state->gdtr.base);
+	noir_vt_vmwrite(host_idtr_base,(ulong_ptr)state->idtr.base);
 	// Host State Area - Control Registers
-	state.cr0|=noir_rdmsr(ia32_vmx_cr0_fixed0);
-	state.cr0&=noir_rdmsr(ia32_vmx_cr0_fixed1);
-	state.cr4|=noir_rdmsr(ia32_vmx_cr4_fixed0);
-	state.cr4&=noir_rdmsr(ia32_vmx_cr4_fixed1);
-	noir_btr(&state.cr4,ia32_cr4_cet);			// Turn off CET in host mode.
-	noir_vt_vmwrite(host_cr0,state.cr0);
-	noir_vt_vmwrite(host_cr3,state.cr3);
-	noir_vt_vmwrite(host_cr4,state.cr4);
-	noir_vt_vmwrite(host_msr_ia32_efer,state.efer);
+	state->cr0|=noir_rdmsr(ia32_vmx_cr0_fixed0);
+	state->cr0&=noir_rdmsr(ia32_vmx_cr0_fixed1);
+	state->cr4|=noir_rdmsr(ia32_vmx_cr4_fixed0);
+	state->cr4&=noir_rdmsr(ia32_vmx_cr4_fixed1);
+	noir_btr(&state->cr4,ia32_cr4_cet);			// Turn off CET in host mode.
+	noir_vt_vmwrite(host_cr0,state->cr0);
+	noir_vt_vmwrite(host_cr3,state->cr3);
+	noir_vt_vmwrite(host_cr4,state->cr4);
+	noir_vt_vmwrite(host_msr_ia32_efer,state->efer);
 	// Host State Area - Stack Pointer, Instruction Pointer
 	noir_vt_vmwrite(host_rsp,(ulong_ptr)stack);
 	noir_vt_vmwrite(host_rip,(ulong_ptr)nvc_vt_exit_handler_a);
@@ -678,7 +675,7 @@ u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp)
 	nvc_vt_setup_available_features(vcpu);
 	nvc_vt_setup_control_area(vt_basic.use_true_msr);
 	nvc_vt_setup_guest_state_area(&state,gsp);
-	nvc_vt_setup_host_state_area(vcpu);
+	nvc_vt_setup_host_state_area(vcpu,&state);
 	nvc_vt_setup_memory_virtualization(vcpu);
 	nvc_vt_setup_msr_auto_list(vcpu,&state);
 	nvc_vt_setup_msr_hook_p(vcpu);

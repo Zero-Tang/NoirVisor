@@ -16,9 +16,7 @@
 
 // Definition of vmmcall Codes
 #define noir_svm_callexit					0x1
-#define noir_svm_disasm_length				0x2
-#define noir_svm_disasm_mnemonic			0x3
-#define noir_svm_disasm_full				0x4
+
 #define noir_svm_init_custom_vmcb			0x10000
 #define noir_svm_run_custom_vcpu			0x10001
 #define noir_svm_dump_vcpu_vmcb				0x10002
@@ -150,7 +148,16 @@ typedef struct _noir_svm_vcpu
 	memory_descriptor hvmcb;
 	memory_descriptor hsave;
 	void* hv_stack;
+	struct _noir_svm_vcpu *self;
 	noir_svm_hvm_p relative_hvm;
+	struct
+	{
+		bool valid;
+		u32 offset;
+		u64 value;
+		ulong_ptr rip;
+		u64 fault_info;
+	}fallback;
 	struct _noir_npt_manager* primary_nptm;
 #if !defined(_hv_type1)
 	struct _noir_npt_manager* secondary_nptm;
@@ -171,6 +178,9 @@ typedef struct _noir_svm_vcpu
 	u8v sipi_vector;
 	u8 status;
 	u8 vcpu_property;
+	align_at(16) noir_gate_descriptor idt_buffer[0x100];
+	align_at(16) noir_segment_descriptor gdt_buffer[0x100];
+	align_at(16) u8 tss_buffer[0x100];
 }noir_svm_vcpu,*noir_svm_vcpu_p;
 
 struct _noir_svm_custom_vm;
@@ -211,9 +221,9 @@ typedef union _noir_svm_shadowed_bits
 	{
 		u64 mce:1;
 		u64 svme:1;
-		u64 tf:1;
-		u64 btf:1;
-		u64 sce:1;
+		u64 tf:1;	// Shadowed bit for MTF
+		u64 btf:1;	// Shadowed bit for MTF
+		u64 sce:1;	// Shadowed bit for MTF
 		u64 reserved:59;
 	};
 	u64 value;

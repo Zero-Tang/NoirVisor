@@ -75,6 +75,8 @@
 
 #define selector_rplti_mask		0xfff8
 
+#define field_offset(t,f)		((size_t)(&((t*)0)->f))
+
 // Classification of CPUID Leaf
 #define noir_cpuid_class(x)		(x>>30)
 #define noir_cpuid_index(x)		(x&0x3FFFFFFF)
@@ -469,7 +471,6 @@ typedef void (*noir_broadcast_worker)(void* context,u32 processor_id);
 typedef i32(cdecl *noir_sorting_comparator)(const void* a,const void*b);
 
 void noir_save_processor_state(noir_processor_state_p state);
-void noir_get_prebuilt_host_processor_state(noir_processor_state_p state);
 u16 noir_get_segment_attributes(ulong_ptr gdt_base,u16 selector);
 void noir_generic_call(noir_broadcast_worker worker,void* context);
 void* noir_get_host_idt_base(u32 processor_number);

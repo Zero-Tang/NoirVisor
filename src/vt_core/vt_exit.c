@@ -449,36 +449,6 @@ void static fastcall nvc_vt_vmcall_handler(noir_gpr_state_p gpr_state,noir_vt_vc
 			}
 			break;
 		}
-		case noir_vt_disasm_length:
-		{
-#if defined(_hv_type1)
-#else
-			noir_disasm_request_p disasm=(noir_disasm_request_p)gpr_state->rdx;
-			// Get the page table base that maps both kernel mode address space
-			// and the user mode address space for the invoker's process.
-			// DO NOT USE THE GUEST CR3 FIELD IN VMCS!
-			u64 gcr3k=noir_get_current_process_cr3();
-			noir_writecr3(gcr3k);		// Switch to the Guest Address Space.
-			disasm->instruction_length=noir_get_instruction_length_ex(disasm->buffer,disasm->bits);
-#endif
-			noir_vt_advance_rip();
-			break;
-		}
-		case noir_vt_disasm_mnemonic:
-		{
-#if defined(_hv_type1)
-#else
-			noir_disasm_request_p disasm=(noir_disasm_request_p)gpr_state->rdx;
-			// Get the page table base that maps both kernel mode address space
-			// and the user mode address space for the invoker's process.
-			// DO NOT USE THE GUEST CR3 FIELD IN VMCS!
-			u64 gcr3k=noir_get_current_process_cr3();
-			noir_writecr3(gcr3k);		// Switch to the Guest Address Space.
-			disasm->instruction_length=noir_disasm_instruction(disasm->buffer,disasm->mnemonic,disasm->mnemonic_limit,disasm->bits,disasm->va);
-#endif
-			noir_vt_advance_rip();
-			break;
-		}
 		case noir_vt_init_custom_vmcs:
 		{
 			// For CVM hypercalls, the caller must be located in Layered Hypervisor.
@@ -751,6 +721,7 @@ void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,noir_vt
 	// On default NoirVisor's setting of VMCS, this handler only traps writes to CR0 and CR4.
 	ia32_cr_access_qualification info;
 	bool advance_ip=true;
+	noir_vt_vmread(guest_rsp,&gpr_state->rsp);
 	noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&info);
 	switch(info.access_type)
 	{
@@ -759,81 +730,78 @@ void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,noir_vt
 			// Write to Control Register is intercepted!
 			switch(info.cr_num)
 			{
+				ia32_vmentry_interruption_information_field fault_info;
 				case 0:
 				{
 					ulong_ptr data=((ulong_ptr*)gpr_state)[info.gpr_num];
-					// If Guest attempts to clear bits unsupported by VMX, inject #GP.
-					if((data & 0x80000021)!=0x80000021)
+					ulong_ptr gcr0,cr0x;
+					noir_vt_vmread(guest_cr0,&gcr0);
+					// Use exclusive-or to check if CR0.CD bit is being changed.
+					cr0x=gcr0^data;
+					if(noir_bt((u32*)&cr0x,ia32_cr0_cd))
 					{
-						noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
-						advance_ip=false;
-					}
-					// If Guest attempts to set bits unsupported by CPU, inject #GP.
-					else if(data & 0x1ffaffc0)
-					{
-						noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
-						advance_ip=false;
-					}
-					// Otherwise, perform setup.
-					else
-					{
-						ulong_ptr gcr0,cr0x;
-						noir_vt_vmread(guest_cr0,&gcr0);
-						// Use exclusive-or to check if CR0.CD bit is being changed.
-						cr0x=gcr0^data;
-						if(noir_bt((u32*)&cr0x,ia32_cr0_cd))
+						// The CR0.CD bit is being changed.
+						if(noir_bt((u32*)&gcr0,ia32_cr0_cd)==0)
 						{
-							// The CR0.CD bit is being changed.
-							if(noir_bt((u32*)&gcr0,ia32_cr0_cd)==0)
-							{
-								invept_descriptor ied;
-								// Reset EPT entries.
-								nvc_ept_update_by_mtrr(vcpu->ept_manager);
-								// Flush EPT TLB due to the update.
-								ied.eptp=vcpu->ept_manager->eptp.phys.value;
-								ied.reserved=0;
-								noir_vt_invept(ept_single_invd,&ied);
-							}
+							invept_descriptor ied;
+							// Reset EPT entries.
+							nvc_ept_update_by_mtrr(vcpu->ept_manager);
+							// Flush EPT TLB due to the update.
+							ied.eptp=vcpu->ept_manager->eptp.phys.value;
+							ied.reserved=0;
+							noir_vt_invept(ept_single_invd,&ied);
 						}
-						// Reflect the write to both host and guest.
-						noir_vt_vmwrite(host_cr0,data);
-						noir_vt_vmwrite(guest_cr0,data);
-						noir_vt_vmwrite(cr0_read_shadow,data);
 					}
+					// Finally, write to Guest CR0 field and CR0 Read-Shadow field.
+					noir_vt_vmwrite(guest_cr0,data);
+					noir_vt_vmwrite(cr0_read_shadow,data);
+					// Set up fallback entries if failure on VM-Entry.
+					vcpu->fallback.valid=true;
+					vcpu->fallback.encoding=guest_cr0;
+					vcpu->fallback.value=gcr0;
+					noir_vt_vmread(guest_rip,&vcpu->fallback.rip);
+					// Failure to write CR0 triggers #GP(0) fault.
+					fault_info.value=0;
+					fault_info.vector=ia32_general_protection;
+					fault_info.type=ia32_hardware_exception;
+					fault_info.deliver=true;
+					fault_info.valid=true;
+					vcpu->fallback.fault_info=fault_info.value;
+					vcpu->fallback.error_code=0;
 					break;
 				}
 				case 4:
 				{
 					ulong_ptr data=((ulong_ptr*)gpr_state)[info.gpr_num];
-					ulong_ptr cr4_rs,gcr4;
+					ulong_ptr gcr4;
 					noir_vt_vmread(guest_cr4,&gcr4);
-					noir_vt_vmread(cr4_read_shadow,&cr4_rs);
-					cr4_rs=data;
-					gcr4=data|ia32_cr4_vmxe_bit;	// Always set CR4.VMXE for the valid Guest State.
 					// If Guest attempts to write CR4.VMXE, mark vCPU as Nested-VMX-Enabled(Disabled).
-					if(noir_bt((u32*)&data,ia32_cr4_vmxe))
-					{
-						// Enable VMX.
-						cr4_rs|=ia32_cr4_vmxe_bit;
+					if(noir_bt((u32*)&data,ia32_cr4_vmxe))		// Enable VMX.
 						noir_bts(&vcpu->nested_vcpu.status,noir_nvt_vmxe);
-					}
 					else
 					{
 						// Disable VMX.
 						if(noir_bt(&vcpu->nested_vcpu.status,noir_nvt_vmxon))
-						{
-							advance_ip=false;
 							noir_vt_inject_event(ia32_general_protection,ia32_hardware_exception,true,0,0);
-						}
 						else
-						{
-							cr4_rs&=~ia32_cr4_vmxe_bit;
 							noir_btr(&vcpu->nested_vcpu.status,noir_nvt_vmxe);
-						}
 					}
 					// Finally, write to Guest CR4 field and CR4 Read-Shadow field.
-					noir_vt_vmwrite(guest_cr4,gcr4);
-					noir_vt_vmwrite(cr4_read_shadow,cr4_rs);
+					noir_vt_vmwrite(guest_cr4,data|ia32_cr4_vmxe_bit);
+					noir_vt_vmwrite(cr4_read_shadow,data);
+					// Set up fallback entries if failure on VM-Entry.
+					vcpu->fallback.valid=true;
+					vcpu->fallback.encoding=guest_cr4;
+					vcpu->fallback.value=gcr4;
+					noir_vt_vmread(guest_rip,&vcpu->fallback.rip);
+					// Failure to write CR0 triggers #GP(0) fault.
+					fault_info.value=0;
+					fault_info.vector=ia32_general_protection;
+					fault_info.type=ia32_hardware_exception;
+					fault_info.deliver=true;
+					fault_info.valid=true;
+					vcpu->fallback.fault_info=fault_info.value;
+					vcpu->fallback.error_code=0;
 					break;
 				}
 				default:
@@ -854,22 +822,13 @@ void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,noir_vt
 		{
 			// The clts instruction is intercepted!
 			// By NoirVisor's default setting of VMCS, we won't go here.
-			nv_dprintf("Check your CR0 Guest-Host Mask!\n");
+			nv_dprintf("The clts instruction is intercepted! Check your CR0 Guest-Host Mask!\n");
 			break;
 		}
 		case 3:
 		{
 			// Lmsw instruction is intercepted!
-			// We monitor bit 0 of CR0, we might go here as lmsw overwrites bits 0-3.
-			ulong_ptr msw=info.lmsw_src&0xf;
-			if(noir_bt((u32*)&msw,0))
-			{
-				ulong_ptr gcr0;
-				noir_vt_vmread(guest_cr0,&gcr0);
-				gcr0|=msw;
-				gcr0&=~msw;
-				noir_vt_vmwrite(guest_cr0,gcr0);
-			}
+			nv_dprintf("The lmsw instruction is intercepted! Check your CR0 Guest-Host Mask!\n");
 			break;
 		}
 	}
@@ -1091,8 +1050,22 @@ void static fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state,noir_vt_vcp
 // You may want to debug your code if this handler is invoked.
 void static fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	nv_dprintf("VM-Entry failed! Check the Guest-State in VMCS!\n");
-	nvc_vt_dump_vmcs_guest_state();
+	if(vcpu->fallback.valid)
+	{
+		// It is possible to fallback.
+		nv_dprintf("VM-Entry failed. Fallback is available. Restoring...\n");
+		noir_vt_vmwrite64(vcpu->fallback.encoding,vcpu->fallback.value);
+		noir_vt_vmwrite(guest_rip,vcpu->fallback.rip);
+		// Fallback comes with event injection...
+		noir_vt_vmwrite(vmentry_interruption_information_field,vcpu->fallback.fault_info);
+		noir_vt_vmwrite(vmentry_exception_error_code,vcpu->fallback.error_code);
+	}
+	else
+	{
+		// There is no falling back, so check the guest state..
+		nv_dprintf("VM-Entry failed with no available fallbacks! Check the Guest-State in VMCS!\n");
+		nvc_vt_dump_vmcs_guest_state();
+	}
 }
 
 // Expected Exit Reason: 34
@@ -1500,8 +1473,18 @@ void fastcall nvc_vt_resume_failure(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vc
 
 void nvc_vt_inject_nmi_to_subverted_host()
 {
-	// Forward the NMI to the subverted host.
-	;
+	noir_vt_vcpu_p vcpu=(noir_vt_vcpu_p)noir_rdvcpuptr(field_offset(noir_vt_vcpu,self));
+	noir_vt_initial_stack_p loader_stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
+	u64 vmcs_phys;
+	// Save the previous VMCS pointer.
+	noir_vt_vmptrst(&vmcs_phys);
+	// Load the VMCS of subverted host.
+	noir_vt_vmptrld(&vcpu->vmcs.phys);
+	// Inject the NMI.
+	// FIXME: Are there unresolved NMIs?
+	noir_vt_inject_event(ia32_nmi_interrupt,ia32_non_maskable_interrupt,false,0,0);
+	// Finally, load the previous VMCS.
+	noir_vt_vmptrld(&vmcs_phys);
 }
 
 void nvc_vt_reconfigure_npiep_interceptions(noir_vt_vcpu_p vcpu)
