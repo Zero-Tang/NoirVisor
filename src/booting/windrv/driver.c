@@ -197,16 +197,7 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		{
 			PULONG32 Input=(PULONG32)InputBuffer;
 			PCVM_HANDLE VmHandle=(PCVM_HANDLE)((ULONG_PTR)OutputBuffer+sizeof(CVM_HANDLE));
-			*(PULONG32)OutputBuffer=NoirCreateVirtualMachineEx(VmHandle,Input[0],Input[1]);
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmSetMappingEx:
-		{
-			PNOIR_ADDRESS_MAPPING MapInfo=(PNOIR_ADDRESS_MAPPING)InputBuffer;
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)((ULONG_PTR)InputBuffer+sizeof(NOIR_ADDRESS_MAPPING));
-			ULONG32 MapId=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(NOIR_ADDRESS_MAPPING)+sizeof(CVM_HANDLE));
-			*(PULONG32)OutputBuffer=NoirSetMappingEx(VmHandle,MapId,MapInfo);
+			*(PULONG32)OutputBuffer=NoirCreateVirtualMachineEx(VmHandle,Input[0]);
 			st=STATUS_SUCCESS;
 			break;
 		}
@@ -306,24 +297,6 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			ULONG32 BufferSize=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE)+4);
 			PVOID StatsBuffer=*(PVOID*)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE)+8);
 			*(PULONG32)OutputBuffer=NoirQueryVirtualProcessorStatistics(VmHandle,VpIndex,StatsBuffer,BufferSize);
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmGetVcpuVmMap:
-		{
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
-			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
-			PULONG32 MapId=(PULONG32)((ULONG_PTR)OutputBuffer+8);
-			*(PULONG32)OutputBuffer=NoirRetrieveMappingIdForVirtualProcessor(VmHandle,VpIndex,MapId);
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmSetVcpuVmMap:
-		{
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
-			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
-			ULONG32 MapId=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE)+4);
-			*(PULONG32)OutputBuffer=NoirSelectMappingForVirtualProcessor(VmHandle,VpIndex,MapId);
 			st=STATUS_SUCCESS;
 			break;
 		}

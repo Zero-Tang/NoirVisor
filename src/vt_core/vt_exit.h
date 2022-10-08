@@ -674,6 +674,7 @@ void inline noir_vt_set_single_stepping(ulong_ptr gflags)
 void inline noir_vt_advance_rip()
 {
 	ulong_ptr gip,gflags;
+	vmx_segment_access_right cs_ar;
 	u32 len;
 	// Special treatings for Single-Step scenarios.
 	u8 vst=noir_vt_vmread(guest_rflags,&gflags);
@@ -682,7 +683,13 @@ void inline noir_vt_advance_rip()
 	// Regular stuff...
 	noir_vt_vmread(guest_rip,&gip);
 	noir_vt_vmread(vmexit_instruction_length,&len);
-	noir_vt_vmwrite(guest_rip,gip+len);
+	gip+=len;
+	// Special treatings for advanced-rip-overflow.
+	// If the processor is out of long mode,
+	// advancement may cause invalid-state if eip is overflown.
+	noir_vt_vmread(guest_cs_access_rights,&cs_ar);
+	if(!cs_ar.long_mode)gip&=0xFFFFFFFF;		// Cut it down.
+	noir_vt_vmwrite(guest_rip,gip);
 }
 
 void inline noir_vt_inject_event(u8 vector,u8 type,bool deliver,u32 length,u32 err_code)

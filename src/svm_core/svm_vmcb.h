@@ -282,3 +282,28 @@ typedef enum _svm_vmsa_offset
 	guest_sev_fpreg_xmm=0x470,
 	guest_sev_fpreg_ymm=0x570
 }svm_vmsa_offset,*svm_vmsa_offset_p;
+
+// The following definitions are intended for 
+// hypervisor's Host-Save Area nested in NoirVisor.
+typedef struct _noir_svm_nested_hsave_area
+{
+	// Segment Selectors
+	u16 cs_sel;
+	u16 ds_sel;
+	u16 es_sel;
+	u16 ss_sel;
+	u16 gdtr_limit;
+	u16 idtr_limit;
+	u64 gdtr_base;
+	u64 idtr_base;
+	// General-Purpose Registers
+	u64 rax;
+	u64 rsp;
+	u64 rip;
+	u64 rflags;
+	// Control Registers
+	u64 cr0;
+	u64 cr3;
+	u64 cr4;
+	u64 efer;
+}noir_svm_nested_hsave_area,*noir_svm_nested_hsave_area_p;

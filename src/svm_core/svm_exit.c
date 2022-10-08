@@ -65,30 +65,42 @@ void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm
 void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
-	u64 efer;
-	ulong_ptr cr0,cr3,cr4;
-	ulong_ptr dr6,dr7;
-	u32 list1,list2;
-	u32 asid;
-	noir_svm_stgi();
-	nv_dprintf("[Processor %d] Guest State is Invalid! VMCB: 0x%p\n",vcpu->proc_id,vmcb);
-	// Dump State in VMCB and Print them to Debugger.
-	efer=noir_svm_vmread64(vmcb,guest_efer);
-	nv_dprintf("Guest EFER MSR: 0x%llx\n",efer);
-	dr6=noir_svm_vmread(vmcb,guest_dr6);
-	dr7=noir_svm_vmread(vmcb,guest_dr7);
-	nv_dprintf("Guest DR6: 0x%p\t DR7: 0x%p\n",dr6,dr7);
-	cr0=noir_svm_vmread(vmcb,guest_cr0);
-	cr3=noir_svm_vmread(vmcb,guest_cr3);
-	cr4=noir_svm_vmread(vmcb,guest_cr4);
-	nv_dprintf("Guest CR0: 0x%p\t CR3: 0x%p\t CR4: 0x%p\n",cr0,cr3,cr4);
-	asid=noir_svm_vmread32(vmcb,guest_asid);
-	nv_dprintf("Guest ASID: %d\n",asid);
-	list1=noir_svm_vmread32(vmcb,intercept_instruction1);
-	list2=noir_svm_vmread32(vmcb,intercept_instruction2);
-	nv_dprintf("Control 1: 0x%X\t Control 2: 0x%X\n",list1,list2);
-	// Generate a debug-break.
-	noir_int3();
+	if(vcpu->fallback.valid)
+	{
+		// Failure of vmrun is expected. Fallback and throw exception.
+		noir_movsb((u8p)((ulong_ptr)vmcb+vcpu->fallback.offset),(u8p)&vcpu->fallback.value,vcpu->fallback.field_size);
+		noir_svm_vmwrite64(vmcb,guest_rip,vcpu->fallback.rip);
+		noir_svm_vmwrite64(vmcb,event_injection,vcpu->fallback.fault_info);
+		vcpu->fallback.valid=false;
+	}
+	else
+	{
+		// Fallback is unavailable because failure of vmrun is unexpected.
+		u64 efer;
+		ulong_ptr cr0,cr3,cr4;
+		ulong_ptr dr6,dr7;
+		u32 list1,list2;
+		u32 asid;
+		noir_svm_stgi();
+		nv_dprintf("[Processor %d] Guest State is Invalid! VMCB: 0x%p\n",vcpu->proc_id,vmcb);
+		// Dump State in VMCB and Print them to Debugger.
+		efer=noir_svm_vmread64(vmcb,guest_efer);
+		nv_dprintf("Guest EFER MSR: 0x%llx\n",efer);
+		dr6=noir_svm_vmread(vmcb,guest_dr6);
+		dr7=noir_svm_vmread(vmcb,guest_dr7);
+		nv_dprintf("Guest DR6: 0x%p\t DR7: 0x%p\n",dr6,dr7);
+		cr0=noir_svm_vmread(vmcb,guest_cr0);
+		cr3=noir_svm_vmread(vmcb,guest_cr3);
+		cr4=noir_svm_vmread(vmcb,guest_cr4);
+		nv_dprintf("Guest CR0: 0x%p\t CR3: 0x%p\t CR4: 0x%p\n",cr0,cr3,cr4);
+		asid=noir_svm_vmread32(vmcb,guest_asid);
+		nv_dprintf("Guest ASID: %d\n",asid);
+		list1=noir_svm_vmread32(vmcb,intercept_instruction1);
+		list2=noir_svm_vmread32(vmcb,intercept_instruction2);
+		nv_dprintf("Control 1: 0x%X\t Control 2: 0x%X\n",list1,list2);
+		// Generate a debug-break.
+		noir_int3();
+	}
 }
 
 // Expected Intercept Code: 0x14
@@ -1645,7 +1657,7 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 		noir_svm_vmwrite32(loader_stack->nested_vcpu->vmcb_t.virt,vmcb_clean_bits,0xffffffff);
 		// Nested VM is exiting, switch to L1 Guest.
 		nvc_svmn_clear_gif(vcpu);
-		nvc_svmn_virtualize_exit_vmcb(vcpu,loader_stack->nested_vcpu->vmcb_t.virt,l2_vmcb);
+		nvc_svmn_virtualize_exit_vmcb(vcpu,loader_stack->nested_vcpu->vmcb_t.virt,(void*)noir_svm_vmread64(vcpu->vmcb.virt,guest_rax));
 		// Forces CR0.PE=1 and RFLAGS.VM=0
 		noir_svm_vmcb_bts64(vcpu->vmcb.virt,guest_cr0,amd64_cr0_pe);
 		noir_svm_vmcb_btr64(vcpu->vmcb.virt,guest_rflags,amd64_rflags_vm);

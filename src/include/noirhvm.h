@@ -156,6 +156,20 @@ typedef struct _noir_hypervisor
 		u32 enabled_size_max;
 		u32 supported_instructions;
 		u32 supported_xss_bits;
+		// The following offsets would be calculated.
+		u32 offset_avx;
+		u32 offset_bndregs;
+		u32 offset_bndcsr;
+		u32 offset_opmask;
+		u32 offset_zmmhi256;
+		u32 offset_hi16zmm;
+		u32 offset_ptrace;
+		u32 offset_mpk;
+		u32 offset_cetu;
+		u32 offset_cets;
+		u32 offset_hdc;
+		u32 offset_hwp;
+		u32 offset_lwp;
 	}xfeat;
 	union
 	{

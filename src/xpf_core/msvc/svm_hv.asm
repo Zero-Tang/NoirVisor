@@ -101,11 +101,9 @@ nvc_svm_subvert_processor_a proc
 	; Second parameter is in rdx - guest rsp
 	; Third parameter is in r8 - guest rip
 	call nvc_svm_subvert_processor_i
-	add rsp,20h
 	; Now, rax stores the physical address of VMCB.
 	; Switch stack pointer to host stack now.
-	pop rcx
-	mov rsp,rcx
+	mov rsp,qword ptr[rsp+20h]
 	; Stack is switched, launch guest now.
 	; At this moment, the vmrun instruction
 	; behaves like vmlaunch in Intel VT-x.

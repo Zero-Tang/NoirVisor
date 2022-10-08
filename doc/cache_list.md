@@ -58,8 +58,7 @@ Disposing the cache list requires only one call to the `free` function.
 
 ### Insertion
 The insertion will pick the oldest node in the pool. Replace the data content and then make it the newest. \
-In order to make it the newest, link it before the head. \
-Insertion can be placed
+In order to make it the newest, link it before the head.
 ```C
 void insert(u64 data)
 {

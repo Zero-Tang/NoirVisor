@@ -285,6 +285,13 @@ typedef struct _noir_fx_state
 	u64 available[6];
 }noir_fx_state,*noir_fx_state_p;
 
+typedef struct _noir_xsave_header
+{
+	u64 xsave_bv;
+	u64 xcomp_bv;
+	u64 reserved[6];
+}noir_xsave_header,*noir_xsave_header_p;
+
 typedef union _noir_segment_attributes
 {
 	struct

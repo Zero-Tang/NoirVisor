@@ -755,11 +755,6 @@ void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,noir_vt
 					// Finally, write to Guest CR0 field and CR0 Read-Shadow field.
 					noir_vt_vmwrite(guest_cr0,data);
 					noir_vt_vmwrite(cr0_read_shadow,data);
-					// Set up fallback entries if failure on VM-Entry.
-					vcpu->fallback.valid=true;
-					vcpu->fallback.encoding=guest_cr0;
-					vcpu->fallback.value=gcr0;
-					noir_vt_vmread(guest_rip,&vcpu->fallback.rip);
 					// Failure to write CR0 triggers #GP(0) fault.
 					fault_info.value=0;
 					fault_info.vector=ia32_general_protection;
@@ -789,11 +784,6 @@ void static fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_state,noir_vt
 					// Finally, write to Guest CR4 field and CR4 Read-Shadow field.
 					noir_vt_vmwrite(guest_cr4,data|ia32_cr4_vmxe_bit);
 					noir_vt_vmwrite(cr4_read_shadow,data);
-					// Set up fallback entries if failure on VM-Entry.
-					vcpu->fallback.valid=true;
-					vcpu->fallback.encoding=guest_cr4;
-					vcpu->fallback.value=gcr4;
-					noir_vt_vmread(guest_rip,&vcpu->fallback.rip);
 					// Failure to write CR0 triggers #GP(0) fault.
 					fault_info.value=0;
 					fault_info.vector=ia32_general_protection;
@@ -1059,6 +1049,8 @@ void static fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr_state,noir_
 		// Fallback comes with event injection...
 		noir_vt_vmwrite(vmentry_interruption_information_field,vcpu->fallback.fault_info);
 		noir_vt_vmwrite(vmentry_exception_error_code,vcpu->fallback.error_code);
+		// Fallback completes. No further fallbacks are available.
+		vcpu->fallback.valid=false;
 	}
 	else
 	{

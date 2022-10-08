@@ -141,6 +141,16 @@ union _amd64_npt_pdpte;
 union _amd64_npt_pde;
 union _amd64_npt_pte;
 
+typedef struct _noir_svm_fallback_info
+{
+	bool valid;
+	u32 offset;
+	u64 value;
+	size_t field_size;
+	ulong_ptr rip;
+	u64 fault_info;
+}noir_svm_fallback_info,*noir_svm_fallback_info_p;
+
 // Virtual Processor defined for host.
 typedef struct _noir_svm_vcpu
 {
@@ -155,6 +165,7 @@ typedef struct _noir_svm_vcpu
 		bool valid;
 		u32 offset;
 		u64 value;
+		size_t field_size;
 		ulong_ptr rip;
 		u64 fault_info;
 	}fallback;
@@ -211,7 +222,6 @@ typedef struct _noir_svm_custom_npt_manager
 		struct _noir_npt_pte_descriptor *head;
 		struct _noir_npt_pte_descriptor *tail;
 	}pte;
-	u32 asid;
 }noir_svm_custom_npt_manager,*noir_svm_custom_npt_manager_p;
 
 // Some bits are host-owned. Therefore, Guest's bit must be saved accordingly.
@@ -250,7 +260,6 @@ typedef struct _noir_svm_custom_vcpu
 		u64 value;
 	}special_state;
 	u64 lasted_tsc;
-	u32 selected_mapping;
 	u32 proc_id;
 	u32 vcpu_id;
 }noir_svm_custom_vcpu,*noir_svm_custom_vcpu_p;
@@ -260,13 +269,13 @@ typedef struct _noir_svm_custom_vm
 	noir_cvm_virtual_machine header;
 	noir_svm_custom_vcpu_p* vcpu;
 	u32 vcpu_count;
-	u32 asid_total;
+	u32 asid;
 	memory_descriptor iopm;
 	memory_descriptor msrpm;
 	memory_descriptor msrpm_full;
 	memory_descriptor avic_logical;
 	memory_descriptor avic_physical;
-	struct _noir_svm_custom_npt_manager *nptm;
+	struct _noir_svm_custom_npt_manager nptm;
 }noir_svm_custom_vm,*noir_svm_custom_vm_p;
 
 // Virtual Processor defined for Encrypted CVM.

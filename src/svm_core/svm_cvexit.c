@@ -311,6 +311,7 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 		// NoirVisor will be handling CVM's CPUID Interception.
 		u32 leaf=(u32)gpr_state->rax,subleaf=(u32)gpr_state->rcx;
 		u32 leaf_class=noir_cpuid_class(leaf);
+		// If User-Hypervisor specified a quickpath, then go through the quickpath.
 		noir_cpuid_general_info info;
 		if(leaf_class==hvm_leaf_index)
 		{
@@ -344,10 +345,13 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 			{
 				case amd64_cpuid_std_proc_feature:
 				{
+					u8p apic_bytes=(u8p)&info.ebx;
 					// Indicate hypervisor presence.
 					noir_bts(&info.ecx,amd64_cpuid_hv_presence);
 					// In addition to indicating hypervisor presence,
 					// the Local APIC ID must be emulated as well.
+					apic_bytes[2]=(u8)cvcpu->vm->vcpu_count;
+					apic_bytes[3]=(u8)cvcpu->vcpu_id;
 					break;
 				}
 				case amd64_cpuid_ext_proc_feature:

@@ -30,8 +30,6 @@
 
 #define ncvm_cpuid_leaf_limit		0x40000001
 
-#define noir_cvm_mapping_limit		16
-
 #define noir_cvm_hvstatus_presence				0
 #define noir_cvm_hvstatus_capabilities			1
 #define noir_cvm_hvstatus_hypercall_instruction	2
@@ -93,6 +91,26 @@ typedef enum _noir_cvm_vcpu_option_type
 	noir_cvm_vcpu_priority,
 	noir_cvm_msr_interception
 }noir_cvm_vcpu_option_type,*noir_cvm_vcpu_option_type_p;
+
+typedef struct _noir_cvm_cpuid_quickpath_info
+{
+	u32 leaf;
+	u32 subleaf;
+	union
+	{
+		struct
+		{
+			u64 active:1;
+			u64 has_subleaf:1;
+			u64 reserved:62;
+		};
+		u64 value;
+	}options;
+	u32 eax;
+	u32 ebx;
+	u32 ecx;
+	u32 edx;
+}noir_cvm_cpuid_quickpath_info,*noir_cvm_cpuid_quickpath_info_p;
 
 typedef union _noir_cvm_invalid_state_context
 {
@@ -363,8 +381,7 @@ typedef union _noir_cvm_vcpu_state_cache
 		u32 lb_valid:1;		// Includes debugctl,br_from/to,ex_from/to.
 		u32 ap_valid:1;		// Includes apic-base.
 		u32 ss_valid:1;		// Includes ssp,pln_ssp,u/s_cet,isst
-		u32 reserved:15;
-		u32 as_valid:1;		// Includes ASID/VPID.
+		u32 reserved:16;
 		u32 tl_valid:1;		// Includes TLB of EPT/NPT.
 		// This field indicates whether the state in VMCS/VMCB is
 		// updated to the state save area in the vCPU structure.
@@ -442,6 +459,11 @@ typedef struct _noir_cvm_virtual_cpu
 	}statistics_internal;
 	u32 exception_bitmap;
 	u32 scheduling_priority;
+	struct
+	{
+		noir_cvm_cpuid_quickpath_info_p info;
+		u32 count;
+	}cpuid_quickpath;
 }noir_cvm_virtual_cpu,*noir_cvm_virtual_cpu_p;
 
 typedef union _noir_cvm_mapping_attributes
@@ -474,7 +496,10 @@ typedef union _noir_cvm_vm_properties
 		u32 sev_guest:1;
 		u32 use_seves:1;
 		u32 use_sevsnp:1;
-		u32 reserved:29;
+		u32 apic_enable:1;
+		u32 x2apic_enable:1;
+		u32 mtrr_enable:1;
+		u32 reserved:26;
 	};
 	u32 value;
 }noir_cvm_vm_properties,*noir_cvm_vm_properties_p;
@@ -489,18 +514,16 @@ typedef struct _noir_cvm_virtual_machine
 
 #if defined(_central_hvm)
 // CVM Functions from SVM-Core
-noir_status nvc_svmc_create_vm(noir_cvm_virtual_machine_p* virtual_machine,u32 asid_total);
+noir_status nvc_svmc_create_vm(noir_cvm_virtual_machine_p* virtual_machine);
 void nvc_svmc_release_vm(noir_cvm_virtual_machine_p vm);
 noir_status nvc_svmc_create_vcpu(noir_cvm_virtual_cpu_p* virtual_cpu,noir_cvm_virtual_machine_p virtual_machine,u32 vcpu_id);
 void nvc_svmc_release_vcpu(noir_cvm_virtual_cpu_p vcpu);
 noir_status nvc_svmc_run_vcpu(noir_cvm_virtual_cpu_p vcpu);
 noir_status nvc_svmc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu);
-noir_status nvc_svmc_select_mapping_for_vcpu(noir_cvm_virtual_cpu_p vcpu,u32 mapping_id);
-noir_status nvc_svmc_retrieve_mapping_id_for_vcpu(noir_cvm_virtual_cpu_p vcpu,u32p mapping_id);
 noir_cvm_virtual_cpu_p nvc_svmc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id);
-noir_status nvc_svmc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,noir_cvm_address_mapping_p mapping_info);
-noir_status nvc_svmc_query_gpa_accessing_bitmap(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,u64 gpa_start,u32 page_count,void* bitmap,u32 bitmap_size);
-noir_status nvc_svmc_clear_gpa_accessing_bits(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,u64 gpa_start,u32 page_count);
+noir_status nvc_svmc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info);
+noir_status nvc_svmc_query_gpa_accessing_bitmap(noir_cvm_virtual_machine_p virtual_machine,u64 gpa_start,u32 page_count,void* bitmap,u32 bitmap_size);
+noir_status nvc_svmc_clear_gpa_accessing_bits(noir_cvm_virtual_machine_p virtual_machine,u64 gpa_start,u32 page_count);
 u32 nvc_svmc_get_vm_asid(noir_cvm_virtual_machine_p vm);
 // CVM Functions from VT-Core
 noir_status nvc_vtc_create_vm(noir_cvm_virtual_machine_p *virtual_machine);

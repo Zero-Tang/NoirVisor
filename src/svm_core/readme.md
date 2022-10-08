@@ -324,7 +324,7 @@ The only condition to switch the processor context from the host to the guest is
 Prior to running a vCPU, NoirVisor should save the processor states. The states subject to be manually saved by NoirVisor includes:
 - General-Purpose Registers. (Excludes `rax`,`rsp`,`rip`,`rflags` because they are saved in VMCB)
 - Debug Registers. (Excludes `dr6` and `dr7` because they are saved in VMCB)
-- Extended States. (We might use `xsave` instruction to save extended state)
+- Extended States. (We might use `xsaves` instruction to save extended state)
 
 To run a vCPU, NoirVisor should load the processor states for the Guest. In addition to the registers mentioned above, NoirVisor should load the following registers to VMCB:
 - Control Registers. (Includes `cr0`,`cr2`,`cr3`,`cr4`,`cr8`)
@@ -476,13 +476,9 @@ Nested Page Fault, usually abbreviated as `#NPF`, indicates that a wrong physica
 ## Accessing Guest Physical Pages
 NoirVisor does not keep GPA-to-HVA translation on track. However, NoirVisor, if installed as a Type-II hypervisor, loads a special page table that maps both an identity map of physical memory and regular system memory. Therefore, when NoirVisor has to operate the guest pages, the only required actions are translating the GVA to HPA. Not to mention if NoirVisor is installed as a Type-I hypervisor, only HPA can be accessed.
 
-## Memory-Mapping Swapping Facility
-In order to accelerate special memory virtualizations in CVM, NoirVisor provides a facility to swap memory mapping. User Hypervisor may specify at most 512 sets of memory mapping per VM. <br>
-User Hypervisor may use this facility to hook into the guest, to accelerate entrances and exits of SMM, and even to specify different mappings per vCPU, etc.
-
 ## SMM Virtualization
 SMM, abbreviation that stands for System Management Mode, is a standard x86 component to handle critical system-control activities (e.g.: Power Management, Interactions with NVRAM on motherboard, etc.). <br>
-Current implementation of NoirVisor does not emulate System Management Mode. It is User Hypervisor's responsibility to emulate SMM for the Guest. Support to NoirVisor's virtualization will be implemented in future.
+Current implementation of NoirVisor does not emulate System Management Mode. Support to NoirVisor's virtualization will be implemented in future.
 
 ### SMRAM Virtualization
 SMRAM is a special memory area consists of 64KiB of memory. It is an independent RAM storage and is not located on the main system memory. For example, if the `SMBASE` is pointed to 0x00030000, memory accesses to `0x00030000-0x0003FFFF` are different from inside and outside of SMM. By virtue of this, User Hypervisor is responsible to set up a different mapping when the vCPU is entering SMM. <br>

@@ -587,38 +587,6 @@ noir_status nvc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu)
 	return st;
 }
 
-noir_status nvc_select_mapping_for_vcpu(noir_cvm_virtual_cpu_p vcpu,u32 mapping_id)
-{
-	noir_status st=noir_hypervision_absent;
-	if(hvm_p)
-	{
-		st=noir_success;
-		if(hvm_p->selected_core==use_vt_core)
-			st=noir_not_implemented;
-		else if(hvm_p->selected_core==use_svm_core)
-			st=nvc_svmc_select_mapping_for_vcpu(vcpu,mapping_id);
-		else
-			st=noir_unknown_processor;
-	}
-	return st;
-}
-
-noir_status nvc_retrieve_mapping_id_for_vcpu(noir_cvm_virtual_cpu_p vcpu,u32p mapping_id)
-{
-	noir_status st=noir_hypervision_absent;
-	if(hvm_p)
-	{
-		st=noir_success;
-		if(hvm_p->selected_core==use_vt_core)
-			st=noir_not_implemented;
-		else if(hvm_p->selected_core==use_svm_core)
-			st=nvc_svmc_retrieve_mapping_id_for_vcpu(vcpu,mapping_id);
-		else
-			st=noir_unknown_processor;
-	}
-	return st;
-}
-
 noir_cvm_virtual_cpu_p nvc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id)
 {
 	noir_cvm_virtual_cpu_p vcpu=null;
@@ -666,16 +634,17 @@ noir_status nvc_create_vcpu(noir_cvm_virtual_machine_p vm,noir_cvm_virtual_cpu_p
 	return st;
 }
 
-noir_status nvc_set_mapping_ex(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,noir_cvm_address_mapping_p mapping_info)
+noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info)
 {
 	noir_status st=noir_hypervision_absent;
 	if(hvm_p)
 	{
-		noir_acquire_reslock_exclusive(virtual_machine->vcpu_list_lock);
+		// Preventing any vCPUs to be launched is good enough. Exclusive acquirement is unnecessary.
+		noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
 		if(hvm_p->selected_core==use_vt_core)
 			st=nvc_vtc_set_mapping(virtual_machine,mapping_info);
 		else if(hvm_p->selected_core==use_svm_core)
-			st=nvc_svmc_set_mapping(virtual_machine,mapping_id,mapping_info);
+			st=nvc_svmc_set_mapping(virtual_machine,mapping_info);
 		else
 			st=noir_unknown_processor;
 		noir_release_reslock(virtual_machine->vcpu_list_lock);
@@ -683,60 +652,40 @@ noir_status nvc_set_mapping_ex(noir_cvm_virtual_machine_p virtual_machine,u32 ma
 	return st;
 }
 
-noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info)
-{
-	return nvc_set_mapping_ex(virtual_machine,0,mapping_info);
-}
-
-noir_status nvc_query_gpa_accessing_bitmap_ex(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,u64 gpa_start,u32 page_count,void* bitmap,u32 bitmap_size)
+noir_status nvc_query_gpa_accessing_bitmap(noir_cvm_virtual_machine_p virtual_machine,u64 gpa_start,u32 page_count,void* bitmap,u32 bitmap_size)
 {
 	noir_status st=noir_hypervision_absent;
 	if(hvm_p)
 	{
 		st=noir_invalid_parameter;
-		if(mapping_id<noir_cvm_mapping_limit)
-		{
-			noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
-			if(hvm_p->selected_core==use_vt_core)
-				st=noir_not_implemented;
-			else if(hvm_p->selected_core==use_svm_core)
-				st=nvc_svmc_query_gpa_accessing_bitmap(virtual_machine,mapping_id,gpa_start,page_count,bitmap,bitmap_size);
-			else
-				st=noir_unknown_processor;
-			noir_release_reslock(virtual_machine->vcpu_list_lock);
-		}
-	}
-	return st;
-}
-
-noir_status nvc_query_gpa_accessing_bitmap(noir_cvm_virtual_machine_p virtual_machine,u64 gpa_start,u32 page_count,void* bitmap,u32 bitmap_size)
-{
-	return nvc_query_gpa_accessing_bitmap_ex(virtual_machine,0,gpa_start,page_count,bitmap,bitmap_size);
-}
-
-noir_status nvc_clear_gpa_accessing_bits_ex(noir_cvm_virtual_machine_p virtual_machine,u32 mapping_id,u64 gpa_start,u32 page_count)
-{
-	noir_status st=noir_hypervision_absent;
-	if(hvm_p)
-	{
-		if(mapping_id<noir_cvm_mapping_limit)
-		{
-			noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
-			if(hvm_p->selected_core==use_vt_core)
-				st=noir_not_implemented;
-			else if(hvm_p->selected_core==use_svm_core)
-				st=nvc_svmc_clear_gpa_accessing_bits(virtual_machine,mapping_id,gpa_start,page_count);
-			else
-				st=noir_unknown_processor;
-			noir_release_reslock(virtual_machine->vcpu_list_lock);
-		}
+		noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			st=nvc_svmc_query_gpa_accessing_bitmap(virtual_machine,gpa_start,page_count,bitmap,bitmap_size);
+		else
+			st=noir_unknown_processor;
+		noir_release_reslock(virtual_machine->vcpu_list_lock);
 	}
 	return st;
 }
 
 noir_status nvc_clear_gpa_accessing_bits(noir_cvm_virtual_machine_p virtual_machine,u64 gpa_start,u32 page_count)
 {
-	return nvc_clear_gpa_accessing_bits_ex(virtual_machine,0,gpa_start,page_count);
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		// Preventing any vCPUs to be launched is good enough. Exclusive acquirement is unnecessary.
+		noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
+		if(hvm_p->selected_core==use_vt_core)
+			st=noir_not_implemented;
+		else if(hvm_p->selected_core==use_svm_core)
+			st=nvc_svmc_clear_gpa_accessing_bits(virtual_machine,gpa_start,page_count);
+		else
+			st=noir_unknown_processor;
+		noir_release_reslock(virtual_machine->vcpu_list_lock);
+}
+	return st;
 }
 
 noir_status nvc_release_vm(noir_cvm_virtual_machine_p vm)
@@ -762,14 +711,14 @@ noir_status nvc_release_vm(noir_cvm_virtual_machine_p vm)
 	return st;
 }
 
-noir_status nvc_create_vm_ex(noir_cvm_virtual_machine_p* vm,u32 process_id,noir_cvm_vm_properties properties,u32 asid_total)
+noir_status nvc_create_vm_ex(noir_cvm_virtual_machine_p* vm,u32 process_id,noir_cvm_vm_properties properties)
 {
 	noir_status st=noir_hypervision_absent;
 	if(hvm_p)
 	{
 		if(hvm_p->selected_core==use_vt_core)
 		{
-			if(properties.value || asid_total!=1)
+			if(properties.value)
 				st=noir_not_implemented;
 			else
 				st=nvc_vtc_create_vm(vm);
@@ -779,7 +728,7 @@ noir_status nvc_create_vm_ex(noir_cvm_virtual_machine_p* vm,u32 process_id,noir_
 			if(properties.value)
 				st=noir_not_implemented;
 			else
-				st=nvc_svmc_create_vm(vm,asid_total);
+				st=nvc_svmc_create_vm(vm);
 		}
 		else
 			st=noir_unknown_processor;
@@ -806,7 +755,7 @@ noir_status nvc_create_vm_ex(noir_cvm_virtual_machine_p* vm,u32 process_id,noir_
 noir_status nvc_create_vm(noir_cvm_virtual_machine_p* vm,u32 process_id)
 {
 	noir_cvm_vm_properties vmprop={0};
-	return nvc_create_vm_ex(vm,process_id,vmprop,1);
+	return nvc_create_vm_ex(vm,process_id,vmprop);
 }
 
 u32 nvc_get_vm_pid(noir_cvm_virtual_machine_p vm)
