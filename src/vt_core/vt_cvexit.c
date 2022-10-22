@@ -24,7 +24,7 @@
 #include "vt_exit.h"
 #include "vt_ept.h"
 
-void static nvc_vt_save_generic_cvexit_context(noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode nvc_vt_save_generic_cvexit_context(noir_vt_custom_vcpu_p cvcpu)
 {
 	// Generic vCPU Exit Context
 	u32 len;
@@ -50,7 +50,7 @@ void static nvc_vt_save_generic_cvexit_context(noir_vt_custom_vcpu_p cvcpu)
 	cvcpu->header.exit_context.rip=cvcpu->header.rip;
 }
 
-void fastcall nvc_vt_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void noir_hvcode fastcall nvc_vt_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	nv_dprintf("Unexpected VM-Exit is intercepted in VM-Exit for CVM!\n");
 	nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
@@ -58,7 +58,7 @@ void fastcall nvc_vt_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_v
 }
 
 // Expected Exit Reason: 0
-void static fastcall nvc_vt_exception_nmi_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_exception_nmi_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	ia32_vmexit_interruption_information_field exit_int_info;
 	noir_vt_vmread(vmexit_interruption_information,&exit_int_info);
@@ -104,14 +104,14 @@ void static fastcall nvc_vt_exception_nmi_cvexit_handler(noir_gpr_state_p gpr_st
 }
 
 // Expected Exit Reason: 1
-void static fastcall nvc_vt_extint_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_extint_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Setting the RFlags.IF should have the external interrupt transferred to the host.
 	nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_scheduler_exit;
 }
 
-void static fastcall nvc_vt_trifault_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_trifault_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Triple-Fault is a shutdown condition. Deliver to the host.
 	nvc_vt_save_generic_cvexit_context(cvcpu);
@@ -119,17 +119,17 @@ void static fastcall nvc_vt_trifault_cvexit_handler(noir_gpr_state_p gpr_state,n
 	cvcpu->header.exit_context.intercept_code=cv_shutdown_condition;
 }
 
-void static fastcall nvc_vt_init_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_init_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	;
 }
 
-void static fastcall nvc_vt_sipi_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_sipi_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	;
 }
 
-void static fastcall nvc_vt_interrupt_window_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_interrupt_window_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// There are two conditions of Interrupt Window:
 	// 1. There is a pending external interrupt. Do not return to host.
@@ -156,7 +156,7 @@ void static fastcall nvc_vt_interrupt_window_cvexit_handler(noir_gpr_state_p gpr
 	}
 }
 
-void static fastcall nvc_vt_nmi_window_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_nmi_window_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// There are two conditions of Interrupt Window:
 	// 1. There is a pending NMI. Do not return to host.
@@ -184,7 +184,7 @@ void static fastcall nvc_vt_nmi_window_cvexit_handler(noir_gpr_state_p gpr_state
 	}
 }
 
-void static fastcall nvc_vt_task_switch_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_task_switch_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// FIXME: Implement Task-Switch Emulation.
 	// Current implementation will force a VM-Exit.
@@ -197,7 +197,7 @@ void static fastcall nvc_vt_task_switch_cvexit_handler(noir_gpr_state_p gpr_stat
 	cvcpu->header.exit_context.task_switch.initiator_id=(u16)info.ts_source;
 }
 
-void static fastcall nvc_vt_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	if(cvcpu->header.vcpu_options.intercept_cpuid)
 	{
@@ -228,7 +228,7 @@ void static fastcall nvc_vt_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noir
 				}
 				case ncvm_cpuid_vendor_neutral_interface_id:
 				{
-					noir_movsb(&info.eax,"Nv#1",4);		// Interface Signature is "Nv#1". Indicate Non-Compliance to MSHV-TLFS.
+					noir_movsb(&info.eax,"Hv#0",4);		// Interface Signature is "Hv#0". Indicate Non-Compliance to MSHV-TLFS.
 					info.eax=info.ebx=info.ecx=0;		// Clear the Reserved CPUID fields.
 					break;
 				}
@@ -258,7 +258,7 @@ void static fastcall nvc_vt_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noir
 	}
 }
 
-void static fastcall nvc_vt_hlt_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_hlt_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// The hlt instruction halts the execution of the processor.
 	// Schedule the host to the processor.
@@ -267,7 +267,7 @@ void static fastcall nvc_vt_hlt_cvexit_handler(noir_gpr_state_p gpr_state,noir_v
 	cvcpu->header.exit_context.intercept_code=cv_hlt_instruction;
 }
 
-void static fastcall nvc_vt_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// The invd instruction would corrupt the cache globally and it thereby must be intercepted.
 	// Execute wbinvd to protect global cache.
@@ -275,7 +275,7 @@ void static fastcall nvc_vt_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 	noir_vt_advance_rip();
 }
 
-void static fastcall nvc_vt_vmcall_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_vmcall_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// The Guest invoked a hypercall. Deliver to the subverted host.
 	nvc_vt_save_generic_cvexit_context(cvcpu);
@@ -283,7 +283,7 @@ void static fastcall nvc_vt_vmcall_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	cvcpu->header.exit_context.intercept_code=cv_hypercall;
 }
 
-void static fastcall nvc_vt_vmclear_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_vmclear_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Nested Virtualization in CVM is currently unsupported.
 	if(noir_bt(&cvcpu->header.exception_bitmap,ia32_invalid_opcode) && cvcpu->header.vcpu_options.intercept_exceptions)
@@ -299,7 +299,7 @@ void static fastcall nvc_vt_vmclear_cvexit_handler(noir_gpr_state_p gpr_state,no
 	}
 }
 
-void static fastcall nvc_vt_vmlaunch_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_vmlaunch_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Nested Virtualization in CVM is currently unsupported.
 	if(noir_bt(&cvcpu->header.exception_bitmap,ia32_invalid_opcode) && cvcpu->header.vcpu_options.intercept_exceptions)
@@ -315,7 +315,7 @@ void static fastcall nvc_vt_vmlaunch_cvexit_handler(noir_gpr_state_p gpr_state,n
 	}
 }
 
-void static fastcall nvc_vt_vmptrld_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_vmptrld_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Nested Virtualization in CVM is currently unsupported.
 	if(noir_bt(&cvcpu->header.exception_bitmap,ia32_invalid_opcode) && cvcpu->header.vcpu_options.intercept_exceptions)
@@ -331,7 +331,7 @@ void static fastcall nvc_vt_vmptrld_cvexit_handler(noir_gpr_state_p gpr_state,no
 	}
 }
 
-void static fastcall nvc_vt_vmptrst_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_vmptrst_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Nested Virtualization in CVM is currently unsupported.
 	if(noir_bt(&cvcpu->header.exception_bitmap,ia32_invalid_opcode) && cvcpu->header.vcpu_options.intercept_exceptions)
@@ -347,7 +347,7 @@ void static fastcall nvc_vt_vmptrst_cvexit_handler(noir_gpr_state_p gpr_state,no
 	}
 }
 
-void static fastcall nvc_vt_vmread_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_vmread_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Nested Virtualization in CVM is currently unsupported.
 	if(noir_bt(&cvcpu->header.exception_bitmap,ia32_invalid_opcode) && cvcpu->header.vcpu_options.intercept_exceptions)
@@ -363,7 +363,7 @@ void static fastcall nvc_vt_vmread_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	}
 }
 
-void static fastcall nvc_vt_vmresume_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_vmresume_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Nested Virtualization in CVM is currently unsupported.
 	if(noir_bt(&cvcpu->header.exception_bitmap,ia32_invalid_opcode) && cvcpu->header.vcpu_options.intercept_exceptions)
@@ -379,7 +379,7 @@ void static fastcall nvc_vt_vmresume_cvexit_handler(noir_gpr_state_p gpr_state,n
 	}
 }
 
-void static fastcall nvc_vt_vmwrite_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_vmwrite_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Nested Virtualization in CVM is currently unsupported.
 	if(noir_bt(&cvcpu->header.exception_bitmap,ia32_invalid_opcode) && cvcpu->header.vcpu_options.intercept_exceptions)
@@ -395,7 +395,7 @@ void static fastcall nvc_vt_vmwrite_cvexit_handler(noir_gpr_state_p gpr_state,no
 	}
 }
 
-void static fastcall nvc_vt_vmxoff_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_vmxoff_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Nested Virtualization in CVM is currently unsupported.
 	if(noir_bt(&cvcpu->header.exception_bitmap,ia32_invalid_opcode) && cvcpu->header.vcpu_options.intercept_exceptions)
@@ -411,7 +411,7 @@ void static fastcall nvc_vt_vmxoff_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	}
 }
 
-void static fastcall nvc_vt_vmxon_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_vmxon_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Nested Virtualization in CVM is currently unsupported.
 	if(noir_bt(&cvcpu->header.exception_bitmap,ia32_invalid_opcode) && cvcpu->header.vcpu_options.intercept_exceptions)
@@ -427,7 +427,7 @@ void static fastcall nvc_vt_vmxon_cvexit_handler(noir_gpr_state_p gpr_state,noir
 	}
 }
 
-void static fastcall nvc_vt_cr_access_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_cr_access_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	ulong_ptr* gpr_array=(ulong_ptr*)gpr_state;
 	ia32_cr_access_qualification info;
@@ -592,7 +592,7 @@ void static fastcall nvc_vt_cr_access_cvexit_handler(noir_gpr_state_p gpr_state,
 	}
 }
 
-void static fastcall nvc_vt_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	u16 size_array[8]={1,2,8,4,0,0,0,0};
 	ia32_io_access_qualification info;
@@ -623,7 +623,7 @@ void static fastcall nvc_vt_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt
 	cvcpu->header.exit_context.io.rdi=cvcpu->header.gpr.rdi;
 }
 
-void static fastcall nvc_vt_rdmsr_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_rdmsr_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	if(cvcpu->header.vcpu_options.intercept_msr)
 	{
@@ -652,7 +652,7 @@ void static fastcall nvc_vt_rdmsr_cvexit_handler(noir_gpr_state_p gpr_state,noir
 	}
 }
 
-void static fastcall nvc_vt_wrmsr_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_wrmsr_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	if(cvcpu->header.vcpu_options.intercept_msr)
 	{
@@ -681,7 +681,7 @@ void static fastcall nvc_vt_wrmsr_cvexit_handler(noir_gpr_state_p gpr_state,noir
 	}
 }
 
-void static fastcall nvc_vt_invalid_guest_state_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_invalid_guest_state_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	ulong_ptr cr0,cr3,cr4,dr7;
 	u64 efer,pat,debug_ctrl,se_cs,se_esp,se_eip;
@@ -761,14 +761,14 @@ void static fastcall nvc_vt_invalid_guest_state_cvexit_handler(noir_gpr_state_p 
 	cvcpu->header.exit_context.intercept_code=cv_invalid_state;
 }
 
-void static fastcall nvc_vt_invalid_msr_loading_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_invalid_msr_loading_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	nv_dprintf("The MSRs to be loaded for CVM is invalid! vCPU=0x%p\n",cvcpu);
 	nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_invalid_state;
 }
 
-void static fastcall nvc_vt_ept_violation_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_ept_violation_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	ia32_ept_violation_qualification info;
 	// EPT Violation occured, tell the subverted host there is a memory access fault.
@@ -783,13 +783,13 @@ void static fastcall nvc_vt_ept_violation_cvexit_handler(noir_gpr_state_p gpr_st
 	cvcpu->header.exit_context.memory_access.access.fetched_bytes=0;
 }
 
-void static fastcall nvc_vt_ept_misconfig_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_ept_misconfig_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_scheduler_bug;
 }
 
-void static fastcall nvc_vt_invept_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_invept_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Nested Virtualization in CVM is currently unsupported.
 	if(noir_bt(&cvcpu->header.exception_bitmap,ia32_invalid_opcode) && cvcpu->header.vcpu_options.intercept_exceptions)
@@ -805,7 +805,7 @@ void static fastcall nvc_vt_invept_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	}
 }
 
-void static fastcall nvc_vt_invvpid_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_invvpid_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Nested Virtualization in CVM is currently unsupported.
 	if(noir_bt(&cvcpu->header.exception_bitmap,ia32_invalid_opcode) && cvcpu->header.vcpu_options.intercept_exceptions)
@@ -821,7 +821,7 @@ void static fastcall nvc_vt_invvpid_cvexit_handler(noir_gpr_state_p gpr_state,no
 	}
 }
 
-void static fastcall nvc_vt_xsetbv_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_vt_xsetbv_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Emulate the xsetbv instruction.
 	u64 value=0;

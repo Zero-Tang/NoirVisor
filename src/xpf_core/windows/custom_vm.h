@@ -256,10 +256,19 @@ typedef PULONG64 PCVM_HANDLE;
 typedef struct _NOIR_CVM_HANDLE_TABLE
 {
 	ULONG_PTR TableCode;
-	ERESOURCE HandleTableLock;
+	EX_PUSH_LOCK HandleTableLock;
 	CVM_HANDLE MaximumHandleValue;
 	SIZE_T HandleCount;
 }NOIR_CVM_HANDLE_TABLE,*PNOIR_CVM_HANDLE_TABLE;
+
+typedef struct _NOIR_LOCKED_GUEST_PAGES
+{
+	PMDL Mdl;
+	PEPROCESS Process;
+	ULONG64 PhysicalAddress;
+	ULONG_PTR VirtualAddress;
+	SIZE_T NumberOfPages;
+}NOIR_LOCKED_GUEST_PAGES,*PNOIR_LOCKED_GUEST_PAGES;
 
 PVOID NoirAllocateNonPagedMemory(IN SIZE_T Length);
 PVOID NoirAllocatePagedMemory(IN SIZE_T Length);
@@ -293,5 +302,10 @@ PVOID nvc_reference_vcpu(IN PVOID VirtualMachine,IN ULONG32 VpIndex);
 HANDLE nvc_get_vm_pid(IN PVOID VirtualMachine);
 
 NOIR_CVM_HANDLE_TABLE NoirCvmHandleTable={0};
+
+NTKERNELAPI void __fastcall ExfAcquirePushLockExclusive(IN OUT PEX_PUSH_LOCK PushLock);
+NTKERNELAPI void __fastcall ExfAcquirePushLockShared(IN OUT PEX_PUSH_LOCK PushLock);
+NTKERNELAPI void __fastcall ExfReleasePushLockExclusive(IN OUT PEX_PUSH_LOCK PushLock);
+NTKERNELAPI void __fastcall ExfReleasePushLockShared(IN OUT PEX_PUSH_LOCK PushLock);
 
 ZWQUERYVIRTUALMEMORY ZwQueryVirtualMemory=NULL;

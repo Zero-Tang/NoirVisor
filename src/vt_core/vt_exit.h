@@ -366,7 +366,7 @@ typedef void (fastcall *noir_vt_cpuid_exit_handler)
 void fastcall nvc_vt_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
 
 #if defined(_vt_exit)
-const char* vmx_exit_msg[vmx_maximum_exit_reason]=
+noir_hvdata const char* vmx_exit_msg[vmx_maximum_exit_reason]=
 {
 	"Exception or NMI is intercepted!",						// Reason=0
 	"External Interrupt is intercepted!",					// Reason=1
@@ -467,7 +467,7 @@ void static fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noi
 void static fastcall nvc_vt_ept_misconfig_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 void static fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu);
 
-noir_vt_exit_handler_routine vt_exit_handlers[vmx_maximum_exit_reason]=
+noir_hvdata noir_vt_exit_handler_routine vt_exit_handlers[vmx_maximum_exit_reason]=
 {
 	nvc_vt_exception_nmi_handler,		// Exception or NMI
 	nvc_vt_default_handler,				// External Interrupt
@@ -541,7 +541,7 @@ noir_vt_exit_handler_routine vt_exit_handlers[vmx_maximum_exit_reason]=
 	nvc_vt_default_handler				// LOADIWKEY Instruction
 };
 
-noir_vt_cpuid_exit_handler nvcp_vt_cpuid_handler=null;
+noir_hvdata noir_vt_cpuid_exit_handler nvcp_vt_cpuid_handler=null;
 extern noir_vt_cvexit_handler_routine vt_cvexit_handlers[];
 #elif defined(_vt_cvexit)
 void static fastcall nvc_vt_exception_nmi_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
@@ -577,7 +577,7 @@ void static fastcall nvc_vt_invept_cvexit_handler(noir_gpr_state_p gpr_state,noi
 void static fastcall nvc_vt_invvpid_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
 void static fastcall nvc_vt_xsetbv_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu);
 
-noir_vt_cvexit_handler_routine vt_cvexit_handlers[vmx_maximum_exit_reason]=
+noir_hvdata noir_vt_cvexit_handler_routine vt_cvexit_handlers[vmx_maximum_exit_reason]=
 {
 	nvc_vt_exception_nmi_cvexit_handler,	// Exception or NMI
 	nvc_vt_extint_cvexit_handler,			// External Interrupt
@@ -652,7 +652,7 @@ noir_vt_cvexit_handler_routine vt_cvexit_handlers[vmx_maximum_exit_reason]=
 };
 #endif
 
-void inline noir_vt_set_single_stepping(ulong_ptr gflags)
+void inline noir_hvcode noir_vt_set_single_stepping(ulong_ptr gflags)
 {
 	// Don't inject an #DB exception since Intel has its own
 	// specific feature regarding pending debug exceptions.
@@ -671,7 +671,7 @@ void inline noir_vt_set_single_stepping(ulong_ptr gflags)
 }
 
 
-void inline noir_vt_advance_rip()
+void inline noir_hvcode noir_vt_advance_rip()
 {
 	ulong_ptr gip,gflags;
 	vmx_segment_access_right cs_ar;
@@ -692,7 +692,7 @@ void inline noir_vt_advance_rip()
 	noir_vt_vmwrite(guest_rip,gip);
 }
 
-void inline noir_vt_inject_event(u8 vector,u8 type,bool deliver,u32 length,u32 err_code)
+void inline noir_hvcode noir_vt_inject_event(u8 vector,u8 type,bool deliver,u32 length,u32 err_code)
 {
 	ia32_vmentry_interruption_information_field event_field;
 	event_field.value=0;

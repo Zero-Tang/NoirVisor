@@ -4,7 +4,8 @@ This document should provide you a general idea about hypervisor development. Yo
 
 ## General Idea of Hypervisor
 Processor's virtualization extension provides an efficient way to load and save the guest state into the processor and allows a hypervisor to set up certain interceptions in order to efficiently and correctly instrument the behavior of the virtual machine. \
-To be more specific, hypervisor may issue a VM-Entry to efficiently load the state of guest to start Guest's operation. When the interception condition is met, processor would issue a VM-Exit to store the state of guest and reload the state of host.
+To be more specific, hypervisor may issue a VM-Entry to efficiently load the state of guest to start Guest's operation. When the interception condition is met, processor would issue a VM-Exit to store the state of guest and reload the state of host. \
+Such VM-Entry is also called subversion.
 
 ## Global Hypervision
 Global Hypervision means to leverage the hardware-accelerated virtualization technology to monitor all activities on a computer. \

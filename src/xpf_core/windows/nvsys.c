@@ -701,6 +701,30 @@ void noir_release_reslock(IN PERESOURCE Resource)
 	KeLeaveCriticalRegion();
 }
 
+void noir_acquire_pushlock_exclusive(IN PEX_PUSH_LOCK PushLock)
+{
+	KeEnterCriticalRegion();
+	ExfAcquirePushLockExclusive(PushLock);
+}
+
+void noir_acquire_pushlock_shared(IN PEX_PUSH_LOCK PushLock)
+{
+	KeEnterCriticalRegion();
+	ExfAcquirePushLockShared(PushLock);
+}
+
+void noir_release_pushlock_exclusive(IN PEX_PUSH_LOCK PushLock)
+{
+	ExfReleasePushLockExclusive(PushLock);
+	KeLeaveCriticalRegion();
+}
+
+void noir_release_pushlock_shared(IN PEX_PUSH_LOCK PushLock)
+{
+	ExfReleasePushLockShared(PushLock);
+	KeLeaveCriticalRegion();
+}
+
 // Standard I/O
 void noir_qsort(IN PVOID base,IN ULONG num,IN ULONG width,IN noir_sorting_comparator comparator)
 {

@@ -133,7 +133,9 @@ void noir_get_vendor_string(char* vendor_string);
 void noir_get_processor_name(char* processor_name);
 ULONG noir_get_virtualization_supportability();
 BOOLEAN noir_is_virtualization_enabled();
-BOOLEAN noir_initialize_ci(PVOID section,ULONG size,BOOLEAN soft_ci,BOOLEAN hard_ci);
+BOOLEAN noir_initialize_ci(BOOLEAN soft_ci,BOOLEAN hard_ci);
+BOOLEAN noir_add_section_to_ci(PVOID base,ULONG32 size);
+BOOLEAN noir_activate_ci();
 void noir_finalize_ci();
 
 GUID EfiNoirVisorVendorGuid={0x2B1F2A1E,0xDBDF,0x44AC,0xDA,0xBC,0xC7,0xA1,0x30,0xE2,0xE7,0x1E};

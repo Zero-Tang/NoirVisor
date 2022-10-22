@@ -29,11 +29,22 @@ typedef struct _noir_ci_page
 
 typedef struct _noir_ci_context
 {
+#if !defined(_hv_type1)
 	noir_thread ci_thread;
-	u32v signal;
+#endif
+	u32 limit;
 	u32 pages;
 	ulong_ptr base;
-	u32 selected;
+	union
+	{
+		struct
+		{
+			u32 soft_ci:1;
+			u32 hard_ci:1;
+			u32 reserved:30;
+		};
+		u32 value;
+	}options;
 	noir_ci_page page_ci[1];
 }noir_ci_context,*noir_ci_context_p;
 
@@ -42,10 +53,12 @@ u32 stdcall noir_crc32_page_sse(void* page);
 bool fastcall noir_check_sse42();
 
 #if defined(_code_integrity)
-noir_ci_context_p noir_ci=null;
-noir_crc32_page_func noir_crc32_page=null;
+u32 noir_ci_selected_page=0;
+u32v noir_ci_stop_signal=0;
+noir_hvdata noir_ci_context_p noir_ci=null;
+noir_hvdata noir_crc32_page_func noir_crc32_page=null;
 
-const u32 crc32c_table[256]=
+noir_hvdata const u32 crc32c_table[256]=
 {
     0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4,
     0xc79a971f, 0x35f1141c, 0x26a1e7e8, 0xd4ca64eb,

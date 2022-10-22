@@ -395,16 +395,38 @@ BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase)
 			PIMAGE_SECTION_HEADER SectionHeaders=(PIMAGE_SECTION_HEADER)((ULONG_PTR)NtHead+sizeof(IMAGE_NT_HEADERS));
 			USHORT NumberOfSections=NtHead->FileHeader.NumberOfSections;
 			USHORT i=0;
+			if(noir_initialize_ci(TRUE,TRUE)==FALSE)
+			{
+				NoirDebugPrint("Failed to initialize Code-Integrity!\n");
+				return FALSE;
+			}
 			for(;i<NumberOfSections;i++)
 			{
-				if(_strnicmp(SectionHeaders[i].Name,".text",8)==0)
+				if(_strnicmp(SectionHeaders[i].Name,"hvtext",8)==0)
 				{
 					PVOID CodeBase=(PVOID)((ULONG_PTR)ImageBase+SectionHeaders[i].VirtualAddress);
 					ULONG CodeSize=SectionHeaders[i].SizeOfRawData;
 					NoirDebugPrint("Code Base: 0x%p\t Size: 0x%X\n",CodeBase,CodeSize);
-					return noir_initialize_ci(CodeBase,CodeSize,TRUE,TRUE);
+					if(noir_add_section_to_ci(CodeBase,CodeSize)==FALSE)
+					{
+						NoirDebugPrint("Failed to add code section to CI!\n");
+						noir_finalize_ci();
+					}
+					continue;
+				}
+				if(_strnicmp(SectionHeaders[i].Name,"hvdata",8)==0)
+				{
+					PVOID DataBase=(PVOID)((ULONG_PTR)ImageBase+SectionHeaders[i].VirtualAddress);
+					ULONG DataSize=SectionHeaders[i].SizeOfRawData;
+					NoirDebugPrint("Data Base: 0x%p\t Size: 0x%X\n",DataBase,DataSize);
+					if(noir_add_section_to_ci(DataBase,DataSize)==FALSE)
+					{
+						NoirDebugPrint("Failed to add data section to CI!\n");
+						noir_finalize_ci();
+					}
 				}
 			}
+			return noir_activate_ci();
 		}
 	}
 	return FALSE;

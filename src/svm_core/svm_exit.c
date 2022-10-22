@@ -41,7 +41,7 @@
 -----------------------------------------------------------------------------*/
 
 // Unexpected VM-Exit occured. You may want to debug your code if this function is invoked.
-void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	const void* vmcb=vcpu->vmcb.virt;
 	i32 code=noir_svm_vmread32(vmcb,exit_code);
@@ -62,7 +62,7 @@ void static fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_state,noir_svm
 }
 
 // Expected Intercept Code: -1
-void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	if(vcpu->fallback.valid)
@@ -104,7 +104,7 @@ void static fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gpr_state,noir
 }
 
 // Expected Intercept Code: 0x14
-void static fastcall nvc_svm_cr4_write_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_cr4_write_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	ulong_ptr *gpr_array=(ulong_ptr*)gpr_state;
@@ -151,7 +151,7 @@ u32 static fastcall nvc_svm_convert_apic_id(u32 apic_id)
 #endif
 
 // Expected Intercept Code: 0x41
-void static fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	if(!vcpu->nested_hvm.gif && vcpu->nested_hvm.svme)
@@ -224,7 +224,7 @@ void static fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noi
 }
 
 // Expected Intercept Code: 0x46
-void static fastcall nvc_svm_ud_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_ud_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 #if defined(_hv_type1)
 	// This exception handler is intended for kva-shadowing.
@@ -237,7 +237,7 @@ void static fastcall nvc_svm_ud_exception_handler(noir_gpr_state_p gpr_state,noi
 }
 
 // Expected Intercept Code: 0x4E
-void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 #if !defined(_hv_type1)
 	void* vmcb=vcpu->vmcb.virt;
@@ -265,7 +265,7 @@ void static fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noi
 }
 
 // Expected Intercept Code: 0x52
-void static fastcall nvc_svm_mc_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_mc_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	// If the GIF is reset then hold the #MC pending.
 	if(!vcpu->nested_hvm.gif)vcpu->nested_hvm.pending_mc=true;
@@ -360,7 +360,7 @@ void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid
 }
 
 // Expected Intercept Code: 0x5E
-void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	u32 error_code=noir_svm_vmread32(vmcb,exit_info1);
@@ -404,13 +404,13 @@ void static fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p gpr_state,noi
 }
 
 // Expected Intercept Code: 0x40-0x5F, excluding other already-defined exceptions.
-void static fastcall nvc_svm_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	;
 }
 
 // Expected Intercept Code: 0x61
-void static fastcall nvc_svm_nmi_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_nmi_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	// This handler is only to be called when we are emulating a cleared GIF!
 	// Take the NMI, but do not unblock NMI by not executing the iret instruction.
@@ -478,7 +478,7 @@ bool static fastcall nvc_svm_parse_npiep_operand(noir_gpr_state_p gpr_state,noir
 }
 
 // Expected Intercept Code: 0x66
-void static fastcall nvc_svm_sidt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_sidt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	bool superv_instruction=(noir_svm_vmread8(vmcb,guest_cpl)==0);
@@ -526,7 +526,7 @@ void static fastcall nvc_svm_sidt_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 }
 
 // Expected Intercept Code: 0x67
-void static fastcall nvc_svm_sgdt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_sgdt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	bool superv_instruction=(noir_svm_vmread8(vmcb,guest_cpl)==0);
@@ -574,7 +574,7 @@ void static fastcall nvc_svm_sgdt_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 }
 
 // Expected Intercept Code: 0x68
-void static fastcall nvc_svm_sldt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_sldt_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	bool superv_instruction=(noir_svm_vmread8(vmcb,guest_cpl)==0);
@@ -642,7 +642,7 @@ void static fastcall nvc_svm_sldt_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 }
 
 // Expected Intercept Code: 0x69
-void static fastcall nvc_svm_str_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_str_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	bool superv_instruction=(noir_svm_vmread8(vmcb,guest_cpl)==0);
@@ -710,7 +710,7 @@ void static fastcall nvc_svm_str_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 }
 
 // Special CPUID Handler for Nested Virtualization Feature Identification
-void static fastcall nvc_svm_cpuid_nested_virtualization_handler(noir_cpuid_general_info_p info)
+void static noir_hvcode fastcall nvc_svm_cpuid_nested_virtualization_handler(noir_cpuid_general_info_p info)
 {
 	if(!hvm_p->options.nested_virtualization)
 		noir_stosd((u32*)info,0,4);
@@ -733,7 +733,7 @@ void static fastcall nvc_svm_cpuid_nested_virtualization_handler(noir_cpuid_gene
 }
 
 // Hypervisor-Present CPUID Handler
-void static fastcall nvc_svm_cpuid_hvp_handler(u32 leaf,u32 subleaf,noir_cpuid_general_info_p info)
+void static noir_hvcode fastcall nvc_svm_cpuid_hvp_handler(u32 leaf,u32 subleaf,noir_cpuid_general_info_p info)
 {
 	// First, classify the leaf function.
 	u32 leaf_class=noir_cpuid_class(leaf);
@@ -775,7 +775,7 @@ void static fastcall nvc_svm_cpuid_hvp_handler(u32 leaf,u32 subleaf,noir_cpuid_g
 }
 
 // Hypervisor-Stealthy CPUID Handler
-void static fastcall nvc_svm_cpuid_hvs_handler(u32 leaf,u32 subleaf,noir_cpuid_general_info_p info)
+void static noir_hvcode fastcall nvc_svm_cpuid_hvs_handler(u32 leaf,u32 subleaf,noir_cpuid_general_info_p info)
 {
 	noir_cpuid(leaf,subleaf,&info->eax,&info->ebx,&info->ecx,&info->edx);
 	switch(leaf)
@@ -799,7 +799,7 @@ void static fastcall nvc_svm_cpuid_hvs_handler(u32 leaf,u32 subleaf,noir_cpuid_g
 }
 
 // Expected Intercept Code: 0x72
-void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	u32 ia=(u32)gpr_state->rax;
 	u32 ic=(u32)gpr_state->rcx;
@@ -814,7 +814,7 @@ void static fastcall nvc_svm_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_v
 }
 
 // Expected Intercept Code: 0x7A
-void static fastcall nvc_svm_invlpga_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_invlpga_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	if(vcpu->nested_hvm.svme)
@@ -859,7 +859,7 @@ ulong_ptr static fastcall nvc_svm_parse_io_string_pointer(noir_gpr_state_p gpr_s
 	return pointer;
 }
 
-void static fastcall nvc_svm_io_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_io_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	nvc_svm_io_exit_info info;
@@ -897,7 +897,7 @@ void static fastcall nvc_svm_io_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu
 }
 
 // This is a branch of MSR-Exit. DO NOT ADVANCE RIP HERE!
-void static fastcall nvc_svm_rdmsr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_rdmsr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	// The index of MSR is saved in ecx register (32-bit).
@@ -957,7 +957,7 @@ void static fastcall nvc_svm_rdmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 }
 
 // This is a branch of MSR-Exit. DO NOT ADVANCE RIP HERE!
-void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	// The index of MSR is saved in ecx register (32-bit).
@@ -1075,7 +1075,7 @@ void static fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_state,noir_svm_v
 }
 
 // Expected Intercept Code: 0x7C
-void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	// Determine the type of operation.
@@ -1090,7 +1090,7 @@ void static fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,noir_svm_vcp
 
 // Expected Intercept Code: 0x7F
 // If this VM-Exit occurs, it may indicate a triple fault.
-void static fastcall nvc_svm_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	noir_svm_stgi();	// Enable GIF for Debug-Printing
 	nv_dprintf("Shutdown (Triple-Fault) is Intercepted! System is unusable!\n");
@@ -1099,7 +1099,7 @@ void static fastcall nvc_svm_shutdown_handler(noir_gpr_state_p gpr_state,noir_sv
 
 // Expected Intercept Code: 0x80
 // This is the cornerstone of nesting virtualization.
-void static fastcall nvc_svm_vmrun_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_vmrun_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	// Loader stack is required for world switching.
 	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
@@ -1154,7 +1154,7 @@ invalid_nested_vmcb:
 }
 
 // Expected Intercept Code: 0x81
-void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	u32 vmmcall_func=(u32)gpr_state->rcx;
 	ulong_ptr context=gpr_state->rdx;
@@ -1206,7 +1206,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 			// If execution goes here, then the invoker is malicious.
 			// Just let the Guest know this is an invalid instruction.
 			else
-				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
+				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,false,0);
 			break;
 		}
 		case noir_svm_init_custom_vmcb:
@@ -1223,7 +1223,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				nvc_svm_initialize_cvm_vmcb(cvcpu);
 			}
 			else
-				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
+				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,false,0);
 			break;
 		}
 		case noir_svm_run_custom_vcpu:
@@ -1242,7 +1242,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				nvc_svm_switch_to_guest_vcpu(gpr_state,vcpu,cvcpu);
 			}
 			else
-				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
+				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,false,0);
 			break;
 		}
 		case noir_svm_dump_vcpu_vmcb:
@@ -1259,7 +1259,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 				nvc_svm_dump_guest_vcpu_state(cvcpu);
 			}
 			else
-				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
+				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,false,0);
 			break;
 		}
 		case noir_svm_set_vcpu_options:
@@ -1280,7 +1280,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 		default:
 		{
 			// This function leaf is unknown. Treat it as an invalid instruction.
-			noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
+			noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,false,0);
 			break;
 		}
 	}
@@ -1288,7 +1288,7 @@ void static fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm
 }
 
 // Expected Intercept Code: 0x82
-void static fastcall nvc_svm_vmload_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_vmload_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	if(vcpu->nested_hvm.svme)
@@ -1341,7 +1341,7 @@ void static fastcall nvc_svm_vmload_handler(noir_gpr_state_p gpr_state,noir_svm_
 }
 
 // Expected Intercept Code: 0x83
-void static fastcall nvc_svm_vmsave_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_vmsave_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	if(vcpu->nested_hvm.svme)
@@ -1394,7 +1394,7 @@ void static fastcall nvc_svm_vmsave_handler(noir_gpr_state_p gpr_state,noir_svm_
 }
 
 // Expected Intercept Code: 0x84
-void static fastcall nvc_svm_stgi_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_stgi_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	if(vcpu->nested_hvm.svme)
@@ -1413,7 +1413,7 @@ void static fastcall nvc_svm_stgi_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 }
 
 // Expected Intercept Code: 0x85
-void static fastcall nvc_svm_clgi_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_clgi_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	if(vcpu->nested_hvm.svme)
@@ -1432,7 +1432,7 @@ void static fastcall nvc_svm_clgi_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 }
 
 // Expected Intercept Code: 0x86
-void static fastcall nvc_svm_skinit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_skinit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	// No skinit support in NoirVisor Guest.
@@ -1440,8 +1440,7 @@ void static fastcall nvc_svm_skinit_handler(noir_gpr_state_p gpr_state,noir_svm_
 }
 
 // Expected Intercept Code: 0x400
-// Do not output to debugger since this may seriously degrade performance.
-void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	bool advance=true;
 	// Necessary Information for #NPF VM-Exit.
@@ -1537,7 +1536,7 @@ void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_s
 	}
 }
 
-void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	// Get the linear address of VMCB.
 	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
@@ -1621,6 +1620,7 @@ void fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 				// Save some GPRs...
 				cvcpu->header.exit_context.rflags=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rflags);
 				cvcpu->header.exit_context.rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip);
+				cvcpu->header.exit_context.next_rip=noir_svm_vmread64(cvcpu->vmcb.virt,next_rip);
 			}
 			else if(noir_locked_btr64(&cvcpu->special_state,63))		// User Hypervisor rescinded execution of vCPU.
 				cvcpu->header.exit_context.intercept_code=cv_rescission;
@@ -1693,7 +1693,7 @@ void nvc_svm_set_mshv_handler(bool option)
 }
 
 // Prior to calling this function, it is required to setup guest state fields.
-void nvc_svm_reconfigure_npiep_interceptions(noir_svm_vcpu_p vcpu)
+void noir_hvcode nvc_svm_reconfigure_npiep_interceptions(noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	ulong_ptr gcr4=noir_svm_vmread(vmcb,guest_cr4);

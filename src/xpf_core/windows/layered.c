@@ -67,9 +67,9 @@ PVOID NoirReferenceVirtualMachineByHandle(IN CVM_HANDLE Handle)
 {
 	PVOID VM=NULL;
 	KeEnterCriticalRegion();
-	ExAcquireResourceExclusiveLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	ExfAcquirePushLockShared(&NoirCvmHandleTable.HandleTableLock);
 	VM=NoirReferenceVirtualMachineByHandleUnsafe(Handle,NoirCvmHandleTable.TableCode);
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	ExfReleasePushLockShared(&NoirCvmHandleTable.HandleTableLock);
 	KeLeaveCriticalRegion();
 	return VM;
 }
@@ -148,7 +148,7 @@ NOIR_STATUS NoirCreateHandle(OUT PCVM_HANDLE Handle,IN PVOID ReferencedEntry)
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
 	// Acquire the resource lock in order to add the entry
 	KeEnterCriticalRegion();
-	ExAcquireResourceExclusiveLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	ExfAcquirePushLockExclusive(&NoirCvmHandleTable.HandleTableLock);
 	// Create Handle.
 	st=NoirCreateHandleUnsafe(NoirCvmHandleTable.TableCode,Handle,ReferencedEntry);
 	if(st==NOIR_UNSUCCESSFUL)
@@ -180,7 +180,7 @@ NOIR_STATUS NoirCreateHandle(OUT PCVM_HANDLE Handle,IN PVOID ReferencedEntry)
 	if(*Handle>NoirCvmHandleTable.MaximumHandleValue)
 		NoirCvmHandleTable.MaximumHandleValue=*Handle;
 	// Release the resource lock for other accesses.
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	ExfReleasePushLockExclusive(&NoirCvmHandleTable.HandleTableLock);
 	KeLeaveCriticalRegion();
 	// Finally, return the status.
 	return st;
@@ -223,7 +223,7 @@ NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine)
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
 	PVOID VM=NULL;
 	KeEnterCriticalRegion();
-	ExAcquireResourceExclusiveLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+	ExfAcquirePushLockExclusive(&NoirCvmHandleTable.HandleTableLock);
 	VM=NoirReferenceVirtualMachineByHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
 	if(VM)
 	{
@@ -234,7 +234,7 @@ NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine)
 			NoirDeleteHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
 		}
 	}
-	ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+	ExfReleasePushLockExclusive(&NoirCvmHandleTable.HandleTableLock);
 	KeLeaveCriticalRegion();
 	return st;
 }
@@ -403,7 +403,7 @@ void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessI
 	if(!Create)		// We have no interest in process creation event.
 	{
 		KeEnterCriticalRegion();	// Acquire the table resource lock with Exclusive Access.
-		ExAcquireResourceExclusiveLite(&NoirCvmHandleTable.HandleTableLock,TRUE);
+		ExfAcquirePushLockExclusive(&NoirCvmHandleTable.HandleTableLock);
 		for(CVM_HANDLE Handle=0;Handle<=NoirCvmHandleTable.MaximumHandleValue;Handle++)
 		{
 			PVOID VirtualMachine=NoirReferenceVirtualMachineByHandleUnsafe(Handle,NoirCvmHandleTable.TableCode);
@@ -419,7 +419,7 @@ void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessI
 				}
 			}
 		}
-		ExReleaseResourceLite(&NoirCvmHandleTable.HandleTableLock);
+		ExfReleasePushLockExclusive(&NoirCvmHandleTable.HandleTableLock);
 		KeLeaveCriticalRegion();
 	}
 }
@@ -427,11 +427,7 @@ void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessI
 NTSTATUS NoirFinalizeCvmModule()
 {
 	NTSTATUS st=PsSetCreateProcessNotifyRoutine(NoirCreateProcessNotifyRoutine,TRUE);
-	if(NT_SUCCESS(st))
-	{
-		st=ExDeleteResourceLite(&NoirCvmHandleTable.HandleTableLock);
-		if(NT_SUCCESS(st))NoirFreeHandleTable(NoirCvmHandleTable.TableCode);
-	}
+	if(NT_SUCCESS(st))NoirFreeHandleTable(NoirCvmHandleTable.TableCode);
 	return st;
 }
 
@@ -441,35 +437,25 @@ NTSTATUS NoirInitializeCvmModule()
 	PVOID NtKernelBase=NoirLocateImageBaseByName(L"ntoskrnl.exe");
 	if(NtKernelBase)
 	{
-		st=ExInitializeResourceLite(&NoirCvmHandleTable.HandleTableLock);
+		RtlZeroMemory(&NoirCvmHandleTable,sizeof(NoirCvmHandleTable));
 		ZwQueryVirtualMemory=NoirLocateExportedProcedureByName(NtKernelBase,"ZwQueryVirtualMemory");
 		NoirCvmTracePrint("Location of ZwQueryVirtualMemory: 0x%p\n",ZwQueryVirtualMemory);
 		if(ZwQueryVirtualMemory==NULL)
 			NoirCvmTracePrint("Failed to locate ZwQueryVirtualMemory!\n");
 		else
 		{
-			if(NT_SUCCESS(st))
+			PVOID TableBase=NoirAllocateNonPagedMemory(PAGE_SIZE);
+			if(TableBase)
 			{
-				PVOID TableBase=NoirAllocateNonPagedMemory(PAGE_SIZE);
-				if(TableBase)
-				{
-					RtlZeroMemory(TableBase,PAGE_SIZE);
-					// At initialization, leave only one level of table.
-					NoirCvmHandleTable.TableCode=(ULONG_PTR)TableBase;
-					// Register a processor creation callback to recycle VMs.
-					st=PsSetCreateProcessNotifyRoutine(NoirCreateProcessNotifyRoutine,FALSE);
-					if(NT_ERROR(st))
-					{
-						NoirFreeNonPagedMemory(TableBase);
-						ExDeleteResourceLite(&NoirCvmHandleTable.HandleTableLock);
-					}
-				}
-				else
-				{
-					ExDeleteResourceLite(&NoirCvmHandleTable.HandleTableLock);
-					st=STATUS_INSUFFICIENT_RESOURCES;
-				}
+				RtlZeroMemory(TableBase,PAGE_SIZE);
+				// At initialization, leave only one level of table.
+				NoirCvmHandleTable.TableCode=(ULONG_PTR)TableBase;
+				// Register a processor creation callback to recycle VMs.
+				st=PsSetCreateProcessNotifyRoutine(NoirCreateProcessNotifyRoutine,FALSE);
+				if(NT_ERROR(st))NoirFreeNonPagedMemory(TableBase);
 			}
+			else
+				st=STATUS_INSUFFICIENT_RESOURCES;
 		}
 	}
 	else

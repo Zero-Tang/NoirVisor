@@ -23,7 +23,7 @@
 #include "svm_def.h"
 #include "svm_npt.h"
 
-void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+void noir_hvcode nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
 	noir_svm_custom_vcpu_p cvcpu=loader_stack->custom_vcpu;
@@ -82,7 +82,7 @@ void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu
 	// The context will go to the host when vmrun is executed.
 }
 
-void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void noir_hvcode nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
 	bool asid_updated=false;
@@ -324,7 +324,7 @@ void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 }
 
 // This function only dumps state saved in VMCB.
-void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu)
+void noir_hvcode nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	// If the state is marked invalid, do not dump from VMCB in that
@@ -417,7 +417,7 @@ void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu)
 	vcpu->header.state_cache.synchronized=1;
 }
 
-void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
+void noir_hvcode nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	// Initialize the VMCB for vCPU.
@@ -484,7 +484,7 @@ void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	noir_svm_vmwrite64(vmcb,msrpm_physical_address,vcpu->vm->msrpm.phys);
 }
 
-void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu)
+void noir_hvcode nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
 	nvc_svm_instruction_intercept1 vector1;

@@ -476,7 +476,7 @@ const u8 noir_vt_vmcs_limit[4][4]=
 	{0x8,		0x6,		0x13,	0xB}		// Natural-Width
 };
 
-const u8 noir_vt_vmcs_field_size[4]={2,8,4,sizeof(void*)};
+noir_hvdata const u8 noir_vt_vmcs_field_size[4]={2,8,4,sizeof(void*)};
 #endif
 
 // This structure should have 256 bytes at maximum

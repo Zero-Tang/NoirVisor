@@ -25,14 +25,14 @@
 #include "svm_def.h"
 
 // Unexpected VM-Exit occured!
-void static fastcall nvc_svm_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_scheduler_bug;
 }
 
 // Expected Intercept Code: -1
-void static fastcall nvc_svm_invalid_state_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_invalid_state_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	void* vmcb=cvcpu->vmcb.virt;
 	u64 cr0,cr3,cr4,efer,dr6,dr7;
@@ -107,7 +107,7 @@ void static fastcall nvc_svm_invalid_state_cvexit_handler(noir_gpr_state_p gpr_s
 }
 
 // Expected Intercept Code: 0x0~0x1F
-void static fastcall nvc_svm_cr4_read_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_cr4_read_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Access to CR4 register is intercepted.
 	nvc_svm_cr_access_exit_info info;
@@ -121,7 +121,7 @@ void static fastcall nvc_svm_cr4_read_cvexit_handler(noir_gpr_state_p gpr_state,
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
-void static fastcall nvc_svm_cr4_write_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_cr4_write_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Access to CR4 register is intercepted.
 	nvc_svm_cr_access_exit_info info;
@@ -135,7 +135,7 @@ void static fastcall nvc_svm_cr4_write_cvexit_handler(noir_gpr_state_p gpr_state
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
 
-void static fastcall nvc_svm_cr_access_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_cr_access_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Access to Control Registers is intercepted.
 	// We don't have to determine whether Interception is subject to be delivered to subverted host,
@@ -156,7 +156,7 @@ void static fastcall nvc_svm_cr_access_cvexit_handler(noir_gpr_state_p gpr_state
 }
 
 // Expected Intercept Code: 0x20~0x3F
-void static fastcall nvc_svm_dr_access_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_dr_access_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Access to Debug Registers is intercepted.
 	// We don't have to determine whether Interception is subject to be delivered to subverted host,
@@ -176,7 +176,7 @@ void static fastcall nvc_svm_dr_access_cvexit_handler(noir_gpr_state_p gpr_state
 }
 
 // Expected Intercept Code: 0x40~0x5F, except 0x52 and 0x5E.
-void static fastcall nvc_svm_exception_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_exception_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Exception is intercepted.
 	// We don't have to determine whether Exception is subject to be delivered to subverted
@@ -219,7 +219,7 @@ void static fastcall nvc_svm_exception_cvexit_handler(noir_gpr_state_p gpr_state
 }
 
 // Expected Intercept Code: 0x52
-void static fastcall nvc_svm_mc_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_mc_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Machine-Check is intercepted.
 	// CVM User is not supposed to intercept an #MC exception.
@@ -231,7 +231,7 @@ void static fastcall nvc_svm_mc_cvexit_handler(noir_gpr_state_p gpr_state,noir_s
 }
 
 // Expected Intercept Code: 0x5E
-void static fastcall nvc_svm_sx_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_sx_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Security Exception is intercepted.
 	// We have to check if #SX is induced by an arrived INIT signal.
@@ -262,7 +262,7 @@ void static fastcall nvc_svm_sx_cvexit_handler(noir_gpr_state_p gpr_state,noir_s
 }
 
 // Expected Intercept Code: 0x60
-void static fastcall nvc_svm_extint_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_extint_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// External Interrupt has arrived.
 	// According to AMD-V, external interrupt is held pending until GIF is set.
@@ -272,7 +272,7 @@ void static fastcall nvc_svm_extint_cvexit_handler(noir_gpr_state_p gpr_state,no
 }
 
 // Expected Intercept Code: 0x61
-void static fastcall nvc_svm_nmi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_nmi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Non-Maskable Interrupt has arrived. According to AMD-V, NMI is held pending until GIF is set.
 	// Switching to the subverted host should have the interrupt handed in under hypervision.
@@ -281,7 +281,7 @@ void static fastcall nvc_svm_nmi_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 }
 
 // Expected Intercept Code: 0x62
-void static fastcall nvc_svm_smi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_smi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// System-Management Interrupt has arrived. According to AMD-V, SMI is held pending until GIF is set.
 	// Switching to the subverted host should have the interrupt handed in under hypervision.
@@ -293,7 +293,7 @@ void static fastcall nvc_svm_smi_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 }
 
 // Expected Intercept Code: 0x72
-void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Determine whether CPUID-Interception is subject to be delivered to subverted host.
 	if(cvcpu->header.vcpu_options.intercept_cpuid)
@@ -327,7 +327,7 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 				}
 				case ncvm_cpuid_vendor_neutral_interface_id:
 				{
-					noir_movsb(&info.eax,"Nv#1",4);		// Interface Signature is "Nv#1". Indicate Non-Compliance to MSHV-TLFS.
+					noir_movsb(&info.eax,"Hv#0",4);		// Interface Signature is "Hv#0". Indicate Non-Compliance to MSHV-TLFS.
 					info.eax=info.ebx=info.ecx=0;		// Clear the Reserved CPUID fields.
 					break;
 				}
@@ -383,7 +383,7 @@ void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noi
 }
 
 // Expected Intercept Code: 0x73
-void static fastcall nvc_svm_rsm_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_rsm_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor does not know if the vCPU is running in SMM.
 	// Let the User Hypervisor emulate the SMM for the Guest.
@@ -394,7 +394,7 @@ void static fastcall nvc_svm_rsm_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 }
 
 // Expected Intercept Code: 0x74
-void static fastcall nvc_svm_iret_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_iret_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// The iret instruction indicates NMI-window.
 	if(cvcpu->special_state.prev_nmi)
@@ -420,7 +420,7 @@ void static fastcall nvc_svm_iret_cvexit_handler(noir_gpr_state_p gpr_state,noir
 }
 
 // Expected Intercept Code: 0x76
-void static fastcall nvc_svm_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// The invd instruction would corrupt cache globally and it must thereby be intercepted.
 	// Execute wbinvd to protect global cache.
@@ -431,7 +431,7 @@ void static fastcall nvc_svm_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir
 }
 
 // Expected Intercept Code: 0x78
-void static fastcall nvc_svm_hlt_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_hlt_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// The hlt instruction halts the execution of processor.
 	// In this regard, schedule the host to the processor.
@@ -442,7 +442,7 @@ void static fastcall nvc_svm_hlt_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 }
 
 // Expected Intercept Code: 0x7A
-void static fastcall nvc_svm_invlpga_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_invlpga_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
@@ -452,7 +452,7 @@ void static fastcall nvc_svm_invlpga_cvexit_handler(noir_gpr_state_p gpr_state,n
 }
 
 // Expected Intercept Code: 0x7B
-void static fastcall nvc_svm_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	nvc_svm_io_exit_info info;
 	// Deliver the I/O interception to subverted host.
@@ -645,7 +645,7 @@ bool static fastcall nvc_svm_wrmsr_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	return advance;
 }
 
-void static fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Determine whether MSR-Interception is subject to be delivered to subverted host.
 	bool op_write=noir_svm_vmread8(cvcpu->vmcb.virt,exit_info1);
@@ -794,7 +794,7 @@ void static fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr_state,noir_
 }
 
 // Expected Intercept Code: 0x7F
-void static fastcall nvc_svm_shutdown_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_shutdown_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// The shutdown condition occured. Deliver to the subverted host.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
@@ -804,7 +804,7 @@ void static fastcall nvc_svm_shutdown_cvexit_handler(noir_gpr_state_p gpr_state,
 }
 
 // Expected Intercept Code: 0x80
-void static fastcall nvc_svm_vmrun_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_vmrun_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
@@ -814,7 +814,7 @@ void static fastcall nvc_svm_vmrun_cvexit_handler(noir_gpr_state_p gpr_state,noi
 }
 
 // Expected Intercept Code: 0x81
-void static fastcall nvc_svm_vmmcall_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_vmmcall_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// The Guest invoked a hypercall. Deliver to the subverted host.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
@@ -824,7 +824,7 @@ void static fastcall nvc_svm_vmmcall_cvexit_handler(noir_gpr_state_p gpr_state,n
 }
 
 // Expected Intercept Code: 0x82
-void static fastcall nvc_svm_vmload_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_vmload_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
@@ -834,7 +834,7 @@ void static fastcall nvc_svm_vmload_cvexit_handler(noir_gpr_state_p gpr_state,no
 }
 
 // Expected Intercept Code: 0x83
-void static fastcall nvc_svm_vmsave_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_vmsave_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
@@ -844,7 +844,7 @@ void static fastcall nvc_svm_vmsave_cvexit_handler(noir_gpr_state_p gpr_state,no
 }
 
 // Expected Intercept Code: 0x84
-void static fastcall nvc_svm_stgi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_stgi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
@@ -854,7 +854,7 @@ void static fastcall nvc_svm_stgi_cvexit_handler(noir_gpr_state_p gpr_state,noir
 }
 
 // Expected Intercept Code: 0x85
-void static fastcall nvc_svm_clgi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_clgi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
@@ -864,7 +864,7 @@ void static fastcall nvc_svm_clgi_cvexit_handler(noir_gpr_state_p gpr_state,noir
 }
 
 // Expected Intercept Code: 0x86
-void static fastcall nvc_svm_skinit_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_skinit_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
 	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
@@ -874,7 +874,7 @@ void static fastcall nvc_svm_skinit_cvexit_handler(noir_gpr_state_p gpr_state,no
 }
 
 // Expected Intercept Code: 0x400
-void static fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	amd64_npt_fault_code fault;
 	// #NPF occured, tell the subverted host there is a memory access fault.
@@ -893,13 +893,13 @@ void static fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state_p gpr_state
 }
 
 // Expected Intercept Code: 0x401
-void static fastcall nvc_svm_incomplete_ipi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_incomplete_ipi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	;
 }
 
 // Expected Intercept Code: 0x402
-void static fastcall nvc_svm_unaccelerated_avic_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+void static noir_hvcode fastcall nvc_svm_unaccelerated_avic_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	;
 }

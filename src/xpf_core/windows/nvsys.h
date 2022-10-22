@@ -133,7 +133,12 @@ typedef LONG(__cdecl *noir_sorting_comparator)(const void* a,const void*b);
 #define NoirSaveProcessorState		noir_save_processor_state
 void noir_save_processor_state(OUT PNOIR_PROCESSOR_STATE State);
 
+NTKERNELAPI void __fastcall ExfAcquirePushLockExclusive(IN OUT PEX_PUSH_LOCK PushLock);
+NTKERNELAPI void __fastcall ExfAcquirePushLockShared(IN OUT PEX_PUSH_LOCK PushLock);
+NTKERNELAPI void __fastcall ExfReleasePushLockExclusive(IN OUT PEX_PUSH_LOCK PushLock);
+NTKERNELAPI void __fastcall ExfReleasePushLockShared(IN OUT PEX_PUSH_LOCK PushLock);
 NTSYSAPI NTSTATUS NTAPI ZwAlertThread(IN HANDLE ThreadHandle);
+
 BYTE NoirDisasmCode16(PSTR Mnemonic,SIZE_T MnemonicLength,PBYTE Code,SIZE_T CodeLength,ULONG64 VirtualAddress);
 BYTE NoirDisasmCode32(PSTR Mnemonic,SIZE_T MnemonicLength,PBYTE Code,SIZE_T CodeLength,ULONG64 VirtualAddress);
 BYTE NoirDisasmCode64(PSTR Mnemonic,SIZE_T MnemonicLength,PBYTE Code,SIZE_T CodeLength,ULONG64 VirtualAddress);

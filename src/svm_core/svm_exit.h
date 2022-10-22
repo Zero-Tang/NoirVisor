@@ -158,7 +158,7 @@ void static fastcall nvc_svm_clgi_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 void static fastcall nvc_svm_skinit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 void static fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
 
-noir_svm_exit_handler_routine svm_exit_handler_group1[noir_svm_maximum_code1]=
+noir_hvdata noir_svm_exit_handler_routine svm_exit_handler_group1[noir_svm_maximum_code1]=
 {
 	// 16 Control-Register Read Exit Handler...
 	nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,nvc_svm_default_handler,
@@ -260,7 +260,7 @@ noir_svm_exit_handler_routine svm_exit_handler_group1[noir_svm_maximum_code1]=
 	nvc_svm_default_handler			// tlbsync Instruction
 };
 
-noir_svm_exit_handler_routine svm_exit_handler_group2[noir_svm_maximum_code2]=
+noir_hvdata noir_svm_exit_handler_routine svm_exit_handler_group2[noir_svm_maximum_code2]=
 {
 	nvc_svm_nested_pf_handler,		// Nested Page Fault
 	nvc_svm_default_handler,		// AVIC Incomplete Virtual IPI Delivery
@@ -268,20 +268,20 @@ noir_svm_exit_handler_routine svm_exit_handler_group2[noir_svm_maximum_code2]=
 	nvc_svm_default_handler			// vmgexit Instruction
 };
 
-noir_svm_exit_handler_routine svm_exit_handler_negative[noir_svm_maximum_negative]=
+noir_hvdata noir_svm_exit_handler_routine svm_exit_handler_negative[noir_svm_maximum_negative]=
 {
 	nvc_svm_invalid_guest_state,	// Invalid Guest State
 	nvc_svm_default_handler			// VMSA Busy
 };
 
-noir_svm_exit_handler_routine* svm_exit_handlers[4]=
+noir_hvdata noir_svm_exit_handler_routine* svm_exit_handlers[4]=
 {
 	svm_exit_handler_group1,
 	svm_exit_handler_group2,
 	null,null
 };
 
-noir_svm_cpuid_exit_handler nvcp_svm_cpuid_handler=null;
+noir_hvdata noir_svm_cpuid_exit_handler nvcp_svm_cpuid_handler=null;
 
 extern noir_svm_cvexit_handler_routine* svm_cvexit_handlers[];
 extern noir_svm_cvexit_handler_routine svm_cvexit_handler_negative[];
@@ -319,7 +319,7 @@ void static fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state_p gpr_state
 void static fastcall nvc_svm_incomplete_ipi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_unaccelerated_avic_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 
-noir_svm_cvexit_handler_routine svm_cvexit_handler_group1[noir_svm_maximum_code1]=
+noir_hvdata noir_svm_cvexit_handler_routine svm_cvexit_handler_group1[noir_svm_maximum_code1]=
 {
 	// 16 Control-Register Read & Write Handlers.
 	nvc_svm_cr_access_cvexit_handler,nvc_svm_cr_access_cvexit_handler,nvc_svm_cr_access_cvexit_handler,nvc_svm_cr_access_cvexit_handler,
@@ -411,7 +411,7 @@ noir_svm_cvexit_handler_routine svm_cvexit_handler_group1[noir_svm_maximum_code1
 	nvc_svm_default_cvexit_handler		// tlbsync Instruction
 };
 
-noir_svm_cvexit_handler_routine svm_cvexit_handler_group2[noir_svm_maximum_code2]=
+noir_hvdata noir_svm_cvexit_handler_routine svm_cvexit_handler_group2[noir_svm_maximum_code2]=
 {
 	nvc_svm_nested_pf_cvexit_handler,				// Nested Page Fault
 	nvc_svm_incomplete_ipi_cvexit_handler,			// AVIC Incomplete Virtual IPI Delivery
@@ -419,13 +419,13 @@ noir_svm_cvexit_handler_routine svm_cvexit_handler_group2[noir_svm_maximum_code2
 	nvc_svm_default_cvexit_handler					// vmgexit Instruction
 };
 
-noir_svm_cvexit_handler_routine svm_cvexit_handler_negative[noir_svm_maximum_negative]=
+noir_hvdata noir_svm_cvexit_handler_routine svm_cvexit_handler_negative[noir_svm_maximum_negative]=
 {
 	nvc_svm_invalid_state_cvexit_handler,	// Invalid Guest State
 	nvc_svm_default_cvexit_handler			// VMSA Busy
 };
 
-noir_svm_cvexit_handler_routine* svm_cvexit_handlers[4]=
+noir_hvdata noir_svm_cvexit_handler_routine* svm_cvexit_handlers[4]=
 {
 	svm_cvexit_handler_group1,
 	svm_cvexit_handler_group2,
@@ -435,7 +435,7 @@ noir_svm_cvexit_handler_routine* svm_cvexit_handlers[4]=
 void static fastcall nvc_svm_nvexit_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu);
 void static fastcall nvc_svm_nvexit_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu);
 
-noir_svm_nvexit_handler_routine svm_nvexit_handler_group1[noir_svm_maximum_code1]=
+noir_hvdata noir_svm_nvexit_handler_routine svm_nvexit_handler_group1[noir_svm_maximum_code1]=
 {
 	// 16 Control-Register Read & Write Handlers.
 	nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,nvc_svm_nvexit_default_handler,
@@ -496,7 +496,7 @@ noir_svm_nvexit_handler_routine svm_nvexit_handler_group1[noir_svm_maximum_code1
 	nvc_svm_nvexit_default_handler,			// MSR Instruction
 	nvc_svm_nvexit_default_handler,			// Task Switches
 	nvc_svm_nvexit_default_handler,			// FP Error Freezing
-	nvc_svm_nvexit_default_handler,			// Shutdown Condition
+	nvc_svm_nvexit_shutdown_handler,		// Shutdown Condition
 	// 16 Interception Handlers for Vector 2.
 	nvc_svm_nvexit_default_handler,			// vmrun Instruction
 	nvc_svm_nvexit_default_handler,			// vmmcall Instruction
@@ -527,7 +527,7 @@ noir_svm_nvexit_handler_routine svm_nvexit_handler_group1[noir_svm_maximum_code1
 	nvc_svm_nvexit_default_handler,			// tlbsync Instruction
 };
 
-noir_svm_nvexit_handler_routine svm_nvexit_handler_group2[noir_svm_maximum_code2]=
+noir_hvdata noir_svm_nvexit_handler_routine svm_nvexit_handler_group2[noir_svm_maximum_code2]=
 {
 	nvc_svm_nvexit_default_handler,					// Nested Page Fault
 	nvc_svm_nvexit_default_handler,					// AVIC Incomplete Virtual IPI Delivery
@@ -535,13 +535,13 @@ noir_svm_nvexit_handler_routine svm_nvexit_handler_group2[noir_svm_maximum_code2
 	nvc_svm_nvexit_default_handler					// vmgexit Instruction
 };
 
-noir_svm_nvexit_handler_routine svm_nvexit_handler_negative[noir_svm_maximum_negative]=
+noir_hvdata noir_svm_nvexit_handler_routine svm_nvexit_handler_negative[noir_svm_maximum_negative]=
 {
 	nvc_svm_nvexit_default_handler,			// Invalid State
 	nvc_svm_nvexit_default_handler			// VMSA is busy
 };
 
-noir_svm_nvexit_handler_routine* svm_nvexit_handlers[4]=
+noir_hvdata noir_svm_nvexit_handler_routine* svm_nvexit_handlers[4]=
 {
 	svm_nvexit_handler_group1,
 	svm_nvexit_handler_group2,

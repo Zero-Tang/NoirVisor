@@ -83,15 +83,15 @@ svm_check:
 }
 
 #if !defined(_hv_type1)
-u32 static stdcall noir_ci_enforcement_worker(void* context)
+u32 static noir_hvcode stdcall noir_ci_enforcement_worker(void* context)
 {
 	// Retrieve Thread Context
 	noir_ci_context_p ncie=(noir_ci_context_p)context;
 	// Check exit signal.
-	while(noir_locked_cmpxchg(&ncie->signal,1,1)==0)
+	while(noir_locked_cmpxchg(&noir_ci_stop_signal,1,1)==0)
 	{
 		// Select a page to enforce CI.
-		u32 i=ncie->selected++;
+		u32 i=noir_ci_selected_page++;
 		void* page=ncie->page_ci[i].virt;
 		// Perform Enforcement.
 		u32 crc=noir_crc32_page(page);
@@ -99,9 +99,8 @@ u32 static stdcall noir_ci_enforcement_worker(void* context)
 			nvci_panicf("CI detected corruption in Page 0x%p!\n",page);
 		else
 			nvci_tracef("Page 0x%p scanned. CRC32C=0x%08X - No Anomaly.\n",page,crc);
-		// Restore if exceeded.
-		if(ncie->selected==ncie->pages)
-			ncie->selected=0;
+		// Advance the CI page.
+		if(noir_ci_selected_page==ncie->pages)noir_ci_selected_page=0;
 		// Clock.
 		noir_sleep(ci_enforcement_delay);
 	}
@@ -122,7 +121,49 @@ i32 static cdecl noir_ci_sorting_comparator(const void* a,const void*b)
 	return 0;
 }
 
-bool noir_initialize_ci(void* section,u32 size,bool soft_ci,bool hard_ci)
+bool noir_add_section_to_ci(void* base,u32 size)
+{
+	const u32 page_num=bytes_to_pages(size);
+	if(noir_ci->pages+page_num>=noir_ci->limit)
+		return false;
+	for(u32 i=noir_ci->pages;i<noir_ci->pages+page_num;i++)
+	{
+		noir_ci->page_ci[i].virt=(void*)((ulong_ptr)base+page_mult(i-noir_ci->pages));
+		noir_ci->page_ci[i].crc=noir_crc32_page(noir_ci->page_ci[i].virt);
+		noir_ci->page_ci[i].phys=noir_get_physical_address(noir_ci->page_ci[i].virt);
+	}
+	noir_ci->pages+=page_num;
+	return true;
+}
+
+bool noir_activate_ci()
+{
+	if(noir_ci)
+	{
+#if !defined(_hv_type1)
+		// No need to trace-print in Type-I hypervisor.
+		nvci_tracef("Number of pages protected by CI: %u\n",noir_ci->pages);
+		for(u32 i=0;i<noir_ci->pages;i++)
+			nvci_tracef("Physical: 0x%llX\t CRC32C: 0x%08X\t Virtual: 0x%p\n",noir_ci->page_ci[i].phys,noir_ci->page_ci[i].crc,noir_ci->page_ci[i].virt);
+		// Create Worker Thread.
+		if(noir_ci->options.soft_ci)noir_ci->ci_thread=noir_create_thread(noir_ci_enforcement_worker,noir_ci);
+		if(noir_ci->ci_thread || noir_ci->options.soft_ci==false)
+			goto activation;
+		else
+		{
+			noir_free_contd_memory(noir_ci,page_size);
+			return false;
+		}
+activation:
+#endif
+		if(noir_ci->options.hard_ci)
+			noir_qsort(noir_ci->page_ci,noir_ci->pages,sizeof(noir_ci_page),noir_ci_sorting_comparator);
+		return true;
+	}
+	return false;
+}
+
+bool noir_initialize_ci(bool soft_ci,bool hard_ci)
 {
 	// Check Intel EPT/AMD NPT supportability.
 	bool use_hard=hard_ci&noir_check_slat_paging();
@@ -130,43 +171,22 @@ bool noir_initialize_ci(void* section,u32 size,bool soft_ci,bool hard_ci)
 	// If both are disabled, fail the Code Integrity initialization.
 	if(use_hard || soft_ci)
 	{
-		// Get total count of pages.
-		u32 page_num=size>>12;
-		if(size & 0xfff)page_num++;
 		// Check supportability of SSE4.2.
 		if(noir_check_sse42())
 			noir_crc32_page=noir_crc32_page_sse;
 		else
 			noir_crc32_page=noir_crc32_page_std;
-		// Setup CI Enforcement Worker Thread.
-		noir_ci=noir_alloc_nonpg_memory(sizeof(noir_ci_context)+sizeof(noir_ci_page)*page_num);
+		noir_ci=noir_alloc_contd_memory(page_size);
 		if(noir_ci)
 		{
-			noir_ci->pages=page_num;
-			noir_ci->base=(ulong_ptr)section;
-			// Initialize Code Integrity of Code Pages.
-			for(u32 i=0;i<page_num;i++)
-			{
-				noir_ci->page_ci[i].virt=(void*)((ulong_ptr)noir_ci->base+(i<<12));
-				noir_ci->page_ci[i].crc=noir_crc32_page(noir_ci->page_ci[i].virt);
-				// Physical Address is intended for SLAT-based real-time enforcement.
-				// In other words, we don't have to write anything about EPT/NPT here.
-				noir_ci->page_ci[i].phys=noir_get_physical_address(noir_ci->page_ci[i].virt);
-			}
-			// Sort it to accelerate real-time CI.
-			// Do the sort unless we enable Hardware-Level CI. Sorting is unnecessary elsewise.
-			if(use_hard)noir_qsort(noir_ci->page_ci,page_num,sizeof(noir_ci_page),noir_ci_sorting_comparator);
-#if !defined(_hv_type1)
-			// No need to trace-print in Type-I hypervisor.
-			for(u32 i=0;i<page_num;i++)
-				nvci_tracef("Physical: 0x%llX\t CRC32C: 0x%08X\t Virtual: 0x%p\n",noir_ci->page_ci[i].phys,noir_ci->page_ci[i].crc,noir_ci->page_ci[i].virt);
-			// Create Worker Thread.
-			if(soft_ci)noir_ci->ci_thread=noir_create_thread(noir_ci_enforcement_worker,noir_ci);
-			if(noir_ci->ci_thread || soft_ci==false)
+			noir_ci->limit=(page_size-sizeof(noir_ci_context))/sizeof(noir_ci_page);
+			noir_ci->options.soft_ci=soft_ci;
+			noir_ci->options.hard_ci=hard_ci;
+			// Add CI page to protection.
+			if(noir_add_section_to_ci(noir_ci,page_size))
 				return true;
 			else
-				noir_free_nonpg_memory(noir_ci);
-#endif
+				noir_free_contd_memory(noir_ci,page_size);
 		}
 	}
 	return false;
@@ -176,9 +196,9 @@ void noir_finalize_ci()
 {
 	if(noir_ci)
 	{
-		// Set the signal.
-		noir_locked_inc(&noir_ci->signal);
 #if !defined(_hv_type1)
+		// Set the signal.
+		noir_locked_inc(&noir_ci_stop_signal);
 		// Wake up thread if sleeping.
 		noir_alert_thread(noir_ci->ci_thread);
 		// Wait for exit.

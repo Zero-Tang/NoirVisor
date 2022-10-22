@@ -114,18 +114,41 @@ BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)
 		if(NtHead->Signature==EFI_IMAGE_NT_SIGNATURE)
 		{
 			EFI_IMAGE_SECTION_HEADER *SectionHeaders=(EFI_IMAGE_SECTION_HEADER*)((UINTN)NtHead+sizeof(EFI_IMAGE_NT_HEADERS));
+			if(noir_initialize_ci(FALSE,TRUE)==FALSE)
+			{
+				NoirDebugPrint("Failed to initialize Code-Integrity!\n");
+				return FALSE;
+			}
 			for(UINT16 i=0;i<NtHead->FileHeader.NumberOfSections;i++)
 			{
 				// Locate Code Section
-				if(AsciiStrnCmp((CHAR8*)SectionHeaders[i].Name,".text",EFI_IMAGE_SIZEOF_SHORT_NAME)==0)
+				if(AsciiStrnCmp((CHAR8*)SectionHeaders[i].Name,"hvtext",EFI_IMAGE_SIZEOF_SHORT_NAME)==0)
 				{
 					VOID* CodeBase=(VOID*)((UINTN)ImageBase+SectionHeaders[i].VirtualAddress);
 					UINT32 CodeSize=SectionHeaders[i].SizeOfRawData;
 					// Software CI Enforcement won't be supported in EFI Runtime Stage.
 					// Hence, we will run Hardware CI Enforcement only in EFI.
-					return noir_initialize_ci(CodeBase,CodeSize,FALSE,TRUE);
+					if(noir_add_section_to_ci(CodeBase,CodeSize)==FALSE)
+					{
+						NoirDebugPrint("Failed to add code section to CI!\n");
+						noir_finalize_ci();
+						return FALSE;
+					}
+				}
+				// Locate Data Section
+				if(AsciiStrnCmp((CHAR8*)SectionHeaders[i].Name,"hvdata",EFI_IMAGE_SIZEOF_SHORT_NAME)==0)
+				{
+					VOID* DataBase=(VOID*)((UINTN)ImageBase+SectionHeaders[i].VirtualAddress);
+					UINT32 DataSize=SectionHeaders[i].SizeOfRawData;
+					if(noir_add_section_to_ci(DataBase,DataSize)==FALSE)
+					{
+						NoirDebugPrint("Failed to add data section to CI!\n");
+						noir_finalize_ci();
+						return FALSE;
+					}
 				}
 			}
+			return noir_activate_ci();
 		}
 	}
 	return FALSE;

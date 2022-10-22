@@ -12,6 +12,8 @@
 
 .code
 
+hvtext segment readonly align(4096) read execute nopage
+
 include noirhv.inc
 
 extern nvc_vt_inject_nmi_to_subverted_host:proc
@@ -83,5 +85,7 @@ noir_page_fault_handler proc
 	iretq
 
 noir_page_fault_handler endp
+
+hvtext ends
 
 end

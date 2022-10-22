@@ -244,14 +244,15 @@ typedef struct _noir_cvm_exit_context
 	segment_register cs;
 	u64 rip;
 	u64 rflags;
+	u64 next_rip;
 	struct
 	{
-		u32 cpl:2;
-		u32 pe:1;
-		u32 lm:1;
-		u32 int_shadow:1;
-		u32 instruction_length:4;
-		u32 reserved:23;
+		u64 cpl:2;
+		u64 pe:1;
+		u64 lm:1;
+		u64 int_shadow:1;
+		u64 instruction_length:4;
+		u64 reserved:55;
 	}vcpu_state;
 }noir_cvm_exit_context,*noir_cvm_exit_context_p;
 
@@ -446,6 +447,7 @@ typedef struct _noir_cvm_virtual_cpu
 	void* xsave_area;
 	u64 rflags;
 	u64 rip;
+	noir_pushlock vcpu_lock;
 	noir_cvm_event_injection injected_event;
 	noir_cvm_exit_context exit_context;
 	noir_cvm_vcpu_options vcpu_options;
@@ -499,7 +501,9 @@ typedef union _noir_cvm_vm_properties
 		u32 apic_enable:1;
 		u32 x2apic_enable:1;
 		u32 mtrr_enable:1;
-		u32 reserved:26;
+		u32 mshv_guest:1;
+		u32 nsv_guest:1;
+		u32 reserved:24;
 	};
 	u32 value;
 }noir_cvm_vm_properties,*noir_cvm_vm_properties_p;
@@ -540,9 +544,9 @@ u32 nvc_vtc_get_vm_asid(noir_cvm_virtual_machine_p vm);
 noir_cvm_virtual_machine noir_idle_vm={0};
 noir_reslock noir_vm_list_lock=null;
 
-u32 noir_cvm_exit_context_size=sizeof(noir_cvm_exit_context);
+noir_hvdata u32 noir_cvm_exit_context_size=sizeof(noir_cvm_exit_context);
 
-u32 noir_cvm_register_buffer_limit[noir_cvm_maximum_register_type]=
+noir_hvdata u32 noir_cvm_register_buffer_limit[noir_cvm_maximum_register_type]=
 {
 	sizeof(noir_gpr_state),			// General-Purpose Register
 	sizeof(u64),					// rflags register

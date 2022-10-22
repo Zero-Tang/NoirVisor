@@ -36,25 +36,25 @@
 #define page_512gb_shift		39
 #define page_256tb_shift		48
 
-#define page_offset(x)			(x&0xfff)
-#define page_4kb_offset(x)		(x&0xfff)
-#define page_2mb_offset(x)		(x&0x1fffff)
-#define page_1gb_offset(x)		(x&0x3fffffff)
-#define page_512gb_offset(x)	(x&0x7fffffffff)
-#define page_256tb_offset(x)	(x&0xffffffffffff)
+#define page_offset(x)			((x)&0xfff)
+#define page_4kb_offset(x)		((x)&0xfff)
+#define page_2mb_offset(x)		((x)&0x1fffff)
+#define page_1gb_offset(x)		((x)&0x3fffffff)
+#define page_512gb_offset(x)	((x)&0x7fffffffff)
+#define page_256tb_offset(x)	((x)&0xffffffffffff)
 
-#define page_count(x)			(x>>page_shift)
-#define page_4kb_count(x)		(x>>page_4kb_shift)
-#define page_2mb_count(x)		(x>>page_2mb_shift)
-#define page_1gb_count(x)		(x>>page_1gb_shift)
-#define page_512gb_count(x)		(x>>page_512gb_shift)
-#define page_256tb_count(x)		(x>>page_256tb_shift)
+#define page_count(x)			((x)>>page_shift)
+#define page_4kb_count(x)		((x)>>page_4kb_shift)
+#define page_2mb_count(x)		((x)>>page_2mb_shift)
+#define page_1gb_count(x)		((x)>>page_1gb_shift)
+#define page_512gb_count(x)		((x)>>page_512gb_shift)
+#define page_256tb_count(x)		((x)>>page_256tb_shift)
 
-#define page_mult(x)			(x<<page_shift)
-#define page_4kb_mult(x)		(x<<page_4kb_shift)
-#define page_2mb_mult(x)		(x<<page_2mb_shift)
-#define page_1gb_mult(x)		(x<<page_1gb_shift)
-#define page_512gb_mult(x)		(x<<page_512gb_shift)
+#define page_mult(x)			((x)<<page_shift)
+#define page_4kb_mult(x)		((x)<<page_4kb_shift)
+#define page_2mb_mult(x)		((x)<<page_2mb_shift)
+#define page_1gb_mult(x)		((x)<<page_1gb_shift)
+#define page_512gb_mult(x)		((x)<<page_512gb_shift)
 
 #define bytes_to_pages(x)		(page_count(x)+(page_offset(x)!=0))
 #define bytes_to_4kb_pages(x)	(page_4kb_count(x)+(page_4kb_offset(x)!=0))
@@ -552,6 +552,7 @@ void cdecl nv_dprintf2(bool datetime,bool proc_id,const char* format,...);
 typedef u32 (stdcall *noir_thread_procedure)(void* context);
 typedef void* noir_thread;
 typedef void* noir_reslock;
+typedef ulong_ptr noir_pushlock;
 
 noir_thread noir_create_thread(noir_thread_procedure procedure,void* context);
 void noir_exit_thread(u32 status);
@@ -564,6 +565,10 @@ void noir_acquire_reslock_shared(noir_reslock lock);
 void noir_acquire_reslock_shared_ex(noir_reslock lock);
 void noir_acquire_reslock_exclusive(noir_reslock lock);
 void noir_release_reslock(noir_reslock lock);
+void noir_acquire_pushlock_shared(noir_pushlock *lock);
+void noir_acquire_pushlock_exclusive(noir_pushlock *lock);
+void noir_release_pushlock_shared(noir_pushlock *lock);
+void noir_release_pushlock_exclusive(noir_pushlock *lock);
 
 // Miscellaneous
 void noir_qsort(void* base,u32 num,u32 width,noir_sorting_comparator comparator);

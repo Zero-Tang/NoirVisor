@@ -102,6 +102,12 @@ typedef enum
 #define always_inline	__forceinline
 
 #define align_at(n)		__declspec(align(n))
+
+#pragma section("hvtext",read,execute,nopage)
+#pragma section("hvdata",read,write,nopage)
+
+#define noir_hvcode		__declspec(code_seg("hvtext"))
+#define noir_hvdata		__declspec(allocate("hvdata"))
 #endif
 
 #define null	(void*)0

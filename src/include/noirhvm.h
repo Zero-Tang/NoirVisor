@@ -57,6 +57,9 @@
 #define nvc_stack_size			0x4000
 #define nvc_stack_pages			4
 
+// Define Generic Hypercall Codes for NoirVisor management.
+#define noir_hypercall_callexit					0x1
+
 // Define Generic Hypercall Codes for Customizable VM.
 #define noir_cvm_run_vcpu					0x10001
 #define noir_cvm_dump_vcpu_vmcb				0x10002
@@ -317,8 +320,8 @@ typedef u64 (fastcall *noir_mshv_msr_handler)
 
 // Handlers of MSHV-Core
 #if defined(_mshv_cpuid)
-noir_mshv_cpuid_handler*	hvm_cpuid_handlers=null;
-noir_mshv_msr_handler*		hvm_msr_handlers=null;
+noir_hvdata noir_mshv_cpuid_handler*	hvm_cpuid_handlers=null;
+noir_hvdata noir_mshv_msr_handler*		hvm_msr_handlers=null;
 #else
 extern noir_mshv_cpuid_handler*	hvm_cpuid_handlers;
 extern noir_mshv_msr_handler*	hvm_msr_handlers;
@@ -326,6 +329,6 @@ extern noir_mshv_msr_handler*	hvm_msr_handlers;
 
 // Globle Variables for MSHV-Core
 #if defined(_mshv_msr)
-u64v noir_mshv_guest_os_id=0;
-u64v noir_mshv_hypercall_ctrl=0;
+noir_hvdata u64v noir_mshv_guest_os_id=0;
+noir_hvdata u64v noir_mshv_hypercall_ctrl=0;
 #endif

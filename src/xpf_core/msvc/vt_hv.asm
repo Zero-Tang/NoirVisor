@@ -17,6 +17,8 @@ endif
 
 .code
 
+hvtext segment readonly align(4096) read execute nopage
+
 include noirhv.inc
 
 extern nvc_vt_subvert_processor_i:proc
@@ -402,5 +404,7 @@ noir_vt_vmresume proc
 noir_vt_vmresume endp
 
 endif
+
+hvtext ends
 
 end

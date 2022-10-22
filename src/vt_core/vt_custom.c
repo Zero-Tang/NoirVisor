@@ -24,7 +24,7 @@
 #include "vt_exit.h"
 #include "vt_ept.h"
 
-void nvc_vt_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
+void noir_hvcode nvc_vt_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	noir_vt_initial_stack_p loader_stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
 	noir_vt_custom_vcpu_p cvcpu=loader_stack->custom_vcpu;
@@ -67,7 +67,7 @@ void nvc_vt_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 	// The context will go to the host when vmresume is executed.
 }
 
-void nvc_vt_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void noir_hvcode nvc_vt_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	noir_vt_initial_stack_p loader_stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
 	ia32_vmx_msr_auto_p msr_auto=(ia32_vmx_msr_auto_p)cvcpu->msr_auto.virt;
@@ -300,7 +300,7 @@ void nvc_vt_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,
 	}
 }
 
-void nvc_vt_dump_vcpu_state(noir_vt_custom_vcpu_p vcpu)
+void noir_hvcode nvc_vt_dump_vcpu_state(noir_vt_custom_vcpu_p vcpu)
 {
 	ia32_vmx_msr_auto_p msr_auto=(ia32_vmx_msr_auto_p)vcpu->msr_auto.virt;
 	// If the state is marked invalid, do not dump from VMCS in that
@@ -389,7 +389,7 @@ void nvc_vt_dump_vcpu_state(noir_vt_custom_vcpu_p vcpu)
 	}
 }
 
-void static nvc_vt_initialize_cvm_pin_based_controls(bool true_msr)
+void static noir_hvcode nvc_vt_initialize_cvm_pin_based_controls(bool true_msr)
 {
 	ia32_vmx_pinbased_ctrl_msr pin_ctrl_msr;
 	ia32_vmx_pinbased_controls pin_ctrl;
@@ -411,7 +411,7 @@ void static nvc_vt_initialize_cvm_pin_based_controls(bool true_msr)
 	noir_vt_vmwrite(pin_based_vm_execution_controls,pin_ctrl.value);
 }
 
-void static nvc_vt_initialize_cvm_proc_based_controls(bool true_msr)
+void static noir_hvcode nvc_vt_initialize_cvm_proc_based_controls(bool true_msr)
 {
 	ia32_vmx_priproc_controls proc_ctrl1;
 	ia32_vmx_2ndproc_controls proc_ctrl2;
@@ -450,7 +450,7 @@ void static nvc_vt_initialize_cvm_proc_based_controls(bool true_msr)
 	noir_vt_vmwrite(secondary_processor_based_vm_execution_controls,proc_ctrl2.value);
 }
 
-void static nvc_vt_initialize_cvm_vmexit_controls(bool true_msr)
+void static noir_hvcode nvc_vt_initialize_cvm_vmexit_controls(bool true_msr)
 {
 	ia32_vmx_exit_controls exit_ctrl;
 	ia32_vmx_exit_ctrl_msr exit_ctrl_msr;
@@ -476,7 +476,7 @@ void static nvc_vt_initialize_cvm_vmexit_controls(bool true_msr)
 	noir_vt_vmwrite(vmexit_controls,exit_ctrl.value);
 }
 
-void static nvc_vt_initialize_cvm_vmentry_controls(bool true_msr)
+void static noir_hvcode nvc_vt_initialize_cvm_vmentry_controls(bool true_msr)
 {
 	ia32_vmx_entry_controls entry_ctrl;
 	ia32_vmx_entry_ctrl_msr entry_ctrl_msr;
@@ -497,7 +497,7 @@ void static nvc_vt_initialize_cvm_vmentry_controls(bool true_msr)
 	noir_vt_vmwrite(vmentry_controls,entry_ctrl.value);
 }
 
-void static nvc_vt_initialize_cvm_host_state(noir_vt_vcpu_p vcpu)
+void static noir_hvcode nvc_vt_initialize_cvm_host_state(noir_vt_vcpu_p vcpu)
 {
 	noir_vt_initial_stack_p loader_stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
 	// Read the processor state.
@@ -529,7 +529,7 @@ void static nvc_vt_initialize_cvm_host_state(noir_vt_vcpu_p vcpu)
 	noir_vt_vmwrite(host_rip,(ulong_ptr)nvc_vt_exit_handler_a);
 }
 
-void static nvc_vt_initialize_cvm_msr_auto_list(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void static noir_hvcode nvc_vt_initialize_cvm_msr_auto_list(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	// Note that MSRs to be loaded on VM-Exit is stored in Host vCPU.
 	ia32_vmx_msr_auto_p auto_list=(ia32_vmx_msr_auto_p)cvcpu->msr_auto.virt;
@@ -548,7 +548,7 @@ void static nvc_vt_initialize_cvm_msr_auto_list(noir_vt_vcpu_p vcpu,noir_vt_cust
 	noir_vt_vmwrite(vmentry_msr_load_count,noir_vt_cvm_msr_auto_max);
 }
 
-void nvc_vt_initialize_cvm_vmcs(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void noir_hvcode nvc_vt_initialize_cvm_vmcs(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	ia32_vmx_basic_msr vt_basic_msr;
 	u8 vst;
@@ -584,7 +584,7 @@ void nvc_vt_initialize_cvm_vmcs(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 	}
 }
 
-void nvc_vt_set_guest_vcpu_options(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
+void noir_hvcode nvc_vt_set_guest_vcpu_options(noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	ia32_vmx_priproc_controls proc_ctrl1;
 	// Load VMCS for CVM.

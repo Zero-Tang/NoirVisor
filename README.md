@@ -142,6 +142,9 @@ For CVM Algorithm on Intel VT-x, visit [here](src/vt_core/readme.md#customizable
 
 APIs to invoke Customizable VMs are available in the [NoirCvmApi](https://github.com/Zero-Tang/NoirCvmApi) repository. The documentation of the APIs is available in the [wiki page](https://github.com/Zero-Tang/NoirCvmApi/wiki).
 
+# NSV
+NSV (a.k.a NoirVisor Secure Virtualization) is a security extension to NoirVisor CVM. This extension is a crossover project with Columbia University's OS2 course project. Read [this document](./doc/nsv.md) for further details.
+
 # NPIEP
 NPIEP (a.k.a Non-Privileged Instruction Execution Prevention) is an important security feature in Microsoft Virtualization-based Security. As a hypervisor project in conformance to Microsoft `Hv#1` interface, NoirVisor would provide this feature to the guest. This feature is similar to `UMIP` provided by later models of x86 processors. The differences are:
 

@@ -15,16 +15,9 @@ ifdef _ia32
 .model flat
 endif
 
-.code
-
 include noirhv.inc
 
-extern nvc_svm_subvert_processor_i:proc
-extern nvc_svm_exit_handler:proc
-
-ifdef _amd64
-
-extern system_cr3:qword
+.code
 
 ; A simple implementation for vmmcall instruction.
 noir_svm_vmmcall proc
@@ -33,6 +26,15 @@ noir_svm_vmmcall proc
 	ret
 
 noir_svm_vmmcall endp
+
+hvtext segment readonly align(4096) read execute nopage
+
+extern nvc_svm_subvert_processor_i:proc
+extern nvc_svm_exit_handler:proc
+
+ifdef _amd64
+
+extern system_cr3:qword
 
 nvc_svm_return proc
 
@@ -223,5 +225,7 @@ svm_launched:
 nvc_svm_subvert_processor_a endp
 
 endif
+
+hvtext ends
 
 end

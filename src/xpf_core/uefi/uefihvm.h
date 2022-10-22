@@ -49,7 +49,9 @@ UINT32 NvImageSize=0;
 void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 void NoirSerialWrite(IN UINTN ComPort,IN UINT8 *Buffer,IN UINTN Length);
 
-BOOLEAN noir_initialize_ci(VOID* section,UINT32 size,BOOLEAN soft_ci,BOOLEAN hard_ci);
+BOOLEAN noir_initialize_ci(BOOLEAN soft_ci,BOOLEAN hard_ci);
+BOOLEAN noir_add_section_to_ci(VOID* base,UINT32 size);
+BOOLEAN noir_activate_ci();
 void noir_finalize_ci();
 UINT32 noir_get_virtualization_supportability();
 BOOLEAN noir_is_virtualization_enabled();
