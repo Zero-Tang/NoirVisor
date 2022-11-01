@@ -31,8 +31,6 @@ nvc_vt_host_nmi_handler proc
 
 nvc_vt_host_nmi_handler endp
 
-; Note that the Host NMI handler (iret emulation) destroys the rax register!
-; The NMI must be triggered in a way that rax is considered totally volatile.
 nvc_svm_host_nmi_handler proc
 
 	; We do not handle NMI on ourself. NMI should be forwarded.
@@ -40,6 +38,7 @@ nvc_svm_host_nmi_handler proc
 	clgi
 	; Use a special macro to return from NMI but do not unblock NMIs.
 	nmiret
+	; The arriving NMI is kept pending even if GIF is set later.
 
 nvc_svm_host_nmi_handler endp
 

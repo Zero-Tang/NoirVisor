@@ -59,8 +59,11 @@ void static fastcall nvc_mshv_cpuid_fn40000003_handler(noir_cpuid_general_info_p
 void static fastcall nvc_mshv_cpuid_fn40000004_handler(noir_cpuid_general_info_p param)
 {
 	noir_mshv_cpuid_implementation_recommendations_p info=(noir_mshv_cpuid_implementation_recommendations_p)param;
-	// We may recommend the guest nothing. Hence, clear it out.
-	noir_stosd((u32*)info,0,4);
+	noir_stosd((u32*)info,0,4);		// Initialization
+#if defined(_hv_type1)
+	// For Type-I hypervisor on AMD-V, it is efficient to virtualize APIC via Microsoft Synthetic MSRs.
+	if(hvm_p->selected_core==use_svm_core)info->recommendation1.msr_apic_access=true;
+#endif
 }
 
 // Hypervisor Implementation Limits

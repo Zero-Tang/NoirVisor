@@ -14,3 +14,6 @@ The [stealthy_hooks.md](/doc/stealthy_hooks.md) file describes the general algor
 
 ## I/O Virtualization
 The [io_hook.md](/doc/io_virt.md) file describes the general architecture of how NoirVisor takes exclusive ownership to peripheral hardware.
+
+## Secure Virtualization
+The [nsv.md](/doc/nsv.md) file describes the architecture of how NoirVisor Secure Virtualization works.

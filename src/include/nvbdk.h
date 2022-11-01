@@ -538,6 +538,7 @@ void noir_unmap_physical_memory(void* virtual_address,size_t length);
 void* noir_find_virt_by_phys(u64 physical_address);
 bool noir_query_page_attributes(void* virtual_address,bool *valid,bool *locked,bool *large_page);
 void noir_copy_memory(void* dest,void* src,u32 cch);
+u64 noir_get_top_of_memory();
 
 // Debugging Facility
 void cdecl nv_dprintf(const char* format,...);

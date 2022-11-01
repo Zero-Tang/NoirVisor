@@ -41,21 +41,21 @@ If guest wishes such NAE to be handled by user hypervisor, guest should issue an
 For example, user hypervisor wants to intercept the `cpuid` instruction, when NSV guest executes a `cpuid` instruction, a `#VC` exception will be thrown into the NSV guest. NSV guest would be aware that it is executing `cpuid` instruction, so if NSV guest wishes to let the user hypervisor handles `cpuid`, it should fill the GHCB, which is a block of insecure memory, with its `eax` and `ecx` register value and reserve a space in GHCB to let the user hypervisor fill the `eax`, `ebx`, `ecx` and `edx` values.
 
 ```Mermaid
-sequenceDiagram
-    participant NsvGuestUser
-    participant NsvGuestKernel
-    participant NoirVisor
-    participant UserHypervisor
-    NsvGuestUser->>NoirVisor: Triggers VM-Exit by executing cpuid instruction
-    NoirVisor->>NsvGuestKernel: Inject VMM-Communication Exception
-    Note left of NsvGuestKernel: Fill GHCB with eax and ecx value
-    NsvGuestKernel->>NoirVisor: Explicitly hypercall
-    NoirVisor->>UserHypervisor: Automatic Exit
-    Note right of UserHypervisor: Fill GHCB with eax, ebx, ecx and edx value
-    UserHypervisor->>NoirVisor: Run NsvGuest vCPU
-    NoirVisor->>NsvGuestKernel: Run vCPU
-    Note left of NsvGuestKernel: Write to eax, ebx, ecx, edx registers according to GHCB
-    NsvGuestKernel->>NsvGuestUser: Execute iret instruction to end exception handling
+sequenceDiagram;
+    participant NsvGuestUser;
+    participant NsvGuestKernel;
+    participant NoirVisor;
+    participant UserHypervisor;
+    NsvGuestUser->>NoirVisor: Triggers VM-Exit by executing cpuid instruction;
+    NoirVisor->>NsvGuestKernel: Inject VMM-Communication Exception;
+    Note left of NsvGuestKernel: Fill GHCB with eax and ecx value;
+    NsvGuestKernel->>NoirVisor: Explicitly hypercall;
+    NoirVisor->>UserHypervisor: Automatic Exit;
+    Note right of UserHypervisor: Fill GHCB with eax, ebx, ecx and edx value;
+    UserHypervisor->>NoirVisor: Run NsvGuest vCPU;
+    NoirVisor->>NsvGuestKernel: Run vCPU;
+    Note left of NsvGuestKernel: Write to eax, ebx, ecx, edx registers according to GHCB;
+    NsvGuestKernel->>NsvGuestUser: Execute iret instruction to end exception handling;
 ```
 
 ### User Hypervisor: Trusted Boot
@@ -151,8 +151,19 @@ The following is a table of Synthetic MSRs defined by NoirVisor for NSV guests.
 | 0x4000_0070 | nsv_msr_eoi | WO | per-vCPU | Issues an End-of-Interrupt signal. |
 | 0x4000_0071 | nsv_msr_icr | R/W | per-vCPU | Issues an IPI. |
 | 0x4000_0072 | nsv_msr_tpr | R/W | per-vCPU | Used for accessing CR8 in 32-bit mode. |
+| 0x4001_0131 | nsv_msr_active_status | RO | VM-wide | Specifies the active status of NSV. |
 
-## Reverse Mapping Table
+#### NSV Active Status
+The `nsv_msr_active_status` is a special Synthetic MSR for NSV guest to confirm whether it is running in a confidential environment. In order to prevent impersonation, user hypervisor's interceptions toward this MSR is explicitly ignored even for Non-NSV guests.
+
+| Bits | Description |
+|---|---|
+| 63:1	| Reserved. |
+| 0		| NSV is enabled. |
+
+However, it is still possible to attack NSV guests through impersonation by using other hypervisor platforms like WHP. Current design lacks an authentication method to verify the hypervisor platform is provided by NoirVisor.
+
+## Reverse Mapping Table (Candidate 1 Design)
 The Reverse Mapping Table (RMT) is a global table that records the mapping relationship from HPA to GPA so that host physical pages are guaranteed to be assigned to their unique guest physical pages. This design is borrowed from SEV-SNP. \
 Each entry of RMT has 32 bytes of data, describing a continuous set of pages, defined as following:
 
@@ -195,4 +206,33 @@ The `Page Size` field is a 2-bit field describing the unit size of pages as desc
 | 0b11	| Reserved |
 
 ### Shared Pages
-Entries indicating that pages are shared between VMs must have the same HPA, Length and Share fields in the RMT and be adjacent to each other in the array.
+Entries indicating that pages are shared between VMs must have the same HPA, Length and Share fields in the RMT and be adjacent to each other in the array. Therefore, it is easier to track shared pages in Candidate 1 implementation.
+
+## Reverse Mapping Table (Candidate 2 Design)
+The Reverse Mapping Table (RMT) is a global table that records the mapping relationship from HPA to GPA so that host physical pages are guaranteed to be assigned to their unique guest physical pages. This design is borrowed from SEV-SNP. \
+Each entry of RMT has 16 bytes of data, defined as following:
+
+| Bit Offset | Entry Name | Description |
+|---|---|---|
+| 127:76	| GPA	| The PFN of the guest physical page being mapped from |
+| 75:64		| Rsvd	| Reserved |
+| 63:56		| Owner	| The ownership purpose of this host page |
+| 55		| Share	| This page is shared with others |
+| 54:32		| Rsvd	| Reserved |
+| 31:0		| ASID	| The Address Space Identifier or Virtual Processor Identifier assigned for the page |
+
+The RMT is an array indexed by Host PFN and thereby allows constant running time to prevent aliased mapping.
+
+### Ownership Purpose
+The `Ownership Purpose` field is a 8-bit field describing the purpose of the page ownership.
+
+| Value | Description |
+|---|---|
+| 0x00 | Owned by NoirVisor (For this entry, ASID must be zero.) |
+| 0x01 | Owned by Subverted Host (For this entry, ASID must be one.) |
+| 0x02 | Assigned to Non-NSV Guest |
+| 0x03 | Assigned to NSV Guest as Secure Memory (For this entry, the `Shared` field must be reset.) |
+| 0x04 | Assigned to NSV Guest as Insecure Memory (For this entry, the `Shared` field must be set.) |
+
+### Shared Pages
+Interoperating VMs typically use shared virtual memories. For candidate 2 implementation of RMT, it would be hard to track shared pages efficiently in that only one ASID is recorded. Also, it requires transferring the ownership to other Guests or the Subverted Host.

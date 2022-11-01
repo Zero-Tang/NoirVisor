@@ -402,12 +402,24 @@ BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase)
 			}
 			for(;i<NumberOfSections;i++)
 			{
+				if(_strnicmp(SectionHeaders[i].Name,".text",8)==0)
+				{
+					PVOID CodeBase=(PVOID)((ULONG_PTR)ImageBase+SectionHeaders[i].VirtualAddress);
+					ULONG CodeSize=SectionHeaders[i].SizeOfRawData;
+					NoirDebugPrint("Code Base: 0x%p\t Size: 0x%X\n",CodeBase,CodeSize);
+					if(noir_add_section_to_ci(CodeBase,CodeSize,TRUE)==FALSE)
+					{
+						NoirDebugPrint("Failed to add code section to CI!\n");
+						noir_finalize_ci();
+					}
+					continue;
+				}
 				if(_strnicmp(SectionHeaders[i].Name,"hvtext",8)==0)
 				{
 					PVOID CodeBase=(PVOID)((ULONG_PTR)ImageBase+SectionHeaders[i].VirtualAddress);
 					ULONG CodeSize=SectionHeaders[i].SizeOfRawData;
 					NoirDebugPrint("Code Base: 0x%p\t Size: 0x%X\n",CodeBase,CodeSize);
-					if(noir_add_section_to_ci(CodeBase,CodeSize)==FALSE)
+					if(noir_add_section_to_ci(CodeBase,CodeSize,TRUE)==FALSE)
 					{
 						NoirDebugPrint("Failed to add code section to CI!\n");
 						noir_finalize_ci();
@@ -419,7 +431,7 @@ BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase)
 					PVOID DataBase=(PVOID)((ULONG_PTR)ImageBase+SectionHeaders[i].VirtualAddress);
 					ULONG DataSize=SectionHeaders[i].SizeOfRawData;
 					NoirDebugPrint("Data Base: 0x%p\t Size: 0x%X\n",DataBase,DataSize);
-					if(noir_add_section_to_ci(DataBase,DataSize)==FALSE)
+					if(noir_add_section_to_ci(DataBase,DataSize,FALSE)==FALSE)
 					{
 						NoirDebugPrint("Failed to add data section to CI!\n");
 						noir_finalize_ci();

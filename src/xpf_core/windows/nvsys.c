@@ -441,11 +441,11 @@ ULONG32 noir_disasm_instruction(IN PVOID Code,OUT PSTR Mnemonic,IN SIZE_T Mnemon
 
 void* noir_alloc_contd_memory(size_t length)
 {
-	// PHYSICAL_ADDRESS L={0};
+	PHYSICAL_ADDRESS L={0};
 	PHYSICAL_ADDRESS H={0xFFFFFFFFFFFFFFFF};
-	// PHYSICAL_ADDRESS B={0};
-	// PVOID p=MmAllocateContiguousMemorySpecifyCacheNode(length,L,H,B,MmCached,MM_ANY_NODE_OK);
-	PVOID p=MmAllocateContiguousMemory(length,H);
+	PHYSICAL_ADDRESS B={0};
+	PVOID p=MmAllocateContiguousMemorySpecifyCacheNode(length,L,H,B,MmCached,MM_ANY_NODE_OK);
+	// PVOID p=MmAllocateContiguousMemory(length,H);
 	if(p)
 	{
 		RtlZeroMemory(p,length);
@@ -466,16 +466,8 @@ void* noir_alloc_paged_memory(size_t length)
 
 void noir_free_contd_memory(void* virtual_address,size_t length)
 {
-#if defined(_WINNT5)
-	// It is recommended to release contiguous memory at APC level on NT5.
-	KIRQL f_oldirql;
-	KeRaiseIrql(APC_LEVEL,&f_oldirql);
-#endif
-	MmFreeContiguousMemory(virtual_address);
+	MmFreeContiguousMemorySpecifyCache(virtual_address,length,MmCached);
 	InterlockedDecrement(&NoirAllocatedContiguousMemoryCount);
-#if defined(_WINNT5)
-	KeLowerIrql(f_oldirql);
-#endif
 }
 
 void noir_free_nonpg_memory(void* virtual_address)
@@ -584,6 +576,24 @@ void* noir_alloc_2mb_page()
 void noir_free_2mb_page(void* virtual_address)
 {
 	MmFreeContiguousMemorySpecifyCache(virtual_address,0x200000,MmCached);
+}
+
+/*
+// NoirVisor should be aware of large-scale systems with NUMA.
+void* noir_alloc_contd_memory_for_numa(ULONG32 numa_node,ULONG64 alignment,size_t length)
+{
+	PHYSICAL_ADDRESS L={0};
+	PHYSICAL_ADDRESS H={0xFFFFFFFFFFFFFFFFui64};
+	PHYSICAL_ADDRESS B={alignment};
+	PVOID p=MmAllocateContiguousMemorySpecifyCacheNode(length,L,H,B,MmCached,numa_node);
+	if(p)RtlZeroMemory(p,length);
+	return p;
+}
+*/
+
+ULONG64 noir_get_top_of_memory()
+{
+	return SharedUserData->NumberOfPhysicalPages<<12;
 }
 
 ULONG64 noir_get_current_process_cr3()

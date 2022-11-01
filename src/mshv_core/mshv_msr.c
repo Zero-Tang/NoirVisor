@@ -79,6 +79,40 @@ u64 static fastcall nvc_mshv_msr_r40000040_handler(noir_mshv_vcpu_p vcpu,bool wr
 	return vcpu->npiep_config;
 }
 
+u64 static fastcall nvc_mshv_r40000070_handler(noir_mshv_vcpu_p vcpu,bool write,u64 val)
+{
+	// Accelerating End-of-Interrupt.
+	if(write)
+	{
+		;
+	}
+	else
+	{
+		// This is a #GP(0) fault.
+	}
+	return 0;
+}
+
+u64 static fastcall nvc_mshv_r40000071_handler(noir_mshv_vcpu_p vcpu,bool write,u64 val)
+{
+	if(write)
+	{
+		// Accelerating Interrupt Command Register.
+		;
+	}
+	return vcpu->local_synic.icr;
+}
+
+u64 static fastcall nvc_mshv_r40000072_handler(noir_mshv_vcpu_p vcpu,bool write,u64 val)
+{
+	if(write)
+	{
+		// Accelerating Task Priority Register.
+		;
+	}
+	return vcpu->local_synic.tpr;
+}
+
 u64 fastcall nvc_mshv_rdmsr_handler(noir_mshv_vcpu_p vcpu,u32 index)
 {
 	switch(index)

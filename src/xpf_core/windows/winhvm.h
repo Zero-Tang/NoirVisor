@@ -134,7 +134,7 @@ void noir_get_processor_name(char* processor_name);
 ULONG noir_get_virtualization_supportability();
 BOOLEAN noir_is_virtualization_enabled();
 BOOLEAN noir_initialize_ci(BOOLEAN soft_ci,BOOLEAN hard_ci);
-BOOLEAN noir_add_section_to_ci(PVOID base,ULONG32 size);
+BOOLEAN noir_add_section_to_ci(PVOID base,ULONG32 size,BOOLEAN enable_scan);
 BOOLEAN noir_activate_ci();
 void noir_finalize_ci();
 

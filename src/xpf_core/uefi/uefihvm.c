@@ -128,7 +128,7 @@ BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)
 					UINT32 CodeSize=SectionHeaders[i].SizeOfRawData;
 					// Software CI Enforcement won't be supported in EFI Runtime Stage.
 					// Hence, we will run Hardware CI Enforcement only in EFI.
-					if(noir_add_section_to_ci(CodeBase,CodeSize)==FALSE)
+					if(noir_add_section_to_ci(CodeBase,CodeSize,TRUE)==FALSE)
 					{
 						NoirDebugPrint("Failed to add code section to CI!\n");
 						noir_finalize_ci();
@@ -140,7 +140,7 @@ BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)
 				{
 					VOID* DataBase=(VOID*)((UINTN)ImageBase+SectionHeaders[i].VirtualAddress);
 					UINT32 DataSize=SectionHeaders[i].SizeOfRawData;
-					if(noir_add_section_to_ci(DataBase,DataSize)==FALSE)
+					if(noir_add_section_to_ci(DataBase,DataSize,TRUE)==FALSE)
 					{
 						NoirDebugPrint("Failed to add data section to CI!\n");
 						noir_finalize_ci();

@@ -528,7 +528,7 @@ void noir_hvcode nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu)
 noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu)
 {
 	noir_status st=noir_success;
-	noir_acquire_reslock_shared(vcpu->vm->header.vcpu_list_lock);
+	noir_acquire_pushlock_exclusive(&vcpu->header.vcpu_lock);
 	// Abort execution if rescission is specified.
 	if(noir_locked_btr64(&vcpu->special_state,63))
 		vcpu->header.exit_context.intercept_code=cv_rescission;
@@ -541,17 +541,13 @@ noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu)
 			noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
 		}while(vcpu->header.exit_context.intercept_code==cv_scheduler_exit);
 	}
-	noir_release_reslock(vcpu->vm->header.vcpu_list_lock);
+	noir_release_pushlock_exclusive(&vcpu->header.vcpu_lock);
 	return st;
 }
 
 noir_status nvc_svmc_rescind_vcpu(noir_svm_custom_vcpu_p vcpu)
 {
-	noir_status st=noir_success;
-	noir_acquire_reslock_shared(vcpu->vm->header.vcpu_list_lock);
-	st=noir_locked_bts64(&vcpu->special_state,63)?noir_already_rescinded:noir_success;
-	noir_release_reslock(vcpu->vm->header.vcpu_list_lock);
-	return st;
+	return noir_locked_bts64(&vcpu->special_state,63)?noir_already_rescinded:noir_success;
 }
 
 u32 nvc_svmc_get_vm_asid(noir_svm_custom_vm_p vm)
@@ -568,6 +564,9 @@ void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 {
 	if(vcpu)
 	{
+		noir_acquire_reslock_exclusive(vcpu->vm->header.vcpu_list_lock);
+		// Acquire vCPU lock.
+		noir_acquire_pushlock_exclusive(&vcpu->header.vcpu_lock);
 		// Release VMCB.
 		if(vcpu->vmcb.virt)noir_free_contd_memory(vcpu->vmcb.virt,page_size);
 		// Release XSAVE State Area,
@@ -585,12 +584,17 @@ void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 			// Release APIC Backing Page.
 			if(vcpu->apic_backing.virt)noir_free_contd_memory(vcpu->apic_backing.virt,page_size);
 		}
+		// Release vCPU lock.
+		noir_release_pushlock_exclusive(&vcpu->header.vcpu_lock);
 		noir_free_nonpg_memory(vcpu);
+		noir_release_reslock(vcpu->vm->header.vcpu_list_lock);
 	}
 }
 
 noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_custom_vm_p virtual_machine,u32 vcpu_id)
 {
+	noir_status st=noir_vcpu_already_created;
+	noir_acquire_reslock_exclusive(virtual_machine->header.vcpu_list_lock);
 	if(virtual_machine->vcpu[vcpu_id]==null)
 	{
 		noir_svm_custom_vcpu_p vcpu=noir_alloc_nonpg_memory(sizeof(noir_svm_custom_vcpu));
@@ -631,14 +635,17 @@ noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_cu
 			noir_svm_vmmcall(noir_svm_init_custom_vmcb,(ulong_ptr)vcpu);
 		}
 		*virtual_cpu=vcpu;
-		return noir_success;
+		st=noir_success;
+		goto complete;
 alloc_failure:
 		if(vcpu->vmcb.virt)
 			noir_free_contd_memory(vcpu->vmcb.virt,page_size);
 		noir_free_nonpg_memory(vcpu);
-		return noir_insufficient_resources;
+		st=noir_insufficient_resources;
 	}
-	return noir_vcpu_already_created;
+complete:
+	noir_release_reslock(virtual_machine->header.vcpu_list_lock);
+	return st;
 }
 
 void nvc_svmc_free_asid(u32 asid)
@@ -913,6 +920,11 @@ noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_a
 	noir_status st=noir_unsuccessful;
 	amd64_addr_translator gpa;
 	u32 increment[4]={page_4kb_shift,page_2mb_shift,page_1gb_shift,page_512gb_shift};
+	// Gain Exclusion of VM.
+	noir_acquire_reslock_shared(virtual_machine->header.vcpu_list_lock);
+	for(u32 i=0;i<255;i++)
+		if(virtual_machine->vcpu[i])
+			noir_acquire_pushlock_exclusive(&virtual_machine->vcpu[i]->header.vcpu_lock);
 	gpa.value=mapping_info->gpa;
 	for(u32 i=0;i<mapping_info->pages;i++)
 	{
@@ -934,6 +946,11 @@ noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_a
 	for(u32 i=0;i<255;i++)
 		if(virtual_machine->vcpu[i])
 			virtual_machine->vcpu[i]->header.state_cache.tl_valid=false;
+	// Release Exclusion of VM.
+	for(u32 i=0;i<255;i++)
+		if(virtual_machine->vcpu[i])
+			noir_release_pushlock_exclusive(&virtual_machine->vcpu[i]->header.vcpu_lock);
+	noir_release_reslock(virtual_machine->header.vcpu_list_lock);
 	return st;
 }
 
@@ -1123,10 +1140,8 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 {
 	if(vm)
 	{
-		// Release vCPUs and list. Make sure no vCPU is running as we release the structure.
+		// Release vCPUs and list..
 		noir_acquire_reslock_exclusive(vm->header.vcpu_list_lock);
-		// In that scheduling a vCPU requires acquiring the vCPU list lock with shared access,
-		// acquiring the lock with exclusive access will rule all vCPUs out of any scheduling.
 		if(vm->vcpu)
 		{
 			for(u32 i=0;i<255;i++)

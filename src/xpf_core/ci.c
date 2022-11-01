@@ -92,6 +92,8 @@ u32 static noir_hvcode stdcall noir_ci_enforcement_worker(void* context)
 	{
 		// Select a page to enforce CI.
 		u32 i=noir_ci_selected_page++;
+		// Skip pages that software CI was disabled.
+		if(!ncie->page_ci[i].options.soft_ci)continue;
 		void* page=ncie->page_ci[i].virt;
 		// Perform Enforcement.
 		u32 crc=noir_crc32_page(page);
@@ -121,7 +123,7 @@ i32 static cdecl noir_ci_sorting_comparator(const void* a,const void*b)
 	return 0;
 }
 
-bool noir_add_section_to_ci(void* base,u32 size)
+bool noir_add_section_to_ci(void* base,u32 size,bool enable_scan)
 {
 	const u32 page_num=bytes_to_pages(size);
 	if(noir_ci->pages+page_num>=noir_ci->limit)
@@ -131,6 +133,9 @@ bool noir_add_section_to_ci(void* base,u32 size)
 		noir_ci->page_ci[i].virt=(void*)((ulong_ptr)base+page_mult(i-noir_ci->pages));
 		noir_ci->page_ci[i].crc=noir_crc32_page(noir_ci->page_ci[i].virt);
 		noir_ci->page_ci[i].phys=noir_get_physical_address(noir_ci->page_ci[i].virt);
+		noir_ci->page_ci[i].options.value=0;
+		noir_ci->page_ci[i].options.soft_ci=enable_scan?noir_ci->options.soft_ci:false;
+		noir_ci->page_ci[i].options.hard_ci=noir_ci->options.hard_ci;
 	}
 	noir_ci->pages+=page_num;
 	return true;
@@ -183,7 +188,7 @@ bool noir_initialize_ci(bool soft_ci,bool hard_ci)
 			noir_ci->options.soft_ci=soft_ci;
 			noir_ci->options.hard_ci=hard_ci;
 			// Add CI page to protection.
-			if(noir_add_section_to_ci(noir_ci,page_size))
+			if(noir_add_section_to_ci(noir_ci,page_size,true))
 				return true;
 			else
 				noir_free_contd_memory(noir_ci,page_size);
@@ -205,7 +210,7 @@ void noir_finalize_ci()
 		noir_join_thread(noir_ci->ci_thread);
 #endif
 		// Finalization.
-		noir_free_nonpg_memory(noir_ci);
+		noir_free_contd_memory(noir_ci,page_size);
 		noir_ci=null;
 	}
 }

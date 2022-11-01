@@ -377,6 +377,9 @@ Only vCPU states not saved into VMCB should be saved for Guest and loaded for Ho
 ## World Switch - vCPU Migration
 To migrate a vCPU to another logical processor, it is required to clear the VMCB clean bits before actually scheduling it onto the vCPU.
 
+## vCPU Relocation
+For large-scale systems, Non-Uniform Memory Architecture (NUMA) is very common. Memory affinity can significantly affect performance. Current implementation of NoirVisor, however, does not support relocating the vCPU to a different node. Nevertheless, support of relocation is in plan. It is recommended to set the host thread affinity of the vCPU so that the vCPU won't be scheduled onto a distant physical core.
+
 ## Emulation of MTF
 The `Monitor Trap Flag (MTF)` feature on Intel VT-x is a very powerful feature to emulate per-instruction. However, AMD-V lacks this feature, so this feature must be emulated. \
 This chapter discusses how to emulate the MTF in AMD-V.

@@ -67,6 +67,77 @@
 
 struct _noir_cvm_virtual_machine;
 
+// Reverse Mapping Table Entry (Candidate 1 Design)
+typedef struct _noir_rmt_entry
+{
+	union
+	{
+		struct
+		{
+			u32 asid;			// Bits	0-31
+			u32 reserved;		// Bits	32-63
+		};
+		u64 value;
+	}v1;
+	union
+	{
+		struct
+		{
+			u64 reserved:24;	// Bits	64-87
+			u64 psize:2;		// Bits	88-89
+			u64 ownership:6;	// Bits	90-95
+			u64 length:32;		// Bits	96-127
+		};
+		u64 value;
+	}v2;
+	union
+	{
+		struct
+		{
+			u64 shared:1;		// Bit	128
+			u64 reserved:11;	// Bits	129-139
+			u64 hpa:52;			// Bits	140-191
+		};
+		u64 value;
+	}v3;
+	union
+	{
+		struct
+		{
+			u64 reserved:12;	// Bits	192-203
+			u64 hpa:52;			// Bits	204-255
+		};
+		u64 value;
+	}v4;
+}noir_rmt_entry,*noir_rmt_entry_p;
+
+// Reverse Mapping Table Entry (Candidate 2 Design)
+/*
+typedef struct _noir_rmt_entry
+{
+	union
+	{
+		struct
+		{
+			u64 asid:32;		// Bits	0-31
+			u64 reserved:21;	// Bits	32-54
+			u64 shared:1;		// Bit	55
+			u64 ownership:8;	// Bits	56-63
+		};
+		u64 value;
+	}low;
+	union
+	{
+		struct
+		{
+			u64 reserved:12;	// Bits	64-75
+			u64 hpa:52;			// Bits	76-127
+		};
+		u64 value;
+	}high;
+}noir_rmt_entry,*noir_rmt_entry_p;
+*/
+
 // Hypervisor Structure
 typedef struct _noir_hypervisor
 {

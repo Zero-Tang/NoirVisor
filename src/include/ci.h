@@ -23,8 +23,18 @@ typedef u32 (stdcall *noir_crc32_page_func)(void* page);
 typedef struct _noir_ci_page
 {
 	void* virt;
-	u32 crc;
 	u64 phys;
+	u32 crc;
+	union
+	{
+		struct
+		{
+			u32 soft_ci:1;
+			u32 hard_ci:1;
+			u32 reserved:30;
+		};
+		u32 value;
+	}options;
 }noir_ci_page,*noir_ci_page_p;
 
 typedef struct _noir_ci_context
