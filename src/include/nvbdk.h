@@ -28,6 +28,8 @@
 #else
 #define page_shift_diff			10
 #endif
+#define page_shift_diff32		9
+#define page_shift_diff64		9
 
 #define page_shift				12
 #define page_4kb_shift			12
@@ -418,7 +420,18 @@ typedef struct _noir_basic_operand
 	}immediate;
 }noir_basic_operand,*noir_basic_operand_p;
 
-typedef union _noir_addr64_translator_l4
+typedef union _noir_addr32_translator
+{
+	struct
+	{
+		u32 offset:12;
+		u32 pte:10;
+		u32 pde:10;
+	};
+	u32 pointer;
+}noir_addr32_translator,*noir_addr32_translator_p;
+
+typedef union _noir_addr64_translator
 {
 	struct
 	{
@@ -470,7 +483,38 @@ typedef union _noir_paging32_general_entry
 		u32 global:1;
 		u32 available:1;
 		u32 base:20;
-	};
+	}pte;
+	struct
+	{
+		u32 present:1;
+		u32 write:1;
+		u32 user:1;
+		u32 pwt:1;
+		u32 pcd:1;
+		u32 accessed:1;
+		u32 ignored0:1;
+		u32 psize:1;
+		u32 ignored1:1;
+		u32 avl:3;
+		u32 pte_base:20;
+	}pde;
+	struct
+	{
+		u32 present:1;
+		u32 write:1;
+		u32 user:1;
+		u32 pwt:1;
+		u32 pcd:1;
+		u32 accessed:1;
+		u32 dirty:1;
+		u32 psize:1;
+		u32 global:1;
+		u32 avl:3;
+		u32 pat:1;
+		u32 base_hi:8;
+		u32 reserved:1;
+		u32 base_lo:10;
+	}large_pde;
 	u32 value;
 }noir_paging32_general_entry,*noir_paging32_general_entry_p;
 
@@ -533,6 +577,9 @@ void noir_free_2mb_page(void* virtual_address);
 u64 noir_get_user_physical_address(void* virtual_address);
 u64 noir_get_physical_address(void* virtual_address);
 u64 noir_get_current_process_cr3();
+void* noir_lock_pages(void* virt,size_t bytes,u64p phys);
+void noir_unlock_pages(void* locker);
+void noir_get_locked_range(void* locker,void** virt,u32p bytes);
 void* noir_map_physical_memory(u64 physical_address,size_t length);
 void noir_unmap_physical_memory(void* virtual_address,size_t length);
 void* noir_find_virt_by_phys(u64 physical_address);

@@ -122,6 +122,76 @@ bool noir_is_under_hvm()
 	return noir_bt(&c,31);
 }
 
+u64 nvc_translate_address_64_routine(noir_paging64_general_entry_p pt,u64 gva,bool write,bool* fault,size_t level)
+{
+	const size_t psize_level=level*page_shift_diff64+page_shift;
+	const size_t psize_exp=1ui64<<psize_level;
+	const u64 index=(gva>>psize_level)&0x1ff;
+	if(write>pt[index].write || pt[index].present==false)
+	{
+		// Page Fault!
+		*fault=true;
+		return 0;
+	}
+	if(pt[index].psize || level==0)
+	{
+		// Reaching final level.
+		u64 base_mask=0xFFFFFFFFFFFFFFFF;
+		u64 offset_mask=0xFFFFFFFFFFFFFFFF;
+		u64 base=pt[index].value;
+		u64 offset=gva;
+		// Erase lower property bits for base.
+		base_mask<<=psize_level;
+		// Erase higher bits for offset.
+		offset_mask&=~base_mask;
+		// Erase higher property bits for base.
+		base_mask&=0xFFFFFFFFFF000;
+		// Calculate the base and mask.
+		base&=base_mask;
+		offset&=offset_mask;
+		return base+offset;
+	}
+	// There are remaining levels to walk over.
+	return nvc_translate_address_64_routine((noir_paging64_general_entry_p)page_mult(pt[index].base),gva,write,fault,level-1);
+}
+
+u64 nvc_translate_address_l4(u64 cr3,u64 gva,bool write,bool *fault)
+{
+	noir_paging64_general_entry_p root=(noir_paging64_general_entry_p)cr3;
+	return nvc_translate_address_64_routine((noir_paging64_general_entry_p)cr3,gva,write,fault,3);
+}
+
+u64 nvc_translate_address_l3(u64 cr3,u32 gva,bool write,bool *fault)
+{
+	noir_paging64_general_entry_p root=(noir_paging64_general_entry_p)cr3;
+	return nvc_translate_address_64_routine((noir_paging64_general_entry_p)cr3,(u64)gva,write,fault,2);
+}
+
+u64 nvc_translate_address_l2(u64 cr3,u32 gva,bool write,bool *fault)
+{
+	// For Non-PAE paging, there is no need to walk page table recursively.
+	noir_paging32_general_entry_p pde=(noir_paging32_general_entry_p)cr3;
+	noir_addr32_translator trans;
+	u64 phys;
+	trans.pointer=gva;
+	phys=trans.offset;
+	if(write>(bool)pde[trans.pde].pde.write || pde[trans.pde].pde.present==false)
+		*fault=true;		// Page Fault!
+	else if(pde[trans.pde].pde.psize)
+	{
+		// Large Page.
+		phys|=trans.pte<<page_shift;
+		phys|=pde[trans.pde].large_pde.base_lo<<(page_shift+page_shift_diff32);
+		phys|=pde[trans.pde].large_pde.base_hi<<(page_shift+page_shift_diff32+page_shift_diff32);
+	}
+	else
+	{
+		noir_paging32_general_entry_p pte=(noir_paging32_general_entry_p)((u64)pde[trans.pde].pde.pte_base<<page_shift);
+		phys|=pte[trans.pte].pte.base<<page_shift;
+	}
+	return phys;
+}
+
 #if !defined(_hv_type1)
 noir_status nvc_set_guest_vcpu_options(noir_cvm_virtual_cpu_p vcpu,noir_cvm_vcpu_option_type option_type,u32 data)
 {
@@ -566,7 +636,7 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 				if(vcpu->exit_context.intercept_code!=cv_scheduler_exit)break;
 			}
 		}
-		if(st==noir_success)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
+		if(st==noir_success && !vcpu->vcpu_options.use_tunnel)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
 	}
 	return st;
 }
@@ -608,6 +678,8 @@ noir_status nvc_release_vcpu(noir_cvm_virtual_cpu_p vcpu)
 	if(hvm_p)
 	{
 		st=noir_success;
+		if(vcpu->ref_count)
+			nv_dprintf("Deleting vCPU 0x%p with uncleared reference (%u)!",vcpu,vcpu->ref_count);
 		if(hvm_p->selected_core==use_vt_core)
 			nvc_vtc_release_vcpu(vcpu);
 		else if(hvm_p->selected_core==use_svm_core)
@@ -630,8 +702,124 @@ noir_status nvc_create_vcpu(noir_cvm_virtual_machine_p vm,noir_cvm_virtual_cpu_p
 			st=nvc_svmc_create_vcpu(vcpu,vm,vcpu_id);
 		else
 			st=noir_unknown_processor;
+		if(st==noir_success)
+		{
+			(*vcpu)->ref_count=1;
+			// Initialize some registers...
+			(*vcpu)->xcrs.xcr0=1;	// HAXM does not know XCR0.
+		}
 	}
 	return st;
+}
+
+noir_status nvc_ref_vcpu(noir_cvm_virtual_cpu_p vcpu)
+{
+	noir_locked_inc(&vcpu->ref_count);
+	return noir_success;
+}
+
+noir_status nvc_deref_vcpu(noir_cvm_virtual_cpu_p vcpu)
+{
+	u32 prev_refcnt=noir_locked_dec(&vcpu->ref_count);
+	if(prev_refcnt!=1)
+		return noir_success;
+	else
+	{
+		nvc_release_vcpu(vcpu);
+		return noir_dereference_destroying;
+	}
+}
+
+noir_status nvc_operate_guest_memory(noir_cvm_virtual_cpu_p vcpu,u64 guest_address,void* buffer,u32 size,bool write,bool virtual_address)
+{
+	noir_status st=noir_hypervision_absent;
+	if(hvm_p)
+	{
+		noir_cvm_gmem_op_context context;
+		context.vcpu=vcpu;
+		context.guest_address=guest_address;
+		context.hva=buffer;
+		context.size=(u64)size;
+		context.write_op=write;
+		context.use_va=virtual_address;
+		context.reserved=0;
+		context.status=noir_unknown_processor;
+		if(hvm_p->selected_core==use_vt_core)
+			noir_vt_vmcall(noir_cvm_guest_memory_operation,(ulong_ptr)&context);
+		else if(hvm_p->selected_core==use_svm_core)
+			noir_svm_vmmcall(noir_cvm_guest_memory_operation,(ulong_ptr)&context);
+		st=context.status;
+	}
+	return st;
+}
+
+void nvc_release_lockers(noir_cvm_virtual_machine_p virtual_machine)
+{
+	// NoirVisor must gain exclusion of VM before releasing the lockers!
+	noir_cvm_lockers_list_p cur=virtual_machine->locker_head;
+	while(cur)
+	{
+		noir_cvm_lockers_list_p next=cur->next;
+		for(u32 i=0;i<noir_cvm_lockers_per_array;i++)
+			if(cur->lockers[i])
+				noir_unlock_pages(cur->lockers[i]);
+		noir_free_nonpg_memory(cur);
+		cur=next;
+	}
+}
+
+// Warning: this function erases the slot!
+// Unlock the page before releasing the slot.
+void nvc_free_locker_slot(void** locker_slot)
+{
+	noir_cvm_lockers_list_p locker_list=(noir_cvm_lockers_list_p)page_4kb_base((ulong_ptr)locker_slot);
+	if(locker_list)
+	{
+#if defined(_amd64)
+		u32 index=(u32)page_4kb_offset((u64)locker_slot)>>3;
+#else
+		u32 index=(u32)page_4kb_offset((u32)locker_slot)>>2;
+#endif
+		noir_reset_bitmap(locker_list,index);
+		*locker_slot=null;
+	}
+}
+
+void** nvc_alloc_locker_slot(noir_cvm_virtual_machine_p virtual_machine)
+{
+	for(noir_cvm_lockers_list_p cur=virtual_machine->locker_head;cur;cur=cur->next)
+	{
+		u32 index=noir_find_clear_bit(cur->bitmap,noir_cvm_lockers_per_array);
+		if(index!=0xffffffff)
+		{
+			noir_set_bitmap(cur->bitmap,index);
+			return &cur->lockers[index];
+		}
+	}
+	// At this point, all lockers are allocated.
+	virtual_machine->locker_tail->next=noir_alloc_nonpg_memory(page_size);
+	if(virtual_machine->locker_tail->next)
+	{
+		noir_cvm_lockers_list_p locker_list=virtual_machine->locker_tail->next;
+		// Return the first entry.
+		locker_list->bitmap[0]=1;
+		return locker_list->lockers;
+	}
+	// Insufficient system resources.
+	return null;
+}
+
+noir_status nvc_register_memblock(noir_cvm_virtual_machine_p vm,u64 start,u64 size)
+{
+	u32 index;
+	if(noir_bsf64(&index,~vm->memblock_bitmap))
+	{
+		noir_bts64(&vm->memblock_bitmap,index);
+		vm->memblock_registrations[index].start=start;
+		vm->memblock_registrations[index].size=size;
+		return noir_success;
+	}
+	return noir_insufficient_resources;
 }
 
 noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info)
@@ -639,14 +827,46 @@ noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_
 	noir_status st=noir_hypervision_absent;
 	if(hvm_p)
 	{
-		// Preventing any vCPUs to be launched is good enough. Exclusive acquirement is unnecessary.
+		// Exclusive acquirement is unnecessary.
 		noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
-		if(hvm_p->selected_core==use_vt_core)
-			st=nvc_vtc_set_mapping(virtual_machine,mapping_info);
-		else if(hvm_p->selected_core==use_svm_core)
-			st=nvc_svmc_set_mapping(virtual_machine,mapping_info);
+		if(mapping_info->attributes.present || mapping_info->attributes.write || mapping_info->attributes.execute)
+		{
+			void** locker_slot=nvc_alloc_locker_slot(virtual_machine);
+			u64p phys_array=noir_alloc_nonpg_memory(mapping_info->pages<<3);
+			if(locker_slot && phys_array)
+			{
+				*locker_slot=noir_lock_pages((void*)mapping_info->hva,page_4kb_mult(mapping_info->pages),phys_array);
+				if(!*locker_slot)goto alloc_failure;
+				if(hvm_p->selected_core==use_vt_core)
+					st=nvc_vtc_set_mapping(virtual_machine,mapping_info);
+				else if(hvm_p->selected_core==use_svm_core)
+					st=nvc_svmc_set_mapping(virtual_machine,mapping_info,phys_array);
+				else
+				{
+					st=noir_unknown_processor;
+					noir_unlock_pages(*locker_slot);
+					nvc_free_locker_slot(locker_slot);
+				}
+				noir_free_nonpg_memory(phys_array);
+			}
+			else
+			{
+alloc_failure:
+				if(locker_slot)nvc_free_locker_slot(locker_slot);
+				if(phys_array)noir_free_nonpg_memory(phys_array);
+				st=noir_insufficient_resources;
+			}
+		}
 		else
-			st=noir_unknown_processor;
+		{
+			if(hvm_p->selected_core==use_vt_core)
+				st=nvc_vtc_set_mapping(virtual_machine,mapping_info);
+			else if(hvm_p->selected_core==use_svm_core)
+				st=nvc_svmc_set_unmapping(virtual_machine,mapping_info->gpa,mapping_info->pages);
+			else
+				st=noir_unknown_processor;
+		}
+		nvc_register_memblock(virtual_machine,mapping_info->gpa,page_mult(mapping_info->pages));
 		noir_release_reslock(virtual_machine->vcpu_list_lock);
 	}
 	return st;
@@ -684,7 +904,7 @@ noir_status nvc_clear_gpa_accessing_bits(noir_cvm_virtual_machine_p virtual_mach
 		else
 			st=noir_unknown_processor;
 		noir_release_reslock(virtual_machine->vcpu_list_lock);
-}
+	}
 	return st;
 }
 
@@ -696,6 +916,7 @@ noir_status nvc_release_vm(noir_cvm_virtual_machine_p vm)
 		st=noir_success;
 		// Remove the VM from the list.
 		noir_acquire_reslock_exclusive(noir_vm_list_lock);
+		if(vm->ref_count)nv_dprintf("Deleting VM 0x%p with uncleared reference (%u)!\n",vm,vm->ref_count);
 		noir_remove_list_entry(&vm->active_vm_list);
 		// Release the VM structure.
 		if(hvm_p->selected_core==use_vt_core)
@@ -747,6 +968,7 @@ noir_status nvc_create_vm_ex(noir_cvm_virtual_machine_p* vm,u32 process_id,noir_
 			}
 			(*vm)->properties=properties;
 			(*vm)->pid=process_id;
+			(*vm)->ref_count=1;
 		}
 	}
 	return st;
@@ -756,6 +978,24 @@ noir_status nvc_create_vm(noir_cvm_virtual_machine_p* vm,u32 process_id)
 {
 	noir_cvm_vm_properties vmprop={0};
 	return nvc_create_vm_ex(vm,process_id,vmprop);
+}
+
+noir_status nvc_deref_vm(noir_cvm_virtual_machine_p vm)
+{
+	u32 prev_refcnt=noir_locked_dec(&vm->ref_count);
+	if(prev_refcnt!=1)
+		return noir_success;
+	else
+	{
+		nvc_release_vm(vm);
+		return noir_dereference_destroying;
+	}
+}
+
+noir_status nvc_ref_vm(noir_cvm_virtual_machine_p vm)
+{
+	noir_locked_inc(&vm->ref_count);
+	return noir_success;
 }
 
 u32 nvc_get_vm_pid(noir_cvm_virtual_machine_p vm)

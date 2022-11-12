@@ -484,6 +484,67 @@ void noir_hvcode nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	noir_svm_vmwrite64(vmcb,msrpm_physical_address,vcpu->vm->msrpm.phys);
 }
 
+u64 noir_hvcode nvc_svm_translate_gva_to_gpa(noir_svm_custom_vcpu_p vcpu,u64 gva,bool write,bool *fault)
+{
+	if(vcpu->header.crs.cr0 & amd64_cr0_pg_bit)
+	{
+		u64 cr3=vcpu->header.crs.cr3;
+		if(vcpu->header.msrs.efer & amd64_efer_lma)
+		{
+			// 64-bit paging
+			return nvc_translate_address_l4(cr3,gva,write,fault);
+		}
+		else
+		{
+			// 32-bit paging
+			if(vcpu->header.crs.cr4 & amd64_cr4_pae)
+				return nvc_translate_address_l3(cr3,(u32)gva,write,fault);	// 3-Level Paging
+			else
+				return nvc_translate_address_l2(cr3,(u32)gva,write,fault);	// 2-Level Paging
+		}
+	}
+	else
+	{
+		// If paging is disabled, then GVA is GPA.
+		*fault=false;
+		return gva;
+	}
+}
+
+u64 noir_hvcode nvc_svm_translate_gpa_to_hpa(noir_svm_custom_vcpu_p vcpu,u64 gpa,bool write,bool *fault)
+{
+	u64 ncr3=vcpu->vm->nptm.ncr3.phys;
+	return nvc_translate_address_l4(ncr3,gpa,write,fault);
+}
+
+void noir_hvcode nvc_svm_operate_guest_memory(noir_cvm_gmem_op_context_p context)
+{
+	noir_svm_custom_vcpu_p vcpu=(noir_svm_custom_vcpu_p)context->vcpu;
+	u64 gpa,guest_hpa;
+	u32 size_remainder=(u32)context->size;
+	while(size_remainder)
+	{
+		bool fault;
+		u32 copy_size=size_remainder;
+		if(context->use_va)
+			gpa=nvc_svm_translate_gva_to_gpa(vcpu,context->guest_address,context->write_op,&fault);
+		else
+			gpa=context->guest_address;
+		guest_hpa=nvc_svm_translate_gpa_to_hpa(vcpu,gpa,context->write_op,&fault);
+		// Check if the copy range spans multiple pages.
+		// If spanning on multiple pages, contract the size.
+		if(gpa+size_remainder>page_base(gpa)+page_size)
+			copy_size=(u32)(page_base(gpa)+page_size-gpa);
+		// HPA is directly accessible.
+		if(context->write_op)
+			noir_movsb((u8p)guest_hpa,context->hva,copy_size);
+		else
+			noir_movsb(context->hva,(u8p)guest_hpa,copy_size);
+		// Reduce the remainder.
+		size_remainder-=copy_size;
+	}
+}
+
 void noir_hvcode nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
@@ -532,15 +593,8 @@ noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu)
 	// Abort execution if rescission is specified.
 	if(noir_locked_btr64(&vcpu->special_state,63))
 		vcpu->header.exit_context.intercept_code=cv_rescission;
-	else if(vcpu->header.scheduling_priority<noir_cvm_vcpu_priority_kernel)
-		noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
 	else
-	{
-		do
-		{
-			noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
-		}while(vcpu->header.exit_context.intercept_code==cv_scheduler_exit);
-	}
+		noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
 	noir_release_pushlock_exclusive(&vcpu->header.vcpu_lock);
 	return st;
 }
@@ -798,7 +852,7 @@ noir_status static nvc_svmc_create_2mb_page_map(noir_svm_custom_npt_manager_p np
 			pde_p->phys=noir_get_physical_address(pde_p->virt);
 			pde_p->gpa_start=page_1gb_base(gpa);
 			// Do mapping
-			nvc_svmc_set_pde_entry(&pde_p->virt[gpa_t.pte_offset],hpa,map_attrib);
+			nvc_svmc_set_pde_entry(&pde_p->virt[gpa_t.pde_offset],hpa,map_attrib);
 			// Add to the linked list.
 			if(npt_manager->pde.head)
 				npt_manager->pde.tail->next=pde_p;
@@ -820,7 +874,7 @@ noir_status static nvc_svmc_create_2mb_page_map(noir_svm_custom_npt_manager_p np
 			}
 			if(cur)
 			{
-				nvc_svmc_set_pdpte_entry(&cur->virt[gpa_t.pde_offset],pde_p->phys,map_attrib);
+				nvc_svmc_set_pdpte_entry(&cur->virt[gpa_t.pdpte_offset],pde_p->phys,map_attrib);
 				st=noir_success;
 			}
 		}
@@ -915,31 +969,33 @@ noir_status static nvc_svmc_set_page_map(noir_svm_custom_npt_manager_p npt_manag
 	return st;
 }
 
-noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_address_mapping_p mapping_info)
+noir_status nvc_svmc_set_unmapping(noir_svm_custom_vm_p virtual_machine,u64 gpa,u32 pages)
+{
+	noir_cvm_mapping_attributes map_attrib={0};
+	for(u32 i=0;i<pages;i++)
+	{
+		noir_status st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,0,map_attrib);
+		if(st!=noir_success)return st;
+	}
+	return noir_success;
+}
+
+noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_address_mapping_p mapping_info,u64p phys_array)
 {
 	noir_status st=noir_unsuccessful;
 	amd64_addr_translator gpa;
-	u32 increment[4]={page_4kb_shift,page_2mb_shift,page_1gb_shift,page_512gb_shift};
+	// u32 increment[4]={page_4kb_shift,page_2mb_shift,page_1gb_shift,page_512gb_shift};
+	if(mapping_info->attributes.psize)return noir_not_implemented;
 	// Gain Exclusion of VM.
-	noir_acquire_reslock_shared(virtual_machine->header.vcpu_list_lock);
 	for(u32 i=0;i<255;i++)
 		if(virtual_machine->vcpu[i])
 			noir_acquire_pushlock_exclusive(&virtual_machine->vcpu[i]->header.vcpu_lock);
 	gpa.value=mapping_info->gpa;
 	for(u32 i=0;i<mapping_info->pages;i++)
 	{
-		u64 hva=mapping_info->hva+(i<<increment[mapping_info->attributes.psize]);
-		bool valid,locked,large_page;
-		if(noir_query_page_attributes((void*)hva,&valid,&locked,&large_page))
-		{
-			st=noir_user_page_violation;
-			if(valid && locked || !mapping_info->attributes.present)
-			{
-				u64 gpa=mapping_info->gpa+(i<<increment[mapping_info->attributes.psize]);
-				u64 hpa=noir_get_user_physical_address((void*)hva);
-				st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,hpa,mapping_info->attributes);
-			}
-		}
+		u64 gpa=mapping_info->gpa+page_4kb_mult(i);
+		u64 hpa=phys_array[i];
+		st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,hpa,mapping_info->attributes);
 		if(st!=noir_success)break;
 	}
 	// Broadcast to all vCPUs that the TLBs are invalid now.
@@ -950,7 +1006,6 @@ noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_a
 	for(u32 i=0;i<255;i++)
 		if(virtual_machine->vcpu[i])
 			noir_release_pushlock_exclusive(&virtual_machine->vcpu[i]->header.vcpu_lock);
-	noir_release_reslock(virtual_machine->header.vcpu_list_lock);
 	return st;
 }
 
@@ -1190,6 +1245,8 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 				cur=next;
 			}
 		}
+		// Release lockers...
+		nvc_release_lockers(&vm->header);
 		// Release ASID
 		if(vm->asid!=0xffffffff)nvc_svmc_free_asid(vm->asid);
 		// Release MSRPM & IOPM
@@ -1243,6 +1300,9 @@ noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine)
 				vm->msrpm_full.phys=noir_get_physical_address(vm->msrpm_full.virt);
 			else
 				goto alloc_failure;
+			// Allocate Locker list.
+			vm->header.locker_head=vm->header.locker_tail=noir_alloc_nonpg_memory(page_size);
+			if(vm->header.locker_head==null)goto alloc_failure;
 			// Allocate vCPU pointer list.
 			// According to AVIC, 255 physical cores are permitted.
 			vm->vcpu=noir_alloc_nonpg_memory(sizeof(void*)*256);

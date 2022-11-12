@@ -15,8 +15,13 @@
 #include <ntddk.h>
 #include <windef.h>
 
+// NoirVisor Device Name
 #define DEVICE_NAME			L"\\Device\\NoirVisor"
 #define LINK_NAME			L"\\DosDevices\\NoirVisor"
+
+// Intel HAXM Device Name
+#define HAX_DEVICE_NAME		L"\\Device\\HAX"
+#define HAX_LINK_NAME		L"\\DosDevices\\HAX"
 
 // Definitions of Status Codes of NoirVisor.
 #define NOIR_SUCCESS					0
@@ -176,6 +181,14 @@ void NoirSetProtectedPID(IN ULONG NewPID);
 void NoirBuildHookedPages();
 void NoirTeardownHookedPages();
 NTSTATUS NoirSubvertSystemOnDriverLoad(OUT PBOOLEAN Subvert);
+void __cdecl NoirDebugPrint(const char* Format,...);
+
+NTSTATUS NoirHaxInitializeDeviceExtension(IN PDRIVER_OBJECT DriverObject);
+void NoirHaxFinalizeDeviceExtension();
+NTSTATUS NoirHaxDispatchCreate(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp);
+NTSTATUS NoirHaxDispatchClose(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp);
+NTSTATUS NoirHaxDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp);
+
 extern ULONG32 noir_cvm_exit_context_size;
 extern ULONG_PTR system_cr3;
 extern ULONG_PTR orig_system_call;
@@ -184,3 +197,7 @@ extern PSTR virtual_nstr;
 
 PEPROCESS SubversionProcess=NULL;
 BOOLEAN SubvertOnDriverLoad=FALSE;
+
+PDRIVER_OBJECT NoirDriverObject=NULL;
+PDEVICE_OBJECT NoirDeviceObject=NULL;
+PDEVICE_OBJECT HaxDeviceObject=NULL;

@@ -14,6 +14,7 @@
 
 #include <nvdef.h>
 #include <nvbdk.h>
+#include <nvstatus.h>
 #include <noirhvm.h>
 #include <nv_intrin.h>
 #include "mshv_msr.h"

@@ -65,6 +65,16 @@ typedef u32 noir_status;
 #define noir_already_rescinded			0x40000001
 
 /*
+  Status Indicator: noir_dereference_destroying
+  If an object is dereferenced to the point it is being
+  released, this value is supposed to be returned.
+
+  Value: 0x40000002
+*/
+
+#define noir_dereference_destroying		0x40000002
+
+/*
   Status Indicator noir_unsuccessful
   If a procedure failed to execute due to unknown error,
   this value is supposed to be returned.

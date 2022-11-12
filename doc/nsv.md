@@ -29,6 +29,7 @@ Following VM-Exits are defined as Automatic Exits:
 | Memory Access | Guest accesses insecure memory with fault. | No |
 | Invalid State | Guest vCPU state is invalid. | No |
 | Explicit Hypercall | Guest issues an explicit hypercall to user hypervisor. | Yes |
+| Rescission | Execution of vCPU was rescinded. | No |
 
 All other VM-Exits are classified as Non-Automatic Exits (NAEs).
 
@@ -40,7 +41,7 @@ Interceptions toward the `#VC` exception by user hypervisor is ignored by NoirVi
 If guest wishes such NAE to be handled by user hypervisor, guest should issue an explicit hypercall to the host using `vmcall` or `vmmcall` instructions with a `rep` prefix in its `#VC` handler. \
 For example, user hypervisor wants to intercept the `cpuid` instruction, when NSV guest executes a `cpuid` instruction, a `#VC` exception will be thrown into the NSV guest. NSV guest would be aware that it is executing `cpuid` instruction, so if NSV guest wishes to let the user hypervisor handles `cpuid`, it should fill the GHCB, which is a block of insecure memory, with its `eax` and `ecx` register value and reserve a space in GHCB to let the user hypervisor fill the `eax`, `ebx`, `ecx` and `edx` values.
 
-```Mermaid
+```mermaid
 sequenceDiagram;
     participant NsvGuestUser;
     participant NsvGuestKernel;

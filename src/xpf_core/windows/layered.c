@@ -236,7 +236,36 @@ NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine)
 	}
 	ExfReleasePushLockExclusive(&NoirCvmHandleTable.HandleTableLock);
 	KeLeaveCriticalRegion();
+	NoirHaxRemoveVirtualMachineNotification(VirtualMachine);
 	return st;
+}
+
+NOIR_STATUS NoirIncrementVirtualMachineReference(IN CVM_HANDLE VirtualMachine)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	return VM==NULL?st:nvc_ref_vm(VM);
+}
+
+NOIR_STATUS NoirDecrementVirtualMachineReference(IN CVM_HANDLE VirtualMachine)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)
+	{
+		st=nvc_deref_vm(VM);
+		if(st==NOIR_DEREFERENCE_DESTROYING)
+		{
+			KeEnterCriticalRegion();
+			ExfAcquirePushLockExclusive(&NoirCvmHandleTable.HandleTableLock);
+			NoirCvmHandleTable.HandleCount--;
+			NoirDeleteHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
+			ExfReleasePushLockExclusive(&NoirCvmHandleTable.HandleTableLock);
+			KeLeaveCriticalRegion();
+			NoirHaxRemoveVirtualMachineNotification(VirtualMachine);
+		}
+	}
+	return VM==NULL?st:nvc_deref_vm(VM);
 }
 
 NOIR_STATUS NoirQueryGpaAccessingBitmap(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages,OUT PVOID Bitmap,IN ULONG32 BitmapSize)
@@ -372,6 +401,30 @@ NOIR_STATUS NoirReleaseVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 
 	return st;
 }
 
+NOIR_STATUS NoirIncrementVirtualProcessorReference(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_ref_vcpu(VP);
+	}
+	return st;
+}
+
+NOIR_STATUS NoirDecrementVirtualProcessorReference(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_deref_vcpu(VP);
+	}
+	return st;
+}
+
 NOIR_STATUS NoirQueryHypervisorStatus(IN ULONG64 StatusType,OUT PVOID Status)
 {
 	return nvc_query_hypervisor_status(StatusType,Status);
@@ -416,6 +469,7 @@ void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessI
 					nvc_release_vm(VirtualMachine);
 					NoirCvmHandleTable.HandleCount--;
 					NoirDeleteHandleUnsafe(Handle,NoirCvmHandleTable.TableCode);
+					NoirHaxRemoveVirtualMachineNotification(Handle);
 				}
 			}
 		}

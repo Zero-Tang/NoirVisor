@@ -17,6 +17,8 @@
 
 // Definitions of Status Codes of NoirVisor.
 #define NOIR_SUCCESS					0
+#define NOIR_ALREADY_RESCINDED			0x40000001
+#define NOIR_DEREFERENCE_DESTROYING		0x40000002
 #define NOIR_UNSUCCESSFUL				0xC0000000
 #define NOIR_INSUFFICIENT_RESOURCES		0xC0000001
 #define NOIR_NOT_IMPLEMENTED			0xC0000002
@@ -265,7 +267,6 @@ typedef struct _NOIR_LOCKED_GUEST_PAGES
 {
 	PMDL Mdl;
 	PEPROCESS Process;
-	ULONG64 PhysicalAddress;
 	ULONG_PTR VirtualAddress;
 	SIZE_T NumberOfPages;
 }NOIR_LOCKED_GUEST_PAGES,*PNOIR_LOCKED_GUEST_PAGES;
@@ -278,6 +279,7 @@ void __cdecl NoirDebugPrint(const char* Format,...);
 
 PVOID NoirLocateImageBaseByName(IN PWSTR ImageName);
 PVOID NoirLocateExportedProcedureByName(IN PVOID ImageBase,IN PSTR ProcedureName);
+NTSTATUS NoirHaxRemoveVirtualMachineNotification(IN CVM_HANDLE VmHandle);
 
 // Functions from NoirVisor XPF-Core for CVM.
 ULONG32 nvc_query_physical_asid_limit(IN PSTR vendor_string);
@@ -286,11 +288,15 @@ NOIR_STATUS nvc_query_hypervisor_status(IN ULONG64 StatusType,OUT PVOID Status);
 NOIR_STATUS nvc_create_vm(OUT PVOID *VirtualMachine,IN HANDLE ProcessId);
 NOIR_STATUS nvc_create_vm_ex(OUT PVOID *VirtualMachine,IN HANDLE ProcessId,IN ULONG32 Properties);
 NOIR_STATUS nvc_release_vm(IN PVOID VirtualMachine);
+NOIR_STATUS nvc_ref_vm(IN PVOID VirtualMachine);
+NOIR_STATUS nvc_deref_vm(IN PVOID VirtualMachine);
 NOIR_STATUS nvc_set_mapping(IN PVOID VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation);
 NOIR_STATUS nvc_query_gpa_accessing_bitmap(IN PVOID VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages,OUT PVOID Bitmap,IN ULONG32 BitmapSize);
 NOIR_STATUS nvc_clear_gpa_accessing_bits(IN PVOID VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages);
 NOIR_STATUS nvc_create_vcpu(IN PVOID VirtualMachine,OUT PVOID *VirtualProcessor,IN ULONG32 VpIndex);
 NOIR_STATUS nvc_release_vcpu(IN PVOID VirtualProcessor);
+NOIR_STATUS nvc_ref_vcpu(IN PVOID VirtualProcessor);
+NOIR_STATUS nvc_deref_vcpu(IN PVOID VirtualProcessor);
 NOIR_STATUS nvc_run_vcpu(IN PVOID VirtualProcessor,OUT PVOID ExitContext);
 NOIR_STATUS nvc_rescind_vcpu(IN PVOID VirtualProcessor);
 NOIR_STATUS nvc_query_vcpu_statistics(IN PVOID VirtualProcessor,OUT PVOID Buffer,IN ULONG32 BufferSize);
@@ -301,11 +307,36 @@ NOIR_STATUS nvc_set_guest_vcpu_options(IN PVOID VirtualProcessor,IN ULONG32 Opti
 PVOID nvc_reference_vcpu(IN PVOID VirtualMachine,IN ULONG32 VpIndex);
 HANDLE nvc_get_vm_pid(IN PVOID VirtualMachine);
 
-NOIR_CVM_HANDLE_TABLE NoirCvmHandleTable={0};
-
 NTKERNELAPI void __fastcall ExfAcquirePushLockExclusive(IN OUT PEX_PUSH_LOCK PushLock);
 NTKERNELAPI void __fastcall ExfAcquirePushLockShared(IN OUT PEX_PUSH_LOCK PushLock);
 NTKERNELAPI void __fastcall ExfReleasePushLockExclusive(IN OUT PEX_PUSH_LOCK PushLock);
 NTKERNELAPI void __fastcall ExfReleasePushLockShared(IN OUT PEX_PUSH_LOCK PushLock);
 
+#if defined(_layered)
+NOIR_CVM_HANDLE_TABLE NoirCvmHandleTable={0};
+
 ZWQUERYVIRTUALMEMORY ZwQueryVirtualMemory=NULL;
+#endif
+
+// Exporting CVM Functions...
+NOIR_STATUS NoirCreateVirtualMachine(OUT PCVM_HANDLE VirtualMachine);
+NOIR_STATUS NoirCreateVirtualMachineEx(OUT PCVM_HANDLE VirtualMachine,IN ULONG32 Properties);
+NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine);
+NOIR_STATUS NoirIncrementVirtualMachineReference(IN CVM_HANDLE VirtualMachine);
+NOIR_STATUS NoirDecrementVirtualMachineReference(IN CVM_HANDLE VirtualMachine);
+NOIR_STATUS NoirQueryGpaAccessingBitmap(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages,OUT PVOID Bitmap,IN ULONG32 BitmapSize);
+NOIR_STATUS NoirClearGpaAccessingBits(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages);
+NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING MappingInformation);
+NOIR_STATUS NoirQueryVirtualProcessorStatistics(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID Buffer,IN ULONG32 BufferSize);
+NOIR_STATUS NoirViewVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize);
+NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
+NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG64 InjectedEvent);
+NOIR_STATUS NoirSetVirtualProcessorOptions(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 OptionType,IN ULONG32 Options);
+NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID ExitContext);
+NOIR_STATUS NoirRescindVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
+NOIR_STATUS NoirCreateVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
+NOIR_STATUS NoirReleaseVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
+NOIR_STATUS NoirIncrementVirtualProcessorReference(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
+NOIR_STATUS NoirDecrementVirtualProcessorReference(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
+NOIR_STATUS NoirQueryHypervisorStatus(IN ULONG64 StatusType,OUT PVOID Status);
+PVOID NoirReferenceVirtualMachineByHandle(IN CVM_HANDLE Handle);

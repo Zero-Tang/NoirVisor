@@ -1277,6 +1277,21 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_st
 			}
 			break;
 		}
+		case noir_svm_guest_memory_operation:
+		{
+			// Validate the caller. Only Layered Hypervisor is authorized to invoke CVM hypercalls.
+			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
+			{
+#if defined(_hv_type1)
+				// FIXME: Translate GVAs in the structure.
+				noir_cvm_gmem_op_context_p op_context=null;
+#else
+				noir_cvm_gmem_op_context_p op_context=(noir_cvm_gmem_op_context_p)context;
+#endif
+				nvc_svm_operate_guest_memory(op_context);
+			}
+			break;
+		}
 		default:
 		{
 			// This function leaf is unknown. Treat it as an invalid instruction.

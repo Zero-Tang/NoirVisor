@@ -21,6 +21,7 @@
 #define noir_svm_run_custom_vcpu			0x10001
 #define noir_svm_dump_vcpu_vmcb				0x10002
 #define noir_svm_set_vcpu_options			0x10003
+#define noir_svm_guest_memory_operation		0x10004
 
 // Definition of Enabled features
 #define noir_svm_vmcb_caching				1		// Bit 0
@@ -254,7 +255,8 @@ typedef struct _noir_svm_custom_vcpu
 			u64 prev_virq:1;	// Required for interrupt-window interception.
 			u64 prev_nmi:1;
 			u64 mtf_active:1;
-			u64 reserved:60;
+			u64 reserved:59;
+			u64 hv_mtf:1;		// Trap-Flag by NoirVisor.
 			u64 rescission:1;
 		};
 		u64 value;
@@ -334,6 +336,7 @@ void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void nvc_svm_operate_guest_memory(noir_cvm_gmem_op_context_p context);
 void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid_fms);
 void nvc_svm_initialize_nested_vcpu_node_pool(noir_svm_nested_vcpu_p nvcpu);
 void nvc_svmn_virtualize_exit_vmcb(noir_svm_vcpu_p vcpu,void* l1_vmcb,void* l2_vmcb);

@@ -16,6 +16,7 @@
 
 #include "mshv_hvm.h"
 #include "cvm_hvm.h"
+#include "hax_hvm.h"
 #if defined(_vt_core)
 #include "vt_hvm.h"
 #elif defined(_svm_core)
@@ -59,11 +60,14 @@
 
 // Define Generic Hypercall Codes for NoirVisor management.
 #define noir_hypercall_callexit					0x1
+#define noir_hypercall_readphys					0x2
+#define noir_hypercall_writephys				0x3
 
 // Define Generic Hypercall Codes for Customizable VM.
 #define noir_cvm_run_vcpu					0x10001
 #define noir_cvm_dump_vcpu_vmcb				0x10002
 #define noir_cvm_set_vcpu_options			0x10003
+#define noir_cvm_guest_memory_operation		0x10004
 
 struct _noir_cvm_virtual_machine;
 
@@ -333,6 +337,11 @@ void fastcall nvc_mshv_wrmsr_handler(noir_mshv_vcpu_p vcpu,u32 index,u64 val);
 // Miscellaneous
 u64 noir_query_enabled_features_in_system();
 void noir_system_call(void);
+
+u64 nvc_translate_address_l5(u64 cr3,u64 gva,bool write,bool *fault);
+u64 nvc_translate_address_l4(u64 cr3,u64 gva,bool write,bool *fault);
+u64 nvc_translate_address_l3(u64 cr3,u32 gva,bool write,bool *fault);
+u64 nvc_translate_address_l2(u64 cr3,u32 gva,bool write,bool *fault);
 
 #if defined(_central_hvm)
 #define known_vendor_strings	16

@@ -877,17 +877,58 @@ void static noir_hvcode fastcall nvc_svm_skinit_cvexit_handler(noir_gpr_state_p 
 void static noir_hvcode fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	amd64_npt_fault_code fault;
+	u64 gpa=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info2);
+	bool is_mmio=false;
+	noir_cvm_memblock_registration_p memblocks=cvcpu->vm->header.memblock_registrations;
 	// #NPF occured, tell the subverted host there is a memory access fault.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
-	cvcpu->header.exit_context.intercept_code=cv_memory_access;
-	cvcpu->header.exit_context.memory_access.gpa=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info2);
+	// #NPF could mean either MMIO or memory-access fault.
+	for(u32 i=0;i<noir_cvm_memblock_registration_limit;i++)
+	{
+		if(gpa>=memblocks[i].start && gpa<memblocks[i].start+memblocks[i].size)
+		{
+			// This is actually MMIO.
+			is_mmio=true;
+			break;
+		}
+	}
 	fault.value=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info1);
-	cvcpu->header.exit_context.memory_access.access.read=(u8)fault.present;
-	cvcpu->header.exit_context.memory_access.access.write=(u8)fault.write;
-	cvcpu->header.exit_context.memory_access.access.execute=(u8)fault.execute;
-	cvcpu->header.exit_context.memory_access.access.user=(u8)fault.user;
-	cvcpu->header.exit_context.memory_access.access.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
-	noir_movsb(cvcpu->header.exit_context.memory_access.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
+	if(is_mmio)
+	{
+		// AMD-V can't calculate the next rip. We must decode by software.
+		// Based on the cs attributes, determine the mode.
+		void* instruction=(void*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes);
+		bool cs_l=noir_svm_vmcb_bt32(cvcpu->vmcb.virt,guest_cs_attrib,9);
+		bool cs_d=noir_svm_vmcb_bt32(cvcpu->vmcb.virt,guest_cs_attrib,10);
+		u32 inslen;
+		u64 next_rip;
+		// Use proper mode engine to decode the instruction.
+		if(cs_l)
+			inslen=noir_get_instruction_length_ex(instruction,64);
+		else if(cs_d)
+			inslen=noir_get_instruction_length_ex(instruction,32);
+		else
+			inslen=noir_get_instruction_length_ex(instruction,16);
+		// Get the Next RIP.
+		next_rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip)+inslen;
+		if(!cs_l)next_rip&=0xFFFFFFFF;
+		cvcpu->header.exit_context.vcpu_state.instruction_length=(u64)inslen;
+		// Save the interception information.
+		cvcpu->header.exit_context.intercept_code=cv_mmio_operation;
+		cvcpu->header.exit_context.mmio.gpa=gpa;
+		cvcpu->header.exit_context.mmio.access.direction=fault.write;
+	}
+	else
+	{
+		cvcpu->header.exit_context.intercept_code=cv_memory_access;
+		cvcpu->header.exit_context.memory_access.gpa=gpa;
+		cvcpu->header.exit_context.memory_access.access.read=(u8)fault.present;
+		cvcpu->header.exit_context.memory_access.access.write=(u8)fault.write;
+		cvcpu->header.exit_context.memory_access.access.execute=(u8)fault.execute;
+		cvcpu->header.exit_context.memory_access.access.user=(u8)fault.user;
+		cvcpu->header.exit_context.memory_access.access.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
+		noir_movsb(cvcpu->header.exit_context.memory_access.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
+	}
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.npf;
 }

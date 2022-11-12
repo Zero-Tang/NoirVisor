@@ -480,6 +480,41 @@ void noir_free_paged_memory(void* virtual_address)
 	NoirFreePagedMemory(virtual_address);
 }
 
+void noir_get_locked_range(PMDL Mdl,void** virt,PULONG bytes)
+{
+	*virt=MmGetMdlVirtualAddress(Mdl);
+	*bytes=MmGetMdlByteCount(Mdl);
+}
+
+void noir_unlock_pages(PMDL Mdl)
+{
+	MmUnlockPages(Mdl);
+	IoFreeMdl(Mdl);
+}
+
+PMDL noir_lock_pages(void* virt,ULONG32 bytes,PULONG64 phys)
+{
+	// Use MDL to lock memories...
+	PMDL pMdl=IoAllocateMdl(virt,bytes,FALSE,FALSE,NULL);
+	if(pMdl)
+	{
+		ULONG Pages=ADDRESS_AND_SIZE_TO_SPAN_PAGES(virt,bytes);
+		PPFN_NUMBER PfnArray;
+		__try
+		{
+			MmProbeAndLockPages(pMdl,KernelMode,IoWriteAccess);
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER)
+		{
+			IoFreeMdl(pMdl);
+			return NULL;
+		}
+		PfnArray=MmGetMdlPfnArray(pMdl);
+		for(ULONG i=0;i<Pages;i++)phys[i]=PfnArray[i]<<PAGE_SHIFT;
+	}
+	return pMdl;
+}
+
 ULONG64 noir_get_physical_address(void* virtual_address)
 {
 	PHYSICAL_ADDRESS pa;

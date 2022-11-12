@@ -81,7 +81,7 @@ In that Zydis is included as a submodule, you must clone this repository recursi
 There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://github.com/Zero-Tang/NoirVisorLoader <br>
 If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher. <br>
 If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine. <br>
-You may enable Stealth SSDT Hook by setting up registry: (If your system is updated with certain patches since 2018, you should, nonetheless, disable Stealth MSR Hook feature. Otherwise, your system could result in #DF failure.) Please note that since hooking is a very dangerous behavior, NoirVisor disables them on default. <br>
+You may enable Stealth SSDT Hook by setting up registry. Please note that since hooking is a very dangerous behavior, NoirVisor disables them on default. <br>
 **Caveat: The stealth hook functionalities are *deprecated* by virtue of Windows kernel-mode patch dections. They are disabled by default. Future updates of NoirVisor will rarely address issues from them. If you encountered issues from stealth hook features, expect no fixes will be applied. This project has no interest in fixing them.** 
 ```bat
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "StealthMsrHook" /t REG_DWORD /d 1 /f
@@ -141,6 +141,14 @@ For CVM Algorithm on AMD-V, visit [here](src/svm_core/readme.md#customizable-vm-
 For CVM Algorithm on Intel VT-x, visit [here](src/vt_core/readme.md#customizable-vm-scheduler-algorithm).
 
 APIs to invoke Customizable VMs are available in the [NoirCvmApi](https://github.com/Zero-Tang/NoirCvmApi) repository. The documentation of the APIs is available in the [wiki page](https://github.com/Zero-Tang/NoirCvmApi/wiki).
+
+## Intel HAXM
+<img src="https://github.com/intel/haxm/blob/master/Installer/res/haxm_logo.ico" align=right>
+
+NoirVisor CVM is implementing a wrapper of HAX-compatible APIs in order to accelerate QEMU. \
+You may visit [Intel HAXM Repository](https://github.com/intel/haxm) for further information.
+
+Note: future implementation of NoirVisor will make a specific NoirVisor CVM accelerator.
 
 # NSV
 NSV (a.k.a NoirVisor Secure Virtualization) is a security extension to NoirVisor CVM. This extension is a crossover project with Columbia University's OS2 course project. Read [this document](./doc/nsv.md) for further details.
