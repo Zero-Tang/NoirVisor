@@ -54,10 +54,12 @@ typedef enum _noir_cvm_intercept_code
 	cv_task_switch=15,
 	cv_single_step=16,
 	cv_mmio_operation=17,
+	cv_monitor_trap=18,
 	// The rest are scheduler-relevant.
 	cv_scheduler_exit=0x80000000,
 	cv_scheduler_pause=0x80000001,
-	cv_scheduler_bug=0x80000002
+	cv_scheduler_bug=0x80000002,
+	cv_scheduler_npt_misconfig=0x80000003
 }noir_cvm_intercept_code,*noir_cvm_intercept_code_p;
 
 typedef enum _noir_cvm_register_type
@@ -93,6 +95,9 @@ typedef enum _noir_cvm_vcpu_option_type
 	noir_cvm_msr_interception
 }noir_cvm_vcpu_option_type,*noir_cvm_vcpu_option_type_p;
 
+#define noir_cvm_cpuid_quickpath_limit_per_vm		64
+#define noir_cvm_cpuid_quickpath_limit_per_vcpu		16
+
 typedef struct _noir_cvm_cpuid_quickpath_info
 {
 	u32 leaf;
@@ -103,7 +108,8 @@ typedef struct _noir_cvm_cpuid_quickpath_info
 		{
 			u64 active:1;
 			u64 has_subleaf:1;
-			u64 reserved:62;
+			u64 vm_wide:1;
+			u64 reserved:61;
 		};
 		u64 value;
 	}options;
@@ -189,6 +195,7 @@ typedef struct _noir_cvm_mmio_context
 		u64 reserved:60;
 	}access;
 	u64 gpa;
+	u8 instruction_bytes[15];
 }noir_cvm_mmio_context,*noir_cvm_mmio_context_p;
 
 typedef struct _noir_cvm_msr_context
@@ -325,6 +332,24 @@ typedef struct _noir_msr_state
 		memory_descriptor host_page;
 		u64 value;
 	}apic;
+	struct
+	{
+		u64 def_type;
+		// Current implementation does not support MTRRs.
+		u64 fix64k_00000;
+		u64 fix16k_80000;
+		u64 fix16k_a0000;
+		u64 fix4k_c0000;
+		u64 fix4k_c8000;
+		u64 fix4k_d0000;
+		u64 fix4k_d8000;
+		u64 fix4k_e0000;
+		u64 fix4k_e8000;
+		u64 fix4k_f0000;
+		u64 fix4k_f8000;
+		u64 base[10];
+		u64 mask[10];
+	}mtrr;
 	u64 debug_ctrl;
 	// The LBR virtualization is in draft-stage.
 	u64 last_branch_from_ip;
@@ -490,11 +515,7 @@ typedef struct _noir_cvm_virtual_cpu
 	}statistics_internal;
 	u32 exception_bitmap;
 	u32 scheduling_priority;
-	struct
-	{
-		noir_cvm_cpuid_quickpath_info_p info;
-		u32 count;
-	}cpuid_quickpath;
+	noir_cvm_cpuid_quickpath_info cpuid_quickpath[8];
 }noir_cvm_virtual_cpu,*noir_cvm_virtual_cpu_p;
 
 #define noir_cvm_memory_uc	0
@@ -546,6 +567,7 @@ typedef struct _noir_cvm_memblock_registration
 {
 	u64 start;
 	u64 size;
+	void* host;
 }noir_cvm_memblock_registration,*noir_cvm_memblock_registration_p;
 
 typedef union _noir_cvm_vm_properties
@@ -577,6 +599,7 @@ typedef struct _noir_cvm_virtual_machine
 	noir_cvm_lockers_list_p locker_tail;
 	u64 memblock_bitmap;
 	noir_cvm_memblock_registration memblock_registrations[noir_cvm_memblock_registration_limit];
+	noir_cvm_cpuid_quickpath_info cpuid_quickpath[64];
 	noir_reslock vcpu_list_lock;
 }noir_cvm_virtual_machine,*noir_cvm_virtual_machine_p;
 
@@ -656,8 +679,11 @@ extern noir_reslock noir_vm_list_lock;
 #elif defined(_cvhax)
 noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_register_type register_type,void* buffer,u32 buffer_size);
 noir_status nvc_view_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_register_type register_type,void* buffer,u32 buffer_size);
+noir_status nvc_set_guest_vcpu_options(noir_cvm_virtual_cpu_p vcpu,noir_cvm_vcpu_option_type option_type,u32 data);
 noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info);
 noir_status nvc_operate_guest_memory(noir_cvm_virtual_cpu_p vcpu,u64 guest_address,void* buffer,u32 size,bool write,bool virtual_address);
+noir_status nvc_translate_gpa_to_hva(noir_cvm_virtual_machine vm,u64 gpa,void* *hva);
+noir_status nvc_translate_gva_to_hva(noir_cvm_virtual_cpu_p vcpu,u64 gva,void* *hva);
 void nvc_synchronize_vcpu_state(noir_cvm_virtual_cpu_p vcpu);
 noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context);
 #endif

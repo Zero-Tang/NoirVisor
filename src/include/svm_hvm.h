@@ -46,6 +46,15 @@
 // most fields in VMCB requires synchronization.
 #define noir_svm_nesting_vmcb_clean_bits	0xFFFFE817
 
+// Definitions of CVM CPUID maskings
+#define noir_svm_cpuid_cvmask0_ecx_fn0000_0001	0xE2D83209
+#define noir_svm_cpuid_cvmask1_ecx_fn0000_0001	0x80000000
+#define noir_svm_cpuid_cvmask0_edx_fn0000_0001	0x078BBB7F
+#define noir_svm_cpuid_cvmask0_ebx_fn0000_0007	0x01DC0589
+#define noir_svm_cpuid_cvmask0_ecx_fn0000_0007	0x00000004
+#define noir_svm_cpuid_cvmask0_ecx_fn8000_0001	0x002001FB
+#define noir_svm_cpuid_cvmask0_edx_fn8000_0001	0xEFDFBB7F
+
 struct _noir_npt_manager;
 
 typedef enum _noir_svm_consistency_check_failure_id

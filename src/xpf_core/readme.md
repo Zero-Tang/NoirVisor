@@ -21,8 +21,10 @@ Save processor state, including:
 # CI (Code Integrity)
 Code Integrity is a component that ensures codes in NoirVisor is not tampered by malicious software. <br>
 It works like PatchGuard in 64-bit Windows. In NoirVisor, checksum of CI is implemented by CRC32 Castagnoli Algorithm. <br>
-By now, Code Integrity is enforced through timer-based enforcement. Real-Time CI is now implemented on AMD-V NPT. Intel EPT-based Real-Time CI will be implemented in future. <br>
 Real-Time Code Integrity will work like HyperGuard in Windows. The key point is that NoirVisor will not crash the system.
+
+# Debugger
+NoirVisor integrates an internal debugger for debugging hypervisor from remote. Currently, NoirVisor supports debugging over serial connection.
 
 # Roadmap
 Implement support to other platforms (e.g Linux, MacOS, etc...).

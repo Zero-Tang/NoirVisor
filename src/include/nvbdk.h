@@ -594,7 +594,11 @@ void cdecl nv_panicf(const char* format,...);
 void cdecl nv_async_dprintf(const char* format,...);
 void cdecl nvci_tracef(const char* format,...);
 void cdecl nvci_panicf(const char* format,...);
-void cdecl nv_dprintf2(bool datetime,bool proc_id,const char* format,...);
+void cdecl nv_dprintf_unprefixed(const char* format,...);
+void cdecl nv_dprintf2(bool datetime,bool proc_id,const char* func_name,const char* format,...);
+
+void cdecl nvd_printf(const char* format,...);
+void cdecl nvd_panicf(const char* format,...);
 
 // Threading Facility
 typedef u32 (stdcall *noir_thread_procedure)(void* context);

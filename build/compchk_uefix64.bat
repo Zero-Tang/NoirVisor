@@ -1,9 +1,8 @@
 @echo off
 set ddkpath=V:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.31.31103
 set path=%ddkpath%\bin\Hostx64\x64;%path%
-set edkpath=C:\UefiDKII
-set mdepath=C:\UefiDKII\MdePkg
-set libpath=C:\UefiDKII\Bin\MdePkg
+set mdepath=%EDK2_PATH%\MdePkg
+set libpath=%EDK2_PATH%\Bin\MdePkg
 set binpath=..\bin\compchk_uefix64
 set objpath=..\bin\compchk_uefix64\Intermediate
 
@@ -41,7 +40,12 @@ cl ..\src\xpf_core\noirhvm.c /I"..\src\include" /nologo /Zi /W3 /WX /Od /Oi /D"_
 
 cl ..\src\xpf_core\ci.c /I"..\src\include" /nologo /Zi /W3 /WX /Od /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_code_integrity" /FAcs /Fa"%objpath%\driver\ci.cod" /Fo"%objpath%\driver\ci.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c
 
-cl ..\src\xpf_core\devkits.c /I"..\src\include" /nologo /Zi /W3 /WX /Od /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_devkits" /FAcs /Fa"%objpath%\driver\devkits.cod" /Fo"%objpath%\driver\devkits.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c
+cl ..\src\xpf_core\devkits.c /I"..\src\include" /I"%ddkpath%\include" /nologo /Zi /W3 /WX /Od /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_devkits" /FAcs /Fa"%objpath%\driver\devkits.cod" /Fo"%objpath%\driver\devkits.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c
+
+cl ..\src\xpf_core\nvdbg.c /I"..\src\include" /I"%ddkpath%\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_nvdbg" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\nvdbg.cod" /Fo"%objpath%\driver\nvdbg.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue
+
+echo Compiling Core of Drivers...
+cl ..\src\drv_core\serial\serial.c /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_drv_serial" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\serial.cod" /Fo"%objpath%\driver\serial.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue
 
 echo ============Start Linking============
 echo Linking NoirVisor EFI Loader Application...

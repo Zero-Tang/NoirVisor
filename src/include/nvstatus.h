@@ -130,6 +130,8 @@ typedef u32 noir_status;
   If the function requires hypervisor to be present
   in the system and hypervisor is actually absent,
   then this value is supposed to be returned.
+
+  Value: 0xC0000005
 */
 
 #define noir_hypervision_absent			0xC0000005
@@ -139,6 +141,8 @@ typedef u32 noir_status;
   If an attempt to create a vCPU with identifier
   that is already created within a Customizable VM,
   then this value is supposed to be returned.
+
+  Value: 0xC0000006
 */
 
 #define noir_vcpu_already_created		0xC0000006
@@ -147,6 +151,8 @@ typedef u32 noir_status;
   Status Indicator: noir_buffer_too_small
   If the buffer passed to the function is too small,
   then this value is supposed to be returned.
+
+  Value: 0xC0000007
 */
 
 #define noir_buffer_too_small			0xC0000007
@@ -155,6 +161,8 @@ typedef u32 noir_status;
   Status Indicator: noir_vcpu_not_exist
   If a specified vCPU does not exist, then
   this value is supposed to be returned.
+
+  Value: 0xC0000008
 */
 
 #define noir_vcpu_not_exist				0xC0000008
@@ -164,6 +172,8 @@ typedef u32 noir_status;
   If the page specified for CVM address
   mapping does not meet the requirements,
   then this value is supposed to be returned.
+
+  Value: 0xC0000009
 */
 
 #define noir_user_page_violation		0xC0000009
@@ -173,6 +183,8 @@ typedef u32 noir_status;
   If a guest page to be accessed by
   the hypervisor does not exist,
   then this value is supposed to be returned.
+
+  Value: 0xC000000A
 */
 
 #define noir_guest_page_absent			0xC000000A
@@ -181,9 +193,31 @@ typedef u32 noir_status;
   Status Indicator: noir_access_denied
   If a procedure is accessing something protected,
   then this value is supposed to be returned.
+
+  Value: 0xC000000B
 */
 
 #define noir_access_denied				0xC000000B
+
+/*
+  Status Indicator: noir_hardware_error
+  If a procedure encounters an external hardware
+  error, then this value is supposed to be returned.
+
+  Value: 0xC000000C
+*/
+
+#define noir_hardware_error				0xC000000C
+
+/*
+  Status Indicator: noir_uninitialized
+  If a procedure is accessing some uninitialized data,
+  then this value is supposed to be returned.
+
+  Value: 0xC000000D
+*/
+
+#define noir_uninitialized				0xC000000D
 
 /*
   Status Indicator: noir_not_intel

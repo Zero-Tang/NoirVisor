@@ -14,6 +14,19 @@
 
 #include "nvdef.h"
 
+// Microsoft Hypervisor CPUID Leaves Definitions
+#define hvm_cpuid_leaf_range_and_vendor_string			0x40000000
+#define hvm_cpuid_vendor_neutral_interface_id			0x40000001
+#define hvm_cpuid_hypervisor_system_id					0x40000002
+#define hvm_cpuid_hypervisor_feature_id					0x40000003
+#define hvm_cpuid_implementation_recommendations		0x40000004
+#define hvm_cpuid_implementation_limits					0x40000005
+#define hvm_cpuid_implementation_hardware_features		0x40000006
+#define hvm_cpuid_cpu_management_features				0x40000007
+#define hvm_cpuid_shared_virtual_memory_features		0x40000008
+#define hvm_cpuid_nested_hypervisor_feature_id			0x40000009
+#define hvm_cpuid_nested_virtualization_features		0x4000000A
+
 #define noir_mshv_npiep_prevent_sgdt		0
 #define noir_mshv_npiep_prevent_sidt		1
 #define noir_mshv_npiep_prevent_sldt		2

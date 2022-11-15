@@ -451,6 +451,9 @@ The `cpuid` instruction must be intercepted by NoirVisor, even though host may c
 #### CPUID Quick-Path
 The User Hypervisor may specify a pre-defined value for guest vCPU. Therefore, interception of `cpuid` instruction does not have to exit to user-mode, and thereby increases the performance of `cpuid` emulation.
 
+NoirVisor defines a preset of CPUID Quick-Paths that indicate what CPU functionalities are exposed to the Guest. \
+There are 7 predefined standard leaves (0,1,5,6,7,B,D) and 9 extended leaves (0x8000_0000 to 0x8000_0008) in the CPUID Quick-Paths.
+
 ### RSM Interception
 The `rsm` instruction is optionally intercepted by NoirVisor. If the host chooses not to intercept `rsm` instruction, NoirVisor would not specify the intercept bit in VMCB.
 

@@ -128,6 +128,7 @@ void NoirTeardownHookedPages();
 void __cdecl NoirDebugPrint(const char* Format,...);
 ULONG nvc_build_hypervisor();
 void nvc_teardown_hypervisor();
+ULONG noir_configure_serial_port_debugger(IN BYTE PortNumber,IN USHORT PortBase,IN ULONG32 BaudRate);
 ULONG noir_visor_version();
 void noir_get_vendor_string(char* vendor_string);
 void noir_get_processor_name(char* processor_name);

@@ -169,7 +169,7 @@ void static noir_hvcode fastcall nvc_svm_db_exception_handler(noir_gpr_state_p g
 	// The guest might be accessing APIC. Clear the flag by the way.
 	if(noir_btr(&vcpu->global_state,noir_svm_apic_access))
 	{
-		nv_dprintf("Single-stepped on APIC-Access!\n");
+		nvd_printf("Single-stepped on APIC-Access!\n");
 		// If the APIC-Access is issuing IPI, inspect what's inside.
 		if(noir_btr(&vcpu->global_state,noir_svm_issuing_ipi))
 		{
@@ -180,7 +180,7 @@ void static noir_hvcode fastcall nvc_svm_db_exception_handler(noir_gpr_state_p g
 			// The value of ICR-Hi is in original APIC page.
 			// It does not matter if we read by physical address.
 			icr_hi.value=*(u32p)(vcpu->apic_base+amd64_apic_icr_hi);
-			nv_dprintf("ICR_LO: 0x%08X, ICR_HI: 0x%08X\n",icr_lo.value,icr_hi.value);
+			nvd_printf("ICR_LO: 0x%08x, ICR_HI: 0x%08x\n",icr_lo.value,icr_hi.value);
 			switch(icr_lo.msg_type)
 			{
 				case amd64_apic_icr_msg_init:
@@ -382,7 +382,7 @@ void static noir_hvcode fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p g
 					// in that INIT signal would not disappear on interception!
 					// We thereby have to redirect INIT signals into #SX exceptions.
 					// Emulate what a real INIT Signal would do.
-					nv_dprintf("INIT signal is intercepted!\n");
+					nvd_printf("INIT signal is intercepted!\n");
 					nvc_svm_emulate_init_signal(gpr_state,vmcb,vcpu->cpuid_fms);
 					// Emulate the Wait-for-SIPI state by spin-locking...
 					while(!noir_locked_btr(&vcpu->global_state,noir_svm_sipi_sent))noir_pause();
@@ -869,14 +869,14 @@ void static noir_hvcode fastcall nvc_svm_io_handler(noir_gpr_state_p gpr_state,n
 	{
 		// NoirVisor needs access to a serial port.
 		// Current implementation does not grant shared access. JUST DO NOTHING.
-		nv_dprintf("Access to protected serial port is intercepted!\n");
+		nvd_printf("Access to protected serial port is intercepted!\n");
 		noir_svm_advance_rip(vmcb);
 	}
 #if defined(_hv_type1)
 	// In Type-I hypervisor, PM1 register access must be virtualized.
 	else if(info.port==hvm_p->protected_ports.pm1a)
 	{
-		nv_dprintf("PM1a register is intercepted!\n");
+		nvd_printf("PM1a register is intercepted!\n");
 		if(info.type)	// Input Operation is none of our business.
 			;
 		else
@@ -886,12 +886,12 @@ void static noir_hvcode fastcall nvc_svm_io_handler(noir_gpr_state_p gpr_state,n
 	}
 	else if(info.port==hvm_p->protected_ports.pm1b)
 	{
-		nv_dprintf("PM1b register is intercepted!\n");
+		nvd_printf("PM1b register is intercepted!\n");
 	}
 	else
 	{
 		// Unexpected I/O operation, forward.
-		nv_dprintf("Unexpected I/O operation is intercepted!\n");
+		nvd_printf("Unexpected I/O operation is intercepted!\n");
 	}
 #endif
 }
@@ -1093,7 +1093,7 @@ void static noir_hvcode fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,
 void static noir_hvcode fastcall nvc_svm_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	noir_svm_stgi();	// Enable GIF for Debug-Printing
-	nv_dprintf("Shutdown (Triple-Fault) is Intercepted! System is unusable!\n");
+	nvd_printf("Shutdown (Triple-Fault) is Intercepted! System is unusable!\n");
 	noir_int3();
 }
 
@@ -1507,7 +1507,7 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 		if(gpa>=apic_base && gpa<apic_base+page_size)
 		{
 			const u64 offset=gpa-apic_base;
-			nv_dprintf("APIC-write is intercepted! Offset=0x%llX\n",offset);
+			nvd_printf("APIC-write is intercepted! Offset=0x%x\n",(u32)offset);
 			noir_bts(&vcpu->global_state,noir_svm_apic_access);
 			switch(offset)
 			{
@@ -1539,7 +1539,7 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 		// Hence we should advance rip by software analysis.
 		// Usually, if #NPF handler goes here, it might be induced by Hardware-Enforced CI.
 		// In this regard, we assume this instruction is writing protected page.
-		nv_dprintf("CI-event is intercepted! #NPF Code: 0x%X, GPA=0x%llX\n",fault.value,noir_svm_vmread64(vcpu->vmcb.virt,exit_info2));
+		nvd_printf("CI-event is intercepted! #NPF Code: 0x%x, GPA=0x%p\n",fault.value,noir_svm_vmread64(vcpu->vmcb.virt,exit_info2));
 		void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
 		// Determine Long-Mode through CS.L bit.
 		u16* cs_attrib=(u16*)((ulong_ptr)vcpu->vmcb.virt+guest_cs_attrib);
@@ -1692,8 +1692,8 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 	else
 	{
 		// Reserved branch.
-		nv_dprintf("VMCB Exiting: 0x%p (0x%p), Host vCPU VMCB: 0x%p\n",gpr_state->rax,loader_stack->guest_vmcb_pa,vcpu->vmcb.phys);
-		nv_dprintf("vCPU pointer: 0x%p, GPR Base: 0x%p\n",vcpu,gpr_state);
+		nvd_printf("VMCB Exiting: 0x%p (0x%p), Host vCPU VMCB: 0x%p\n",gpr_state->rax,loader_stack->guest_vmcb_pa,vcpu->vmcb.phys);
+		nvd_printf("vCPU pointer: 0x%p, GPR Base: 0x%p\n",vcpu,gpr_state);
 		noir_int3();
 	}
 	// The rax in GPR state should be the physical address of VMCB

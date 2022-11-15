@@ -418,11 +418,24 @@ noir_status nvc_hax_run_vcpu(noir_cvm_virtual_cpu_p vcpu)
 			noir_copy_memory(&vcpu->gpr.rax,vcpu->iobuff,htun->io.size);
 		}
 	}
+	// Trap
+	/*
+	noir_cvm_vcpu_options vcpu_op;
+	vcpu->rflags|=0x100;
+	vcpu->state_cache.gprvalid=0;
+	vcpu_op.value=0;
+	vcpu_op.use_tunnel=1;
+	vcpu_op.tunnel_format=noir_cvm_tunnel_format_haxm;
+	vcpu_op.intercept_exceptions=1;
+	nvc_set_guest_vcpu_options(vcpu,noir_cvm_guest_vcpu_options,vcpu_op.value);
+	nvc_set_guest_vcpu_options(vcpu,noir_cvm_exception_bitmap,2);
+	*/
 	st=nvc_run_vcpu(vcpu,null);
 	while(st==noir_success)
 	{
 		bool resumption=false;
 		// NoirVisor CVM VM-Exit happened.
+		nv_dprintf("CVM VM-Exit in Haxm! Intercept Code=0x%X\n",vcpu->exit_context.intercept_code);
 		// Translate CVM Exit Context into HAXM Tunnel.
 		switch(vcpu->exit_context.intercept_code)
 		{
@@ -432,6 +445,7 @@ noir_status nvc_hax_run_vcpu(noir_cvm_virtual_cpu_p vcpu)
 				// For invalid states and shutdown conditions,
 				// Intel HAXM interprets them as state changes.
 				htun->exit_status=hax_exit_state_change;
+				noir_int3();
 				break;
 			}
 			case cv_memory_access:
@@ -450,7 +464,10 @@ noir_status nvc_hax_run_vcpu(noir_cvm_virtual_cpu_p vcpu)
 				mmio_info->direction=false;
 				// Intel HAXM automatically advance rip.
 				nvc_edit_vcpu_registers(vcpu,noir_cvm_instruction_pointer,&vcpu->exit_context.next_rip,sizeof(u64));
-				nv_dprintf("MMIO Happened at Guest RIP=0x%p!\n",vcpu->exit_context.rip);
+				nv_dprintf("MMIO Happened at Guest RIP=0x%p! Next RIP=0x%p (CS.Selector=0x%04X, Base=0x%p)\n",vcpu->exit_context.rip,vcpu->exit_context.next_rip,vcpu->exit_context.cs.selector,vcpu->exit_context.cs.base);
+				nv_dprintf("Fetched Instruction Bytes: ");
+				for(u32 i=0;i<15;i++)nv_dprintf_unprefixed("%02X ",vcpu->exit_context.mmio.instruction_bytes[i]);
+				nv_dprintf_unprefixed("\n");
 				noir_int3();
 				break;
 			}
@@ -470,6 +487,7 @@ noir_status nvc_hax_run_vcpu(noir_cvm_virtual_cpu_p vcpu)
 				htun->io.size=(u8)vcpu->exit_context.io.access.operand_size;
 				htun->io.flags.string=(u8)vcpu->exit_context.io.access.string;
 				htun->io.count=1;
+				nv_dprintf("PIO on Port=0x%04X! Size=%u, (%s, %s)\n",htun->io.port,htun->io.size,htun->io.direction?"in":"out",htun->io.flags.string?"string":"value");
 				if(htun->io.flags.string)
 				{
 					u64 mask_a=(u64)-1;
@@ -504,16 +522,41 @@ noir_status nvc_hax_run_vcpu(noir_cvm_virtual_cpu_p vcpu)
 			}
 			case cv_exception:
 			{
+				// Single-Step.
+				if(vcpu->exit_context.exception.vector==1)
+				{
+					resumption=true;
+					/*
+					char mnemonic[64];
+					u8p ins_ptr;
+					u8 bits;
+					u32 inslen;
+					nvc_translate_gva_to_hva(vcpu,vcpu->exit_context.rip,(void**)&ins_ptr);
+					if(noir_bt(&vcpu->exit_context.cs.attrib,14))
+						bits=32;
+					else if(noir_bt(&vcpu->exit_context.cs.attrib,13))
+						bits=64;
+					else
+						bits=16;
+					inslen=noir_disasm_instruction(ins_buff,mnemonic,sizeof(mnemonic),bits,vcpu->exit_context.rip);
+					*/
+					nv_dprintf("Single-Stepped to %04X:%p!\n",vcpu->exit_context.cs.selector,vcpu->exit_context.rip);
+				}
+				break;
+			}
+			case cv_scheduler_exit:
+			{
+				htun->exit_status=hax_exit_interrupt;
 				break;
 			}
 			default:
 			{
 				// Intel HAXM does not know what this CVM interception is.
-				htun->exit_reason=(u32)vcpu->exit_context.intercept_code;
 				htun->exit_status=hax_exit_unknown;
 				break;
 			}
 		}
+		htun->exit_reason=(u32)vcpu->exit_context.intercept_code;
 		if(!resumption)break;
 		st=nvc_run_vcpu(vcpu,null);
 	}

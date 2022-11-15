@@ -70,7 +70,7 @@ void __cdecl nvci_panicf(const char* format,...)
 	va_end(arg_list);
 }
 
-void __cdecl nv_dprintf2(IN BOOL DateTime,IN BOOL ProcessorNumber,IN PCSTR Format,...)
+void __cdecl nv_dprintf2(IN BOOL DateTime,IN BOOL ProcessorNumber,IN PCSTR FunctionName,IN PCSTR Format,...)
 {
 	CHAR Buffer[512];
 	PSTR ContentBuffer,TimeBuffer;
@@ -98,6 +98,14 @@ void __cdecl nv_dprintf2(IN BOOL DateTime,IN BOOL ProcessorNumber,IN PCSTR Forma
 	RtlStringCbVPrintfA(ContentBuffer,ContentSize,Format,ArgList);
 	va_end(ArgList);
 	DbgPrintEx(DPFLTR_IHVDRIVER_ID,DPFLTR_ERROR_LEVEL,Buffer);
+}
+
+void __cdecl nv_dprintf_unprefixed(const char* format,...)
+{
+	va_list arg_list;
+	va_start(arg_list,format);
+	vDbgPrintEx(DPFLTR_IHVDRIVER_ID,DPFLTR_INFO_LEVEL,format,arg_list);
+	va_end(arg_list);
 }
 
 void __cdecl nv_dprintf(const char* format,...)
@@ -348,7 +356,7 @@ void __cdecl NoirAsyncDebugVPrint(ULONG FilterLevel,const char* Format,va_list A
 	KeQuerySystemTime(&LogRecord->LogTime);
 	LogRecord->Level=FilterLevel;
 	// Format the logging message string.
-	RtlStringCchVPrintfA(LogRecord->Message,sizeof(LogRecord->Message),Format,ArgList);
+	RtlStringCbVPrintfA(LogRecord->Message,sizeof(LogRecord->Message),Format,ArgList);
 }
 
 void __cdecl nv_async_dprintf(const char* format,...)

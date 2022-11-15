@@ -165,6 +165,7 @@ NTSTATUS NoirInitializeAsyncDebugPrinter();
 void NoirFinalizeAsyncDebugPrinter();
 ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();
+NTSTATUS NoirConfigureInternalDebugger();
 ULONG NoirVisorVersion();
 ULONG NoirQueryVirtualizationSupportability();
 BOOLEAN NoirIsVirtualizationEnabled();

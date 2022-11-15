@@ -88,7 +88,6 @@ void NoirPrintCompilerVersion()
 	UINT32 Build=_MSC_FULL_VER%100000;
 	UINT32 Minor=_MSC_VER%100;
 	UINT32 Major=_MSC_VER/100;
-	NoirInitializeSerialPort(1,0);
 	NoirDebugPrint("Compiler Version: MSVC %02d.%02d.%05d\n",Major,Minor,Build);
 	NoirDebugPrint("NoirVisor Compliation Date: %a %a\n",__DATE__,__TIME__);
 }
@@ -122,6 +121,7 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	NoirBlockUntilKeyStroke(L'\r');
 	NoirInitializeCodeIntegrity(ImageInfo->ImageBase);
 	NoirSuppressImageRelocation(ImageInfo->ImageBase);
+	NoirConfigureInternalDebugger();
 	NoirBuildHypervisor();
 	return EFI_SUCCESS;
 }

@@ -16,6 +16,7 @@
 #include <nvbdk.h>
 #include <nvstatus.h>
 #include <noirhvm.h>
+#include <debug.h>
 #include <nv_intrin.h>
 #include <vt_intrin.h>
 #include <svm_intrin.h>
@@ -625,16 +626,12 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 		st=noir_success;
 		if(valid_state)
 		{
-			while(st==noir_success)
-			{
-				if(hvm_p->selected_core==use_svm_core)
-					st=nvc_svmc_run_vcpu(vcpu);
-				else if(hvm_p->selected_core==use_vt_core)
-					st=nvc_vtc_run_vcpu(vcpu);
-				else
-					st=noir_unknown_processor;
-				if(vcpu->exit_context.intercept_code!=cv_scheduler_exit)break;
-			}
+			if(hvm_p->selected_core==use_svm_core)
+				st=nvc_svmc_run_vcpu(vcpu);
+			else if(hvm_p->selected_core==use_vt_core)
+				st=nvc_vtc_run_vcpu(vcpu);
+			else
+				st=noir_unknown_processor;
 		}
 		if(st==noir_success && !vcpu->vcpu_options.use_tunnel)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
 	}
@@ -706,7 +703,8 @@ noir_status nvc_create_vcpu(noir_cvm_virtual_machine_p vm,noir_cvm_virtual_cpu_p
 		{
 			(*vcpu)->ref_count=1;
 			// Initialize some registers...
-			(*vcpu)->xcrs.xcr0=1;	// HAXM does not know XCR0.
+			(*vcpu)->xcrs.xcr0=1;			// HAXM does not know XCR0.
+			(*vcpu)->msrs.mtrr.def_type=6;	// Let WB to be default.
 		}
 	}
 	return st;
@@ -728,6 +726,46 @@ noir_status nvc_deref_vcpu(noir_cvm_virtual_cpu_p vcpu)
 		nvc_release_vcpu(vcpu);
 		return noir_dereference_destroying;
 	}
+}
+
+noir_status nvc_translate_gpa_to_hva(noir_cvm_virtual_machine_p vm,u64 gpa,void* *hva)
+{
+	for(u32 i=0;i<noir_cvm_memblock_registration_limit;i++)
+	{
+		u64 gpa_start=vm->memblock_registrations[i].start;
+		u64 gpa_end=vm->memblock_registrations[i].start+vm->memblock_registrations[i].size;
+		if(gpa>=gpa_start && gpa<gpa_end)
+		{
+			*hva=(void*)((ulong_ptr)vm->memblock_registrations[i].host+(gpa-gpa_start));
+			return noir_success;
+		}
+	}
+	return noir_unsuccessful;
+}
+
+noir_status nvc_translate_gva_to_gpa(noir_cvm_virtual_cpu_p vcpu,u64 gva,u64p gpa)
+{
+	noir_cr_state crs;
+	noir_status st=nvc_view_vcpu_registers(vcpu,noir_cvm_control_register,&crs,sizeof(crs));
+	if(st==noir_success)
+	{
+		// If paging is enabled...
+		if(crs.cr0 & 0x80000000)
+		{
+			;
+		}
+		else
+		{
+			// Paging is disabled.
+			*gpa=gva;
+		}
+	}
+	return st;
+}
+
+noir_status nvc_translate_gva_to_hva(noir_cvm_virtual_cpu_p vcpu,u64 gva,void* *hva)
+{
+	return noir_not_implemented;
 }
 
 noir_status nvc_operate_guest_memory(noir_cvm_virtual_cpu_p vcpu,u64 guest_address,void* buffer,u32 size,bool write,bool virtual_address)
@@ -809,7 +847,7 @@ void** nvc_alloc_locker_slot(noir_cvm_virtual_machine_p virtual_machine)
 	return null;
 }
 
-noir_status nvc_register_memblock(noir_cvm_virtual_machine_p vm,u64 start,u64 size)
+noir_status nvc_register_memblock(noir_cvm_virtual_machine_p vm,u64 start,u64 size,void* host)
 {
 	u32 index;
 	if(noir_bsf64(&index,~vm->memblock_bitmap))
@@ -817,6 +855,7 @@ noir_status nvc_register_memblock(noir_cvm_virtual_machine_p vm,u64 start,u64 si
 		noir_bts64(&vm->memblock_bitmap,index);
 		vm->memblock_registrations[index].start=start;
 		vm->memblock_registrations[index].size=size;
+		vm->memblock_registrations[index].host=host;
 		return noir_success;
 	}
 	return noir_insufficient_resources;
@@ -866,7 +905,7 @@ alloc_failure:
 			else
 				st=noir_unknown_processor;
 		}
-		nvc_register_memblock(virtual_machine,mapping_info->gpa,page_mult(mapping_info->pages));
+		nvc_register_memblock(virtual_machine,mapping_info->gpa,page_mult(mapping_info->pages),(void*)mapping_info->hva);
 		noir_release_reslock(virtual_machine->vcpu_list_lock);
 	}
 	return st;

@@ -380,7 +380,6 @@ NTSTATUS NoirHaxVmControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 					PHAX_ALLOC_RAM_INFO Info=(PHAX_ALLOC_RAM_INFO)InputBuffer;
 					// NOIR_STATUS nst=nvc_register_memblock(VM,Info->VA,(ULONG64)Info->Size);
 					NOIR_STATUS nst=NOIR_SUCCESS;
-					NoirDebugPrint("[HAXM] VM %u is adding 32-bit RAM Block, status=0x%X\n",VmId,nst);
 					st=nst==NOIR_SUCCESS?STATUS_SUCCESS:STATUS_UNSUCCESSFUL;
 				}
 			}
@@ -398,7 +397,6 @@ NTSTATUS NoirHaxVmControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 					PHAX_RAMBLOCK_INFO Info=(PHAX_RAMBLOCK_INFO)InputBuffer;
 					// NOIR_STATUS nst=nvc_register_memblock(VM,Info->StartVa,Info->Size);
 					NOIR_STATUS nst=NOIR_SUCCESS;
-					NoirDebugPrint("[HAXM] VM %u is adding 64-bit RAM Block (Start: 0x%p Size: 0x%X), status=0x%X\n",VmId,Info->StartVa,Info->Size,nst);
 					st=nst==NOIR_SUCCESS?STATUS_SUCCESS:STATUS_UNSUCCESSFUL;
 				}
 			}

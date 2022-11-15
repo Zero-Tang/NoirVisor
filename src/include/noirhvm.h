@@ -334,6 +334,11 @@ void fastcall nvc_mshv_teardown_cpuid_handlers();
 u64 fastcall nvc_mshv_rdmsr_handler(noir_mshv_vcpu_p vcpu,u32 index);
 void fastcall nvc_mshv_wrmsr_handler(noir_mshv_vcpu_p vcpu,u32 index,u64 val);
 
+// Functions from NoirVisor internal debugger.
+noir_status noir_configure_serial_port_debugger(u8 port_number,u16 port_base,u32 baudrate);
+noir_status noir_dbgport_read(void* buffer,size_t length);
+noir_status noir_dbgport_write(void* buffer,size_t length);
+
 // Miscellaneous
 u64 noir_query_enabled_features_in_system();
 void noir_system_call(void);

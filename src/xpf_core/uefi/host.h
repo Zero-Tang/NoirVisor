@@ -313,9 +313,6 @@ UINT16 noir_get_segment_attributes(IN UINT16 Selector,IN PNHGDTENTRY64 GdtBase);
 void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 void NoirBlockUntilKeyStroke(IN CHAR16 Unicode);
 void NoirUnexpectedInterruptHandler(void);
-void NoirInitializeSerialPort(IN UINTN ComPort,IN UINT16 PortBase);
-void NoirSerialRead(IN UINTN ComPort,OUT UINT8 *Buffer,IN UINTN Length);
-void NoirSerialWrite(IN UINTN ComPort,IN UINT8 *Buffer,IN UINTN Length);
 void NoirSetupDebugSupportPerProcessor(IN VOID *ProcedureArgument);
 UINT64 NoirReadHpetCounter();
 

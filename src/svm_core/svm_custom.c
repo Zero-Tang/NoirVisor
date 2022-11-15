@@ -309,6 +309,14 @@ void noir_hvcode nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_sv
 		noir_svm_vmwrite8(cvcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
 		cvcpu->header.state_cache.tl_valid=true;
 	}
+	// Load the TSC offset.
+	if(!cvcpu->header.state_cache.ts_valid)
+	{
+		noir_svm_vmwrite64(cvcpu->vmcb.virt,tsc_offset,cvcpu->header.tsc_offset);
+		// Writing to TSC Offset causes the interception controls in VMCB to be invalid.
+		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
+		cvcpu->header.state_cache.ts_valid=true;
+	}
 	// If AVIC is supported, set the Physical APIC ID Entry to be running.
 	if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
 	{
@@ -580,6 +588,13 @@ void noir_hvcode nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu)
 	vector1.intercept_rsm=vcpu->header.vcpu_options.intercept_rsm;
 	// FIXME: Implement NPIEP and Pause-Filters.
 	noir_svm_vmwrite32(vmcb,intercept_instruction1,vector1.value);
+	// Hidden TF.
+	vcpu->special_state.mtf_active=vcpu->header.vcpu_options.hidden_tf;
+	if(vcpu->special_state.mtf_active)
+	{
+		vcpu->shadowed_bits.tf=noir_svm_vmcb_bts32(vmcb,guest_rflags,amd64_rflags_tf);
+		noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_debug_exception);
+	}
 	// Invalidate VMCB Cache.
 	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_interception);
 	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_iomsrpm);
@@ -607,6 +622,143 @@ noir_status nvc_svmc_rescind_vcpu(noir_svm_custom_vcpu_p vcpu)
 u32 nvc_svmc_get_vm_asid(noir_svm_custom_vm_p vm)
 {
 	return vm->asid;
+}
+
+void nvc_svm_init_vcpu_cpuid_quickpath(noir_svm_custom_vcpu_p vcpu)
+{
+	u32 a,b,c,d;
+	u32 i=0;
+	// Standard Leaf 1 - Processor and Processor Feature Identifiers.
+	noir_cpuid(amd64_cpuid_std_proc_feature,0,&a,&b,&c,&d);
+	vcpu->header.cpuid_quickpath[i].leaf=amd64_cpuid_std_proc_feature;
+	vcpu->header.cpuid_quickpath[i].subleaf=0;
+	vcpu->header.cpuid_quickpath[i].options.value=0;
+	vcpu->header.cpuid_quickpath[i].options.active=true;
+	// Family, Model, Stepping.
+	vcpu->header.cpuid_quickpath[i].eax=a;
+	// Local APIC ID
+	vcpu->header.cpuid_quickpath[i].ebx=b&0xFFFF;		// Retain clflush and Brand ID info.
+	vcpu->header.cpuid_quickpath[i].ebx|=(vcpu->vcpu_id<<24)&0xff;
+	vcpu->header.cpuid_quickpath[i].ebx|=(vcpu->vm->vcpu_count<<16)&0xff;
+	// Feature Identifier
+	vcpu->header.cpuid_quickpath[i].ecx=c&noir_svm_cpuid_cvmask0_ecx_fn0000_0001|noir_svm_cpuid_cvmask1_ecx_fn0000_0001;
+	vcpu->header.cpuid_quickpath[i++].edx=d&noir_svm_cpuid_cvmask0_ecx_fn0000_0001;
+	// Standard Leaf D - Processor Extended State Enumeration (Subleaf 0)
+	noir_cpuid(amd64_cpuid_std_pestate_enum,0,&a,&b,&c,&d);
+	vcpu->header.cpuid_quickpath[i].leaf=amd64_cpuid_std_pestate_enum;
+	vcpu->header.cpuid_quickpath[i].subleaf=0;
+	vcpu->header.cpuid_quickpath[i].options.value=0;
+	vcpu->header.cpuid_quickpath[i].options.active=true;
+	vcpu->header.cpuid_quickpath[i].options.has_subleaf=true;
+	vcpu->header.cpuid_quickpath[i].eax=3;		// Allow FPU and SSE.
+	vcpu->header.cpuid_quickpath[i].ebx=vcpu->header.cpuid_quickpath[i].ecx=sizeof(noir_fx_state);
+	vcpu->header.cpuid_quickpath[i].edx=0;		// No higher bits in mask.
+	// Extended Leaf 8000_0002-8000_0004 Extended Processor Name String
+	// Note that this is changeable by MSRs (0xC001_0030-0xC0010035), so keep it per-vCPU.
+	vcpu->header.cpuid_quickpath[++i].leaf=amd64_cpuid_ext_brand_str_p1;
+	vcpu->header.cpuid_quickpath[i].subleaf=0;
+	vcpu->header.cpuid_quickpath[i].options.value=0;
+	vcpu->header.cpuid_quickpath[i].options.active=true;
+	noir_cpuid(amd64_cpuid_ext_brand_str_p1,0,&vcpu->header.cpuid_quickpath[i].eax,&vcpu->header.cpuid_quickpath[i].ebx,&vcpu->header.cpuid_quickpath[i].ecx,&vcpu->header.cpuid_quickpath[i].edx);
+	vcpu->header.cpuid_quickpath[++i].leaf=amd64_cpuid_ext_brand_str_p2;
+	vcpu->header.cpuid_quickpath[i].subleaf=0;
+	vcpu->header.cpuid_quickpath[i].options.value=0;
+	vcpu->header.cpuid_quickpath[i].options.active=true;
+	noir_cpuid(amd64_cpuid_ext_brand_str_p2,0,&vcpu->header.cpuid_quickpath[i].eax,&vcpu->header.cpuid_quickpath[i].ebx,&vcpu->header.cpuid_quickpath[i].ecx,&vcpu->header.cpuid_quickpath[i].edx);
+	vcpu->header.cpuid_quickpath[++i].leaf=amd64_cpuid_ext_brand_str_p3;
+	vcpu->header.cpuid_quickpath[i].subleaf=0;
+	vcpu->header.cpuid_quickpath[i].options.value=0;
+	vcpu->header.cpuid_quickpath[i].options.active=true;
+	noir_cpuid(amd64_cpuid_ext_brand_str_p3,0,&vcpu->header.cpuid_quickpath[i].eax,&vcpu->header.cpuid_quickpath[i].ebx,&vcpu->header.cpuid_quickpath[i].ecx,&vcpu->header.cpuid_quickpath[i].edx);
+	i++;
+}
+
+void nvc_svm_init_vm_cpuid_quickpath(noir_svm_custom_vm_p vm)
+{
+	u32 a,b,c,d;
+	u32 i=0;
+	// Standard Leaf 0 - Maximum Standard Leaf Number and Vendor String.
+	noir_cpuid(amd64_cpuid_std_max_num_vstr,0,null,&b,&c,&d);
+	vm->header.cpuid_quickpath[i].leaf=amd64_cpuid_std_max_num_vstr;
+	vm->header.cpuid_quickpath[i].subleaf=0;
+	vm->header.cpuid_quickpath[i].options.value=0;
+	vm->header.cpuid_quickpath[i].options.active=true;
+	vm->header.cpuid_quickpath[i].options.vm_wide=true;
+	vm->header.cpuid_quickpath[i].eax=0xD;	// Maximum leaf is 0xD - Processor Extended State Enumeration.
+	vm->header.cpuid_quickpath[i].ebx=b;
+	vm->header.cpuid_quickpath[i].ecx=c;
+	vm->header.cpuid_quickpath[i++].edx=d;
+	// Standard Leaf 7 - Structured Extended Feature Identifiers
+	noir_cpuid(amd64_cpuid_std_struct_extid,0,&a,&b,&c,&d);
+	vm->header.cpuid_quickpath[i].leaf=amd64_cpuid_std_struct_extid;
+	vm->header.cpuid_quickpath[i].subleaf=0;
+	vm->header.cpuid_quickpath[i].options.value=0;
+	vm->header.cpuid_quickpath[i].options.active=true;
+	vm->header.cpuid_quickpath[i].options.has_subleaf=true;
+	vm->header.cpuid_quickpath[i].options.vm_wide=true;
+	vm->header.cpuid_quickpath[i].eax=0;	// No supported subfunctions from NoirVisor.
+	vm->header.cpuid_quickpath[i].ebx=b&noir_svm_cpuid_cvmask0_ebx_fn0000_0007;
+	vm->header.cpuid_quickpath[i].ecx=c&noir_svm_cpuid_cvmask0_ecx_fn0000_0007;
+	vm->header.cpuid_quickpath[i++].edx=0;	// Reserved by AMD.
+	// Standard Leaf 7 - Structured Extended Feature Identifiers (Subleaf 1)
+	vm->header.cpuid_quickpath[i].leaf=amd64_cpuid_std_pestate_enum;
+	vm->header.cpuid_quickpath[i].subleaf=1;
+	vm->header.cpuid_quickpath[i].options.value=0;
+	vm->header.cpuid_quickpath[i].options.active=true;
+	vm->header.cpuid_quickpath[i].options.has_subleaf=true;
+	vm->header.cpuid_quickpath[i].options.vm_wide=true;
+	vm->header.cpuid_quickpath[i].eax=0;		// No support to xsaves, xgetbv, xsavec, xsaveopt...
+	vm->header.cpuid_quickpath[i].ebx=0x240;	// Fix to 0x240. No AVX support yet.
+	vm->header.cpuid_quickpath[i].ecx=0;		// No CET support yet...
+	vm->header.cpuid_quickpath[i++].edx=0;		// Reserved by AMD...
+	// Extended Leaf 8000_0000 - Maximum Extended Leaf Number and Vendor String.
+	noir_cpuid(amd64_cpuid_ext_max_num_vstr,0,null,&b,&c,&d);
+	vm->header.cpuid_quickpath[i].leaf=amd64_cpuid_ext_max_num_vstr;
+	vm->header.cpuid_quickpath[i].subleaf=0;
+	vm->header.cpuid_quickpath[i].options.value=0;
+	vm->header.cpuid_quickpath[i].options.active=true;
+	vm->header.cpuid_quickpath[i].options.vm_wide=true;
+	vm->header.cpuid_quickpath[i].eax=amd64_cpuid_ext_pcap_prm_eid;	// Maximum leaf is 0x8000_0008
+	vm->header.cpuid_quickpath[i].ebx=b;
+	vm->header.cpuid_quickpath[i].ecx=c;
+	vm->header.cpuid_quickpath[i++].edx=d;
+	// Extended Leaf 8000_0001 - Extended Processor and Processor Feature Identifiers
+	noir_cpuid(amd64_cpuid_ext_proc_feature,0,&a,&b,&c,&d);
+	vm->header.cpuid_quickpath[i].leaf=amd64_cpuid_ext_proc_feature;
+	vm->header.cpuid_quickpath[i].subleaf=0;
+	vm->header.cpuid_quickpath[i].options.value=0;
+	vm->header.cpuid_quickpath[i].options.active=true;
+	vm->header.cpuid_quickpath[i].options.vm_wide=true;
+	vm->header.cpuid_quickpath[i].eax=a;
+	vm->header.cpuid_quickpath[i].ebx=b;
+	vm->header.cpuid_quickpath[i].ecx=c&noir_svm_cpuid_cvmask0_ecx_fn8000_0001;
+	vm->header.cpuid_quickpath[i++].edx=d&noir_svm_cpuid_cvmask0_edx_fn8000_0001;
+	// Extended Leaf 8000_0008 - Processor Capacity Parameters and Extended Feature Identification
+	vm->header.cpuid_quickpath[i].leaf=amd64_cpuid_ext_pcap_prm_eid;
+	vm->header.cpuid_quickpath[i].subleaf=0;
+	vm->header.cpuid_quickpath[i].options.value=0;
+	vm->header.cpuid_quickpath[i].options.active=true;
+	vm->header.cpuid_quickpath[i].options.vm_wide=true;
+	vm->header.cpuid_quickpath[i].eax=0x3030;	// 48-bit physical/linear addresses.
+	vm->header.cpuid_quickpath[i].ebx=0;
+	vm->header.cpuid_quickpath[i].ecx=0;
+	vm->header.cpuid_quickpath[i++].edx=0;
+	// Hypervisor Leaf 4000_0000 - Hypervisor Leaf Number and Vendor String
+	vm->header.cpuid_quickpath[i].leaf=ncvm_cpuid_leaf_range_and_vendor_string;
+	vm->header.cpuid_quickpath[i].subleaf=0;
+	vm->header.cpuid_quickpath[i].options.value=0;
+	vm->header.cpuid_quickpath[i].options.active=true;
+	vm->header.cpuid_quickpath[i].options.vm_wide=true;
+	vm->header.cpuid_quickpath[i].eax=ncvm_cpuid_leaf_limit;
+	noir_movsb(&vm->header.cpuid_quickpath[i].ebx,"NoirVisor ZT",12);
+	// Hypervisor Leaf 4000_0001 - Hypervisor Vendor-Neutral Interface ID
+	vm->header.cpuid_quickpath[i].leaf=ncvm_cpuid_vendor_neutral_interface_id;
+	vm->header.cpuid_quickpath[i].subleaf=0;
+	vm->header.cpuid_quickpath[i].options.value=0;
+	vm->header.cpuid_quickpath[i].options.active=true;
+	vm->header.cpuid_quickpath[i].options.vm_wide=true;
+	noir_movsb(&vm->header.cpuid_quickpath[i].eax,"Nv#1",4);
+	noir_stosd(&vm->header.cpuid_quickpath[i].ebx,0,3);
 }
 
 noir_svm_custom_vcpu_p nvc_svmc_reference_vcpu(noir_svm_custom_vm_p vm,u32 vcpu_id)
@@ -683,8 +835,14 @@ noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_cu
 			virtual_machine->vcpu[vcpu_id]=vcpu;
 			vcpu->vcpu_id=vcpu_id;
 			vcpu->proc_id=0xffffffff;
+			// Initialize some registers...
+			vcpu->header.msrs.apic.value=amd64_apic_default_base;
+			noir_bts64(&vcpu->header.msrs.apic.value,amd64_apic_ae);
+			if(!vcpu_id)noir_bts64(&vcpu->header.msrs.apic.value,amd64_apic_bsc);
 			// Mark the owner VM of vCPU.
 			vcpu->vm=virtual_machine;
+			// Initialize vCPU CPUID-QuickPath
+			nvc_svm_init_vcpu_cpuid_quickpath(vcpu);
 			// Initialize the VMCB via hypercall. It is supposed that only hypervisor can operate VMCB.
 			noir_svm_vmmcall(noir_svm_init_custom_vmcb,(ulong_ptr)vcpu);
 		}
@@ -1329,6 +1487,8 @@ noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine)
 			noir_stosb(vm->iopm.virt,0xff,noir_svm_iopm_size);
 			// Some MSRs are unnessary to be intercepted. Rule them out of interception.
 			nvc_svmc_setup_msr_interception_exception(vm->msrpm.virt);
+			// Initialize CPUID Quick-Path
+			nvc_svm_init_vm_cpuid_quickpath(vm);
 			st=noir_success;
 		}
 	}

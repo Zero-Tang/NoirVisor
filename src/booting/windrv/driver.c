@@ -343,6 +343,7 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	NoirBuildProtectedFile();
 	NoirInitializePowerStateCallback();
 	NoirSubvertSystemOnDriverLoad(&SubvertOnDriverLoad);
+	NoirConfigureInternalDebugger();
 	if(SubvertOnDriverLoad)
 		if(NoirQueryVirtualizationSupportability())
 			if(NoirIsVirtualizationEnabled())

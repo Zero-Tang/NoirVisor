@@ -47,7 +47,6 @@ VOID* NvImageBase=NULL;
 UINT32 NvImageSize=0;
 
 void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
-void NoirSerialWrite(IN UINTN ComPort,IN UINT8 *Buffer,IN UINTN Length);
 
 BOOLEAN noir_initialize_ci(BOOLEAN soft_ci,BOOLEAN hard_ci);
 BOOLEAN noir_add_section_to_ci(VOID* base,UINT32 size,BOOLEAN enable_scan);
@@ -57,3 +56,4 @@ UINT32 noir_get_virtualization_supportability();
 BOOLEAN noir_is_virtualization_enabled();
 UINT32 nvc_build_hypervisor();
 void nvc_teardown_hypervisor();
+UINT32 noir_configure_serial_port_debugger(UINT8 PortNumber,UINT16 PortBase,UINT32 BaudRate);

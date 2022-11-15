@@ -255,7 +255,6 @@ void __cdecl nv_dprintf(const char* format,...)
 	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
 	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,FormatBuffer,arg_list);
 	va_end(arg_list);
-	NoirSerialWrite(1,(UINT8*)TempBuffer,Start+Size);
 	if(!NoirEfiInRuntimeStage)AsciiPrint(TempBuffer,Size);
 }
 
@@ -279,7 +278,6 @@ void __cdecl nv_panicf(const char* format,...)
 	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
 	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,FormatBuffer,arg_list);
 	va_end(arg_list);
-	NoirSerialWrite(1,(UINT8*)TempBuffer,Start+Size);
 	if(!NoirEfiInRuntimeStage)AsciiPrint(TempBuffer,Size);
 }
 
@@ -306,7 +304,6 @@ void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...)
 	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
 	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,FormatBuffer,ArgList);
 	va_end(ArgList);
-	NoirSerialWrite(1,(UINT8*)TempBuffer,Start+Size);
 	if(!NoirEfiInRuntimeStage)AsciiPrint(TempBuffer,Size);
 }
 

@@ -204,6 +204,54 @@ NTSTATUS NoirSubvertSystemOnDriverLoad(OUT PBOOLEAN Subvert)
 	return st;
 }
 
+NTSTATUS NoirConfigureInternalDebugger()
+{
+	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
+	PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=NoirAllocatePagedMemory(PAGE_SIZE);
+	if(KvPartInf)
+	{
+		HANDLE hKey=NULL;
+		UNICODE_STRING uniKeyName=RTL_CONSTANT_STRING(L"\\Registry\\Machine\\Software\\Zero-Tang\\NoirVisor");
+		OBJECT_ATTRIBUTES oa;
+		InitializeObjectAttributes(&oa,&uniKeyName,OBJ_CASE_INSENSITIVE|OBJ_KERNEL_HANDLE,NULL,NULL);
+		st=ZwOpenKey(&hKey,GENERIC_READ,&oa);
+		if(NT_SUCCESS(st))
+		{
+			UNICODE_STRING uniKvName;
+			ULONG RetLen=0;
+			// Get Debug Port Information
+			RtlInitUnicodeString(&uniKvName,L"DebugPort");
+			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+			if(NT_SUCCESS(st))
+			{
+				if(KvPartInf->Type==REG_SZ)
+				{
+					if(_wcsnicmp((PWSTR)KvPartInf->Data,L"serial",KvPartInf->DataLength>>1)==0)
+					{
+						ULONG32 BaudRate=115200;
+						BYTE PortNumber=2;
+						USHORT PortBase=0x2F8;
+						RtlInitUnicodeString(&uniKvName,L"SerialBaudRate");
+						st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+						if(NT_SUCCESS(st))BaudRate=*(PULONG32)KvPartInf->Data;
+						RtlInitUnicodeString(&uniKvName,L"SerialPortNumber");
+						st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+						if(NT_SUCCESS(st))PortNumber=*(PBYTE)KvPartInf->Data;
+						RtlInitUnicodeString(&uniKvName,L"SerialPortBase");
+						st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+						if(NT_SUCCESS(st))PortBase=*(PUSHORT)KvPartInf->Data;
+						noir_configure_serial_port_debugger(PortNumber-1,PortBase,BaudRate);
+						st=STATUS_SUCCESS;
+					}
+				}
+			}
+			ZwClose(hKey);
+		}
+		NoirFreePagedMemory(KvPartInf);
+	}
+	return st;
+}
+
 NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 {
 	// Setup default values. Hooking becomes a very unstable feature in Windows with post-2018 updates!

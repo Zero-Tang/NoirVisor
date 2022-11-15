@@ -51,6 +51,7 @@
 #define amd64_cr4_osfxsr			9
 #define amd64_cr4_osxmmexcept		10
 #define amd64_cr4_umip				11
+#define amd64_cr4_la57				12
 #define amd64_cr4_fsgsbase			16
 #define amd64_cr4_pcide				17
 #define amd64_cr4_osxsave			18
@@ -70,6 +71,7 @@
 #define amd64_cr4_osfxsr_bit		0x200
 #define amd64_cr4_osxmmexcept_bit	0x400
 #define amd64_cr4_umip_bit			0x800
+#define amd64_cr4_la57_bit			0x1000
 #define amd64_cr4_fsgsbase_bit		0x10000
 #define amd64_cr4_pcide_bit			0x20000
 #define amd64_cr4_osxsave_bit		0x40000
@@ -89,6 +91,8 @@
 #define amd64_efer_tce			15
 #define amd64_efer_mcommit		17
 #define amd64_efer_intwb		18
+#define amd64_efer_uaie			20
+#define amd64_efer_aibrse		21
 #define amd64_efer_sce_bit		0x1
 #define amd64_efer_lme_bit		0x100
 #define amd64_efer_lma_bit		0x400
@@ -99,6 +103,8 @@
 #define amd64_efer_tce_bit		0x8000
 #define amd64_efer_mcommit_bit	0x20000
 #define amd64_efer_intwb_bit	0x40000
+#define amd64_efer_uaie_bit		0x100000
+#define amd64_efer_aibrse_bit	0x200000
 
 // DR6 Bit Fields
 #define amd64_dr6_b0			0
@@ -323,9 +329,11 @@
 #define amd64_apic_extint_lvt			0x500
 
 // This is used for defining APIC BAR definitions
-#define amd64_apic_bsc	8
-#define amd64_apic_extd	10
-#define amd64_apic_ae	11
+#define amd64_apic_default_base	0xFEE00000
+#define amd64_apic_rsvd_mask	0xFFFF0000000006FF
+#define amd64_apic_bsc			8
+#define amd64_apic_extd			10
+#define amd64_apic_ae			11
 
 // This is used for defining APIC Interrupt Command Register
 typedef union _amd64_apic_register_icr_lo
@@ -426,6 +434,24 @@ typedef union _amd64_apic_register_icr_hi
 #define amd64_cpuid_vmlsvirt_bit		0x8000
 #define amd64_cpuid_vgif				16
 #define amd64_cpuid_vgif_bit			0x10000
+#define amd64_cpuid_gmet				17
+#define amd64_cpuid_gmet_bit			0x20000
+#define amd64_cpuid_x2avic				18
+#define amd64_cpuid_x2avic_bit			0x40000
+#define amd64_cpuid_sss_check			19
+#define amd64_cpuid_sss_check_bit		0x80000
+#define amd64_cpuid_spec_ctrl_virt		20
+#define amd64_cpuid_spec_ctrl_virt_bit	0x100000
+#define amd64_cpuid_rogpt				21
+#define amd64_cpuid_rogpt_bit			0x200000
+#define amd64_cpuid_host_mce			23
+#define amd64_cpuid_host_mce_bit		0x800000
+#define amd64_cpuid_tlbi_ctrl			24
+#define amd64_cpuid_tlbi_ctrl_bit		0x1000000
+#define amd64_cpuid_vnmi				25
+#define amd64_cpuid_vnmi_bit			0x2000000
+#define amd64_cpuid_vibs				26
+#define amd64_cpuid_vibs_bit			0x4000000
 
 typedef union _amd64_addr_translator
 {
@@ -436,7 +462,8 @@ typedef union _amd64_addr_translator
 		u64 pde_offset:9;
 		u64 pdpte_offset:9;
 		u64 pml4e_offset:9;
-		u64 canonical:16;
+		u64 pml5e_offset:9;
+		u64 canonical:7;
 	};
 	u64 value;
 }amd64_addr_translator,*amd64_addr_translator_p;

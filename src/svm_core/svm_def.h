@@ -243,19 +243,24 @@ typedef union _nvc_svm_avic_control
 {
 	struct
 	{
-		u64 virtual_tpr:8;
-		u64 virtual_irq:1;
-		u64 virtual_gif:1;
-		u64 reserved1:6;
-		u64 virtual_interrupt_priority:4;
-		u64 ignore_virtual_tpr:1;
-		u64 reserved2:3;
-		u64 virtual_interrupt_masking:1;
-		u64 enable_virtual_gif:1;
-		u64 reserved3:5;
-		u64 enable_avic:1;
-		u64 virtual_interrupt_vector:8;
-		u64 reserved4:24;
+		u64 virtual_tpr:8;					// Bits	0-7
+		u64 virtual_irq:1;					// Bit	8
+		u64 virtual_gif:1;					// Bit	9
+		u64 reserved1:1;					// Bit	10
+		u64 virtual_nmi:1;					// Bit	11
+		u64 virtual_nmi_mask:1;				// Bit	12
+		u64 reserved2:3;					// Bits	13-15
+		u64 virtual_interrupt_priority:4;	// Bits	16-19
+		u64 ignore_virtual_tpr:1;			// Bit	20
+		u64 reserved3:3;					// Bits	21-23
+		u64 virtual_interrupt_masking:1;	// Bit	24
+		u64 enable_virtual_gif:1;			// Bit	25
+		u64 enable_virtual_nmi:1;			// Bit	26
+		u64 reserved4:3;					// Bits	27-29
+		u64 enable_x2avic:1;				// Bit	30
+		u64 enable_avic:1;					// Bit	31
+		u64 virtual_interrupt_vector:8;		// Bits	32-39
+		u64 reserved5:24;					// Bits	40-63
 	};
 	u64 value;
 }nvc_svm_avic_control,*nvc_svm_avic_control_p;
@@ -275,15 +280,15 @@ typedef union _nvc_svm_npt_control
 {
 	struct
 	{
-		u64 enable_npt:1;
-		u64 enable_sev:1;
-		u64 enable_sev_es:1;
-		u64 gmet:1;
-		u64 enable_sss_check:1;
-		u64 virtual_transparent_encryption:1;
-		u64 reserved1:1;
-		u64 enable_invlpgb_tlbsync:1;
-		u64 reserved2:56;
+		u64 enable_npt:1;				// Bit	0
+		u64 enable_sev:1;				// Bit	1
+		u64 enable_sev_es:1;			// Bit	2
+		u64 gmet:1;						// Bit	3
+		u64 enable_sss_check:1;			// Bit	4
+		u64 vte:1;						// Bit	5
+		u64 enable_readonly_guest_pt:1;	// Bit	6
+		u64 enable_invlpgb_tlbsync:1;	// Bit	7
+		u64 reserved2:56;				// Bit	8-63
 	};
 	u64 value;
 }nvc_svm_npt_control,*nvc_svm_npt_control_p;
@@ -292,9 +297,10 @@ typedef union _nvc_svm_lbr_virtualization_control
 {
 	struct
 	{
-		u64 enable_lbr_virtualization:1;
-		u64 virtualize_vmsave_vmload:1;
-		u64 reserved:62;
+		u64 enable_lbr_virtualization:1;	// Bit	0
+		u64 virtualize_vmsave_vmload:1;		// Bit	1
+		u64 virtualize_ibs:1;				// Bit	2
+		u64 reserved:61;					// Bits	3-61
 	};
 	u64 value;
 }nvc_svm_lbr_virtualization_control,*nvc_svm_lbr_virtualization_control_p;

@@ -34,14 +34,12 @@ void NoirTestCpuid()
 		AsmCpuid(CPUID_LEAF_HV_VENDOR_ID,&MaximumLeaf,(UINT32*)&VendorString[0],(UINT32*)&VendorString[4],(UINT32*)&VendorString[8]);
 		VendorString[12]='\0';
 		Length=AsciiSPrint(TempBuffer,sizeof(TempBuffer),"[Test] Hypervisor is detected! Maximum Leaf: 0x%X, Vendor: %a\n",MaximumLeaf,VendorString);
-		NoirSerialWrite(1,(UINT8*)TempBuffer,Length);
 		if(MaximumLeaf>=CPUID_LEAF_HV_VENDOR_NEUTRAL)
 		{
 			CHAR8 Signature[5];
 			AsmCpuid(CPUID_LEAF_HV_VENDOR_NEUTRAL,(UINT32*)Signature,NULL,NULL,NULL);
 			Signature[4]='\0';
 			Length=AsciiSPrint(TempBuffer,sizeof(TempBuffer),"[Test] Signature: %a\n",Signature);
-			NoirSerialWrite(1,(UINT8*)TempBuffer,Length);
 		}
 	}
 }
@@ -102,6 +100,12 @@ UINT32 NoirQueryVirtualizationSupportability()
 BOOLEAN NoirIsVirtualizationEnabled()
 {
 	return noir_is_virtualization_enabled();
+}
+
+EFI_STATUS NoirConfigureInternalDebugger()
+{
+	noir_configure_serial_port_debugger(1,0x2F8,115200);
+	return EFI_SUCCESS;
 }
 
 BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)

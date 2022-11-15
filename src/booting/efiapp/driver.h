@@ -63,7 +63,6 @@ EFI_STATUS EFIAPI UefiRuntimeServicesTableLibConstructor(IN EFI_HANDLE ImageHand
 EFI_STATUS EFIAPI UefiLibConstructor(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable);
 EFI_STATUS EFIAPI DevicePathLibConstructor(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable);
 
-void NoirInitializeSerialPort(IN UINTN ComPort,IN UINT16 PortBase);
 void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 void NoirDisplayProcessorState();
 EFI_STATUS NoirBuildHostEnvironment();
@@ -73,6 +72,7 @@ BOOLEAN NoirIsVirtualizationEnabled();
 BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase);
 void NoirFinalizeCodeIntegrity();
 void NoirSuppressImageRelocation(IN VOID* ImageBase);
+EFI_STATUS NoirConfigureInternalDebugger();
 
 EFI_GUID gEfiMpServicesProtocolGuid=EFI_MP_SERVICES_PROTOCOL_GUID;
 EFI_GUID gEfiSimpleFileSystemProtocolGuid=EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;

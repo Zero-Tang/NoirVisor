@@ -105,6 +105,8 @@ typedef enum _svm_vmcb_offset
 	avic_logical_table_pointer=0xF0,
 	avic_physical_table_pointer=0xF8,
 	vmsa_pointer=0x108,
+	vmgexit_rax=0x110,
+	vmgexit_cpl=0x118,
 	// Following offset definitions would be available only if Microsoft enlightenments are enabled.
 	enlightenments_control=0x3E0,
 	vp_id=0x3E4,
@@ -192,7 +194,21 @@ typedef enum _svm_vmcb_offset
 	guest_last_branch_to=0x680,
 	guest_last_exception_from=0x688,
 	guest_last_exception_to=0x690,
-	guest_spec_ctrl=0x6E0
+	guest_debug_extened_config=0x698,
+	guest_spec_ctrl=0x6E0,
+	guest_lbr_stack_from=0xA70,
+	guest_lbr_stack_to=0xAF0,
+	guest_lbr_select=0xB70,
+	guest_ibs_fetch_ctrl=0xB78,
+	guest_ibs_fetch_linear_address=0xB80,
+	guest_ibs_op_ctrl=0xB88,
+	guest_ibs_op_rip=0xB90,
+	guest_ibs_op_data1=0xB98,
+	guest_ibs_op_data2=0xBA0,
+	guest_ibs_op_data3=0xBA8,
+	guest_ibs_dc_linear_address=0xBB0,
+	guest_bp_ibstgt_rip=0xBB8,
+	guest_ic_ibs_extd_ctrl=0xBC0
 }svm_vmcb_offset,*svm_vmcb_offset_p;
 
 // Following definitions is for State Save Area with SEV-ES Enabled
@@ -243,6 +259,11 @@ typedef enum _svm_vmsa_offset
 	guest_sev_last_branch_to=0x280,
 	guest_sev_last_exception_from=0x288,
 	guest_sev_last_exception_to=0x290,
+	guest_sev_pkru=0x2E8,
+	guest_sev_tsc_aux=0x2EC,
+	guest_sev_tsc_scale=0x2F0,
+	guest_sev_tsc_offset=0x2F8,
+	guest_sev_reg_prot_nonce=0x300,
 	guest_sev_rcx=0x308,
 	guest_sev_rdx=0x310,
 	guest_sev_rbx=0x318,

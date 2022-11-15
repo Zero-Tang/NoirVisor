@@ -310,64 +310,43 @@ void static noir_hvcode fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p g
 	{
 		// NoirVisor will be handling CVM's CPUID Interception.
 		u32 leaf=(u32)gpr_state->rax,subleaf=(u32)gpr_state->rcx;
-		u32 leaf_class=noir_cpuid_class(leaf);
-		// If User-Hypervisor specified a quickpath, then go through the quickpath.
-		noir_cpuid_general_info info;
-		if(leaf_class==hvm_leaf_index)
+		noir_cpuid_general_info info={0};
+		bool qp_hit=false;
+		// Use QuickPath to handle CPUID interception.
+		// Search per-vCPU QuickPath list.
+		for(u32 i=0;i<noir_cvm_cpuid_quickpath_limit_per_vcpu;i++)
 		{
-			// The first two fields are compliant with Microsoft Hypervisor Top-Level Functionality Specification
-			// even though NoirVisor CVM is running with different set of Hypervisor functionalities.
-			switch(leaf)
+			noir_cvm_cpuid_quickpath_info_p qp=&cvcpu->header.cpuid_quickpath[i];
+			if(qp->leaf==leaf)
 			{
-				case ncvm_cpuid_leaf_range_and_vendor_string:
+				if(qp->options.has_subleaf==false || qp->subleaf==subleaf)
 				{
-					info.eax=ncvm_cpuid_leaf_limit;					// NoirVisor CVM CPUID Leaf Limit.
-					noir_movsb(&info.ebx,"NoirVisor ZT",12);		// The Vendor String is "NoirVisor ZT"
-					break;
-				}
-				case ncvm_cpuid_vendor_neutral_interface_id:
-				{
-					noir_movsb(&info.eax,"Hv#0",4);		// Interface Signature is "Hv#0". Indicate Non-Compliance to MSHV-TLFS.
-					info.eax=info.ebx=info.ecx=0;		// Clear the Reserved CPUID fields.
-					break;
-				}
-				default:
-				{
-					noir_movsd((u32*)&info,0,4);
+					info.eax=qp->eax;
+					info.ebx=qp->ebx;
+					info.ecx=qp->ecx;
+					info.edx=qp->edx;
+					qp_hit=true;
 					break;
 				}
 			}
 		}
-		else
+		if(!qp_hit)
 		{
-			noir_cpuid(leaf,subleaf,&info.eax,&info.ebx,&info.ecx,&info.edx);
-			switch(leaf)
+			// Search per-VM QuickPath list.
+			for(u32 i=0;i<noir_cvm_cpuid_quickpath_limit_per_vm;i++)
 			{
-				case amd64_cpuid_std_proc_feature:
+				noir_cvm_cpuid_quickpath_info_p qp=&cvcpu->vm->header.cpuid_quickpath[i];
+				if(qp->leaf==leaf)
 				{
-					u8p apic_bytes=(u8p)&info.ebx;
-					// Indicate hypervisor presence.
-					noir_bts(&info.ecx,amd64_cpuid_hv_presence);
-					// In addition to indicating hypervisor presence,
-					// the Local APIC ID must be emulated as well.
-					apic_bytes[2]=(u8)cvcpu->vm->vcpu_count;
-					apic_bytes[3]=(u8)cvcpu->vcpu_id;
-					break;
-				}
-				case amd64_cpuid_ext_proc_feature:
-				{
-					noir_btr(&info.ecx,amd64_cpuid_svm);
-					break;
-				}
-				case amd64_cpuid_ext_svm_features:
-				{
-					noir_stosd((u32*)&info,0,4);
-					break;
-				}
-				case amd64_cpuid_ext_mem_crypting:
-				{
-					noir_stosd((u32*)&info,0,4);
-					break;
+					if(qp->options.has_subleaf==false || qp->subleaf==subleaf)
+					{
+						info.eax=qp->eax;
+						info.ebx=qp->ebx;
+						info.ecx=qp->ecx;
+						info.edx=qp->edx;
+						qp_hit=true;
+						break;
+					}
 				}
 			}
 		}
@@ -485,6 +464,27 @@ bool static fastcall nvc_svm_rdmsr_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	bool advance=true;
 	switch(index)
 	{
+		case amd64_tsc:
+		{
+			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,tsc_offset)+noir_rdtsc();
+			break;
+		}
+		case amd64_apic_base:
+		{
+			val.value=cvcpu->header.msrs.apic.value;
+			break;
+		}
+		case amd64_mtrr_cap:
+		{
+			// Support no MTRRs, but support WC type.
+			val.value=0x400;
+			break;
+		}
+		case amd64_mtrr_def_type:
+		{
+			val.value=cvcpu->header.msrs.mtrr.def_type;
+			break;
+		}
 		case amd64_sysenter_cs:
 		{
 			val.value=noir_svm_vmread64(cvcpu->vmcb.virt,guest_sysenter_cs);
@@ -570,6 +570,23 @@ bool static fastcall nvc_svm_wrmsr_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	val.high=(u32)gpr_state->rdx;
 	switch(index)
 	{
+		case amd64_tsc:
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,tsc_offset,val.value-noir_rdtsc());
+			// TSC-Offsetting is an interception field in VMCB.
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
+			break;
+		}
+		case amd64_apic_base:
+		{
+			if(val.value & amd64_apic_rsvd_mask)
+				advance=false;
+			else if(page_base(val.value)==page_base(cvcpu->header.msrs.apic.value) && noir_bt64(&val.value,amd64_apic_bsc)==noir_bt64(&cvcpu->header.msrs.apic.value,amd64_apic_bsc))
+				cvcpu->header.msrs.apic.value=val.value;
+			else
+				advance=false;
+			break;
+		}
 		case amd64_sysenter_cs:
 		{
 			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_cs,val.value);
@@ -882,52 +899,66 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state
 	noir_cvm_memblock_registration_p memblocks=cvcpu->vm->header.memblock_registrations;
 	// #NPF occured, tell the subverted host there is a memory access fault.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
-	// #NPF could mean either MMIO or memory-access fault.
-	for(u32 i=0;i<noir_cvm_memblock_registration_limit;i++)
+	fault.value=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info1);
+	if(fault.npf_addr)
 	{
-		if(gpa>=memblocks[i].start && gpa<memblocks[i].start+memblocks[i].size)
+		// #NPF could mean either MMIO or memory-access fault.
+		for(u32 i=0;i<noir_cvm_memblock_registration_limit;i++)
 		{
-			// This is actually MMIO.
-			is_mmio=true;
-			break;
+			if(gpa>=memblocks[i].start && gpa<memblocks[i].start+memblocks[i].size)
+			{
+				// This is actually MMIO.
+				is_mmio=true;
+				break;
+			}
+		}
+		if(is_mmio)
+		{
+			// AMD-V can't calculate the next rip. We must decode by software.
+			// Based on the cs attributes, determine the mode.
+			u8p instruction=(u8p)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes);
+			bool cs_l=noir_svm_vmcb_bt32(cvcpu->vmcb.virt,guest_cs_attrib,9);
+			bool cs_d=noir_svm_vmcb_bt32(cvcpu->vmcb.virt,guest_cs_attrib,10);
+			u32 inslen;
+			u64 next_rip;
+			// Use proper mode engine to decode the instruction.
+			if(cs_l)
+				inslen=noir_get_instruction_length_ex(instruction,64);
+			else if(cs_d)
+				inslen=noir_get_instruction_length_ex(instruction,32);
+			else
+				inslen=noir_get_instruction_length_ex(instruction,16);
+			// Get the Next RIP.
+			next_rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip)+inslen;
+			if(!cs_l)next_rip&=0xFFFFFFFF;
+			cvcpu->header.exit_context.vcpu_state.instruction_length=(u64)inslen;
+			// Save the interception information.
+			cvcpu->header.exit_context.intercept_code=cv_mmio_operation;
+			cvcpu->header.exit_context.mmio.gpa=gpa;
+			cvcpu->header.exit_context.mmio.access.direction=fault.write;
+			noir_movsb(cvcpu->header.exit_context.mmio.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
+		}
+		else
+		{
+			cvcpu->header.exit_context.intercept_code=cv_memory_access;
+			cvcpu->header.exit_context.memory_access.gpa=gpa;
+			cvcpu->header.exit_context.memory_access.access.read=(u8)fault.present;
+			cvcpu->header.exit_context.memory_access.access.write=(u8)fault.write;
+			cvcpu->header.exit_context.memory_access.access.execute=(u8)fault.execute;
+			cvcpu->header.exit_context.memory_access.access.user=(u8)fault.user;
+			cvcpu->header.exit_context.memory_access.access.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
+			noir_movsb(cvcpu->header.exit_context.memory_access.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
 		}
 	}
-	fault.value=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info1);
-	if(is_mmio)
+	else if(fault.npf_table)
 	{
-		// AMD-V can't calculate the next rip. We must decode by software.
-		// Based on the cs attributes, determine the mode.
-		void* instruction=(void*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes);
-		bool cs_l=noir_svm_vmcb_bt32(cvcpu->vmcb.virt,guest_cs_attrib,9);
-		bool cs_d=noir_svm_vmcb_bt32(cvcpu->vmcb.virt,guest_cs_attrib,10);
-		u32 inslen;
-		u64 next_rip;
-		// Use proper mode engine to decode the instruction.
-		if(cs_l)
-			inslen=noir_get_instruction_length_ex(instruction,64);
-		else if(cs_d)
-			inslen=noir_get_instruction_length_ex(instruction,32);
-		else
-			inslen=noir_get_instruction_length_ex(instruction,16);
-		// Get the Next RIP.
-		next_rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip)+inslen;
-		if(!cs_l)next_rip&=0xFFFFFFFF;
-		cvcpu->header.exit_context.vcpu_state.instruction_length=(u64)inslen;
-		// Save the interception information.
-		cvcpu->header.exit_context.intercept_code=cv_mmio_operation;
-		cvcpu->header.exit_context.mmio.gpa=gpa;
-		cvcpu->header.exit_context.mmio.access.direction=fault.write;
-	}
-	else
-	{
-		cvcpu->header.exit_context.intercept_code=cv_memory_access;
+		// For such #NPF, there are misconfigurations!
+		cvcpu->header.exit_context.intercept_code=cv_scheduler_npt_misconfig;
 		cvcpu->header.exit_context.memory_access.gpa=gpa;
 		cvcpu->header.exit_context.memory_access.access.read=(u8)fault.present;
 		cvcpu->header.exit_context.memory_access.access.write=(u8)fault.write;
 		cvcpu->header.exit_context.memory_access.access.execute=(u8)fault.execute;
 		cvcpu->header.exit_context.memory_access.access.user=(u8)fault.user;
-		cvcpu->header.exit_context.memory_access.access.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
-		noir_movsb(cvcpu->header.exit_context.memory_access.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
 	}
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.npf;
