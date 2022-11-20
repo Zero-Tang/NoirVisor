@@ -455,22 +455,6 @@ noir_status nvc_hax_run_vcpu(noir_cvm_virtual_cpu_p vcpu)
 				noir_int3();
 				break;
 			}
-			case cv_mmio_operation:
-			{
-				noir_hax_fastmmio_p mmio_info=(noir_hax_fastmmio_p)vcpu->iobuff;
-				htun->exit_status=hax_exit_fast_mmio;
-				htun->mmio.gpa=vcpu->exit_context.mmio.gpa;
-				mmio_info->gpa=vcpu->exit_context.mmio.gpa;
-				mmio_info->direction=false;
-				// Intel HAXM automatically advance rip.
-				nvc_edit_vcpu_registers(vcpu,noir_cvm_instruction_pointer,&vcpu->exit_context.next_rip,sizeof(u64));
-				nv_dprintf("MMIO Happened at Guest RIP=0x%p! Next RIP=0x%p (CS.Selector=0x%04X, Base=0x%p)\n",vcpu->exit_context.rip,vcpu->exit_context.next_rip,vcpu->exit_context.cs.selector,vcpu->exit_context.cs.base);
-				nv_dprintf("Fetched Instruction Bytes: ");
-				for(u32 i=0;i<15;i++)nv_dprintf_unprefixed("%02X ",vcpu->exit_context.mmio.instruction_bytes[i]);
-				nv_dprintf_unprefixed("\n");
-				noir_int3();
-				break;
-			}
 			case cv_hlt_instruction:
 			{
 				htun->exit_status=hax_exit_hlt;

@@ -26,6 +26,7 @@
 	00 - Cross-Platform or General Facility (xpf_core)
 	01 - Intel VT-x Specific Facility (vt_core)
 	02 - AMD-V Specific Facility (svm_core)
+	03 - Instruction Emulator
 	Other values (03-63) are reserved for future usage.
 
   C - Detailed Code (24 bits, bits 0-24)
@@ -73,6 +74,18 @@ typedef u32 noir_status;
 */
 
 #define noir_dereference_destroying		0x40000002
+
+/*
+  Status Indicator: noir_emu_dual_memory_operands
+  If an instruction operand has two memory operands,
+  this value is supposed to be returned so that the
+  user hypervisor should do further processing.
+  (Including address translations and access checks)
+
+  Value: 0x43000000
+*/
+
+#define noir_emu_dual_memory_operands	0x43000000
 
 /*
   Status Indicator noir_unsuccessful
@@ -286,3 +299,25 @@ typedef u32 noir_status;
 */
 
 #define noir_npt_not_supported			0xC2000002
+
+/*
+  Status Indicator: noir_emu_non_emulatable
+  If the VM-Exit is not emulatable,
+  then this value is supposed to be returned.
+  This indicator is from Instruction Emulator.
+
+  Value: 0xC3000000
+*/
+
+#define noir_emu_not_emulatable			0xC3000000
+
+/*
+  Status Indicator: noir_emu_unknown_instruction
+  If the instruction emulated for MMIO is unrecognized by
+  the emulator, then this value is supposed to be returned.
+  This indicator is from Instruction Emulator.
+
+  Value: 0xC3000001
+*/
+
+#define noir_emu_unknown_instruction	0xC3000001

@@ -403,6 +403,12 @@ noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 				vcpu->state_cache.lb_valid=0;
 				break;
 			}
+			case noir_cvm_time_stamp_counter:
+			{
+				vcpu->tsc_offset=*(u64*)buffer-noir_rdtsc();
+				vcpu->state_cache.ts_valid=0;
+				break;
+			}
 			default:
 			{
 				st=noir_invalid_parameter;
@@ -557,6 +563,16 @@ noir_status nvc_view_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 				*(u64*)buffer=vcpu->msrs.pat;
 				break;
 			}
+			case noir_cvm_last_branch_record_register:
+			{
+				noir_copy_memory(buffer,&vcpu->msrs.debug_ctrl,sizeof(u64)*5);
+				break;
+			}
+			case noir_cvm_time_stamp_counter:
+			{
+				*(u64*)buffer=noir_rdtsc()+vcpu->tsc_offset;
+				break;
+			}
 			default:
 			{
 				st=noir_invalid_parameter;
@@ -633,7 +649,11 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 			else
 				st=noir_unknown_processor;
 		}
-		if(st==noir_success && !vcpu->vcpu_options.use_tunnel)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
+		if(st==noir_success)
+		{
+			if(vcpu->exit_context.intercept_code==cv_memory_access)nvc_emu_decode_memory_access(vcpu);
+			if(!vcpu->vcpu_options.use_tunnel)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
+		}
 	}
 	return st;
 }
@@ -861,6 +881,19 @@ noir_status nvc_register_memblock(noir_cvm_virtual_machine_p vm,u64 start,u64 si
 	return noir_insufficient_resources;
 }
 
+void nvc_unregister_memblock(noir_cvm_virtual_machine_p vm,u64 start,u64 size)
+{
+	for(u32 i=0;i<noir_cvm_memblock_registration_limit;i++)
+	{
+		if(vm->memblock_registrations[i].start==start && vm->memblock_registrations[i].size==size)
+		{
+			noir_stosb(&vm->memblock_registrations[i],0,sizeof(noir_cvm_memblock_registration));
+			noir_btr64(&vm->memblock_bitmap,i);
+			break;
+		}
+	}
+}
+
 noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info)
 {
 	noir_status st=noir_hypervision_absent;
@@ -895,6 +928,7 @@ alloc_failure:
 				if(phys_array)noir_free_nonpg_memory(phys_array);
 				st=noir_insufficient_resources;
 			}
+			nvc_register_memblock(virtual_machine,mapping_info->gpa,page_mult(mapping_info->pages),(void*)mapping_info->hva);
 		}
 		else
 		{
@@ -904,8 +938,8 @@ alloc_failure:
 				st=nvc_svmc_set_unmapping(virtual_machine,mapping_info->gpa,mapping_info->pages);
 			else
 				st=noir_unknown_processor;
+			nvc_unregister_memblock(virtual_machine,mapping_info->gpa,page_mult(mapping_info->pages));
 		}
-		nvc_register_memblock(virtual_machine,mapping_info->gpa,page_mult(mapping_info->pages),(void*)mapping_info->hva);
 		noir_release_reslock(virtual_machine->vcpu_list_lock);
 	}
 	return st;

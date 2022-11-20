@@ -71,6 +71,7 @@ typedef ULONG32 NOIR_STATUS;
 #define IOCTL_CvmInjectEvent	CTL_CODE_GEN(0x896)
 #define IOCTL_CvmSetVcpuOptions	CTL_CODE_GEN(0x897)
 #define IOCTL_CvmQueryVcpuStats	CTL_CODE_GEN(0x898)
+#define IOCTL_CvmTryEmuExit		CTL_CODE_GEN(0x899)
 
 // Layered Hypervisor Functions
 typedef ULONG64 CVM_HANDLE;
@@ -151,6 +152,7 @@ NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpInde
 NOIR_STATUS NoirSetVirtualProcessorOptions(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 OptionType,IN ULONG32 Options);
 NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID ExitContext);
 NOIR_STATUS NoirRescindVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
+NOIR_STATUS NoirTryCvExitEmulation(IN CVM_HANDLE Handle,IN ULONG32 VpIndex,IN OUT PVOID Emulation);
 
 void NoirInitializeDisassembler();
 NTSTATUS NoirReportWindowsVersion();

@@ -53,7 +53,6 @@ typedef enum _noir_cvm_intercept_code
 	cv_interrupt_window=14,
 	cv_task_switch=15,
 	cv_single_step=16,
-	cv_mmio_operation=17,
 	cv_monitor_trap=18,
 	// The rest are scheduler-relevant.
 	cv_scheduler_exit=0x80000000,
@@ -84,6 +83,7 @@ typedef enum _noir_cvm_register_type
 	noir_cvm_efer_register,
 	noir_cvm_pat_register,
 	noir_cvm_last_branch_record_register,
+	noir_cvm_time_stamp_counter,
 	noir_cvm_maximum_register_type
 }noir_cvm_register_type,*noir_cvm_register_type_p;
 
@@ -186,18 +186,6 @@ typedef struct _noir_cvm_io_context
 	segment_register segment;
 }noir_cvm_io_context,*noir_cvm_io_context_p;
 
-typedef struct _noir_cvm_mmio_context
-{
-	struct
-	{
-		u64 size:3;
-		u64 direction:1;
-		u64 reserved:60;
-	}access;
-	u64 gpa;
-	u8 instruction_bytes[15];
-}noir_cvm_mmio_context,*noir_cvm_mmio_context_p;
-
 typedef struct _noir_cvm_msr_context
 {
 	u32 eax;
@@ -215,7 +203,7 @@ typedef struct _noir_cvm_memory_access_context
 {
 	struct
 	{
-		u8 read:1;
+		u8 present:1;
 		u8 write:1;
 		u8 execute:1;
 		u8 user:1;
@@ -223,10 +211,16 @@ typedef struct _noir_cvm_memory_access_context
 	}access;
 	u8 instruction_bytes[15];
 	u64 gpa;
-	struct
+	u64 gva;
+	union
 	{
-		u64 avl:3;
-		u64 reserved:61;
+		struct
+		{
+			u64 operand_size:16;
+			u64 reserved:47;
+			u64 decoded:1;
+		};
+		u64 value;
 	}flags;
 }noir_cvm_memory_access_context,*noir_cvm_memory_access_context_p;
 
@@ -259,7 +253,6 @@ typedef struct _noir_cvm_exit_context
 		noir_cvm_dr_access_context dr_access;
 		noir_cvm_exception_context exception;
 		noir_cvm_io_context io;
-		noir_cvm_mmio_context mmio;
 		noir_cvm_msr_context msr;
 		noir_cvm_memory_access_context memory_access;
 		noir_cvm_cpuid_context cpuid;
@@ -277,18 +270,22 @@ typedef struct _noir_cvm_exit_context
 		u64 lm:1;
 		u64 int_shadow:1;
 		u64 instruction_length:4;
-		u64 reserved:55;
+		u64 int_pending:1;
+		u64 pg:1;
+		u64 pae:1;
+		u64 reserved:51;
+		u64 loaded:1;
 	}vcpu_state;
 }noir_cvm_exit_context,*noir_cvm_exit_context_p;
 
 typedef struct _noir_seg_state
 {
-	segment_register cs;
-	segment_register ds;
 	segment_register es;
+	segment_register cs;
+	segment_register ss;
+	segment_register ds;
 	segment_register fs;
 	segment_register gs;
-	segment_register ss;
 	segment_register tr;
 	segment_register gdtr;
 	segment_register idtr;
@@ -518,6 +515,31 @@ typedef struct _noir_cvm_virtual_cpu
 	noir_cvm_cpuid_quickpath_info cpuid_quickpath[8];
 }noir_cvm_virtual_cpu,*noir_cvm_virtual_cpu_p;
 
+typedef struct _noir_emulated_instruction
+{
+	u32 struct_size;
+	u32 emulation_type;
+}noir_emulated_instruction,*noir_emulated_instruction_p;
+
+typedef struct _noir_emulated_mmio_instruction
+{
+	noir_emulated_instruction header;
+	union
+	{
+		struct
+		{
+			u64 direction:1;
+			u64 advancement_length:4;
+			u64 reserved:27;
+			u64 access_size:32;
+		};
+		u64 value;
+	}emulation_property;
+	u64 address;
+	u64 data_size;
+	u8 data[64];
+}noir_emulated_mmio_instruction,*noir_emulated_mmio_instruction_p;
+
 #define noir_cvm_memory_uc	0
 #define noir_cvm_memory_wb	6
 
@@ -642,6 +664,8 @@ noir_status nvc_vtc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu);
 noir_cvm_virtual_cpu_p nvc_vtc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id);
 noir_status nvc_vtc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info);
 u32 nvc_vtc_get_vm_asid(noir_cvm_virtual_machine_p vm);
+// Emulator Functions
+noir_status nvc_emu_decode_memory_access(noir_cvm_virtual_cpu_p vcpu);
 
 // Idle VM is to be considered as the List Head.
 noir_cvm_virtual_machine noir_idle_vm={0};
@@ -670,7 +694,8 @@ noir_hvdata u32 noir_cvm_register_buffer_limit[noir_cvm_maximum_register_type]=
 	8,								// XCR0 Register
 	8,								// EFER Register
 	8,								// PAT Register
-	sizeof(u64)*5					// LBR Register
+	sizeof(u64)*5,					// LBR Register
+	8								// TSC Register
 };
 #elif defined(_vt_core) || defined(_svm_core)
 void nvc_release_lockers(noir_cvm_virtual_machine_p virtual_machine);

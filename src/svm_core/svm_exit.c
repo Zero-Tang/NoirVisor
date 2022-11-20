@@ -1605,6 +1605,7 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 		noir_svm_vmwrite32(vmcb_va,tlb_control,nvc_svm_tlb_control_do_nothing);
 		// Mark the state as not synchronized.
 		cvcpu->header.state_cache.synchronized=0;
+		cvcpu->header.exit_context.vcpu_state.loaded=false;
 		// Check if the interception is due to invalid guest state.
 		// Invoke the handler accordingly.
 		if(unlikely(intercept_code<0))		// Rare circumstance.
@@ -1619,24 +1620,8 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 		{
 			// VM-Exit to User Hypervisor occurs.
 			// If the exit is due to the scheduler, saving exit context is utterly meaningless.
-			if(cvcpu->header.exit_context.intercept_code!=cv_scheduler_exit)
-			{
-				// Set General vCPU Exit Context.
-				cvcpu->header.exit_context.vcpu_state.instruction_length=(noir_svm_vmread64(vmcb_va,next_rip)-noir_svm_vmread64(vmcb_va,guest_rip))&0xf;
-				cvcpu->header.exit_context.vcpu_state.cpl=noir_svm_vmread8(vmcb_va,guest_cpl)&0x3;
-				cvcpu->header.exit_context.vcpu_state.int_shadow=noir_svm_vmcb_bt32(vmcb_va,guest_interrupt,0);
-				cvcpu->header.exit_context.vcpu_state.pe=noir_svm_vmcb_bt32(vmcb_va,guest_cr0,amd64_cr0_pe);
-				cvcpu->header.exit_context.vcpu_state.lm=noir_svm_vmcb_bt32(vmcb_va,guest_efer,amd64_efer_lma);
-				// Save Code Segment...
-				cvcpu->header.exit_context.cs.selector=noir_svm_vmread16(cvcpu->vmcb.virt,guest_cs_selector);
-				cvcpu->header.exit_context.cs.attrib=svm_attrib_inverse(noir_svm_vmread16(cvcpu->vmcb.virt,guest_cs_attrib));
-				cvcpu->header.exit_context.cs.limit=noir_svm_vmread32(cvcpu->vmcb.virt,guest_cs_limit);
-				cvcpu->header.exit_context.cs.base=noir_svm_vmread64(cvcpu->vmcb.virt,guest_cs_base);
-				// Save some GPRs...
-				cvcpu->header.exit_context.rflags=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rflags);
-				cvcpu->header.exit_context.rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip);
-				cvcpu->header.exit_context.next_rip=noir_svm_vmread64(cvcpu->vmcb.virt,next_rip);
-			}
+			if(cvcpu->header.exit_context.intercept_code!=cv_scheduler_exit && cvcpu->header.exit_context.vcpu_state.loaded==false)
+				nvc_svm_load_basic_exit_context(cvcpu);
 			else if(noir_locked_btr64(&cvcpu->special_state,63))		// User Hypervisor rescinded execution of vCPU.
 				cvcpu->header.exit_context.intercept_code=cv_rescission;
 			else if(cvcpu->header.vcpu_options.intercept_interrupt_window)

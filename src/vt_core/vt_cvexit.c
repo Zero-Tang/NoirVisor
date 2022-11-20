@@ -777,7 +777,7 @@ void static noir_hvcode fastcall nvc_vt_ept_violation_cvexit_handler(noir_gpr_st
 	nvc_vt_save_generic_cvexit_context(cvcpu);
 	nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_memory_access;
-	cvcpu->header.exit_context.memory_access.access.read=(u8)info.read;
+	cvcpu->header.exit_context.memory_access.access.present=(u8)((info.value&0x38)!=0);
 	cvcpu->header.exit_context.memory_access.access.write=(u8)info.write;
 	cvcpu->header.exit_context.memory_access.access.execute=(u8)info.execute;
 	cvcpu->header.exit_context.memory_access.access.fetched_bytes=0;
@@ -786,7 +786,7 @@ void static noir_hvcode fastcall nvc_vt_ept_violation_cvexit_handler(noir_gpr_st
 void static noir_hvcode fastcall nvc_vt_ept_misconfig_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
 {
 	nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
-	cvcpu->header.exit_context.intercept_code=cv_scheduler_bug;
+	cvcpu->header.exit_context.intercept_code=cv_scheduler_npt_misconfig;
 }
 
 void static noir_hvcode fastcall nvc_vt_invept_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)

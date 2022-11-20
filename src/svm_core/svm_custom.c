@@ -331,6 +331,31 @@ void noir_hvcode nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_sv
 	// The context will go to the guest when vmrun is executed.
 }
 
+void noir_hvcode nvc_svm_load_basic_exit_context(noir_svm_custom_vcpu_p cvcpu)
+{
+	void* vmcb_va=cvcpu->vmcb.virt;
+	// Set General vCPU Exit Context.
+	cvcpu->header.exit_context.vcpu_state.instruction_length=(noir_svm_vmread64(vmcb_va,next_rip)-noir_svm_vmread64(vmcb_va,guest_rip))&0xf;
+	cvcpu->header.exit_context.vcpu_state.cpl=noir_svm_vmread8(vmcb_va,guest_cpl)&0x3;
+	cvcpu->header.exit_context.vcpu_state.int_shadow=noir_svm_vmcb_bt32(vmcb_va,guest_interrupt,0);
+	cvcpu->header.exit_context.vcpu_state.int_pending=noir_svm_vmcb_bt32(vmcb_va,avic_control,nvc_svm_avic_control_virq);
+	cvcpu->header.exit_context.vcpu_state.pe=noir_svm_vmcb_bt32(vmcb_va,guest_cr0,amd64_cr0_pe);
+	cvcpu->header.exit_context.vcpu_state.pg=noir_svm_vmcb_bt32(vmcb_va,guest_cr0,amd64_cr0_pg);
+	cvcpu->header.exit_context.vcpu_state.pae=noir_svm_vmcb_bt32(vmcb_va,guest_cr4,amd64_cr4_pae);
+	cvcpu->header.exit_context.vcpu_state.lm=noir_svm_vmcb_bt32(vmcb_va,guest_efer,amd64_efer_lma);
+	// Save Code Segment...
+	cvcpu->header.exit_context.cs.selector=noir_svm_vmread16(vmcb_va,guest_cs_selector);
+	cvcpu->header.exit_context.cs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb_va,guest_cs_attrib));
+	cvcpu->header.exit_context.cs.limit=noir_svm_vmread32(vmcb_va,guest_cs_limit);
+	cvcpu->header.exit_context.cs.base=noir_svm_vmread64(vmcb_va,guest_cs_base);
+	// Save some GPRs...
+	cvcpu->header.exit_context.rflags=noir_svm_vmread64(vmcb_va,guest_rflags);
+	cvcpu->header.exit_context.rip=noir_svm_vmread64(vmcb_va,guest_rip);
+	cvcpu->header.exit_context.next_rip=noir_svm_vmread64(vmcb_va,next_rip);
+	// Mark it as loaded to the context.
+	cvcpu->header.exit_context.vcpu_state.loaded=true;
+}
+
 // This function only dumps state saved in VMCB.
 void noir_hvcode nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu)
 {

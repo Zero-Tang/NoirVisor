@@ -234,9 +234,13 @@ typedef union _nvc_svm_asid_control
 
 #define nvc_svm_avic_control_virq			8
 #define nvc_svm_avic_control_vgif			9
+#define nvc_svm_avic_control_vnmi			11
+#define nvc_svm_avic_control_vnmi_mask		12
 #define nvc_svm_avic_control_ignore_vtpr	20
 #define nvc_svm_avic_control_vintr_mask		24
 #define nvc_svm_avic_control_vgif_enabled	25
+#define nvc_svm_avic_control_vnmi_enabled	26
+#define nvc_svm_avic_control_x2_enabled		30
 #define nvc_svm_avic_control_enabled		31
 
 typedef union _nvc_svm_avic_control

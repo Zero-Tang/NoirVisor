@@ -292,6 +292,18 @@ NOIR_STATUS NoirSetMapping(IN CVM_HANDLE VirtualMachine,IN PNOIR_ADDRESS_MAPPING
 	return st;
 }
 
+NOIR_STATUS NoirTryCvExitEmulation(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN OUT PVOID Emulation)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_emu_try_cvexit_emulation(VP,Emulation);
+	}
+	return st;
+}
+
 NOIR_STATUS NoirQueryVirtualProcessorStatistics(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID Buffer,IN ULONG32 BufferSize)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
