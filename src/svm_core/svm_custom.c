@@ -1152,43 +1152,138 @@ noir_status static nvc_svmc_set_page_map(noir_svm_custom_npt_manager_p npt_manag
 	return st;
 }
 
+bool nvc_svmc_get_physical_mapping(noir_svm_custom_npt_manager_p npt_manager,u64 gpa,u64p hpa,bool r,bool w,bool x)
+{
+	bool result=false;
+	amd64_npt_pml4e_p pml4e;
+	amd64_addr_translator trans;
+	trans.value=gpa;
+	pml4e=&npt_manager->ncr3.virt[trans.pml4e_offset];
+	*hpa=0;
+	if(pml4e->present>=r && pml4e->write>=w && pml4e->no_execute<=x)
+	{
+		const u64 pdpte_phys=page_mult(pml4e->pdpte_base);
+		for(noir_npt_pdpte_descriptor_p pdpte_p=npt_manager->pdpte.head;pdpte_p;pdpte_p=pdpte_p->next)
+		{
+			if(pdpte_p->phys==pdpte_phys)
+			{
+				amd64_npt_huge_pdpte_p pdpte=(amd64_npt_huge_pdpte_p)&pdpte_p->virt[trans.pdpte_offset];
+				if(pdpte->present>=r && pdpte->write>=w && pdpte->no_execute<=x)
+				{
+					if(pdpte->huge_pdpte)
+					{
+						result=true;
+						*hpa=page_1gb_mult(pdpte->page_base)|page_1gb_offset(gpa);
+					}
+					else
+					{
+						const u64 pde_phys=page_mult(pdpte_p->virt[trans.pdpte_offset].pde_base);
+						for(noir_npt_pde_descriptor_p pde_p=npt_manager->pde.head;pde_p;pde_p=pde_p->next)
+						{
+							if(pde_p->phys==pde_phys)
+							{
+								amd64_npt_large_pde_p pde=(amd64_npt_large_pde_p)&pde_p->virt[trans.pde_offset];
+								if(pde->present>=r && pde->write>=w && pde->no_execute<=x)
+								{
+									if(pde->large_pde)
+									{
+										result=true;
+										*hpa=page_2mb_mult(pde->page_base)|page_2mb_offset(gpa);
+									}
+									else
+									{
+										const u64 pte_phys=page_mult(pde_p->virt[trans.pde_offset].pte_base);
+										for(noir_npt_pte_descriptor_p pte_p=npt_manager->pte.head;pte_p;pte_p=pte_p->next)
+										{
+											if(pte_p->phys==pte_phys)
+											{
+												amd64_npt_pte_p pte=&pte_p->virt[trans.pte_offset];
+												if(pte->present>=r && pte->write>=w && pte->no_execute<=x)
+												{
+													result=true;
+													*hpa=page_4kb_mult(pte->page_base)|trans.page_offset;
+												}
+												break;
+											}
+										}
+									}
+								}
+								break;
+							}
+						}
+					}
+				}
+				break;
+			}
+		}
+	}
+	return result;
+}
+
 noir_status nvc_svmc_set_unmapping(noir_svm_custom_vm_p virtual_machine,u64 gpa,u32 pages)
 {
-	noir_cvm_mapping_attributes map_attrib={0};
-	for(u32 i=0;i<pages;i++)
+	noir_status st=noir_insufficient_resources;
+	u64p hpa_list=noir_alloc_nonpg_memory(pages<<3);
+	if(hpa_list)
 	{
-		noir_status st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,0,map_attrib);
-		if(st!=noir_success)return st;
+		for(u32 i=0;i<pages;i++)
+			nvc_svmc_get_physical_mapping(&virtual_machine->nptm,gpa+page_4kb_mult(i),&hpa_list[i],true,false,false);
+		if(nvc_npt_reassign_page_ownership(hpa_list,hpa_list,pages,1,true,noir_nsv_rmt_subverted_host))
+		{
+			noir_cvm_mapping_attributes map_attrib={0};
+			for(u32 i=0;i<pages;i++)
+			{
+				noir_status st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,0,map_attrib);
+				if(st!=noir_success)return st;
+			}
+		}
+		noir_free_nonpg_memory(hpa_list);
 	}
-	return noir_success;
+	return st;
 }
 
 noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_address_mapping_p mapping_info,u64p phys_array)
 {
-	noir_status st=noir_unsuccessful;
-	amd64_addr_translator gpa;
-	// u32 increment[4]={page_4kb_shift,page_2mb_shift,page_1gb_shift,page_512gb_shift};
-	if(mapping_info->attributes.psize)return noir_not_implemented;
-	// Gain Exclusion of VM.
-	for(u32 i=0;i<255;i++)
-		if(virtual_machine->vcpu[i])
-			noir_acquire_pushlock_exclusive(&virtual_machine->vcpu[i]->header.vcpu_lock);
-	gpa.value=mapping_info->gpa;
-	for(u32 i=0;i<mapping_info->pages;i++)
+	noir_status st=noir_insufficient_resources;
+	u64p gpa_list=noir_alloc_nonpg_memory(mapping_info->pages<<3);
+	if(gpa_list)
 	{
-		u64 gpa=mapping_info->gpa+page_4kb_mult(i);
-		u64 hpa=phys_array[i];
-		st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,hpa,mapping_info->attributes);
-		if(st!=noir_success)break;
+		// First, reassign the reverse mapping.
+		for(u32 i=0;i<mapping_info->pages;i++)
+			gpa_list[i]=mapping_info->gpa+page_4kb_mult(i);
+		if(nvc_npt_reassign_page_ownership(phys_array,gpa_list,mapping_info->pages,virtual_machine->asid,false,noir_nsv_rmt_insecure_guest))
+		{
+			// u32 increment[4]={page_4kb_shift,page_2mb_shift,page_1gb_shift,page_512gb_shift};
+			if(mapping_info->attributes.psize)return noir_not_implemented;
+			// Gain Exclusion of VM.
+			for(u32 i=0;i<255;i++)
+				if(virtual_machine->vcpu[i])
+					noir_acquire_pushlock_exclusive(&virtual_machine->vcpu[i]->header.vcpu_lock);
+			for(u32 i=0;i<mapping_info->pages;i++)
+			{
+				u64 gpa=mapping_info->gpa+page_4kb_mult(i);
+				u64 hpa=phys_array[i];
+				st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,hpa,mapping_info->attributes);
+				if(st!=noir_success)break;
+			}
+			// Broadcast to all vCPUs that the TLBs are invalid now.
+			for(u32 i=0;i<255;i++)
+				if(virtual_machine->vcpu[i])
+					virtual_machine->vcpu[i]->header.state_cache.tl_valid=false;
+			// Release Exclusion of VM.
+			for(u32 i=0;i<255;i++)
+				if(virtual_machine->vcpu[i])
+					noir_release_pushlock_exclusive(&virtual_machine->vcpu[i]->header.vcpu_lock);
+			// Failure of mapping will result in unmapping.
+			if(st!=noir_success)nvc_svmc_set_unmapping(virtual_machine,mapping_info->gpa,mapping_info->pages);
+		}
+		else
+		{
+			nv_dprintf("Violations in Reverse-Mapping Table are detected in page-mapping!\n");
+			st=noir_nsv_violation;
+		}
+		noir_free_nonpg_memory(gpa_list);
 	}
-	// Broadcast to all vCPUs that the TLBs are invalid now.
-	for(u32 i=0;i<255;i++)
-		if(virtual_machine->vcpu[i])
-			virtual_machine->vcpu[i]->header.state_cache.tl_valid=false;
-	// Release Exclusion of VM.
-	for(u32 i=0;i<255;i++)
-		if(virtual_machine->vcpu[i])
-			noir_release_pushlock_exclusive(&virtual_machine->vcpu[i]->header.vcpu_lock);
 	return st;
 }
 

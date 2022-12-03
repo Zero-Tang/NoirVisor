@@ -1156,6 +1156,7 @@ invalid_nested_vmcb:
 // Expected Intercept Code: 0x81
 void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
+	bool advance=true;
 	u32 vmmcall_func=(u32)gpr_state->rcx;
 	ulong_ptr context=gpr_state->rdx;
 	ulong_ptr gsp=noir_svm_vmread(vcpu->vmcb.virt,guest_rsp);
@@ -1292,14 +1293,46 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_st
 			}
 			break;
 		}
+		case noir_svm_nsv_reassign_rmt:
+		{
+			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
+			{
+#if defined(_hv_type1)
+				// FIXME: Translate GVAs in the structure.
+				noir_rmt_reassignment_context_p reassignment=null;
+#else
+				noir_rmt_reassignment_context_p reassignment=(noir_rmt_reassignment_context_p)context;
+#endif
+				reassignment->result=nvc_validate_rmt_reassignment(reassignment->hpa_list,reassignment->gpa_list,reassignment->pages,reassignment->asid,reassignment->shared,reassignment->ownership);
+				if(reassignment->result)	// If validation fails, do not reconfigure the reverse mapping.
+					for(u32 i=0;i<reassignment->pages;i++)
+						nvc_configure_reverse_mapping(reassignment->hpa_list[i],reassignment->gpa_list[i],reassignment->asid,reassignment->shared,reassignment->ownership);
+			}
+			break;
+		}
+		case noir_svm_nsv_remap_by_rmt:
+		{
+			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
+			{
+#if defined(_hv_type1)
+				// FIXME: Translate GVAs in the structure.
+				noir_rmt_remap_context_p reassignment=null;
+#else
+				noir_rmt_remap_context_p reassignment=(noir_rmt_remap_context_p)context;
+#endif
+				nvc_npt_reassign_page_ownership_hvrt(vcpu,reassignment);
+			}
+			break;
+		}
 		default:
 		{
 			// This function leaf is unknown. Treat it as an invalid instruction.
 			noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,false,0);
+			advance=false;
 			break;
 		}
 	}
-	noir_svm_advance_rip(vcpu->vmcb.virt);
+	if(advance)noir_svm_advance_rip(vcpu->vmcb.virt);
 }
 
 // Expected Intercept Code: 0x82
@@ -1458,96 +1491,122 @@ void static noir_hvcode fastcall nvc_svm_skinit_handler(noir_gpr_state_p gpr_sta
 void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	bool advance=true;
+	noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
 	// Necessary Information for #NPF VM-Exit.
+	const u64 gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
+	const u64 guest_pfn=page_count(gpa);
 	amd64_npt_fault_code fault;
 	fault.value=noir_svm_vmread64(vcpu->vmcb.virt,exit_info1);
-#if !defined(_hv_type1)
-	if(fault.execute)
+	if(rm_table[guest_pfn].low.asid==0)
 	{
-		i32 lo=0,hi=noir_hook_pages_count;
-		u64 gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
-		// Check if we should switch to secondary.
-		// Use binary search to reduce searching time complexity.
-		while(hi>=lo)
-		{
-			i32 mid=(lo+hi)>>1;
-			noir_hook_page_p nhp=&vcpu->secondary_nptm->hook_pages[mid];
-			if(gpa>=nhp->orig.phys+page_size)
-				lo=mid+1;
-			else if(gpa<nhp->orig.phys)
-				hi=mid-1;
-			else
-			{
-				noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->secondary_nptm;
-				noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
-				advance=false;
-				break;
-			}
-		}
-		if(advance)
-		{
-			// Execution is outside hooked page.
-			// We should switch to primary.
-			noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->primary_nptm;
-			noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
-			advance=false;
-		}
-		// We switched NPT. Thus we should clean VMCB cache state.
-		noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_npt);
-		// It is necessary to flush TLB.
-		noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+		// If the assigned ASID is zero, then the logic for treating
+		// this #NPF should be considered as reserved area of NoirVisor.
+		noir_svm_inject_event(vcpu->vmcb.virt,amd64_page_fault,amd64_fault_trap_exception,true,true,(u32)fault.value);
+		// Write to CR2 about the faulting physical address.
+		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_cr2,gpa);
+		noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_cr2);
 	}
-#else
-	// For Type-I Hypervisors, #NPF can be triggerred by virtue of interceptions on writes to APIC pages.
-	if(fault.write)
+	else if(rm_table[guest_pfn].low.asid==1)
 	{
-		u64 gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
-		u64 apic_bar=noir_rdmsr(amd64_apic_base);
-		u64 apic_base=page_base(apic_bar);
-		if(gpa>=apic_base && gpa<apic_base+page_size)
+		// If the assigned ASID is one, then the logic for treating this
+		// #NPF should be considered as special subverted host operations.
+#if !defined(_hv_type1)
+		if(fault.execute)
 		{
-			const u64 offset=gpa-apic_base;
-			nvd_printf("APIC-write is intercepted! Offset=0x%x\n",(u32)offset);
-			noir_bts(&vcpu->global_state,noir_svm_apic_access);
-			switch(offset)
+			i32 lo=0,hi=noir_hook_pages_count;
+			// Check if we should switch to secondary.
+			// Use binary search to reduce searching time complexity.
+			while(hi>=lo)
 			{
-				case amd64_apic_icr_lo:
+				i32 mid=(lo+hi)>>1;
+				noir_hook_page_p nhp=&vcpu->secondary_nptm->hook_pages[mid];
+				if(gpa>=nhp->orig.phys+page_size)
+					lo=mid+1;
+				else if(gpa<nhp->orig.phys)
+					hi=mid-1;
+				else
 				{
-					// Write to Interrupt Control Register (Low) is intercepted.
-					// Deactivate APIC by redirecting the APIC access to the shadowed page.
-					// Mark this vCPU is issuing IPI.
-					noir_bts(&vcpu->global_state,noir_svm_issuing_ipi);
-					vcpu->apic_pte->page_base=vcpu->sapic.phys>>page_shift;
+					noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->secondary_nptm;
+					noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
+					advance=false;
 					break;
 				}
 			}
-			// Grant the access to write for the sake of single-stepping.
-			vcpu->apic_pte->write=true;
+			if(advance)
+			{
+				// Execution is outside hooked page.
+				// We should switch to primary.
+				noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->primary_nptm;
+				noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
+				advance=false;
+			}
+			// We switched NPT. Thus we should clean VMCB cache state.
+			noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_npt);
+			// It is necessary to flush TLB.
 			noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
-			// Single-step the guest execution.
-			noir_svm_vmcb_bts32(vcpu->vmcb.virt,guest_rflags,amd64_rflags_tf);
-			noir_svm_vmcb_bts32(vcpu->vmcb.virt,intercept_exceptions,amd64_debug_exception);
-			noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
-			// Do not advance the rip in order to single-step.
-			advance=false;
+		}
+#else
+		// For Type-I Hypervisors, #NPF can be triggerred by virtue of interceptions on writes to APIC pages.
+		if(fault.write)
+		{
+			u64 apic_bar=noir_rdmsr(amd64_apic_base);
+			u64 apic_base=page_base(apic_bar);
+			if(gpa>=apic_base && gpa<apic_base+page_size)
+			{
+				const u64 offset=gpa-apic_base;
+				nvd_printf("APIC-write is intercepted! Offset=0x%x\n",(u32)offset);
+				noir_bts(&vcpu->global_state,noir_svm_apic_access);
+				switch(offset)
+				{
+					case amd64_apic_icr_lo:
+					{
+						// Write to Interrupt Control Register (Low) is intercepted.
+						// Deactivate APIC by redirecting the APIC access to the shadowed page.
+						// Mark this vCPU is issuing IPI.
+						noir_bts(&vcpu->global_state,noir_svm_issuing_ipi);
+						vcpu->apic_pte->page_base=vcpu->sapic.phys>>page_shift;
+						break;
+					}
+				}
+				// Grant the access to write for the sake of single-stepping.
+				vcpu->apic_pte->write=true;
+				noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+				// Single-step the guest execution.
+				noir_svm_vmcb_bts32(vcpu->vmcb.virt,guest_rflags,amd64_rflags_tf);
+				noir_svm_vmcb_bts32(vcpu->vmcb.virt,intercept_exceptions,amd64_debug_exception);
+				noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
+				// Do not advance the rip in order to single-step.
+				advance=false;
+			}
+		}
+#endif
+		if(advance)
+		{
+			// Note that SVM won't save the next rip in #NPF.
+			// Hence we should advance rip by software analysis.
+			// Usually, if #NPF handler goes here, it might be induced by Hardware-Enforced CI.
+			// In this regard, we assume this instruction is writing protected page.
+			nvd_printf("CI-event is intercepted! #NPF Code: 0x%x, GPA=0x%p\n",fault.value,noir_svm_vmread64(vcpu->vmcb.virt,exit_info2));
+			void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
+			// Determine Long-Mode through CS.L bit.
+			u16* cs_attrib=(u16*)((ulong_ptr)vcpu->vmcb.virt+guest_cs_attrib);
+			u32 increment=noir_get_instruction_length(instruction,noir_bt(cs_attrib,9));
+			// Just increment the rip. Don't emulate a read/write for guest.
+			ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
+			gip+=increment;
+			noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
 		}
 	}
-#endif
-	if(advance)
+	else
 	{
-		// Note that SVM won't save the next rip in #NPF.
-		// Hence we should advance rip by software analysis.
-		// Usually, if #NPF handler goes here, it might be induced by Hardware-Enforced CI.
-		// In this regard, we assume this instruction is writing protected page.
-		nvd_printf("CI-event is intercepted! #NPF Code: 0x%x, GPA=0x%p\n",fault.value,noir_svm_vmread64(vcpu->vmcb.virt,exit_info2));
-		void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
-		// Determine Long-Mode through CS.L bit.
-		u16* cs_attrib=(u16*)((ulong_ptr)vcpu->vmcb.virt+guest_cs_attrib);
-		u32 increment=noir_get_instruction_length(instruction,noir_bt(cs_attrib,9));
-		// Just increment the rip. Don't emulate a read/write for guest.
-		ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
-		gip+=increment;
-		noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
+		// For other ASIDs, this #NPF should be considered as NSV-violations.
+		// Current implementation injects a #PF fault.
+		// The 31st bit of error-code, according to AMD, is indicating RMP violation for SEV-SNP.
+		// Let's say this is intended for NSV-violations for subverted host accessing guest data.
+		noir_svm_inject_event(vcpu->vmcb.virt,amd64_page_fault,amd64_fault_trap_exception,true,true,(u32)fault.value|0x80000000);
+		// Write to CR2 about the faulting physical address.
+		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_cr2,gpa);
+		noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_cr2);
 	}
 }
 

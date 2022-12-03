@@ -405,3 +405,31 @@ typedef union _nvc_svm_io_exit_info
 	};
 	u32 value;
 }nvc_svm_io_exit_info,*nvc_svm_io_exit_info_p;
+
+typedef union _nvc_svm_task_switch_exit_info1
+{
+	struct
+	{
+		u64 selector:16;
+		u64 reserved:48;
+	};
+	u64 value;
+}nvc_svm_task_switch_exit_info1,*nvc_svm_task_switch_exit_info1_p;
+
+typedef union nvc_svm_task_switch_exit_info2
+{
+	struct
+	{
+		u64 error_code:32;		// Bits	0-31
+		u64 reserved1:3;		// Bits	32-35
+		u64 iret:1;				// Bit	36
+		u64 reserved2:1;		// Bit	37
+		u64 far_jmp:1;			// Bit	38
+		u64 reserved3:5;		// Bits	39-43
+		u64 ec_valid:1;			// Bit	44
+		u64 reserved4:3;		// Bits	45-47
+		u64 rf:1;				// Bit	48
+		u64 reserved:15;		// Bits	49-63
+	};
+	u64 value;
+}nvc_svm_task_switch_exit_info2,*nvc_svm_task_switch_exit_info2_p;

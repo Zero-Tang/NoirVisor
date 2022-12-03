@@ -903,19 +903,20 @@ noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_
 		noir_acquire_reslock_shared(virtual_machine->vcpu_list_lock);
 		if(mapping_info->attributes.present || mapping_info->attributes.write || mapping_info->attributes.execute)
 		{
+			// This is mapping memories to the guest.
 			void** locker_slot=nvc_alloc_locker_slot(virtual_machine);
 			u64p phys_array=noir_alloc_nonpg_memory(mapping_info->pages<<3);
 			if(locker_slot && phys_array)
 			{
 				*locker_slot=noir_lock_pages((void*)mapping_info->hva,page_4kb_mult(mapping_info->pages),phys_array);
 				if(!*locker_slot)goto alloc_failure;
+				st=noir_unknown_processor;
 				if(hvm_p->selected_core==use_vt_core)
 					st=nvc_vtc_set_mapping(virtual_machine,mapping_info);
 				else if(hvm_p->selected_core==use_svm_core)
 					st=nvc_svmc_set_mapping(virtual_machine,mapping_info,phys_array);
-				else
+				if(st!=noir_success)
 				{
-					st=noir_unknown_processor;
 					noir_unlock_pages(*locker_slot);
 					nvc_free_locker_slot(locker_slot);
 				}
@@ -932,6 +933,7 @@ alloc_failure:
 		}
 		else
 		{
+			// This is unmapping memories from the guest.
 			if(hvm_p->selected_core==use_vt_core)
 				st=nvc_vtc_set_mapping(virtual_machine,mapping_info);
 			else if(hvm_p->selected_core==use_svm_core)
@@ -1171,6 +1173,70 @@ void nvc_print_vm_list()
 	noir_release_reslock(noir_vm_list_lock);
 }
 #endif
+
+void nvc_configure_reverse_mapping(u64 hpa,u64 gpa,u32 asid,bool shared,u8 ownership)
+{
+	noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
+	const u64 i=page_count(hpa);
+	rm_table[i].low.asid=asid;
+	rm_table[i].low.shared=shared;
+	rm_table[i].low.ownership=ownership;
+	rm_table[i].low.reserved=0;
+	rm_table[i].high.value=gpa;
+	rm_table[i].high.reserved=0;
+}
+
+bool nvc_validate_rmt_reassignment(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership)
+{
+	noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
+	for(u32 j=0;j<pages;j++)
+	{
+		const u64 i=page_count(hpa[j]);
+		if(rm_table[i].low.asid==0 || rm_table[i].low.ownership==noir_nsv_rmt_noirvisor)
+			return false;	// If the page was assigned to NoirVisor, fail the validation.
+		else if(rm_table[i].low.ownership==noir_nsv_rmt_secure_guest && ownership==noir_nsv_rmt_secure_guest)
+			return false;	// Secure Memory are not allowed to be remapped in one shot.
+		else if(rm_table[i].low.ownership==noir_nsv_rmt_secure_guest && (shared || rm_table[i].low.shared))
+			return false;	// Secure Memory are not allowed to be shared.
+		else if((i<<3)>=hvm_p->rmt.size)
+			return false;	// The HPA has exceeded the TOM.
+	}
+	return true;
+}
+
+bool nvc_build_reverse_mapping_table()
+{
+	// Get the top-of-memory address.
+	u64 tom=noir_get_top_of_memory();
+	u64 pages=page_count(tom);
+	hvm_p->rmt.size=pages*sizeof(noir_rmt_entry);
+	nv_dprintf("Size of RMT: 0x%llX\n",hvm_p->rmt.size);
+	// Allocate pages...
+	hvm_p->rmt.table.virt=noir_alloc_contd_memory(hvm_p->rmt.size);
+	if(hvm_p->rmt.table.virt)
+	{
+		noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
+		hvm_p->rmt.table.phys=noir_get_physical_address(rm_table);
+		// Initialize the table.
+		for(u64 i=0;i<pages;i++)
+		{
+			// All pages are initially assigned to the subverted host.
+			rm_table[i].low.asid=1;
+			rm_table[i].low.shared=false;
+			rm_table[i].low.ownership=noir_nsv_rmt_subverted_host;
+			rm_table[i].high.value=page_mult(i);		// GPA.
+		}
+		// RMT pages are reserved by NoirVisor.
+		for(u64 i=0;i<page_count(hvm_p->rmt.size);i++)
+		{
+			u64 pfn=page_count(hvm_p->rmt.table.phys);
+			rm_table[pfn+i].low.asid=0;
+			rm_table[pfn+i].low.ownership=noir_nsv_rmt_noirvisor;
+		}
+		return true;
+	}
+	return false;
+}
 
 noir_status nvc_build_hypervisor()
 {

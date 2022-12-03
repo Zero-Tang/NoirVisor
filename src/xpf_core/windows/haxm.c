@@ -128,6 +128,12 @@ NTSTATUS NoirHaxCreateVirtualProcessor(IN ULONG VmId,IN ULONG VpId)
 	nst=NoirCreateVirtualProcessor(HaxVmList[VmId].Handle,VpId);
 	ExfReleasePushLockShared(&HaxVmDeviceListLock);
 	KeLeaveCriticalRegion();
+	if(nst==NOIR_SUCCESS)
+	{
+		// Intel HAXM has some assumptions about initial vCPU state...
+		ULONG64 Xcr0=1;
+		NoirEditVirtualProcessorRegisters(HaxVmList[VmId].Handle,VpId,NoirCvmXcr0Register,&Xcr0,sizeof(Xcr0));
+	}
 	return nst==NOIR_SUCCESS?STATUS_SUCCESS:STATUS_UNSUCCESSFUL;
 }
 

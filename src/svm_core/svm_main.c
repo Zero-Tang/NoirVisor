@@ -541,6 +541,8 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 	if(hvm_p->host_memmap.pdpt.virt)
 		noir_free_contd_memory(hvm_p->host_memmap.pdpt.virt,page_size);
 #endif
+	if(hvm_p->rmt.table.virt)
+		noir_free_contd_memory(hvm_p->rmt.table.virt,hvm_p->rmt.size);
 }
 
 noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
@@ -672,8 +674,11 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 		nv_dprintf("Failed to build hypervisor's paging structure...\n");
 	nvc_svm_setup_msr_hook(hvm_p);
 	nvc_svm_setup_io_hook(hvm_p);
+	// Build Reverse Mapping Table
+	if(!nvc_build_reverse_mapping_table())goto alloc_failure;
 	if(nvc_npt_protect_critical_hypervisor(hvm_p)==false)goto alloc_failure;
 	if(hvm_p->virtual_cpu==null)goto alloc_failure;
+	nvc_npt_build_reverse_map();
 	hvm_p->options.tlfs_passthrough=noir_is_under_hvm();
 	if(hvm_p->options.tlfs_passthrough && hvm_p->options.cpuid_hv_presence)
 		nv_dprintf("Note: Hypervisor is detected! The cpuid presence will be in pass-through mode!\n");

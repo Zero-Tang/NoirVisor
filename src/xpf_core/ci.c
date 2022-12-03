@@ -94,7 +94,7 @@ u32 static noir_hvcode stdcall noir_ci_enforcement_worker(void* context)
 		// Select a page to enforce CI.
 		u32 i=noir_ci_selected_page++;
 		// Skip pages that software CI was disabled.
-		if(!ncie->page_ci[i].options.soft_ci)continue;
+		if(!ncie->page_ci[i].options.soft_ci)goto skip_page;
 		void* page=ncie->page_ci[i].virt;
 		// Perform Enforcement.
 		u32 crc=noir_crc32_page(page);
@@ -102,10 +102,11 @@ u32 static noir_hvcode stdcall noir_ci_enforcement_worker(void* context)
 			nvci_panicf("CI detected corruption in Page 0x%p!\n",page);
 		else
 			nvci_tracef("Page 0x%p scanned. CRC32C=0x%08X - No Anomaly.\n",page,crc);
-		// Advance the CI page.
-		if(noir_ci_selected_page==ncie->pages)noir_ci_selected_page=0;
 		// Clock.
 		noir_sleep(ci_enforcement_delay);
+skip_page:
+		// Advance the CI page.
+		if(noir_ci_selected_page==ncie->pages)noir_ci_selected_page=0;
 	}
 	// Thread is about to exit.
 	noir_exit_thread(0);

@@ -196,6 +196,7 @@ typedef struct _noir_npt_manager
 #endif
 	}pte;
 #if !defined(_hv_type1)
+	noir_pushlock nptm_lock;
 	noir_hook_page hook_pages[1];
 #endif
 }noir_npt_manager,*noir_npt_manager_p;
@@ -209,12 +210,15 @@ typedef union _amd64_npt_fault_code
 		u64 user:1;			// Bit	2
 		u64 rsv_b:1;		// Bit	3
 		u64 execute:1;		// Bit	4
-		u64 reserved1:1;	// Bit	5
+		u64 reserved1:1;	// Bit	5, albeit reserved, this should be about protection keys once AMD defines it.
 		u64 shadow_stk:1;	// Bit	6
-		u64 reserved2:25;	// Bits	7-31
+		u64 reserved2:24;	// Bits	7-30
+		u64 rmp_check:1;	// Bit	31
 		u64 npf_addr:1;		// Bit	32
 		u64 npf_table:1;	// Bit	33
-		u64 reserved3:3;	// Bits	34-36
+		u64 encrypted:1;	// Bit	34
+		u64 size_mismatch:1;// Bit	35
+		u64 vmpl_failed:1;	// Bit	36
 		u64 sss:1;			// Bit	37
 		u64 reserved4:26;	// Bits 38-63
 	};
@@ -224,6 +228,7 @@ typedef union _amd64_npt_fault_code
 bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm);
 bool nvc_npt_initialize_ci(noir_npt_manager_p nptm);
 noir_npt_manager_p nvc_npt_build_identity_map();
+void nvc_npt_build_reverse_map();
 bool nvc_npt_update_pde(noir_npt_manager_p nptm,u64 hpa,bool r,bool w,bool x);
 bool nvc_npt_update_pte(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bool x);
 #if defined(_hv_type1)

@@ -418,18 +418,6 @@ noir_status nvc_hax_run_vcpu(noir_cvm_virtual_cpu_p vcpu)
 			noir_copy_memory(&vcpu->gpr.rax,vcpu->iobuff,htun->io.size);
 		}
 	}
-	// Trap
-	/*
-	noir_cvm_vcpu_options vcpu_op;
-	vcpu->rflags|=0x100;
-	vcpu->state_cache.gprvalid=0;
-	vcpu_op.value=0;
-	vcpu_op.use_tunnel=1;
-	vcpu_op.tunnel_format=noir_cvm_tunnel_format_haxm;
-	vcpu_op.intercept_exceptions=1;
-	nvc_set_guest_vcpu_options(vcpu,noir_cvm_guest_vcpu_options,vcpu_op.value);
-	nvc_set_guest_vcpu_options(vcpu,noir_cvm_exception_bitmap,2);
-	*/
 	st=nvc_run_vcpu(vcpu,null);
 	while(st==noir_success)
 	{
@@ -502,30 +490,6 @@ noir_status nvc_hax_run_vcpu(noir_cvm_virtual_cpu_p vcpu)
 				// For in instruction, there is post processing mechanism.
 				// Intel HAXM automatically advance rip.
 				nvc_edit_vcpu_registers(vcpu,noir_cvm_instruction_pointer,&vcpu->exit_context.next_rip,sizeof(u64));
-				break;
-			}
-			case cv_exception:
-			{
-				// Single-Step.
-				if(vcpu->exit_context.exception.vector==1)
-				{
-					resumption=true;
-					/*
-					char mnemonic[64];
-					u8p ins_ptr;
-					u8 bits;
-					u32 inslen;
-					nvc_translate_gva_to_hva(vcpu,vcpu->exit_context.rip,(void**)&ins_ptr);
-					if(noir_bt(&vcpu->exit_context.cs.attrib,14))
-						bits=32;
-					else if(noir_bt(&vcpu->exit_context.cs.attrib,13))
-						bits=64;
-					else
-						bits=16;
-					inslen=noir_disasm_instruction(ins_buff,mnemonic,sizeof(mnemonic),bits,vcpu->exit_context.rip);
-					*/
-					nv_dprintf("Single-Stepped to %04X:%p!\n",vcpu->exit_context.cs.selector,vcpu->exit_context.rip);
-				}
 				break;
 			}
 			case cv_scheduler_exit:

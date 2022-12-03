@@ -148,10 +148,8 @@ APIs to invoke Customizable VMs are available in the [NoirCvmApi](https://github
 NoirVisor CVM is implementing a wrapper of HAX-compatible APIs in order to accelerate QEMU. \
 You may visit [Intel HAXM Repository](https://github.com/intel/haxm) for further information.
 
-Note: future implementation of NoirVisor will make a specific NoirVisor CVM accelerator.
-
 # NSV
-NSV (a.k.a NoirVisor Secure Virtualization) is a security extension to NoirVisor CVM. This extension is a crossover project with Columbia University's OS2 course project. Read [this document](./doc/nsv.md) for further details.
+NSV (a.k.a NoirVisor Secure Virtualization) is a security extension to NoirVisor CVM. This extension is a crossover project with Columbia University's Operating Systems II course project. Read [this document](./doc/nsv.md) for further details.
 
 # NPIEP
 NPIEP (a.k.a Non-Privileged Instruction Execution Prevention) is an important security feature in Microsoft Virtualization-based Security. As a hypervisor project in conformance to Microsoft `Hv#1` interface, NoirVisor would provide this feature to the guest. This feature is similar to `UMIP` provided by later models of x86 processors. The differences are:

@@ -640,6 +640,24 @@ typedef struct _noir_cvm_gmem_op_context
 	noir_status status;
 }noir_cvm_gmem_op_context,*noir_cvm_gmem_op_context_p;
 
+typedef struct _noir_rmt_remap_context
+{
+	u64p hpa_list;
+	u32 pages;
+	noir_status status[1];
+}noir_rmt_remap_context,*noir_rmt_remap_context_p;
+
+typedef struct _noir_rmt_reassignment_context
+{
+	u64p hpa_list;
+	u64p gpa_list;
+	u32 pages;
+	u32 asid;
+	bool shared;
+	u8 ownership;
+	bool result;
+}noir_rmt_reassignment_context,*noir_rmt_reassignment_context_p;
+
 #if defined(_central_hvm)
 // CVM Functions from SVM-Core
 noir_status nvc_svmc_create_vm(noir_cvm_virtual_machine_p* virtual_machine);

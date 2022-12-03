@@ -152,7 +152,15 @@ The following is a table of Synthetic MSRs defined by NoirVisor for NSV guests.
 | 0x4000_0070 | nsv_msr_eoi | WO | per-vCPU | Issues an End-of-Interrupt signal. |
 | 0x4000_0071 | nsv_msr_icr | R/W | per-vCPU | Issues an IPI. |
 | 0x4000_0072 | nsv_msr_tpr | R/W | per-vCPU | Used for accessing CR8 in 32-bit mode. |
+| 0x4001_0130 | nsv_msr_activation | WO | VM-wide | Activates the virtual machine. |
 | 0x4001_0131 | nsv_msr_active_status | RO | VM-wide | Specifies the active status of NSV. |
+| 0x4001_0140 | nsv_msr_vc_handler_16 | R/W | per-VCPU | Specifies the `rip` for the handler of `#VC` exception in real mode. |
+| 0x4001_0141 | nsv_msr_vc_handler_32 | R/W | per-VCPU | Specifies the `rip` for the handler of `#VC` exception in protected mode. |
+| 0x4001_0142 | nsv_msr_vc_handler_64 | R/W | per-VCPU | Specifies the `rip` for the handler of `#VC` exception in long mode. |
+| 0x4001_0143 | nsv_msr_vc_handler_cs | R/W | per-vCPU | Specifies the `cs` selector for the handler of `#VC` exception. |
+| 0x4001_0180 | nsv_msr_claim_gpa_cmd | WO | VM-wide | Specifies the command to claim security of secure memory. |
+| 0x4001_0181 | nsv_msr_claim_gpa_start | R/W | VM-wide | Specifies the start of GPA to claim the security. |
+| 0x4001_0182 | nsv_msr_claim_gpa_end | R/W | VM-wide | Specifies the end of GPA to claim the security. |
 
 #### NSV Active Status
 The `nsv_msr_active_status` is a special Synthetic MSR for NSV guest to confirm whether it is running in a confidential environment. In order to prevent impersonation, user hypervisor's interceptions toward this MSR is explicitly ignored even for Non-NSV guests.
@@ -222,7 +230,8 @@ Each entry of RMT has 16 bytes of data, defined as following:
 | 54:32		| Rsvd	| Reserved |
 | 31:0		| ASID	| The Address Space Identifier or Virtual Processor Identifier assigned for the page |
 
-The RMT is an array indexed by Host PFN and thereby allows constant running time to prevent aliased mapping.
+The RMT is an array indexed by Host PFN and thereby allows constant running time to prevent aliased mapping. \
+In RMT, all pages are in regular size (4KiB), and there are no definitions for large (2MiB) or huge (1GiB) pages.
 
 ### Ownership Purpose
 The `Ownership Purpose` field is a 8-bit field describing the purpose of the page ownership.

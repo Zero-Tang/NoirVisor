@@ -477,7 +477,14 @@ Currently, NoirVisor does not support a hypervisor to be nested inside a CVM. Si
 Exception interception is optional: it is only intercepted if the User Hypervisor specifies so. The `#SX` and `#MC` are exceptions to this rule: `#SX` must be intercepted in that this means an `INIT` signal has arrived - unless the guest sets `R_INIT` bit in `VM_CR` MSR, `#SX` should neither be injected to guest nor be transfered to the host - and `#MC` must be intercepted in that this is a physical-hardware-issued exception, which must be taken by host interrupt handler.
 
 ### Nested Page Fault
-Nested Page Fault, usually abbreviated as `#NPF`, indicates that a wrong physical address is accessed. NoirVisor would not handle `#NPF` itself, but transfer the interception to the host. In addition, information like fetched instruction bytes, access information, etc., would be recorded.
+Nested Page Fault, usually abbreviated as `#NPF`, indicates that a wrong physical address is accessed. NoirVisor would not handle `#NPF` itself, but transfer the interception to the host. In addition, information like fetched instruction bytes, access information, etc., would be recorded. \
+
+#### Instruction Decode
+In NoirVisor x Columbia Crossover Event, `#NPF` fault is now associated with MMIO (Memory-Mapped I/O). For any `#NPF`s which are not instruction fetches, instructions will be decoded by disassembler in order to extract MMIO operation details.
+
+- If an instruction triggers `#NPF` read-fault, decode the size of source operand (which is the memory referenced by MMIO) and get the metadata of the destination operand.
+- If an instruction triggers `#NPF` write-fault, decode the size of destination operand (which is the memory referenced by MMIO) and get the metadata of the source operand.
+- Decode the instruction length for this MMIO instruction.
 
 ## Accessing Guest Physical Pages
 NoirVisor does not keep GPA-to-HVA translation on track. However, NoirVisor, if installed as a Type-II hypervisor, loads a special page table that maps both an identity map of physical memory and regular system memory. Therefore, when NoirVisor has to operate the guest pages, the only required actions are translating the GVA to HPA. Not to mention if NoirVisor is installed as a Type-I hypervisor, only HPA can be accessed.
@@ -541,6 +548,15 @@ When `#NPF` is intercepted, check the address being written. Something needs to 
 If the address is unaligned, according to AMD64 architecture, it may cause undefined behavior. We may ignore it. <br>
 If the APIC register is invalid, transfer the VM-Exit to the guest, and indicate that an invalid APIC access is intercepted. <br>
 If the APIC register is valid, we may emulate the behavior of register. If NoirVisor cannot emulate the behavior (e.g.: writing APIC timer), exit to the User Hypervisor.
+
+## NoirVisor Secure Virtualization
+The NoirVisor Secure Virtualization is a secure extension to NoirVisor Customizable Virtual Machines.
+
+### Secure Memory
+NoirVisor NSV separates Guest Physical Memory from Host Physical Memory by construting isolated paging, meaning that permissions for accessing physical pages assigned to the guest would be revoked from the host and granted to the guest exclusively.
+
+### NSV Violation
+If the subverted host accesses Secure Memory, then `#NPF` is triggered. Such `#NPF` is refered as NSV-Violation. Current implementation of NoirVisor injects an `#PF` exception with 31st bit of error code set, and the `cr2` register is filled with the faulting physical address.
 
 ## Encrypted Virtual Machine
 AMD-V provides a mechanism for encrypted guests. This mechanism enables a guest to run in a manner where codes and data are encrypted and the only decrypted version of them are only available within the guest itself. It would require the hypervisor to enable the `SEV` (Secure Encrypted Virtualization) feature. Please note that, as the hypervisor is no longer able to inspect or alter all guest code or data, the hypervisor model is departing from the standard x86 virtualization model. <br>

@@ -79,10 +79,11 @@
 
 #define invalid_guest_state			-1
 #define intercepted_vmsa_busy		-2
+#define idle_required				-3
 
 #define noir_svm_maximum_code1		0xA5
 #define noir_svm_maximum_code2		0x4
-#define noir_svm_maximum_negative	2
+#define noir_svm_maximum_negative	3
 
 #define amd64_external_virtual_interrupt	0
 #define amd64_non_maskable_interrupt		2
@@ -271,7 +272,8 @@ noir_hvdata noir_svm_exit_handler_routine svm_exit_handler_group2[noir_svm_maxim
 noir_hvdata noir_svm_exit_handler_routine svm_exit_handler_negative[noir_svm_maximum_negative]=
 {
 	nvc_svm_invalid_guest_state,	// Invalid Guest State
-	nvc_svm_default_handler			// VMSA Busy
+	nvc_svm_default_handler,		// VMSA Busy
+	nvc_svm_default_handler			// Idle state is required
 };
 
 noir_hvdata noir_svm_exit_handler_routine* svm_exit_handlers[4]=

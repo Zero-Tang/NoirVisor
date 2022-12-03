@@ -22,6 +22,8 @@
 #define noir_svm_dump_vcpu_vmcb				0x10002
 #define noir_svm_set_vcpu_options			0x10003
 #define noir_svm_guest_memory_operation		0x10004
+#define noir_svm_nsv_reassign_rmt			0x10005
+#define noir_svm_nsv_remap_by_rmt			0x10006
 
 // Definition of Enabled features
 #define noir_svm_vmcb_caching				1		// Bit 0
@@ -345,6 +347,8 @@ void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void nvc_npt_reassign_page_ownership_hvrt(noir_svm_vcpu_p vcpu,noir_rmt_remap_context_p context);
+bool nvc_npt_reassign_page_ownership(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership);
 void nvc_svm_load_basic_exit_context(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_operate_guest_memory(noir_cvm_gmem_op_context_p context);
 void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid_fms);

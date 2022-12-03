@@ -233,6 +233,16 @@ typedef u32 noir_status;
 #define noir_uninitialized				0xC000000D
 
 /*
+  Status Indicator: noir_nsv_violation
+  If a certain operation is violating NSV policies,
+  then this value is supposed to be returned.
+
+  Value: 0xC000000E
+*/
+
+#define noir_nsv_violation				0xC000000E
+
+/*
   Status Indicator: noir_not_intel
   If a procedure is specific for Intel Processor,
   and the processor is not manufactured by Intel,

@@ -69,9 +69,16 @@
 #define noir_cvm_set_vcpu_options			0x10003
 #define noir_cvm_guest_memory_operation		0x10004
 
+// Define the ownership purposes on Reverse Mapping Table.
+#define noir_nsv_rmt_subverted_host			0x00
+#define noir_nsv_rmt_noirvisor				0x01
+#define noir_nsv_rmt_insecure_guest			0x02
+#define noir_nsv_rmt_secure_guest			0x03
+
 struct _noir_cvm_virtual_machine;
 
 // Reverse Mapping Table Entry (Candidate 1 Design)
+/*
 typedef struct _noir_rmt_entry
 {
 	union
@@ -114,9 +121,9 @@ typedef struct _noir_rmt_entry
 		u64 value;
 	}v4;
 }noir_rmt_entry,*noir_rmt_entry_p;
+*/
 
 // Reverse Mapping Table Entry (Candidate 2 Design)
-/*
 typedef struct _noir_rmt_entry
 {
 	union
@@ -135,12 +142,11 @@ typedef struct _noir_rmt_entry
 		struct
 		{
 			u64 reserved:12;	// Bits	64-75
-			u64 hpa:52;			// Bits	76-127
+			u64 guest_pfn:52;	// Bits	76-127
 		};
 		u64 value;
 	}high;
 }noir_rmt_entry,*noir_rmt_entry_p;
-*/
 
 // Hypervisor Structure
 typedef struct _noir_hypervisor
@@ -267,6 +273,12 @@ typedef struct _noir_hypervisor
 #endif
 		u16 serial;
 	}protected_ports;
+	struct
+	{
+		memory_descriptor table;
+		u64 size;
+		noir_pushlock lock;
+	}rmt;
 	u32 cpu_count;
 	char vendor_string[13];
 	u8 cpu_manuf;
@@ -318,6 +330,9 @@ ulong_ptr orig_system_call=0;
 char virtual_vstr[13]="AuthenticAMD\0";
 char virtual_nstr[49]="AMD Ryzen 7 1700 Eight-Core Processor\0";
 #else
+bool nvc_build_reverse_mapping_table();
+void nvc_configure_reverse_mapping(u64 hpa,u64 gpa,u32 asid,bool shared,u8 ownership);
+bool nvc_validate_rmt_reassignment(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership);
 extern noir_hypervisor_p hvm_p;
 extern ulong_ptr system_cr3;
 extern ulong_ptr orig_system_call;
