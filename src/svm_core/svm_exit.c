@@ -1588,18 +1588,22 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 			// In this regard, we assume this instruction is writing protected page.
 			nvd_printf("CI-event is intercepted! #NPF Code: 0x%x, GPA=0x%p\n",fault.value,noir_svm_vmread64(vcpu->vmcb.virt,exit_info2));
 			void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
-			// Determine Long-Mode through CS.L bit.
-			u16* cs_attrib=(u16*)((ulong_ptr)vcpu->vmcb.virt+guest_cs_attrib);
-			u32 increment=noir_get_instruction_length(instruction,noir_bt(cs_attrib,9));
-			// Just increment the rip. Don't emulate a read/write for guest.
+			// Determine the Long-Mode through CS.L bit.
+			bool long_mode=noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9);
+			u32 increment=noir_get_instruction_length(instruction,long_mode);
+			// Increment the rip so that the access is ignored.
 			ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
 			gip+=increment;
+			// If guest is not in long mode, cut the higher 32 bits in rip register.
+			if(!long_mode)gip&=maxu32;
+			// Complete the advancement of rip register.
 			noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
 		}
 	}
 	else
 	{
 		// For other ASIDs, this #NPF should be considered as NSV-violations.
+		/*
 		// Current implementation injects a #PF fault.
 		// The 31st bit of error-code, according to AMD, is indicating RMP violation for SEV-SNP.
 		// Let's say this is intended for NSV-violations for subverted host accessing guest data.
@@ -1607,6 +1611,19 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 		// Write to CR2 about the faulting physical address.
 		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_cr2,gpa);
 		noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_cr2);
+		*/
+		// Current implementation ignores the instruction.
+		void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
+		// Determine the Long-Mode through CS.L bit.
+		bool long_mode=noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9);
+		u32 increment=noir_get_instruction_length(instruction,long_mode);
+		// Increment the rip so that the access is ignored.
+		ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
+		gip+=increment;
+		// If guest is not in long mode, cut the higher 32 bits in rip register.
+		if(!long_mode)gip&=maxu32;
+		// Complete the advancement of rip register.
+		noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
 	}
 }
 
@@ -1678,24 +1695,28 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 		else
 		{
 			// VM-Exit to User Hypervisor occurs.
-			// If the exit is due to the scheduler, saving exit context is utterly meaningless.
-			if(cvcpu->header.exit_context.intercept_code!=cv_scheduler_exit && cvcpu->header.exit_context.vcpu_state.loaded==false)
-				nvc_svm_load_basic_exit_context(cvcpu);
-			else if(noir_locked_btr64(&cvcpu->special_state,63))		// User Hypervisor rescinded execution of vCPU.
-				cvcpu->header.exit_context.intercept_code=cv_rescission;
-			else if(cvcpu->header.vcpu_options.intercept_interrupt_window)
+			// For NSV-Guest, do not save exit context in order to protect vCPU state.
+			if(!cvcpu->vm->header.properties.nsv_guest)
 			{
-				if(cvcpu->special_state.prev_virq && !noir_svm_vmcb_bt32(vmcb_va,avic_control,nvc_svm_avic_control_virq))
+				// If the exit is due to the scheduler, saving exit context is utterly meaningless.
+				if(cvcpu->header.exit_context.intercept_code!=cv_scheduler_exit && cvcpu->header.exit_context.vcpu_state.loaded==false)
+					nvc_svm_load_basic_exit_context(cvcpu);
+				else if(noir_locked_btr64(&cvcpu->special_state,63))		// User Hypervisor rescinded execution of vCPU.
+					cvcpu->header.exit_context.intercept_code=cv_rescission;
+				else if(cvcpu->header.vcpu_options.intercept_interrupt_window)
 				{
-					// User Hypervisor specifies intercepting the interrupt windows.
-					// If there was a previously injected IRQ and the interrupt was already taken, consider this an interrupt window.
-					// Notify the User Hypervisor of this information.
-					cvcpu->header.exit_context.intercept_code=cv_interrupt_window;
-					cvcpu->header.exit_context.interrupt_window.nmi=false;
-					cvcpu->header.exit_context.interrupt_window.iret_passed=false;
-					cvcpu->header.exit_context.interrupt_window.reserved=0;
-					// Reset the status of previous vIRQ.
-					cvcpu->special_state.prev_virq=0;
+					if(cvcpu->special_state.prev_virq && !noir_svm_vmcb_bt32(vmcb_va,avic_control,nvc_svm_avic_control_virq))
+					{
+						// User Hypervisor specifies intercepting the interrupt windows.
+						// If there was a previously injected IRQ and the interrupt was already taken, consider this an interrupt window.
+						// Notify the User Hypervisor of this information.
+						cvcpu->header.exit_context.intercept_code=cv_interrupt_window;
+						cvcpu->header.exit_context.interrupt_window.nmi=false;
+						cvcpu->header.exit_context.interrupt_window.iret_passed=false;
+						cvcpu->header.exit_context.interrupt_window.reserved=0;
+						// Reset the status of previous vIRQ.
+						cvcpu->special_state.prev_virq=0;
+					}
 				}
 			}
 		}

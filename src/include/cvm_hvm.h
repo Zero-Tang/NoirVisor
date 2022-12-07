@@ -14,6 +14,7 @@
 
 #include <nvdef.h>
 #include <nvbdk.h>
+#include <nsv_hvm.h>
 
 #define noir_cvm_invalid_state_intel_vmx	0
 #define noir_cvm_invalid_state_amd_v		1
@@ -58,7 +59,9 @@ typedef enum _noir_cvm_intercept_code
 	cv_scheduler_exit=0x80000000,
 	cv_scheduler_pause=0x80000001,
 	cv_scheduler_bug=0x80000002,
-	cv_scheduler_npt_misconfig=0x80000003
+	cv_scheduler_npt_misconfig=0x80000003,
+	cv_scheduler_nsv_activate=0x80000004,
+	cv_scheduler_nsv_claim_security=0x80000005
 }noir_cvm_intercept_code,*noir_cvm_intercept_code_p;
 
 typedef enum _noir_cvm_register_type
@@ -169,14 +172,18 @@ typedef struct _noir_cvm_exception_context
 
 typedef struct _noir_cvm_io_context
 {
-	struct
+	union
 	{
-		u16 io_type:1;
-		u16 string:1;
-		u16 repeat:1;
-		u16 operand_size:3;
-		u16 address_width:4;
-		u16 reserved:6;
+		struct
+		{
+			u16 io_type:1;
+			u16 string:1;
+			u16 repeat:1;
+			u16 operand_size:3;
+			u16 address_width:4;
+			u16 reserved:6;
+		};
+		u16 value;
 	}access;
 	u16 port;
 	u64 rax;
@@ -258,6 +265,8 @@ typedef struct _noir_cvm_exit_context
 		noir_cvm_cpuid_context cpuid;
 		noir_cvm_task_switch_context task_switch;
 		noir_cvm_interrupt_window_context interrupt_window;
+		noir_nsv_activation_context nsv_activation;
+		noir_nsv_claim_pages_context claim_pages;
 	};
 	segment_register cs;
 	u64 rip;
@@ -490,6 +499,7 @@ typedef struct _noir_cvm_virtual_cpu
 	noir_dr_state drs;
 	noir_msr_state msrs;
 	noir_xcr_state xcrs;
+	noir_nsv_synthetic_msr_state nsvs;
 	void* xsave_area;
 	u64 rflags;
 	u64 rip;
@@ -554,7 +564,8 @@ typedef union _noir_cvm_mapping_attributes
 		u32 caching:3;
 		u32 psize:2;
 		u32 avl:3;
-		u32 reserved:20;
+		u32 nsv_secure:1;
+		u32 reserved:19;
 	};
 	u32 value;
 }noir_cvm_mapping_attributes,*noir_cvm_mapping_attributes_p;

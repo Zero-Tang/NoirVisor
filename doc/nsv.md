@@ -38,7 +38,7 @@ If guest triggers an NAE (e.g.: Guest executed `cpuid` instruction while user hy
 Current implementation of NSV will throw VMM Communication (`#VC`, vector 28) exceptions for such VM-Exits. \
 Interceptions toward the `#VC` exception by user hypervisor is ignored by NoirVisor.
 
-If guest wishes such NAE to be handled by user hypervisor, guest should issue an explicit hypercall to the host using `vmcall` or `vmmcall` instructions with a `rep` prefix in its `#VC` handler. \
+If guest wishes such NAE to be handled by user hypervisor, guest should issue an explicit hypercall to the host using `vmcall` or `vmmcall` instructions in its `#VC` handler. \
 For example, user hypervisor wants to intercept the `cpuid` instruction, when NSV guest executes a `cpuid` instruction, a `#VC` exception will be thrown into the NSV guest. NSV guest would be aware that it is executing `cpuid` instruction, so if NSV guest wishes to let the user hypervisor handles `cpuid`, it should fill the GHCB, which is a block of insecure memory, with its `eax` and `ecx` register value and reserve a space in GHCB to let the user hypervisor fill the `eax`, `ebx`, `ecx` and `edx` values.
 
 ```mermaid
@@ -154,10 +154,17 @@ The following is a table of Synthetic MSRs defined by NoirVisor for NSV guests.
 | 0x4000_0072 | nsv_msr_tpr | R/W | per-vCPU | Used for accessing CR8 in 32-bit mode. |
 | 0x4001_0130 | nsv_msr_activation | WO | VM-wide | Activates the virtual machine. |
 | 0x4001_0131 | nsv_msr_active_status | RO | VM-wide | Specifies the active status of NSV. |
-| 0x4001_0140 | nsv_msr_vc_handler_16 | R/W | per-VCPU | Specifies the `rip` for the handler of `#VC` exception in real mode. |
-| 0x4001_0141 | nsv_msr_vc_handler_32 | R/W | per-VCPU | Specifies the `rip` for the handler of `#VC` exception in protected mode. |
-| 0x4001_0142 | nsv_msr_vc_handler_64 | R/W | per-VCPU | Specifies the `rip` for the handler of `#VC` exception in long mode. |
-| 0x4001_0143 | nsv_msr_vc_handler_cs | R/W | per-vCPU | Specifies the `cs` selector for the handler of `#VC` exception. |
+| 0x4001_0140 | nsv_msr_vc_handler_cs | R/W | per-vCPU | Specifies the `cs` and `ss` selector for the handler of `#VC` exception. |
+| 0x4001_0141 | nsv_msr_vc_handler_rsp | R/W | per-vCPU | Specifies the `rsp` for the handler of `#VC` exception. |
+| 0x4001_0142 | nsv_msr_vc_handler_rip | R/W | per-vCPU | Specifies the `rip` for the handler of `#VC` exception. |
+| 0x4001_0150 | nsv_msr_vc_return_cs | RO| per-vCPU | Specifies the `cs` and `ss` selector at the `#VC` exception. |
+| 0x4001_0151 | nsv_msr_vc_return_rsp | RO | per-vCPU | Specifies the `rsp` register at the `#VC` exception. |
+| 0x4001_0152 | nsv_msr_vc_return_rip | RO | per-vCPU | Specifies the `rip` register at the `#VC` exception. |
+| 0x4001_0153 | nsv_msr_vc_return_rflags | RO | per-vCPU | Specifies the `rflags` register at the `#VC` exception. |
+| 0x4001_0154 | nsv_msr_vc_next_rip | RO | per-vCPU | Specifies the advanced `rip` register after the `#VC` exception. |
+| 0x4001_0155 | nsv_msr_vc_error_code | RO | per-vCPU | Specifies the CVM intercept code of the `#VC` exception. |
+| 0x4001_0156 | nsv_msr_vc_info1 | RO | per-vCPU | Specifies the additional information of the `#VC` exception. |
+| 0x4001_0157 | nsv_msr_vc_info2 | RO | per-vCPU | Specifies the additional information of the `#VC` exception. |
 | 0x4001_0180 | nsv_msr_claim_gpa_cmd | WO | VM-wide | Specifies the command to claim security of secure memory. |
 | 0x4001_0181 | nsv_msr_claim_gpa_start | R/W | VM-wide | Specifies the start of GPA to claim the security. |
 | 0x4001_0182 | nsv_msr_claim_gpa_end | R/W | VM-wide | Specifies the end of GPA to claim the security. |

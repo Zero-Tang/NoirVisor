@@ -1192,7 +1192,7 @@ bool nvc_validate_rmt_reassignment(u64p hpa,u64p gpa,u32 pages,u32 asid,bool sha
 	for(u32 j=0;j<pages;j++)
 	{
 		const u64 i=page_count(hpa[j]);
-		if(rm_table[i].low.asid==0 || rm_table[i].low.ownership==noir_nsv_rmt_noirvisor)
+		if(rm_table[i].low.ownership==noir_nsv_rmt_noirvisor)
 			return false;	// If the page was assigned to NoirVisor, fail the validation.
 		else if(rm_table[i].low.ownership==noir_nsv_rmt_secure_guest && ownership==noir_nsv_rmt_secure_guest)
 			return false;	// Secure Memory are not allowed to be remapped in one shot.

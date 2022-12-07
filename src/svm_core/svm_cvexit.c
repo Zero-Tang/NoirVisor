@@ -298,13 +298,24 @@ void static noir_hvcode fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p g
 	// Determine whether CPUID-Interception is subject to be delivered to subverted host.
 	if(cvcpu->header.vcpu_options.intercept_cpuid)
 	{
-		// Switch to subverted host in order to handle the cpuid instruction.
-		nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
-		cvcpu->header.exit_context.intercept_code=cv_cpuid_instruction;
-		cvcpu->header.exit_context.cpuid.leaf.a=(u32)cvcpu->header.gpr.rax;
-		cvcpu->header.exit_context.cpuid.leaf.c=(u32)cvcpu->header.gpr.rcx;
-		// Profiler: Classify the interception.
-		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.cpuid;
+		if(cvcpu->vm->header.properties.nsv_guest)
+		{
+			// For NSV-Guest, interception of CPUID instruction triggers a Non-Automatic Exit.
+			nvc_svm_nsv_load_nae_synthetic_msr_state(cvcpu);
+			// Load specific information.
+			cvcpu->header.nsvs.vc_error_code=cv_cpuid_instruction;
+			cvcpu->header.nsvs.vc_info1=cvcpu->header.nsvs.vc_info2=0;
+		}
+		else
+		{
+			// Switch to subverted host in order to handle the cpuid instruction.
+			nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+			cvcpu->header.exit_context.intercept_code=cv_cpuid_instruction;
+			cvcpu->header.exit_context.cpuid.leaf.a=(u32)cvcpu->header.gpr.rax;
+			cvcpu->header.exit_context.cpuid.leaf.c=(u32)cvcpu->header.gpr.rcx;
+			// Profiler: Classify the interception.
+			cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.cpuid;
+		}
 	}
 	else
 	{
@@ -364,12 +375,22 @@ void static noir_hvcode fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p g
 // Expected Intercept Code: 0x73
 void static noir_hvcode fastcall nvc_svm_rsm_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	// NoirVisor does not know if the vCPU is running in SMM.
-	// Let the User Hypervisor emulate the SMM for the Guest.
-	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
-	cvcpu->header.exit_context.intercept_code=cv_rsm_instruction;
-	// Profiler: Classify the interception.
-	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.rsm;
+	if(cvcpu->vm->header.properties.nsv_guest)
+	{
+		// For NSV guests, interceptions should be converted into Non-Automatic Exits.
+		nvc_svm_nsv_load_nae_synthetic_msr_state(cvcpu);
+		cvcpu->header.nsvs.vc_error_code=cv_rsm_instruction;
+		cvcpu->header.nsvs.vc_info1=cvcpu->header.nsvs.vc_info2=0;
+	}
+	else
+	{
+		// NoirVisor does not know if the vCPU is running in SMM.
+		// Let the User Hypervisor emulate the SMM for the Guest.
+		nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+		cvcpu->header.exit_context.intercept_code=cv_rsm_instruction;
+		// Profiler: Classify the interception.
+		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.rsm;
+	}
 }
 
 // Expected Intercept Code: 0x74
@@ -418,6 +439,8 @@ void static noir_hvcode fastcall nvc_svm_hlt_cvexit_handler(noir_gpr_state_p gpr
 	cvcpu->header.exit_context.intercept_code=cv_hlt_instruction;
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.halt;
+	// Halting is an Automatic Exit. Advance the rip by NoirVisor.
+	if(cvcpu->vm->header.properties.nsv_guest)noir_svm_advance_rip(cvcpu->vmcb.virt);
 }
 
 // Expected Intercept Code: 0x7A
@@ -434,9 +457,6 @@ void static noir_hvcode fastcall nvc_svm_invlpga_cvexit_handler(noir_gpr_state_p
 void static noir_hvcode fastcall nvc_svm_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	nvc_svm_io_exit_info info;
-	// Deliver the I/O interception to subverted host.
-	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
-	cvcpu->header.exit_context.intercept_code=cv_io_instruction;
 	info.value=noir_svm_vmread32(cvcpu->vmcb.virt,exit_info1);
 	cvcpu->header.exit_context.io.access.io_type=(u16)info.type;
 	cvcpu->header.exit_context.io.access.string=(u16)info.string;
@@ -444,16 +464,30 @@ void static noir_hvcode fastcall nvc_svm_io_cvexit_handler(noir_gpr_state_p gpr_
 	cvcpu->header.exit_context.io.access.operand_size=(u16)info.op_size;
 	cvcpu->header.exit_context.io.access.address_width=(u16)info.addr_size<<1;
 	cvcpu->header.exit_context.io.port=(u16)info.port;
-	cvcpu->header.exit_context.io.rax=cvcpu->header.gpr.rax;
-	cvcpu->header.exit_context.io.rcx=cvcpu->header.gpr.rcx;
-	cvcpu->header.exit_context.io.rsi=cvcpu->header.gpr.rsi;
-	cvcpu->header.exit_context.io.rdi=cvcpu->header.gpr.rdi;
-	cvcpu->header.exit_context.io.segment.selector=noir_svm_vmread16(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_selector);
-	cvcpu->header.exit_context.io.segment.attrib=noir_svm_vmread16(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_attrib);
-	cvcpu->header.exit_context.io.segment.limit=noir_svm_vmread32(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_limit);
-	cvcpu->header.exit_context.io.segment.base=noir_svm_vmread64(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_base);
-	// Profiler: Classify the interception.
-	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.io;
+	if(cvcpu->vm->header.properties.nsv_guest)
+	{
+		// I/O instructions are Non-Automatic Exits to NSV-Guests.
+		nvc_svm_nsv_load_nae_synthetic_msr_state(cvcpu);
+		cvcpu->header.nsvs.vc_error_code=cv_io_instruction;
+		cvcpu->header.nsvs.vc_info1=(u64)cvcpu->header.exit_context.io.access.value;
+		cvcpu->header.nsvs.vc_info2=(u64)cvcpu->header.exit_context.io.port;
+	}
+	else
+	{
+		// Deliver the I/O interception to subverted host.
+		nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+		cvcpu->header.exit_context.intercept_code=cv_io_instruction;
+		cvcpu->header.exit_context.io.rax=cvcpu->header.gpr.rax;
+		cvcpu->header.exit_context.io.rcx=cvcpu->header.gpr.rcx;
+		cvcpu->header.exit_context.io.rsi=cvcpu->header.gpr.rsi;
+		cvcpu->header.exit_context.io.rdi=cvcpu->header.gpr.rdi;
+		cvcpu->header.exit_context.io.segment.selector=noir_svm_vmread16(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_selector);
+		cvcpu->header.exit_context.io.segment.attrib=noir_svm_vmread16(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_attrib);
+		cvcpu->header.exit_context.io.segment.limit=noir_svm_vmread32(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_limit);
+		cvcpu->header.exit_context.io.segment.base=noir_svm_vmread64(cvcpu->vmcb.virt,(info.segment<<4)+guest_es_base);
+		// Profiler: Classify the interception.
+		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.io;
+	}
 }
 
 // Expected Intercept Code: 0x7C
@@ -666,11 +700,17 @@ void static noir_hvcode fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr
 {
 	// Determine whether MSR-Interception is subject to be delivered to subverted host.
 	bool op_write=noir_svm_vmread8(cvcpu->vmcb.virt,exit_info1);
+	const u32 index=(const u32)gpr_state->rcx;
 	bool emulate=false;
-	if(cvcpu->header.vcpu_options.intercept_msr && !cvcpu->header.msr_interceptions.valid)
+	if(index>=0x40000000 && index<0x80000000)
+	{
+		// These are MSRs reserved by NoirVisor. User hypervisors cannot intercept them.
+		bool no_exit=op_write?nvc_svm_wrmsr_nsvexit_handler(gpr_state,vcpu,cvcpu):nvc_svm_rdmsr_nsvexit_handler(gpr_state,vcpu,cvcpu);
+		if(!no_exit)nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+	}
+	else if(cvcpu->header.vcpu_options.intercept_msr && !cvcpu->header.msr_interceptions.valid)
 	{
 		bool intercept=!cvcpu->header.msr_interceptions.valid;
-		u32 index=(u32)gpr_state->rcx;
 		if(cvcpu->header.msr_interceptions.valid)
 		{
 			// User Hypervisor wants to intercept only a portion of MSRs.
@@ -833,11 +873,15 @@ void static noir_hvcode fastcall nvc_svm_vmrun_cvexit_handler(noir_gpr_state_p g
 // Expected Intercept Code: 0x81
 void static noir_hvcode fastcall nvc_svm_vmmcall_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
+	// u64 inslen=noir_svm_vmread64(cvcpu->vmcb.virt,next_rip)-noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip);
 	// The Guest invoked a hypercall. Deliver to the subverted host.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 	cvcpu->header.exit_context.intercept_code=cv_hypercall;
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.hypercall;
+	// For NSV guests, this is an explicit hypercall to the user hypervisor.
+	// NoirVisor will advance the rip register in lieu of the user hypervisor.
+	if(cvcpu->vm->header.properties.nsv_guest)noir_svm_advance_rip(cvcpu->vmcb.virt);
 }
 
 // Expected Intercept Code: 0x82

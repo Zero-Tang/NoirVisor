@@ -273,8 +273,8 @@ typedef struct _noir_svm_custom_vcpu
 		u64 value;
 	}special_state;
 	u64 lasted_tsc;
-	u32 proc_id;
-	u32 vcpu_id;
+	u32 proc_id;	// The physical processor id this vCPU was scheduled to
+	u32 vcpu_id;	// The virtual processor id of this vCPU
 }noir_svm_custom_vcpu,*noir_svm_custom_vcpu_p;
 
 typedef struct _noir_svm_custom_vm
@@ -347,8 +347,6 @@ void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
-void nvc_npt_reassign_page_ownership_hvrt(noir_svm_vcpu_p vcpu,noir_rmt_remap_context_p context);
-bool nvc_npt_reassign_page_ownership(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership);
 void nvc_svm_load_basic_exit_context(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_operate_guest_memory(noir_cvm_gmem_op_context_p context);
 void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid_fms);
@@ -359,6 +357,10 @@ noir_svm_nested_vcpu_node_p nvc_svm_search_nested_vcpu_node(noir_svm_nested_vcpu
 noir_svm_nested_vcpu_node_p nvc_svm_insert_nested_vcpu_node(noir_svm_nested_vcpu_p nvcpu,u64 vmcb);
 void nvc_svmn_set_gif(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,void* target_vmcb);
 void nvc_svmn_clear_gif(noir_svm_vcpu_p vcpu);
+bool nvc_svmc_get_physical_mapping(noir_svm_custom_npt_manager_p npt_manager,u64 gpa,u64p hpa,bool r,bool w,bool x);
+void nvc_npt_reassign_page_ownership_hvrt(noir_svm_vcpu_p vcpu,noir_rmt_remap_context_p context);
+bool nvc_npt_reassign_page_ownership(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership);
+bool nvc_npt_reassign_cvm_all_pages_ownership(noir_svm_custom_vm_p vm,u32 asid,bool shared,u8 ownership);
 u8 nvc_npt_get_host_pat_index(u8 type);
 noir_status nvc_svmc_initialize_cvm_module();
 void nvc_svmc_finalize_cvm_module();

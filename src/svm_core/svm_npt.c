@@ -572,6 +572,8 @@ alloc_failure:
 	return result;
 }
 
+// Warning: this procedure does not gain exclusion of the VM!
+// Schedule out all vCPUs from execution before reassignment!
 bool nvc_npt_reassign_page_ownership(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership)
 {
 	bool result;
@@ -581,6 +583,54 @@ bool nvc_npt_reassign_page_ownership(u64p hpa,u64p gpa,u32 pages,u32 asid,bool s
 	noir_acquire_pushlock_exclusive(&hvm_p->rmt.lock);
 	// Now, perform reassignment.
 	result=nvc_npt_reassign_page_ownership_unsafe(hpa,gpa,pages,asid,shared,ownership);
+	// Unlock everything we locked.
+	noir_release_pushlock_exclusive(&hvm_p->rmt.lock);
+	for(u32 i=0;i<hvm_p->cpu_count;i++)
+		noir_release_pushlock_exclusive(&hvm_p->virtual_cpu[i].primary_nptm->nptm_lock);
+	// Return
+	return result;
+}
+
+// Warning: this procedure does not gain exclusion of the VM!
+// Schedule out all vCPUs from execution before reassignment!
+bool nvc_npt_reassign_cvm_all_pages_ownership(noir_svm_custom_vm_p vm,u32 asid,bool shared,u8 ownership)
+{
+	bool result=false;
+	noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
+	const u64 total_pages=hvm_p->rmt.size>>4;
+	u32 pages=0;
+	// Lock everything here we need in order to circumvent race condition and reentrance of locks.
+	for(u32 i=0;i<hvm_p->cpu_count;i++)
+		noir_acquire_pushlock_exclusive(&hvm_p->virtual_cpu[i].primary_nptm->nptm_lock);
+	noir_acquire_pushlock_exclusive(&hvm_p->rmt.lock);
+	// Stage I: Scan the Reverse-Mapping Table.
+	for(u64 i=0;i<total_pages;i++)
+		if(rm_table[i].low.asid==vm->asid)
+			pages++;	// Count the number of pages in the VM.
+	// Stage II: Make the list.
+	if(pages)
+	{
+		u64p gpa_list=noir_alloc_nonpg_memory(pages<<3);
+		u64p hpa_list=noir_alloc_nonpg_memory(pages<<3);
+		u32 j=0;
+		if(gpa_list && hpa_list)
+		{
+			for(u64 i=0;i<total_pages;i++)
+			{
+				if(rm_table[i].low.asid==vm->asid)
+				{
+					gpa_list[j]=page_4kb_mult(rm_table[i].high.guest_pfn);
+					hpa_list[j]=page_4kb_mult(i);
+					j++;
+				}
+			}
+		}
+		// Stage III: Perform reassignment
+		if(j==pages)result=nvc_npt_reassign_page_ownership_unsafe(hpa_list,gpa_list,pages,asid,shared,ownership);
+		// Release list...
+		if(gpa_list)noir_free_nonpg_memory(gpa_list);
+		if(hpa_list)noir_free_nonpg_memory(hpa_list);
+	}
 	// Unlock everything we locked.
 	noir_release_pushlock_exclusive(&hvm_p->rmt.lock);
 	for(u32 i=0;i<hvm_p->cpu_count;i++)
