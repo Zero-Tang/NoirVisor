@@ -266,7 +266,8 @@ typedef struct _noir_svm_custom_vcpu
 			u64 prev_virq:1;	// Required for interrupt-window interception.
 			u64 prev_nmi:1;
 			u64 mtf_active:1;
-			u64 reserved:59;
+			u64 reserved:58;
+			u64 switch_success:1;
 			u64 hv_mtf:1;		// Trap-Flag by NoirVisor.
 			u64 rescission:1;
 		};
@@ -347,6 +348,8 @@ void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+bool nvc_svm_nsv_save_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+bool nvc_svm_nsv_load_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_load_basic_exit_context(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_operate_guest_memory(noir_cvm_gmem_op_context_p context);
 void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid_fms);

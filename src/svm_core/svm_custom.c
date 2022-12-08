@@ -28,19 +28,29 @@ void noir_hvcode nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm
 	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
 	noir_svm_custom_vcpu_p cvcpu=loader_stack->custom_vcpu;
 	// Step 1: Save State of the Customizable VM.
-	// Save General-Purpose Registers...
-	gpr_state->rax=noir_svm_vmread(cvcpu->vmcb.virt,guest_rax);
-	gpr_state->rsp=noir_svm_vmread(cvcpu->vmcb.virt,guest_rsp);
-	noir_movsp(&cvcpu->header.gpr,gpr_state,sizeof(void*)*2);
-	cvcpu->header.rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip);
-	cvcpu->header.rflags=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rflags);
-	// Save Extended Control Registers...
-	cvcpu->header.xcrs.xcr0=noir_xgetbv(0);
-	// Save Debug Registers...
-	cvcpu->header.drs.dr0=noir_readdr0();
-	cvcpu->header.drs.dr1=noir_readdr1();
-	cvcpu->header.drs.dr2=noir_readdr2();
-	cvcpu->header.drs.dr3=noir_readdr3();
+	if(cvcpu->vm->header.properties.nsv_guest)
+	{
+		// For NSV-Guests, do not save to vCPU structure.
+		// Instead, save to its protected page.
+		cvcpu->special_state.switch_success=nvc_svm_nsv_save_guest_vcpu(gpr_state,vcpu,cvcpu);
+	}
+	else
+	{
+		// Save General-Purpose Registers...
+		gpr_state->rax=noir_svm_vmread(cvcpu->vmcb.virt,guest_rax);
+		gpr_state->rsp=noir_svm_vmread(cvcpu->vmcb.virt,guest_rsp);
+		noir_movsp(&cvcpu->header.gpr,gpr_state,sizeof(void*)*2);
+		cvcpu->header.rip=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rip);
+		cvcpu->header.rflags=noir_svm_vmread64(cvcpu->vmcb.virt,guest_rflags);
+		// Save Extended Control Registers...
+		cvcpu->header.xcrs.xcr0=noir_xgetbv(0);
+		// Save Debug Registers...
+		cvcpu->header.drs.dr0=noir_readdr0();
+		cvcpu->header.drs.dr1=noir_readdr1();
+		cvcpu->header.drs.dr2=noir_readdr2();
+		cvcpu->header.drs.dr3=noir_readdr3();
+		cvcpu->special_state.switch_success=true;
+	}
 	// Save the event injection field...
 	cvcpu->header.injected_event.attributes.value=noir_svm_vmread32(cvcpu->vmcb.virt,event_injection);
 	cvcpu->header.injected_event.error_code=noir_svm_vmread32(cvcpu->vmcb.virt,event_error_code);
@@ -106,172 +116,190 @@ void noir_hvcode nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_sv
 	vcpu->cvm_state.drs.dr2=noir_readdr2();
 	vcpu->cvm_state.drs.dr3=noir_readdr3();
 	// Step 2: Load Guest State.
-	// Load General-Purpose Registers...
-	noir_movsp(gpr_state,&cvcpu->header.gpr,sizeof(void*)*2);
-	if(!cvcpu->header.state_cache.gprvalid)
+	if(cvcpu->vm->header.properties.nsv_guest)
 	{
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_rax,gpr_state->rax);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_rsp,gpr_state->rsp);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_rip,cvcpu->header.rip);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_rflags,cvcpu->header.rflags);
-		cvcpu->header.state_cache.gprvalid=true;
+		// For NSV-Guests, do not load from vCPU structure.
+		// Instead, load from its protected page.
+		cvcpu->special_state.switch_success=nvc_svm_nsv_load_guest_vcpu(gpr_state,vcpu,cvcpu);
 	}
-	// Load x87 FPU and SSE State...
-	noir_xrestore(cvcpu->header.xsave_area,maxu64);
-	// Load Extended Control Registers...
-	noir_xsetbv(0,cvcpu->header.xcrs.xcr0);
-	// Load Debug Registers...
-	noir_writedr0(cvcpu->header.drs.dr0);
-	noir_writedr1(cvcpu->header.drs.dr1);
-	noir_writedr2(cvcpu->header.drs.dr2);
-	noir_writedr3(cvcpu->header.drs.dr3);
-	if(!cvcpu->header.state_cache.dr_valid)
+	else
 	{
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_dr6,cvcpu->header.drs.dr6);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_dr7,cvcpu->header.drs.dr7);
-		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_debug_reg);
-		cvcpu->header.state_cache.dr_valid=true;
-	}
-	// Load Control Registers...
-	if(!cvcpu->header.state_cache.cr_valid)
-	{
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr0,cvcpu->header.crs.cr0);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr3,cvcpu->header.crs.cr3);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr4,cvcpu->header.crs.cr4);
-		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_control_reg);
-		cvcpu->header.state_cache.cr_valid=true;
-		// Changes made to control registers can cause TLBs to be invalid.
-		noir_svm_vmwrite8(cvcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
-	}
-	if(!cvcpu->header.state_cache.cr2valid)
-	{
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr2,cvcpu->header.crs.cr2);
-		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_cr2);
-		cvcpu->header.state_cache.cr2valid=true;
-	}
-	if(!cvcpu->header.state_cache.tp_valid)
-	{
-		noir_svm_vmwrite8(cvcpu->vmcb.virt,avic_control,(u8)cvcpu->header.crs.cr8&0xf);
-		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_tpr);
-		cvcpu->header.state_cache.tp_valid=true;
-	}
-	// Load Segment Registers...
-	if(!cvcpu->header.state_cache.sr_valid)
-	{
-		// Load segment selectors.
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_cs_selector,cvcpu->header.seg.cs.selector);
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ds_selector,cvcpu->header.seg.ds.selector);
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_es_selector,cvcpu->header.seg.es.selector);
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ss_selector,cvcpu->header.seg.ss.selector);
-		// Load segment attributes.
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_cs_attrib,svm_attrib(cvcpu->header.seg.cs.attrib));
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ds_attrib,svm_attrib(cvcpu->header.seg.ds.attrib));
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_es_attrib,svm_attrib(cvcpu->header.seg.es.attrib));
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ss_attrib,svm_attrib(cvcpu->header.seg.ss.attrib));
-		// Load segment limits.
-		noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_cs_limit,cvcpu->header.seg.cs.limit);
-		noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_ds_limit,cvcpu->header.seg.ds.limit);
-		noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_es_limit,cvcpu->header.seg.es.limit);
-		noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_ss_limit,cvcpu->header.seg.ss.limit);
-		// Load segment bases.
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cs_base,cvcpu->header.seg.cs.base);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_ds_base,cvcpu->header.seg.ds.base);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_es_base,cvcpu->header.seg.es.base);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_ss_base,cvcpu->header.seg.ss.base);
-		// Mark the VMCB cache invalid.
-		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_segment_reg);
-		cvcpu->header.state_cache.sr_valid=true;	// Cache is refreshed. Mark it valid.
-	}
-	if(!cvcpu->header.state_cache.fg_valid)
-	{
-		// Load segment selectors.
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_fs_selector,cvcpu->header.seg.fs.selector);
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_gs_selector,cvcpu->header.seg.gs.selector);
-		// Load segment attributes.
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_fs_attrib,svm_attrib(cvcpu->header.seg.fs.attrib));
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_gs_attrib,svm_attrib(cvcpu->header.seg.gs.attrib));
-		// Load segment limits.
-		noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_fs_limit,cvcpu->header.seg.fs.limit);
-		noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_gs_limit,cvcpu->header.seg.gs.limit);
-		// Load segment bases.
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_fs_base,cvcpu->header.seg.fs.base);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_gs_base,cvcpu->header.seg.gs.base);
-		// Load Kernel-GS-Base MSR.
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_kernel_gs_base,cvcpu->header.msrs.gsswap);
-		// No need to invalidate VMCB. The vmload instruction will load them.
-		cvcpu->header.state_cache.fg_valid=true;
-	}
-	// Load Descriptor Tables...
-	if(!cvcpu->header.state_cache.lt_valid)
-	{
-		// Load segment selectors.
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_tr_selector,cvcpu->header.seg.tr.selector);
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ldtr_selector,cvcpu->header.seg.ldtr.selector);
-		// Load segment attributes.
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_tr_attrib,svm_attrib(cvcpu->header.seg.tr.attrib));
-		noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ldtr_attrib,svm_attrib(cvcpu->header.seg.ldtr.attrib));
-		// Load segment limits.
-		noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_tr_limit,cvcpu->header.seg.tr.limit);
-		noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_ldtr_limit,cvcpu->header.seg.ldtr.limit);
-		// Load segment bases.
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_tr_base,cvcpu->header.seg.tr.base);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_ldtr_base,cvcpu->header.seg.ldtr.base);
-		// No need to invalidate VMCB. The vmload instruction will load them.
-		cvcpu->header.state_cache.lt_valid=true;
-	}
-	if(!cvcpu->header.state_cache.dt_valid)
-	{
-		// Load descriptor table limits.
-		noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_gdtr_limit,cvcpu->header.seg.gdtr.limit);
-		noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_idtr_limit,cvcpu->header.seg.idtr.limit);
-		// Load descriptor table bases.
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_gdtr_base,cvcpu->header.seg.gdtr.base);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_idtr_base,cvcpu->header.seg.idtr.base);
-		// Mark the VMCB cache invalid.
-		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_idt_gdt);
-		cvcpu->header.state_cache.dt_valid=true;
-	}
-	// Load EFER MSR
-	if(!cvcpu->header.state_cache.ef_valid)
-	{
-		const u64 efer_tlb_mask=amd64_efer_lme|amd64_efer_lma|amd64_efer_nxe;
-		// SVME Shadowing
-		cvcpu->shadowed_bits.svme=noir_bt((u32*)&cvcpu->header.msrs.efer,amd64_efer_svme);
-		// Changes made to EFER can cause TLBs to be invalid.
-		if((noir_svm_vmread64(cvcpu->vmcb.virt,guest_efer)&efer_tlb_mask)!=(cvcpu->header.msrs.efer&efer_tlb_mask))
+		// Load General-Purpose Registers...
+		noir_movsp(gpr_state,&cvcpu->header.gpr,sizeof(void*)*2);
+		if(!cvcpu->header.state_cache.gprvalid)
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_rax,gpr_state->rax);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_rsp,gpr_state->rsp);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_rip,cvcpu->header.rip);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_rflags,cvcpu->header.rflags);
+			cvcpu->header.state_cache.gprvalid=true;
+		}
+		// Load x87 FPU and SSE State...
+		noir_xrestore(cvcpu->header.xsave_area,maxu64);
+		// Load Extended Control Registers...
+		noir_xsetbv(0,cvcpu->header.xcrs.xcr0);
+		// Load Debug Registers...
+		noir_writedr0(cvcpu->header.drs.dr0);
+		noir_writedr1(cvcpu->header.drs.dr1);
+		noir_writedr2(cvcpu->header.drs.dr2);
+		noir_writedr3(cvcpu->header.drs.dr3);
+		if(!cvcpu->header.state_cache.dr_valid)
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_dr6,cvcpu->header.drs.dr6);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_dr7,cvcpu->header.drs.dr7);
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_debug_reg);
+			cvcpu->header.state_cache.dr_valid=true;
+		}
+		// Load Control Registers...
+		if(!cvcpu->header.state_cache.cr_valid)
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr0,cvcpu->header.crs.cr0);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr3,cvcpu->header.crs.cr3);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr4,cvcpu->header.crs.cr4);
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_control_reg);
+			cvcpu->header.state_cache.cr_valid=true;
+			// Changes made to control registers can cause TLBs to be invalid.
 			noir_svm_vmwrite8(cvcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
-		// Always enable EFER.SVME.
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_efer,cvcpu->header.msrs.efer|amd64_efer_svme_bit);
-		// Writing to EFER causes cached copy of control registers in VMCB to be invalid.
-		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_control_reg);
-		cvcpu->header.state_cache.ef_valid=true;
-	}
-	// Load PAT MSR
-	if(!cvcpu->header.state_cache.pa_valid)
-	{
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_pat,cvcpu->header.msrs.pat);
-		// Mark the VMCB cache invalid.
-		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_npt);
-		cvcpu->header.state_cache.pa_valid=true;
-	}
-	// Load MSRs for System Call (sysenter/sysexit)
-	if(!cvcpu->header.state_cache.se_valid)
-	{
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_cs,cvcpu->header.msrs.sysenter_cs);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_esp,cvcpu->header.msrs.sysenter_esp);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_eip,cvcpu->header.msrs.sysenter_eip);
-		// No need to invalidate VMCB. The vmload instruction will load them.
-		cvcpu->header.state_cache.se_valid=true;
-	}
-	// Load MSRs for System Call (syscall/sysret)
-	if(!cvcpu->header.state_cache.sc_valid)
-	{
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_star,cvcpu->header.msrs.star);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_lstar,cvcpu->header.msrs.lstar);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cstar,cvcpu->header.msrs.cstar);
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sfmask,cvcpu->header.msrs.sfmask);
-		// No need to invalidate VMCB. The vmload instruction will load them.
-		cvcpu->header.state_cache.sc_valid=true;
+		}
+		if(!cvcpu->header.state_cache.cr2valid)
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr2,cvcpu->header.crs.cr2);
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_cr2);
+			cvcpu->header.state_cache.cr2valid=true;
+		}
+		if(!cvcpu->header.state_cache.tp_valid)
+		{
+			noir_svm_vmwrite8(cvcpu->vmcb.virt,avic_control,(u8)cvcpu->header.crs.cr8&0xf);
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_tpr);
+			cvcpu->header.state_cache.tp_valid=true;
+		}
+		// Load Segment Registers...
+		if(!cvcpu->header.state_cache.sr_valid)
+		{
+			// Load segment selectors.
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_cs_selector,cvcpu->header.seg.cs.selector);
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ds_selector,cvcpu->header.seg.ds.selector);
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_es_selector,cvcpu->header.seg.es.selector);
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ss_selector,cvcpu->header.seg.ss.selector);
+			// Load segment attributes.
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_cs_attrib,svm_attrib(cvcpu->header.seg.cs.attrib));
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ds_attrib,svm_attrib(cvcpu->header.seg.ds.attrib));
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_es_attrib,svm_attrib(cvcpu->header.seg.es.attrib));
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ss_attrib,svm_attrib(cvcpu->header.seg.ss.attrib));
+			// Load segment limits.
+			noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_cs_limit,cvcpu->header.seg.cs.limit);
+			noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_ds_limit,cvcpu->header.seg.ds.limit);
+			noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_es_limit,cvcpu->header.seg.es.limit);
+			noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_ss_limit,cvcpu->header.seg.ss.limit);
+			// Load segment bases.
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cs_base,cvcpu->header.seg.cs.base);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_ds_base,cvcpu->header.seg.ds.base);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_es_base,cvcpu->header.seg.es.base);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_ss_base,cvcpu->header.seg.ss.base);
+			// Mark the VMCB cache invalid.
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_segment_reg);
+			cvcpu->header.state_cache.sr_valid=true;	// Cache is refreshed. Mark it valid.
+		}
+		if(!cvcpu->header.state_cache.fg_valid)
+		{
+			// Load segment selectors.
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_fs_selector,cvcpu->header.seg.fs.selector);
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_gs_selector,cvcpu->header.seg.gs.selector);
+			// Load segment attributes.
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_fs_attrib,svm_attrib(cvcpu->header.seg.fs.attrib));
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_gs_attrib,svm_attrib(cvcpu->header.seg.gs.attrib));
+			// Load segment limits.
+			noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_fs_limit,cvcpu->header.seg.fs.limit);
+			noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_gs_limit,cvcpu->header.seg.gs.limit);
+			// Load segment bases.
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_fs_base,cvcpu->header.seg.fs.base);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_gs_base,cvcpu->header.seg.gs.base);
+			// Load Kernel-GS-Base MSR.
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_kernel_gs_base,cvcpu->header.msrs.gsswap);
+			// No need to invalidate VMCB. The vmload instruction will load them.
+			cvcpu->header.state_cache.fg_valid=true;
+		}
+		// Load Descriptor Tables...
+		if(!cvcpu->header.state_cache.lt_valid)
+		{
+			// Load segment selectors.
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_tr_selector,cvcpu->header.seg.tr.selector);
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ldtr_selector,cvcpu->header.seg.ldtr.selector);
+			// Load segment attributes.
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_tr_attrib,svm_attrib(cvcpu->header.seg.tr.attrib));
+			noir_svm_vmwrite16(cvcpu->vmcb.virt,guest_ldtr_attrib,svm_attrib(cvcpu->header.seg.ldtr.attrib));
+			// Load segment limits.
+			noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_tr_limit,cvcpu->header.seg.tr.limit);
+			noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_ldtr_limit,cvcpu->header.seg.ldtr.limit);
+			// Load segment bases.
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_tr_base,cvcpu->header.seg.tr.base);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_ldtr_base,cvcpu->header.seg.ldtr.base);
+			// No need to invalidate VMCB. The vmload instruction will load them.
+			cvcpu->header.state_cache.lt_valid=true;
+		}
+		if(!cvcpu->header.state_cache.dt_valid)
+		{
+			// Load descriptor table limits.
+			noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_gdtr_limit,cvcpu->header.seg.gdtr.limit);
+			noir_svm_vmwrite32(cvcpu->vmcb.virt,guest_idtr_limit,cvcpu->header.seg.idtr.limit);
+			// Load descriptor table bases.
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_gdtr_base,cvcpu->header.seg.gdtr.base);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_idtr_base,cvcpu->header.seg.idtr.base);
+			// Mark the VMCB cache invalid.
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_idt_gdt);
+			cvcpu->header.state_cache.dt_valid=true;
+		}
+		// Load EFER MSR
+		if(!cvcpu->header.state_cache.ef_valid)
+		{
+			const u64 efer_tlb_mask=amd64_efer_lme|amd64_efer_lma|amd64_efer_nxe;
+			// SVME Shadowing
+			cvcpu->shadowed_bits.svme=noir_bt((u32*)&cvcpu->header.msrs.efer,amd64_efer_svme);
+			// Changes made to EFER can cause TLBs to be invalid.
+			if((noir_svm_vmread64(cvcpu->vmcb.virt,guest_efer)&efer_tlb_mask)!=(cvcpu->header.msrs.efer&efer_tlb_mask))
+				noir_svm_vmwrite8(cvcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+			// Always enable EFER.SVME.
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_efer,cvcpu->header.msrs.efer|amd64_efer_svme_bit);
+			// Writing to EFER causes cached copy of control registers in VMCB to be invalid.
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_control_reg);
+			cvcpu->header.state_cache.ef_valid=true;
+		}
+		// Load PAT MSR
+		if(!cvcpu->header.state_cache.pa_valid)
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_pat,cvcpu->header.msrs.pat);
+			// Mark the VMCB cache invalid.
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_npt);
+			cvcpu->header.state_cache.pa_valid=true;
+		}
+		// Load MSRs for System Call (sysenter/sysexit)
+		if(!cvcpu->header.state_cache.se_valid)
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_cs,cvcpu->header.msrs.sysenter_cs);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_esp,cvcpu->header.msrs.sysenter_esp);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sysenter_eip,cvcpu->header.msrs.sysenter_eip);
+			// No need to invalidate VMCB. The vmload instruction will load them.
+			cvcpu->header.state_cache.se_valid=true;
+		}
+		// Load MSRs for System Call (syscall/sysret)
+		if(!cvcpu->header.state_cache.sc_valid)
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_star,cvcpu->header.msrs.star);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_lstar,cvcpu->header.msrs.lstar);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cstar,cvcpu->header.msrs.cstar);
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_sfmask,cvcpu->header.msrs.sfmask);
+			// No need to invalidate VMCB. The vmload instruction will load them.
+			cvcpu->header.state_cache.sc_valid=true;
+		}
+		// Load the TSC offset.
+		if(!cvcpu->header.state_cache.ts_valid)
+		{
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,tsc_offset,cvcpu->header.tsc_offset);
+			// Writing to TSC Offset causes the interception controls in VMCB to be invalid.
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
+			cvcpu->header.state_cache.ts_valid=true;
+		}
+		cvcpu->special_state.switch_success=true;
 	}
 	// Set the event injection
 	if(cvcpu->header.injected_event.attributes.type)
@@ -308,14 +336,6 @@ void noir_hvcode nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_sv
 	{
 		noir_svm_vmwrite8(cvcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
 		cvcpu->header.state_cache.tl_valid=true;
-	}
-	// Load the TSC offset.
-	if(!cvcpu->header.state_cache.ts_valid)
-	{
-		noir_svm_vmwrite64(cvcpu->vmcb.virt,tsc_offset,cvcpu->header.tsc_offset);
-		// Writing to TSC Offset causes the interception controls in VMCB to be invalid.
-		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
-		cvcpu->header.state_cache.ts_valid=true;
 	}
 	// If AVIC is supported, set the Physical APIC ID Entry to be running.
 	if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
@@ -452,6 +472,7 @@ void noir_hvcode nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu)
 
 void noir_hvcode nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 {
+	noir_nsv_virtual_cpu_p nsvcpu=(noir_nsv_virtual_cpu_p)vcpu->header.vmsa.virt;
 	void* vmcb=vcpu->vmcb.virt;
 	// Initialize the VMCB for vCPU.
 	nvc_svm_cra_intercept cr_vector;
@@ -515,6 +536,9 @@ void noir_hvcode nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	// Initialize IOPM/MSRPM
 	noir_svm_vmwrite64(vmcb,iopm_physical_address,vcpu->vm->iopm.phys);
 	noir_svm_vmwrite64(vmcb,msrpm_physical_address,vcpu->vm->msrpm.phys);
+	// Set the NSV structure.
+	nsvcpu->parent.vcpu=&vcpu->header;
+	nsvcpu->parent.vmcb=vcpu->vmcb;
 }
 
 u64 noir_hvcode nvc_svm_translate_gva_to_gpa(noir_svm_custom_vcpu_p vcpu,u64 gva,bool write,bool *fault)
@@ -653,54 +677,62 @@ noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu)
 		vcpu->header.exit_context.intercept_code=cv_rescission;
 	else
 		noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
-	switch(vcpu->header.exit_context.intercept_code)
+	// Check if the world-switch is successful.
+	if(vcpu->special_state.switch_success==false)
+		st=noir_nsv_violation;
+	else
 	{
-		// Some NoirVisor-specific interceptions cannot be handled in atomic state (GIF=0).
-		case cv_scheduler_nsv_activate:
+		switch(vcpu->header.exit_context.intercept_code)
 		{
-			// (De)Activation of NSV must be done under exclusion.
-			nvc_svmc_gain_exclusion(vcpu);
-			vcpu->vm->header.properties.nsv_guest=(u32)vcpu->header.exit_context.nsv_activation.activation;
-			u64p pa_list=noir_alloc_nonpg_memory(vcpu->vm->vcpu_count<<3);
-			if(pa_list)
+			// Some NoirVisor-specific interceptions cannot be handled in atomic state (GIF=0).
+			case cv_scheduler_nsv_activate:
 			{
-				u32 j=0;
-				for(u32 i=0;i<256;i++)
-					if(vcpu->vm->vcpu[i])
-						pa_list[j++]=vcpu->vm->vcpu[i]->vmcb.phys;
-				if(!vcpu->vm->header.properties.nsv_guest)	// If NSV is being deactivated, all pages must be reassigned as insecure memory.
-					nvc_npt_reassign_cvm_all_pages_ownership(vcpu->vm,vcpu->vm->asid,true,noir_nsv_rmt_insecure_guest);
-				// VMCB pages must be reassigned in order to (un)protect their state.
-				nvc_npt_reassign_page_ownership(pa_list,pa_list,vcpu->vm->vcpu_count,0,false,vcpu->vm->header.properties.nsv_guest?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest);
-				noir_free_nonpg_memory(pa_list);
-			}
-			nvc_svmc_free_exclusion(vcpu);
-			break;
-		}
-		case cv_scheduler_nsv_claim_security:
-		{
-			// Claiming security of guest pages must be done under exclusion.
-			u32 pages=(u32)page_count(vcpu->header.nsvs.claim_gpa_end-vcpu->header.nsvs.claim_gpa_start);
-			u64p hpa_list=noir_alloc_nonpg_memory(pages);
-			u64p gpa_list=noir_alloc_nonpg_memory(pages);
-			if(hpa_list && gpa_list)
-			{
-				u8 ownership=vcpu->header.exit_context.claim_pages.claim?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest;
+				// (De)Activation of NSV must be done under exclusion.
 				nvc_svmc_gain_exclusion(vcpu);
-				// Fill the list for reassignment.
-				for(u32 i=0;i<pages;i++)
+				vcpu->vm->header.properties.nsv_guest=(u32)vcpu->header.exit_context.nsv_activation.activation;
+				nv_dprintf("VM 0x%p is %s NSV!\n",vcpu->vm,vcpu->vm->header.properties.nsv_guest?"activating":"deactivating");
+				u64p pa_list=noir_alloc_nonpg_memory(vcpu->vm->vcpu_count<<3);
+				if(pa_list)
 				{
-					gpa_list[i]=vcpu->header.nsvs.claim_gpa_start+page_mult(i);
-					nvc_svmc_get_physical_mapping(&vcpu->vm->nptm,gpa_list[i],&hpa_list[i],true,false,false);
+					u32 j=0;
+					for(u32 i=0;i<256;i++)
+						if(vcpu->vm->vcpu[i])
+							pa_list[j++]=vcpu->vm->vcpu[i]->vmcb.phys;
+					if(!vcpu->vm->header.properties.nsv_guest)	// If NSV is being deactivated, all pages must be reassigned as insecure memory.
+						nvc_npt_reassign_cvm_all_pages_ownership(vcpu->vm,vcpu->vm->asid,true,noir_nsv_rmt_insecure_guest);
+					// VMCB pages must be reassigned in order to (un)protect their state.
+					nvc_npt_reassign_page_ownership(pa_list,pa_list,vcpu->vm->vcpu_count,0,false,vcpu->vm->header.properties.nsv_guest?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest);
+					noir_free_nonpg_memory(pa_list);
 				}
-				// Perform reassignment.
-				nvc_npt_reassign_page_ownership(hpa_list,gpa_list,pages,vcpu->vm->asid,vcpu->header.exit_context.claim_pages.claim==false,ownership);
 				nvc_svmc_free_exclusion(vcpu);
+				break;
 			}
-			if(hpa_list)noir_free_nonpg_memory(hpa_list);
-			if(gpa_list)noir_free_nonpg_memory(gpa_list);
-			// Don't let user hypervisor know about security claim.
-			break;
+			case cv_scheduler_nsv_claim_security:
+			{
+				// Claiming security of guest pages must be done under exclusion.
+				u32 pages=(u32)page_count(vcpu->header.nsvs.claim_gpa_end-vcpu->header.nsvs.claim_gpa_start);
+				u64p hpa_list=noir_alloc_nonpg_memory(pages<<3);
+				u64p gpa_list=noir_alloc_nonpg_memory(pages<<3);
+				if(hpa_list && gpa_list)
+				{
+					u8 ownership=vcpu->header.exit_context.claim_pages.claim?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest;
+					nvc_svmc_gain_exclusion(vcpu);
+					// Fill the list for reassignment.
+					for(u32 i=0;i<pages;i++)
+					{
+						gpa_list[i]=vcpu->header.nsvs.claim_gpa_start+page_mult(i);
+						nvc_svmc_get_physical_mapping(&vcpu->vm->nptm,gpa_list[i],&hpa_list[i],true,false,false);
+					}
+					// Perform reassignment.
+					nvc_npt_reassign_page_ownership(hpa_list,gpa_list,pages,vcpu->vm->asid,vcpu->header.exit_context.claim_pages.claim==false,ownership);
+					nvc_svmc_free_exclusion(vcpu);
+					nv_dprintf("NSV-VM 0x%p has claimed security of GPA range 0x%llX-0x%llX!\n",vcpu->vm,vcpu->header.nsvs.claim_gpa_start,vcpu->header.nsvs.claim_gpa_end);
+				}
+				if(hpa_list)noir_free_nonpg_memory(hpa_list);
+				if(gpa_list)noir_free_nonpg_memory(gpa_list);
+				// Don't let user hypervisor know about security claim.
+				break;
+			}
 		}
 	}
 	noir_release_pushlock_exclusive(&vcpu->header.vcpu_lock);
@@ -875,6 +907,13 @@ void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 		}
 		// Release XSAVE State Area,
 		if(vcpu->header.xsave_area)noir_free_contd_memory(vcpu->header.xsave_area,hvm_p->xfeat.supported_size_max);
+		// Release VMSA.
+		if(vcpu->header.vmsa.virt)
+		{
+			// Reassign the VMSA page to the subverted host before releasing it.
+			nvc_npt_reassign_page_ownership(&vcpu->header.vmsa.phys,&vcpu->header.vmsa.phys,1,1,true,noir_nsv_rmt_subverted_host);
+			noir_free_contd_memory(vcpu->header.vmsa.virt,page_size);
+		}
 		// Remove vCPU from VM.
 		if(vcpu->vm)vcpu->vm->vcpu[vcpu->vcpu_id]=null;
 		// In addition, remove the vCPU from AVIC.
@@ -888,6 +927,8 @@ void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 			// Release APIC Backing Page.
 			if(vcpu->apic_backing.virt)noir_free_contd_memory(vcpu->apic_backing.virt,page_size);
 		}
+		// Decrement the counter.
+		vcpu->vm->vcpu_count--;
 		// Release vCPU lock.
 		noir_release_pushlock_exclusive(&vcpu->header.vcpu_lock);
 		noir_free_nonpg_memory(vcpu);
@@ -933,6 +974,15 @@ noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_cu
 			// Allocate XSAVE State Area
 			vcpu->header.xsave_area=noir_alloc_contd_memory(hvm_p->xfeat.supported_size_max);
 			if(vcpu->header.xsave_area==null)goto alloc_failure;
+			// Allocate NSV Area.
+			vcpu->header.vmsa.virt=noir_alloc_contd_memory(page_size);
+			if(vcpu->header.vmsa.virt)
+				vcpu->header.vmsa.phys=noir_get_physical_address(vcpu->header.vmsa.virt);
+			else
+				goto alloc_failure;
+			// VMSA is assigned to NoirVisor but ownership is always secure guest.
+			if(!nvc_npt_reassign_page_ownership(&vcpu->header.vmsa.phys,&vcpu->header.vmsa.phys,1,0,false,noir_nsv_rmt_secure_guest))
+				goto alloc_failure;
 			// Insert the vCPU into the VM.
 			virtual_machine->vcpu[vcpu_id]=vcpu;
 			vcpu->vcpu_id=vcpu_id;
@@ -947,14 +997,14 @@ noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_cu
 			nvc_svm_init_vcpu_cpuid_quickpath(vcpu);
 			// Initialize the VMCB via hypercall. It is supposed that only hypervisor can operate VMCB.
 			noir_svm_vmmcall(noir_svm_init_custom_vmcb,(ulong_ptr)vcpu);
+			// Increment the counter.
+			virtual_machine->vcpu_count++;
 		}
 		*virtual_cpu=vcpu;
 		st=noir_success;
 		goto complete;
 alloc_failure:
-		if(vcpu->vmcb.virt)
-			noir_free_contd_memory(vcpu->vmcb.virt,page_size);
-		noir_free_nonpg_memory(vcpu);
+		nvc_svmc_release_vcpu(vcpu);
 		st=noir_insufficient_resources;
 	}
 complete:

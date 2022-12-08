@@ -1501,10 +1501,18 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 	{
 		// If the assigned ASID is zero, then the logic for treating
 		// this #NPF should be considered as reserved area of NoirVisor.
-		noir_svm_inject_event(vcpu->vmcb.virt,amd64_page_fault,amd64_fault_trap_exception,true,true,(u32)fault.value);
-		// Write to CR2 about the faulting physical address.
-		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_cr2,gpa);
-		noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_cr2);
+		// Ignore the instruction.
+		void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
+		// Determine the Long-Mode through CS.L bit.
+		bool long_mode=noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9);
+		u32 increment=noir_get_instruction_length(instruction,long_mode);
+		// Increment the rip so that the access is ignored.
+		ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
+		gip+=increment;
+		// If guest is not in long mode, cut the higher 32 bits in rip register.
+		if(!long_mode)gip&=maxu32;
+		// Complete the advancement of rip register.
+		noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
 	}
 	else if(rm_table[guest_pfn].low.asid==1)
 	{

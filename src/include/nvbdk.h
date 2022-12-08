@@ -622,6 +622,11 @@ void noir_acquire_pushlock_exclusive(noir_pushlock *lock);
 void noir_release_pushlock_shared(noir_pushlock *lock);
 void noir_release_pushlock_exclusive(noir_pushlock *lock);
 
+// Crypto Facility
+typedef u32 (stdcall *noir_crc32_page_func)(void* page);
+
+extern noir_crc32_page_func noir_crc32_page;
+
 // Miscellaneous
 void noir_qsort(void* base,u32 num,u32 width,noir_sorting_comparator comparator);
 u64 noir_get_system_time();

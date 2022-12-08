@@ -443,18 +443,21 @@ void nvc_npt_reassign_page_ownership_hvrt(noir_svm_vcpu_p vcpu,noir_rmt_remap_co
 					// For debugging-purpose, pages assigned to NoirVisor can be readable.
 					pte_p->virt[trans.pte_offset].present=true;
 					pte_p->virt[trans.pte_offset].write=false;
+					pte_p->virt[trans.pte_offset].user=true;
 				}
 				else if(rmt[index].low.ownership==noir_nsv_rmt_secure_guest)
 				{
 					// If the page is assigned to a secure guest, no accesses should be granted.
 					pte_p->virt[trans.pte_offset].present=false;
 					pte_p->virt[trans.pte_offset].write=false;
+					pte_p->virt[trans.pte_offset].user=false;
 				}
 				else
 				{
 					// For subverted-host and insecure guest, pages should be fully accessible in host.
 					pte_p->virt[trans.pte_offset].present=true;
 					pte_p->virt[trans.pte_offset].write=true;
+					pte_p->virt[trans.pte_offset].user=true;
 				}
 				pte_p->virt[trans.pte_offset].no_execute=false;
 				context->status[vcpu->proc_id]=noir_success;
@@ -470,7 +473,6 @@ void nvc_npt_reassign_page_ownership_hvrt(noir_svm_vcpu_p vcpu,noir_rmt_remap_co
 void static nvc_npt_reassign_page_ownership_routine(void* context,u32 processor_id)
 {
 	// Broadcast Routine for Page-Ownership Reassignment.
-	noir_svm_vcpu_p vcpu=&hvm_p->virtual_cpu[processor_id];
 	noir_svm_vmmcall(noir_svm_nsv_remap_by_rmt,(ulong_ptr)context);
 }
 

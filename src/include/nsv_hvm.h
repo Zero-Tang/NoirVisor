@@ -52,9 +52,8 @@ typedef union _noir_nsv_selector_msr
 	u64 value;
 }noir_nsv_selector_msr,*noir_nsv_selector_msr_p;
 
-typedef struct _noir_nsv_synthetic_msr_state
+typedef struct _noir_nsv_internal_msr_state
 {
-	u64 ghcb;
 	noir_nsv_selector_msr vc_handler_cs;
 	u64 vc_handler_rsp;
 	u64 vc_handler_rip;
@@ -68,6 +67,11 @@ typedef struct _noir_nsv_synthetic_msr_state
 	u64 vc_info2;
 	u64 vc_info3;
 	u64 vc_info4;
+}noir_nsv_internal_msr_state,*noir_nsv_internal_msr_state_p;
+
+typedef struct _noir_nsv_synthetic_msr_state
+{
+	u64 ghcb;
 	u64 claim_gpa_start;
 	u64 claim_gpa_end;
 }noir_nsv_synthetic_msr_state,*noir_nsv_synthetic_msr_state_p;
@@ -97,3 +101,34 @@ typedef struct _noir_nsv_claim_pages_context
 		u64 value;
 	};
 }noir_nsv_claim_pages_context,*noir_nsv_claim_pages_context_p;
+
+struct _noir_cvm_virtual_cpu;
+
+// This structure must be aligned on page-granularity.
+// This structure is intended for NSV-enabled vCPUs.
+typedef struct _noir_nsv_virtual_cpu
+{
+	// We only need to save registers that
+	// are not covered by VMCS or VMCB.
+	noir_gpr_state gpr;		// VMCB covers rax.
+	u64 cr2;				// VMCS does not cover cr2.
+	u64 cr8;				// VMCS does not cover cr8.
+	u64 dr0;
+	u64 dr1;
+	u64 dr2;
+	u64 dr3;
+	u64 dr6;				// VMCS does not cover dr6.
+	u64 xcr0;
+	struct
+	{
+		struct _noir_cvm_virtual_cpu *vcpu;
+		union
+		{
+			memory_descriptor vmcb;
+			memory_descriptor vmcs;
+		};
+	}parent;
+	noir_nsv_internal_msr_state nsvs;
+	// The XSAVE State must be aligned on 64-byte boundary.
+	align_at(64) noir_fx_state xstate;
+}noir_nsv_virtual_cpu,*noir_nsv_virtual_cpu_p;

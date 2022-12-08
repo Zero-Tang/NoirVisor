@@ -409,6 +409,11 @@ noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 				vcpu->state_cache.ts_valid=0;
 				break;
 			}
+			case noir_cvm_ghcb_register:
+			{
+				vcpu->nsvs.ghcb=*(u64*)buffer;
+				break;
+			}
 			default:
 			{
 				st=noir_invalid_parameter;
@@ -571,6 +576,11 @@ noir_status nvc_view_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 			case noir_cvm_time_stamp_counter:
 			{
 				*(u64*)buffer=noir_rdtsc()+vcpu->tsc_offset;
+				break;
+			}
+			case noir_cvm_ghcb_register:
+			{
+				*(u64*)buffer=vcpu->nsvs.ghcb;
 				break;
 			}
 			default:
@@ -1196,7 +1206,7 @@ bool nvc_validate_rmt_reassignment(u64p hpa,u64p gpa,u32 pages,u32 asid,bool sha
 			return false;	// If the page was assigned to NoirVisor, fail the validation.
 		else if(rm_table[i].low.ownership==noir_nsv_rmt_secure_guest && ownership==noir_nsv_rmt_secure_guest)
 			return false;	// Secure Memory are not allowed to be remapped in one shot.
-		else if(rm_table[i].low.ownership==noir_nsv_rmt_secure_guest && (shared || rm_table[i].low.shared))
+		else if(ownership==noir_nsv_rmt_secure_guest && shared)
 			return false;	// Secure Memory are not allowed to be shared.
 		else if((i<<3)>=hvm_p->rmt.size)
 			return false;	// The HPA has exceeded the TOM.

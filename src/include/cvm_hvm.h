@@ -87,6 +87,7 @@ typedef enum _noir_cvm_register_type
 	noir_cvm_pat_register,
 	noir_cvm_last_branch_record_register,
 	noir_cvm_time_stamp_counter,
+	noir_cvm_ghcb_register,
 	noir_cvm_maximum_register_type
 }noir_cvm_register_type,*noir_cvm_register_type_p;
 
@@ -500,6 +501,7 @@ typedef struct _noir_cvm_virtual_cpu
 	noir_msr_state msrs;
 	noir_xcr_state xcrs;
 	noir_nsv_synthetic_msr_state nsvs;
+	memory_descriptor vmsa;
 	void* xsave_area;
 	u64 rflags;
 	u64 rip;
@@ -724,7 +726,8 @@ noir_hvdata u32 noir_cvm_register_buffer_limit[noir_cvm_maximum_register_type]=
 	8,								// EFER Register
 	8,								// PAT Register
 	sizeof(u64)*5,					// LBR Register
-	8								// TSC Register
+	8,								// TSC Register
+	8								// GHCB Register
 };
 #elif defined(_vt_core) || defined(_svm_core)
 void nvc_release_lockers(noir_cvm_virtual_machine_p virtual_machine);

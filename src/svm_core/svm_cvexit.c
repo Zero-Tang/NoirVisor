@@ -295,6 +295,7 @@ void static noir_hvcode fastcall nvc_svm_smi_cvexit_handler(noir_gpr_state_p gpr
 // Expected Intercept Code: 0x72
 void static noir_hvcode fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
+	noir_nsv_virtual_cpu_p nsvcpu=(noir_nsv_virtual_cpu_p)cvcpu->header.vmsa.virt;
 	// Determine whether CPUID-Interception is subject to be delivered to subverted host.
 	if(cvcpu->header.vcpu_options.intercept_cpuid)
 	{
@@ -303,8 +304,8 @@ void static noir_hvcode fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p g
 			// For NSV-Guest, interception of CPUID instruction triggers a Non-Automatic Exit.
 			nvc_svm_nsv_load_nae_synthetic_msr_state(cvcpu);
 			// Load specific information.
-			cvcpu->header.nsvs.vc_error_code=cv_cpuid_instruction;
-			cvcpu->header.nsvs.vc_info1=cvcpu->header.nsvs.vc_info2=0;
+			nsvcpu->nsvs.vc_error_code=cv_cpuid_instruction;
+			nsvcpu->nsvs.vc_info1=nsvcpu->nsvs.vc_info2=0;
 		}
 		else
 		{
@@ -375,12 +376,13 @@ void static noir_hvcode fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p g
 // Expected Intercept Code: 0x73
 void static noir_hvcode fastcall nvc_svm_rsm_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
+	noir_nsv_virtual_cpu_p nsvcpu=(noir_nsv_virtual_cpu_p)cvcpu->header.vmsa.virt;
 	if(cvcpu->vm->header.properties.nsv_guest)
 	{
 		// For NSV guests, interceptions should be converted into Non-Automatic Exits.
 		nvc_svm_nsv_load_nae_synthetic_msr_state(cvcpu);
-		cvcpu->header.nsvs.vc_error_code=cv_rsm_instruction;
-		cvcpu->header.nsvs.vc_info1=cvcpu->header.nsvs.vc_info2=0;
+		nsvcpu->nsvs.vc_error_code=cv_rsm_instruction;
+		nsvcpu->nsvs.vc_info1=nsvcpu->nsvs.vc_info2=0;
 	}
 	else
 	{
@@ -456,6 +458,7 @@ void static noir_hvcode fastcall nvc_svm_invlpga_cvexit_handler(noir_gpr_state_p
 // Expected Intercept Code: 0x7B
 void static noir_hvcode fastcall nvc_svm_io_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
+	noir_nsv_virtual_cpu_p nsvcpu=(noir_nsv_virtual_cpu_p)cvcpu->header.vmsa.virt;
 	nvc_svm_io_exit_info info;
 	info.value=noir_svm_vmread32(cvcpu->vmcb.virt,exit_info1);
 	cvcpu->header.exit_context.io.access.io_type=(u16)info.type;
@@ -468,9 +471,9 @@ void static noir_hvcode fastcall nvc_svm_io_cvexit_handler(noir_gpr_state_p gpr_
 	{
 		// I/O instructions are Non-Automatic Exits to NSV-Guests.
 		nvc_svm_nsv_load_nae_synthetic_msr_state(cvcpu);
-		cvcpu->header.nsvs.vc_error_code=cv_io_instruction;
-		cvcpu->header.nsvs.vc_info1=(u64)cvcpu->header.exit_context.io.access.value;
-		cvcpu->header.nsvs.vc_info2=(u64)cvcpu->header.exit_context.io.port;
+		nsvcpu->nsvs.vc_error_code=cv_io_instruction;
+		nsvcpu->nsvs.vc_info1=(u64)cvcpu->header.exit_context.io.access.value;
+		nsvcpu->nsvs.vc_info2=(u64)cvcpu->header.exit_context.io.port;
 	}
 	else
 	{

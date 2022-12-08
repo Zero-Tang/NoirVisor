@@ -215,7 +215,7 @@ NTSTATUS NoirVisorDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		case IOCTL_CvmQueryHvStatus:
 		{
 			ULONG64 StType=*(PULONG64)((ULONG_PTR)InputBuffer);
-			PVOID Status=(PULONG64)((ULONG_PTR)OutputBuffer);
+			PVOID Status=(PULONG64)((ULONG_PTR)OutputBuffer+8);
 			*(PULONG32)OutputBuffer=NoirQueryHypervisorStatus(StType,Status);
 			st=STATUS_SUCCESS;
 			break;

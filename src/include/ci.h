@@ -18,8 +18,6 @@
 #define ci_enforcement_delay 50000
 #endif
 
-typedef u32 (stdcall *noir_crc32_page_func)(void* page);
-
 typedef struct _noir_ci_page
 {
 	void* virt;
