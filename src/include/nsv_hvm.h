@@ -103,6 +103,7 @@ typedef struct _noir_nsv_claim_pages_context
 }noir_nsv_claim_pages_context,*noir_nsv_claim_pages_context_p;
 
 struct _noir_cvm_virtual_cpu;
+struct _noir_cvm_virtual_machine;
 
 // This structure must be aligned on page-granularity.
 // This structure is intended for NSV-enabled vCPUs.
@@ -132,3 +133,17 @@ typedef struct _noir_nsv_virtual_cpu
 	// The XSAVE State must be aligned on 64-byte boundary.
 	align_at(64) noir_fx_state xstate;
 }noir_nsv_virtual_cpu,*noir_nsv_virtual_cpu_p;
+
+// This structure must be aligned on page-granularity.
+// This structure is intended for NSV-enabled VMs.
+typedef struct _noir_nsv_virtual_machine
+{
+	struct
+	{
+		struct _noir_cvm_virtual_machine *vm;
+	}parent;
+	// Store AES Keys intended for crypto operations.
+	align_at(16) u8 aes_key[16];
+	align_at(16) u8 expanded_encryption_keys[160];
+	align_at(16) u8 expanded_decryption_keys[160];
+}noir_nsv_virtual_machine,*noir_nsv_virtual_machine_p;

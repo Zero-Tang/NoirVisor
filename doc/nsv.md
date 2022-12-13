@@ -165,9 +165,11 @@ The following is a table of Synthetic MSRs defined by NoirVisor for NSV guests.
 | 0x4001_0155 | nsv_msr_vc_error_code | RO | per-vCPU | Specifies the CVM intercept code of the `#VC` exception. |
 | 0x4001_0156 | nsv_msr_vc_info1 | RO | per-vCPU | Specifies the additional information of the `#VC` exception. |
 | 0x4001_0157 | nsv_msr_vc_info2 | RO | per-vCPU | Specifies the additional information of the `#VC` exception. |
-| 0x4001_0180 | nsv_msr_claim_gpa_cmd | WO | VM-wide | Specifies the command to claim security of secure memory. |
-| 0x4001_0181 | nsv_msr_claim_gpa_start | R/W | VM-wide | Specifies the start of GPA to claim the security. |
-| 0x4001_0182 | nsv_msr_claim_gpa_end | R/W | VM-wide | Specifies the end of GPA to claim the security. |
+| 0x4001_0158 | nsv_msr_vc_info3 | RO | per-vCPU | Specifies the additional information of the `#VC` exception. |
+| 0x4001_0159 | nsv_msr_vc_info4 | RO | per-vCPU | Specifies the additional information of the `#VC` exception. |
+| 0x4001_0180 | nsv_msr_claim_gpa_cmd | WO | per-vCPU | Specifies the command to claim security of secure memory. |
+| 0x4001_0181 | nsv_msr_claim_gpa_start | R/W | per-vCPU | Specifies the start of GPA to claim the security. |
+| 0x4001_0182 | nsv_msr_claim_gpa_end | R/W | per-vCPU | Specifies the end of GPA to claim the security. |
 
 #### NSV Active Status
 The `nsv_msr_active_status` is a special Synthetic MSR for NSV guest to confirm whether it is running in a confidential environment. In order to prevent impersonation, user hypervisor's interceptions toward this MSR is explicitly ignored even for Non-NSV guests.

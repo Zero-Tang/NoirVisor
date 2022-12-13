@@ -627,6 +627,10 @@ typedef u32 (stdcall *noir_crc32_page_func)(void* page);
 
 extern noir_crc32_page_func noir_crc32_page;
 
+void noir_aes128_expand_key(u8p key,bool expand_encrypt,u8p expanded_keys);
+void noir_aes128_encrypt_pages(void* page_base,u8p expanded_keys,u64 pages,u8p key);
+void noir_aes128_decrypt_pages(void* page_base,u8p expanded_keys,u64 pages,u8p key);
+
 // Miscellaneous
 void noir_qsort(void* base,u32 num,u32 width,noir_sorting_comparator comparator);
 u64 noir_get_system_time();

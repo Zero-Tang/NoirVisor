@@ -629,6 +629,7 @@ typedef struct _noir_cvm_virtual_machine
 	list_entry active_vm_list;
 	u32 pid;
 	u32v ref_count;
+	memory_descriptor vmsa;
 	noir_cvm_vm_properties properties;
 	noir_cvm_lockers_list_p locker_head;
 	noir_cvm_lockers_list_p locker_tail;
@@ -670,6 +671,13 @@ typedef struct _noir_rmt_reassignment_context
 	u8 ownership;
 	bool result;
 }noir_rmt_reassignment_context,*noir_rmt_reassignment_context_p;
+
+typedef struct _noir_rmt_crypto_context
+{
+	noir_nsv_virtual_machine_p vm;
+	u64p hpa_list;
+	u32 pages;
+}noir_rmt_crypto_context,*noir_rmt_crypto_context_p;
 
 #if defined(_central_hvm)
 // CVM Functions from SVM-Core

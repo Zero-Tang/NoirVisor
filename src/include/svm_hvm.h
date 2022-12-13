@@ -24,6 +24,7 @@
 #define noir_svm_guest_memory_operation		0x10004
 #define noir_svm_nsv_reassign_rmt			0x10005
 #define noir_svm_nsv_remap_by_rmt			0x10006
+#define noir_svm_nsv_crypto_for_rmt			0x10007
 
 // Definition of Enabled features
 #define noir_svm_vmcb_caching				1		// Bit 0

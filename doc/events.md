@@ -13,5 +13,5 @@ This crossover campaign is a project of Columbia University's Operating System I
 This campaign aims to design a secure hypervisor with the base of NoirVisor's Customizable VM feature. This feature is called [NoirVisor Secure Virtualization (NSV)](./nsv.md).
 
 ### Duration
-This campaign will end on Dec.12th, 2022. \
+This campaign was ended on Dec.12th, 2022. \
 However, Project NoirVisor will provide long-term support for NSV.

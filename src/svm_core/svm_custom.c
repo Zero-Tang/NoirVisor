@@ -1355,6 +1355,7 @@ noir_status nvc_svmc_set_unmapping(noir_svm_custom_vm_p virtual_machine,u64 gpa,
 	{
 		for(u32 i=0;i<pages;i++)
 			nvc_svmc_get_physical_mapping(&virtual_machine->nptm,gpa+page_4kb_mult(i),&hpa_list[i],true,false,false);
+		// FIXME: Encrypt the pages if these pages are secure.
 		if(nvc_npt_reassign_page_ownership(hpa_list,hpa_list,pages,1,true,noir_nsv_rmt_subverted_host))
 		{
 			noir_cvm_mapping_attributes map_attrib={0};
@@ -1379,9 +1380,17 @@ noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_a
 		// First, reassign the reverse mapping.
 		for(u32 i=0;i<mapping_info->pages;i++)
 			gpa_list[i]=mapping_info->gpa+page_4kb_mult(i);
-		// FIXME: If the page is mapped as secure guest, encrypt the pages.
+		// FIXME: If the page is mapped as secure guest, decrypt the pages.
 		if(nvc_npt_reassign_page_ownership(phys_array,gpa_list,mapping_info->pages,virtual_machine->asid,false,ownership))
 		{
+			if(mapping_info->attributes.nsv_secure)
+			{
+				noir_rmt_crypto_context crypto;
+				crypto.vm=(noir_nsv_virtual_machine_p)virtual_machine->header.vmsa.virt;
+				crypto.hpa_list=phys_array;
+				crypto.pages=mapping_info->pages;
+				noir_svm_vmmcall(noir_svm_nsv_crypto_for_rmt,(ulong_ptr)&crypto);
+			}
 			// u32 increment[4]={page_4kb_shift,page_2mb_shift,page_1gb_shift,page_512gb_shift};
 			if(mapping_info->attributes.psize)return noir_not_implemented;
 			// Gain Exclusion of VM.
@@ -1598,6 +1607,42 @@ void nvc_svmc_setup_msr_interception_exception(void* msrpm)
 	noir_reset_bitmap(bitmap1,svm_msrpm_bit(1,amd64_pat,1));
 }
 
+void nvc_svmc_release_all_guest_pages(noir_svm_custom_vm_p vm)
+{
+	noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
+	const u64 total_pages=hvm_p->rmt.size>>4;
+	u32 pages=0;
+	// Lock the RMT
+	noir_acquire_pushlock_exclusive(&hvm_p->rmt.lock);
+	// Stage I: Scan the Reverse-Mapping Table.
+	for(u64 i=0;i<total_pages;i++)
+		if(rm_table[i].low.asid==vm->asid && rm_table[i].low.ownership==noir_nsv_rmt_secure_guest)
+			pages++;	// Count the number of pages in the VM.
+	// Stage II: Make the list.
+	if(pages)
+	{
+		u64p hpa_list=noir_alloc_nonpg_memory(pages<<3);
+		u32 j=0;
+		if(hpa_list)
+			for(u64 i=0;i<total_pages;i++)
+				if(rm_table[i].low.asid==vm->asid && rm_table[i].low.ownership==noir_nsv_rmt_secure_guest)
+					hpa_list[j++]=page_4kb_mult(i);
+		// Stage III: Perform Crypto Operation
+		if(j==pages)
+		{
+			noir_rmt_crypto_context crypto;
+			crypto.vm=(noir_nsv_virtual_machine_p)vm->header.vmsa.virt;
+			crypto.hpa_list=hpa_list;
+			crypto.pages=pages;
+			noir_svm_vmmcall(noir_svm_nsv_crypto_for_rmt,(ulong_ptr)&crypto);
+		}
+		// Release list...
+		if(hpa_list)noir_free_nonpg_memory(hpa_list);
+	}
+	// Unlock the RMT
+	noir_release_pushlock_exclusive(&hvm_p->rmt.lock);
+}
+
 void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 {
 	if(vm)
@@ -1652,10 +1697,18 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 				cur=next;
 			}
 		}
+		// Encrypt all secure pages in the VM.
+		nvc_svmc_release_all_guest_pages(vm);
 		// Reassign all pages to the subverted host.
 		nvc_npt_reassign_cvm_all_pages_ownership(vm,1,true,noir_nsv_rmt_subverted_host);
 		// Release lockers...
 		nvc_release_lockers(&vm->header);
+		// Release VMSA...
+		if(vm->header.vmsa.virt)
+		{
+			nvc_npt_reassign_page_ownership(&vm->header.vmsa.phys,&vm->header.vmsa.phys,1,1,true,noir_nsv_rmt_subverted_host);
+			noir_free_contd_memory(vm->header.vmsa.virt,page_size);
+		}
 		// Release ASID
 		if(vm->asid!=0xffffffff)nvc_svmc_free_asid(vm->asid);
 		// Release MSRPM & IOPM
@@ -1708,6 +1761,27 @@ noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine)
 			if(vm->msrpm.virt)
 				vm->msrpm_full.phys=noir_get_physical_address(vm->msrpm_full.virt);
 			else
+				goto alloc_failure;
+			// Allocate VMSA.
+			vm->header.vmsa.virt=noir_alloc_contd_memory(page_size);
+			if(vm->header.vmsa.virt)
+			{
+				noir_nsv_virtual_machine_p nsvm=(noir_nsv_virtual_machine_p)vm->header.vmsa.virt;
+				nsvm->parent.vm=&vm->header;
+				// Generate an AES-128 key for the VM.
+				// Please note that this key-generator is insecure!
+				// It is just for demonstration purpose.
+				noir_movsb(nsvm->aes_key,"NoirVisor SE",12);
+				*(u32p)&nsvm->aes_key[12]=vm->asid;
+				// Expand the key.
+				noir_aes128_expand_key(nsvm->aes_key,true,nsvm->expanded_encryption_keys);
+				noir_aes128_expand_key(nsvm->aes_key,false,nsvm->expanded_decryption_keys);
+				vm->header.vmsa.phys=noir_get_physical_address(vm->header.vmsa.virt);
+			}
+			else
+				goto alloc_failure;
+			// VMSA must be placed in Secure Memory.
+			if(!nvc_npt_reassign_page_ownership(&vm->header.vmsa.phys,&vm->header.vmsa.phys,1,0,false,noir_nsv_rmt_secure_guest))
 				goto alloc_failure;
 			// Allocate Locker list.
 			vm->header.locker_head=vm->header.locker_tail=noir_alloc_nonpg_memory(page_size);

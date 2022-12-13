@@ -1324,6 +1324,30 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_st
 			}
 			break;
 		}
+		case noir_svm_nsv_crypto_for_rmt:
+		{
+			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
+			{
+				noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
+#if defined(_hv_type1)
+				noir_rmt_crypto_context_p crypto=null;
+#else
+				noir_rmt_crypto_context_p crypto=(noir_rmt_crypto_context_p)context;
+#endif
+				noir_nsv_virtual_machine_p vm=crypto->vm;
+				for(u32 i=0;i<crypto->pages;i++)
+				{
+					const u64 pfn=page_count(crypto->hpa_list[i]);
+					void* page=(void*)crypto->hpa_list[i];
+					// If the page is assigned to a secure guest, then decryption is required.
+					if(rm_table[pfn].low.ownership==noir_nsv_rmt_secure_guest)
+						noir_aes128_decrypt_pages(page,vm->expanded_decryption_keys,1,vm->aes_key);
+					else
+						noir_aes128_encrypt_pages(page,vm->expanded_encryption_keys,1,vm->aes_key);
+				}
+			}
+			break;
+		}
 		default:
 		{
 			// This function leaf is unknown. Treat it as an invalid instruction.
