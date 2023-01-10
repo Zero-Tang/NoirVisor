@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file is the basic driver of Intel EPT.
 
@@ -140,7 +140,11 @@ typedef union _amd64_npt_pte
 typedef struct _noir_npt_pdpte_descriptor
 {
 	struct _noir_npt_pdpte_descriptor* next;
-	amd64_npt_pdpte_p virt;
+	union
+	{
+		amd64_npt_pdpte_p virt;
+		amd64_npt_huge_pdpte_p huge;
+	};
 	u64 phys;
 	u64 gpa_start;
 }noir_npt_pdpte_descriptor,*noir_npt_pdpte_descriptor_p;
@@ -150,7 +154,11 @@ typedef struct _noir_npt_pdpte_descriptor
 typedef struct _noir_npt_pde_descriptor
 {
 	struct _noir_npt_pde_descriptor* next;
-	amd64_npt_pde_p virt;
+	union
+	{
+		amd64_npt_pde_p virt;
+		amd64_npt_large_pde_p large;
+	};
 	u64 phys;
 	u64 gpa_start;
 }noir_npt_pde_descriptor,*noir_npt_pde_descriptor_p;
@@ -174,13 +182,13 @@ typedef struct _noir_npt_manager
 	}ncr3;
 	struct
 	{
-		amd64_npt_pdpte_p virt;
+		amd64_npt_huge_pdpte_p virt;
 		u64 phys;
 	}pdpt;
 	struct
 	{
-		amd64_npt_large_pde_p virt;
-		u64 phys;
+		noir_npt_pde_descriptor_p head;
+		noir_npt_pde_descriptor_p tail;
 	}pde;
 	struct
 	{
@@ -229,13 +237,13 @@ bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm);
 bool nvc_npt_initialize_ci(noir_npt_manager_p nptm);
 noir_npt_manager_p nvc_npt_build_identity_map();
 void nvc_npt_build_reverse_map();
-bool nvc_npt_update_pde(noir_npt_manager_p nptm,u64 hpa,bool r,bool w,bool x);
-bool nvc_npt_update_pte(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bool x);
+bool nvc_npt_update_pde(noir_npt_manager_p nptm,u64 gpa,u64 hpa,bool r,bool w,bool x,bool l,bool alloc);
+bool nvc_npt_update_pte(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bool x,bool alloc);
 #if defined(_hv_type1)
 bool nvc_npt_build_apic_shadowing(noir_svm_vcpu_p vcpu);
 void nvc_npt_setup_apic_shadowing(noir_svm_vcpu_p vcpu);
 #else
-void nvc_npt_build_hook_mapping(noir_svm_vcpu_p vcpu);
+void nvc_npt_build_hook_mapping(noir_npt_manager_p pri_nptm,noir_npt_manager_p sec_nptm);
 #endif
 void nvc_npt_cleanup(noir_npt_manager_p nptm);
 u32 nvc_npt_get_allocation_size();

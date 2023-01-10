@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file is the central HyperVisor of NoirVisor.
 
@@ -324,7 +324,8 @@ bool nvc_svm_subvert_system(noir_hypervisor_p hvm);
 void nvc_svm_restore_system(noir_hypervisor_p hvm);
 // Central Hypervisor Structure.
 void nvc_store_image_info(ulong_ptr* base,u32* size);
-noir_hypervisor_p hvm_p=null;
+noir_hypervisor hvm_t={0};
+noir_hypervisor_p hvm_p=&hvm_t;
 ulong_ptr system_cr3=0;
 ulong_ptr orig_system_call=0;
 char virtual_vstr[13]="AuthenticAMD\0";

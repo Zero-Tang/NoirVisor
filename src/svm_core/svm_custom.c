@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file is the customizable VM engine for AMD-V
 
@@ -1721,8 +1721,6 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 			if(vm->avic_logical.virt)noir_free_contd_memory(vm->avic_logical.virt,page_size);
 			if(vm->avic_physical.virt)noir_free_contd_memory(vm->avic_physical.virt,page_size);
 		}
-		// Release VM Structure.
-		noir_free_nonpg_memory(vm);
 	}
 }
 

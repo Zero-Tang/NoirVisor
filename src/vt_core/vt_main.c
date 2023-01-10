@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file is the basic driver of Intel VT-x.
 
@@ -461,7 +461,7 @@ void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_stat
 	state->cr4&=noir_rdmsr(ia32_vmx_cr4_fixed1);
 	noir_btr(&state->cr4,ia32_cr4_cet);			// Turn off CET in host mode.
 	noir_vt_vmwrite(host_cr0,state->cr0);
-	noir_vt_vmwrite(host_cr3,state->cr3);
+	noir_vt_vmwrite(host_cr3,system_cr3);
 	noir_vt_vmwrite(host_cr4,state->cr4);
 	noir_vt_vmwrite(host_msr_ia32_efer,state->efer);
 	// Host State Area - Stack Pointer, Instruction Pointer

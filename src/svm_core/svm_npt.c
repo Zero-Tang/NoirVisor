@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file is the basic driver of AMD-V Nested Paging.
 
@@ -37,9 +37,18 @@ void nvc_npt_cleanup(noir_npt_manager_p nptm)
 		if(nptm->ncr3.virt)
 			noir_free_contd_memory(nptm->ncr3.virt,page_size);
 		if(nptm->pdpt.virt)
-			noir_free_contd_memory(nptm->pdpt.virt,page_size);
-		if(nptm->pde.virt)
-			noir_free_2mb_page(nptm->pde.virt);
+			noir_free_2mb_page(nptm->pdpt.virt);
+		if(nptm->pde.head)
+		{
+			noir_npt_pde_descriptor_p cur=nptm->pde.head;
+			while(cur)
+			{
+				noir_npt_pde_descriptor_p next=cur->next;
+				noir_free_contd_memory(cur->virt,page_size);
+				noir_free_nonpg_memory(cur);
+				cur=next;
+			}
+		}
 		if(nptm->pte.head)
 		{
 			noir_npt_pte_descriptor_p cur=nptm->pte.head;
@@ -74,85 +83,209 @@ u8 nvc_npt_convert_pat_type(u64 pat,u8 type)
 	return final_type;
 }
 
-bool nvc_npt_update_pde(noir_npt_manager_p nptm,u64 hpa,bool r,bool w,bool x)
+// Splitted PDPTE must be described.
+noir_npt_pde_descriptor_p nvc_npt_split_pdpte(noir_npt_manager_p nptm,u64 gpa,bool host,bool alloc)
 {
-	amd64_addr_translator trans;
-	trans.value=hpa;
-	if(trans.pml4e_offset==0)
+	noir_npt_pde_descriptor_p pde_p=nptm->pde.head;
+	while(pde_p)
 	{
-		u32 index=(u32)((trans.pdpte_offset<<9)+trans.pde_offset);
-		nptm->pde.virt[index].present=r;
-		nptm->pde.virt[index].write=w;
-		nptm->pde.virt[index].no_execute=!x;
+		if(gpa>=pde_p->gpa_start && gpa<pde_p->gpa_start+page_1gb_size)
+			break;		// The 1GB page has already been described.
+		pde_p=pde_p->next;
+	}
+	if(alloc==true && pde_p==null)
+	{
+		// The 1GB page has not been described yet.
+		pde_p=noir_alloc_nonpg_memory(sizeof(noir_npt_pde_descriptor));
+		if(pde_p)
+		{
+			pde_p->virt=noir_alloc_contd_memory(page_size);
+			if(pde_p->virt)
+			{
+				const u64 index=page_1gb_count(gpa);
+				amd64_npt_pdpte_p pdpte_p=(amd64_npt_pdpte_p)&nptm->pdpt.virt[index];
+				// PDE Descriptor
+				pde_p->phys=noir_get_physical_address(pde_p->virt);
+				pde_p->gpa_start=index<<page_shift_diff64;
+				for(u32 i=0;i<page_table_entries64;i++)
+				{
+					pde_p->large[i].present=true;
+					pde_p->large[i].write=true;
+					pde_p->large[i].user=true;
+					pde_p->large[i].large_pde=true;
+					pde_p->large[i].no_execute=false;
+					pde_p->large[i].page_base=pde_p->gpa_start+i;
+				}
+				pde_p->gpa_start<<=page_2mb_shift;
+				// Append to Linked-List
+				if(nptm->pde.head && nptm->pde.tail)
+				{
+					nptm->pde.tail->next=pde_p;
+					nptm->pde.tail=pde_p;
+				}
+				else
+				{
+					nptm->pde.head=pde_p;
+					nptm->pde.tail=pde_p;
+				}
+				goto update_pdpte;
+			}
+			noir_free_nonpg_memory(pde_p);
+		}
+	}
+update_pdpte:
+	// If in host mode, update PDPTE.
+	if(host)
+	{
+		const u64 index=page_1gb_count(gpa);
+		amd64_npt_pdpte_p pdpte_p=(amd64_npt_pdpte_p)&nptm->pdpt.virt[index];
+		pdpte_p->reserved1=0;
+		pdpte_p->pde_base=page_4kb_count(pde_p->phys);
+	}
+	return pde_p;
+}
+
+// Splitted PDE must be described.
+noir_npt_pte_descriptor_p nvc_npt_split_pde(noir_npt_manager_p nptm,u64 gpa,bool host,bool alloc)
+{
+	noir_npt_pte_descriptor_p pte_p=nptm->pte.head;
+	while(pte_p)
+	{
+		if(gpa>=pte_p->gpa_start && gpa<pte_p->gpa_start+page_2mb_size)
+			break;		// The 2MB page has been described.
+		pte_p=pte_p->next;
+	}
+	if(alloc==true && pte_p==null)
+	{
+		// The 2MB page has not been described yet.
+		pte_p=noir_alloc_nonpg_memory(sizeof(noir_npt_pte_descriptor));
+		if(pte_p)
+		{
+			pte_p->virt=noir_alloc_contd_memory(page_size);
+			if(pte_p->virt)
+			{
+				// Split the PDPTE first.
+				noir_npt_pde_descriptor_p pde_p=nvc_npt_split_pdpte(nptm,gpa,host,true);
+				if(pde_p)
+				{
+					const u64 pfn_index=page_2mb_count(gpa);
+					const u64 pde_index=page_entry_index64(pfn_index);
+					// PTE Descriptor
+					pte_p->phys=noir_get_physical_address(pte_p->virt);
+					pte_p->gpa_start=pfn_index<<page_shift_diff64;
+					for(u32 i=0;i<page_table_entries64;i++)
+					{
+						pte_p->virt[i].present=true;
+						pte_p->virt[i].write=true;
+						pte_p->virt[i].user=true;
+						pte_p->virt[i].no_execute=false;
+						pte_p->virt[i].page_base=pte_p->gpa_start+i;
+					}
+					pte_p->gpa_start<<=page_4kb_shift;
+					// Append to Linked-List
+					if(nptm->pte.head && nptm->pte.tail)
+					{
+						nptm->pte.tail->next=pte_p;
+						nptm->pte.tail=pte_p;
+					}
+					else
+					{
+						nptm->pte.head=pte_p;
+						nptm->pte.tail=pte_p;
+					}
+					goto update_pde;
+				}
+				noir_free_contd_memory(pte_p->virt,page_size);
+			}
+			noir_free_nonpg_memory(pte_p);
+		}
+	}
+update_pde:
+	if(host)
+	{
+		// If in host mode, update PDE.
+		noir_npt_pde_descriptor_p pde_p=nvc_npt_split_pdpte(nptm,gpa,host,alloc);
+		if(pde_p)
+		{
+			const u64 pfn_index=page_2mb_count(gpa);
+			const u64 pde_index=page_entry_index64(pfn_index);
+			pde_p->virt[pde_index].reserved1=0;
+			pde_p->virt[pde_index].pte_base=page_4kb_count(pte_p->phys);
+		}
+	}
+	return pte_p;
+}
+
+bool nvc_npt_update_pdpte(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bool x,bool h,bool alloc)
+{
+	const u64 index=page_1gb_count(gpa);
+	amd64_npt_pdpte_p pdpte_p=(amd64_npt_pdpte_p)&nptm->pdpt.virt[index];
+	if(h)
+	{
+		// Reset to huge PDPTE.
+		nptm->pdpt.virt[index].huge_pdpte=true;
+		nptm->pdpt.virt[index].page_base=page_1gb_count(hpa);
+	}
+	else
+	{
+		// Split the PDPTE.
+		// If it is previously splitted, restore the mapping.
+		noir_npt_pde_descriptor_p pde_p=nvc_npt_split_pdpte(nptm,gpa,true,alloc);
+		if(!pde_p)return false;
+		pdpte_p->reserved1=0;
+		pdpte_p->pde_base=page_4kb_count(pde_p->phys);
+	}
+	pdpte_p->present=r;
+	pdpte_p->write=w;
+	pdpte_p->no_execute=!x;
+	return true;
+}
+
+bool nvc_npt_update_pde(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bool x,bool l,bool alloc)
+{
+	// Split the PDPTE.
+	noir_npt_pde_descriptor_p pde_p=nvc_npt_split_pdpte(nptm,gpa,true,alloc);
+	if(pde_p)
+	{
+		amd64_addr_translator gat;
+		gat.value=gpa;
+		if(l)
+		{
+			// Reset to large PDE.
+			pde_p->large[gat.pde_offset].large_pde=true;
+			pde_p->large[gat.pde_offset].page_base=page_2mb_count(hpa);
+		}
+		else
+		{
+			// Split the PDE.
+			// If it is previously splitted, restore the mapping.
+			noir_npt_pte_descriptor_p pte_p=nvc_npt_split_pde(nptm,gpa,true,alloc);
+			if(!pte_p)return false;
+			pde_p->virt[gat.pde_offset].reserved1=0;
+			pde_p->virt[gat.pde_offset].pte_base=page_4kb_count(pte_p->phys);
+		}
+		pde_p->virt[gat.pde_offset].present=r;
+		pde_p->virt[gat.pde_offset].write=w;
+		pde_p->virt[gat.pde_offset].no_execute=!x;
 		return true;
 	}
 	return false;
 }
 
-bool nvc_npt_update_pte(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bool x)
+bool nvc_npt_update_pte(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bool x,bool alloc)
 {
-	amd64_addr_translator hat,gat;
-	noir_npt_pte_descriptor_p pte_p=nptm->pte.head;
-	hat.value=hpa;
-	gat.value=gpa;
-	// Address above 512GB cannot be operated.
-	if(hat.pml4e_offset || gat.pml4e_offset)return false;
-	while(pte_p)
-	{
-		if(hpa>=pte_p->gpa_start && hpa<pte_p->gpa_start+page_2mb_size)
-		{
-			// The 2MB page has already been described.
-			pte_p->virt[gat.pte_offset].present=r;
-			pte_p->virt[gat.pte_offset].write=w;
-			pte_p->virt[gat.pte_offset].no_execute=!x;
-			pte_p->virt[gat.pte_offset].page_base=hpa>>12;
-			return true;
-		}
-		pte_p=pte_p->next;
-	}
-	// The 2MB page has not been described yet.
-	pte_p=noir_alloc_nonpg_memory(sizeof(noir_npt_pte_descriptor));
+	// Split the PTE
+	noir_npt_pte_descriptor_p pte_p=nvc_npt_split_pde(nptm,gpa,true,alloc);
 	if(pte_p)
 	{
-		pte_p->virt=noir_alloc_contd_memory(page_size);
-		if(pte_p->virt)
-		{
-			u64 index=(gat.pdpte_offset<<9)+gat.pde_offset;
-			amd64_npt_pde_p pde_p=(amd64_npt_pde_p)&nptm->pde.virt[index];
-			// PTE Descriptor
-			pte_p->phys=noir_get_physical_address(pte_p->virt);
-			pte_p->gpa_start=index<<9;
-			for(u32 i=0;i<512;i++)
-			{
-				pte_p->virt[i].present=true;
-				pte_p->virt[i].write=true;
-				pte_p->virt[i].user=true;
-				pte_p->virt[i].no_execute=false;
-				pte_p->virt[i].page_base=pte_p->gpa_start+i;
-			}
-			pte_p->gpa_start<<=12;
-			// Page Attributes
-			pte_p->virt[gat.pte_offset].present=r;
-			pte_p->virt[gat.pte_offset].write=w;
-			pte_p->virt[gat.pte_offset].no_execute=!x;
-			pte_p->virt[gat.pte_offset].page_base=hpa>>12;
-			// Update PDE
-			pde_p->reserved1=0;
-			pde_p->pte_base=pte_p->phys>>12;
-			// Update Linked-List
-			if(nptm->pte.head && nptm->pte.tail)
-			{
-				nptm->pte.tail->next=pte_p;
-				nptm->pte.tail=pte_p;
-			}
-			else
-			{
-				nptm->pte.head=pte_p;
-				nptm->pte.tail=pte_p;
-			}
-			return true;
-		}
-		noir_free_nonpg_memory(pte_p);
+		amd64_addr_translator gat;
+		gat.value=gpa;
+		// Update the specific PTE.
+		pte_p->virt[gat.pte_offset].present=r;
+		pte_p->virt[gat.pte_offset].write=w;
+		pte_p->virt[gat.pte_offset].no_execute=!x;
+		pte_p->virt[gat.pte_offset].page_base=page_4kb_count(hpa);
+		return true;
 	}
 	return false;
 }
@@ -173,30 +306,32 @@ bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm)
 	hvm->relative_hvm->blank_page.virt=noir_alloc_contd_memory(page_size);
 	if(hvm->relative_hvm->blank_page.virt)
 	{
+		noir_npt_manager_p pri_nptm=(noir_npt_manager_p)hvm->relative_hvm->primary_nptm;
 		bool result=true;
 		hvm->relative_hvm->blank_page.phys=noir_get_physical_address(hvm->relative_hvm->blank_page.virt);
 		// Protect HSAVE and VMCB
 		for(u32 i=0;i<hvm->cpu_count;i++)
 		{
 			noir_svm_vcpu_p vcpu=&hvm->virtual_cpu[i];
-			noir_npt_manager_p pri_nptm=(noir_npt_manager_p)vcpu->primary_nptm;
 			// Protect MSRPM and IOPM
-			result&=nvc_npt_update_pte(pri_nptm,hvm->relative_hvm->msrpm.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
-			result&=nvc_npt_update_pte(pri_nptm,vcpu->hsave.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
-			result&=nvc_npt_update_pte(pri_nptm,vcpu->vmcb.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
-			// Protect Nested Paging Structure
-			result&=nvc_npt_update_pte(pri_nptm,pri_nptm->ncr3.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
-			result&=nvc_npt_update_pte(pri_nptm,pri_nptm->pdpt.phys,hvm->relative_hvm->blank_page.phys,true,true,true);
-			// For PDE, memory usage would be too high to protect a 2MB page.
-			// Disable the writing permission is enough, though.
-			result&=nvc_npt_update_pde(pri_nptm,pri_nptm->pde.phys,true,false,true);
-			// Update PTEs...
-			for(noir_npt_pte_descriptor_p cur=pri_nptm->pte.head;cur;cur=cur->next)
-				result&=nvc_npt_update_pte(pri_nptm,cur->phys,hvm->relative_hvm->blank_page.phys,true,true,true);
-			// Protect Reverse-Mapping Table...
-			for(u64 phys=hvm->rmt.table.phys;phys<hvm->rmt.table.phys+hvm->rmt.size;phys+=page_size)
-				result&=nvc_npt_update_pte(pri_nptm,phys,phys,true,false,true);
+			result&=nvc_npt_update_pte(pri_nptm,hvm->relative_hvm->msrpm.phys,hvm->relative_hvm->blank_page.phys,true,true,true,true);
+			result&=nvc_npt_update_pte(pri_nptm,vcpu->hsave.phys,hvm->relative_hvm->blank_page.phys,true,true,true,true);
+			result&=nvc_npt_update_pte(pri_nptm,vcpu->vmcb.phys,hvm->relative_hvm->blank_page.phys,true,true,true,true);
 		}
+		// Protect Nested Paging Structure
+		result&=nvc_npt_update_pte(pri_nptm,pri_nptm->ncr3.phys,hvm->relative_hvm->blank_page.phys,true,true,true,true);
+		// For PDPTE, memory usage would be too high to protect a 2MB page.
+		// Disable the writing permission is enough, though.
+		result&=nvc_npt_update_pde(pri_nptm,pri_nptm->pdpt.phys,pri_nptm->pdpt.phys,true,false,true,true,true);
+		// Update PDEs...
+		for(noir_npt_pde_descriptor_p cur=pri_nptm->pde.head;cur;cur=cur->next)
+			result&=nvc_npt_update_pte(pri_nptm,cur->phys,hvm->relative_hvm->blank_page.phys,true,true,true,true);
+		// Update PTEs...
+		for(noir_npt_pte_descriptor_p cur=pri_nptm->pte.head;cur;cur=cur->next)
+			result&=nvc_npt_update_pte(pri_nptm,cur->phys,hvm->relative_hvm->blank_page.phys,true,true,true,true);
+		// Protect Reverse-Mapping Table...
+		for(u64 phys=hvm->rmt.table.phys;phys<hvm->rmt.table.phys+hvm->rmt.size;phys+=page_size)
+			result&=nvc_npt_update_pte(pri_nptm,phys,phys,true,false,true,true);
 		return result;
 	}
 	return false;
@@ -208,40 +343,42 @@ bool nvc_npt_initialize_ci(noir_npt_manager_p nptm)
 	for(u32 i=0;i<noir_ci->pages;i++)
 	{
 		u64 phys=noir_ci->page_ci[i].phys;
-		r&=nvc_npt_update_pte(nptm,phys,phys,true,false,true);
+		r&=nvc_npt_update_pte(nptm,phys,phys,true,false,true,true);
 		if(!r)break;
 	}
 	return r;
 }
 
 #if !defined(_hv_type1)
-void nvc_npt_build_hook_mapping(noir_svm_vcpu_p vcpu)
+void nvc_npt_build_hook_mapping(noir_npt_manager_p pri_nptm,noir_npt_manager_p sec_nptm)
 {
 	u32 i=0;
+	noir_npt_pde_descriptor_p pde_p=null;
 	noir_npt_pte_descriptor_p pte_p=null;
 	noir_hook_page_p nhp=null;
-	noir_npt_manager_p pri_nptm=(noir_npt_manager_p)vcpu->primary_nptm;
-	noir_npt_manager_p sec_nptm=(noir_npt_manager_p)vcpu->secondary_nptm;
 	// In this function, we build mappings necessary to make stealth inline hook.
 	for(nhp=noir_hook_pages;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
-		nvc_npt_update_pte(pri_nptm,nhp->orig.phys,nhp->orig.phys,true,true,false);
+		nvc_npt_update_pte(pri_nptm,nhp->orig.phys,nhp->orig.phys,true,true,false,true);
 	for(nhp=noir_hook_pages,i=0;i<noir_hook_pages_count;nhp=&noir_hook_pages[++i])
-		nvc_npt_update_pte(sec_nptm,nhp->hook.phys,nhp->orig.phys,true,true,true);
-	// Set all necessary PDEs to NX.
+		nvc_npt_update_pte(sec_nptm,nhp->hook.phys,nhp->orig.phys,true,true,true,true);
+	// Set all necessary PDPTEs to NX.
 	for(i=0;i<512;i++)
 	{
 		for(u32 j=0;j<512;j++)
 		{
 			u32 k=(i<<9)+j;
-			if(sec_nptm->pde.virt[k].large_pde)
-				sec_nptm->pde.virt[k].no_execute=true;
+			if(sec_nptm->pdpt.virt[k].huge_pdpte)sec_nptm->pdpt.virt[k].no_execute=true;
 		}
 	}
+	// Set all PDEs to NX
+	for(pde_p=sec_nptm->pde.head;pde_p;pde_p=pde_p->next)
+		for(i=0;i<512;i++)
+			pde_p->virt[i].no_execute=true;
 	// Set all PTEs to NX
 	for(pte_p=sec_nptm->pte.head;pte_p;pte_p=pte_p->next)
 		for(i=0;i<512;i++)
 			pte_p->virt[i].no_execute=true;
-	// Select PTEs that should be X.
+	// Select PTEs and PDEs that should be X.
 	for(nhp=sec_nptm->hook_pages,i=0;i<noir_hook_pages_count;nhp=&sec_nptm->hook_pages[++i])
 	{
 		amd64_addr_translator trans;
@@ -252,9 +389,20 @@ void nvc_npt_build_hook_mapping(noir_svm_vcpu_p vcpu)
 			if(nhp->orig.phys>=pte_p->gpa_start && nhp->orig.phys<pte_p->gpa_start+page_2mb_size)
 			{
 				// To enable execution of a specific 4KiB page, upper PDE should be executable as well.
-				nvc_npt_update_pde(sec_nptm,pte_p->gpa_start,true,true,true);
+				nvc_npt_update_pde(sec_nptm,0,pte_p->gpa_start,true,true,true,false,true);
 				pte_p->virt[trans.pte_offset].no_execute=false;
 				nhp->pte_descriptor=(void*)&pte_p->virt[trans.pte_offset];
+				break;
+			}
+		}
+		// Select PDE
+		for(pde_p=sec_nptm->pde.head;pde_p;pde_p=pde_p->next)
+		{
+			if(nhp->orig.phys>=pde_p->gpa_start && nhp->orig.phys<pde_p->gpa_start+page_1gb_size)
+			{
+				// To enable execution of a specific 4KiB page, upper PDPTE should be executable as well.
+				nvc_npt_update_pdpte(sec_nptm,0,pde_p->gpa_start,true,true,true,false,true);
+				pde_p->virt[trans.pde_offset].no_execute=false;
 				break;
 			}
 		}
@@ -308,11 +456,12 @@ void nvc_npt_setup_apic_shadowing(noir_svm_vcpu_p vcpu)
   mapped as long as top-of-memory is there. This allows scalable systems.
 
   Memory Consumption in Paging of each vCPU:
-  4KB for 1 PML4E page - only 1 entry is used for mapping 512GB physical memory.
-  4KB for 1 PDPTE page - all 512 entries are used for mapping 512*1GB=512GB physical memory.
-  2MB for 512 PDE pages - all 262144 entries are used for mapping 512*512*2MB=512GB physical memory.
+  4KiB for 1 PML4E page - all 512 entries are used for to fully cover the address space.
+  2MiB for 512 PDPTE page - the lowest entry uses 2MiB mapping and the higher 511 entries use 1GiB mapping.
+  2MiB for 512 PDE pages - all 262144 entries are used for mapping 512*512*2MB=512GB physical memory.
   We will allocate the PDEs on a single 2MB-aligned page.
 */
+
 noir_npt_manager_p nvc_npt_build_identity_map()
 {
 	u64 tom=noir_get_top_of_memory();
@@ -327,15 +476,10 @@ noir_npt_manager_p nvc_npt_build_identity_map()
 		nptm->ncr3.virt=noir_alloc_contd_memory(page_size);
 		if(nptm->ncr3.virt)
 		{
-			nptm->pdpt.virt=noir_alloc_contd_memory(page_size);
+			nptm->pdpt.virt=noir_alloc_2mb_page();
 			if(nptm->pdpt.virt)
 			{
-				nptm->pde.virt=noir_alloc_2mb_page();
-				if(nptm->pde.virt)
-				{
-					nptm->pde.phys=noir_get_physical_address(nptm->pde.virt);
-					alloc_success=true;
-				}
+				alloc_success=true;
 				nptm->pdpt.phys=noir_get_physical_address(nptm->pdpt.virt);
 			}
 			nptm->ncr3.phys=noir_get_physical_address(nptm->ncr3.virt);
@@ -348,29 +492,23 @@ noir_npt_manager_p nvc_npt_build_identity_map()
 			for(u32 j=0;j<512;j++)
 			{
 				const u32 k=(i<<9)+j;
-				// Build Page-Directory Entries (PDE)
-				nptm->pde.virt[k].value=0;
-				nptm->pde.virt[k].present=1;
-				nptm->pde.virt[k].write=1;
-				nptm->pde.virt[k].user=1;
-				nptm->pde.virt[k].large_pde=1;
-				nptm->pde.virt[k].page_base=k;
+				// Build Page-Directory Pointer Table Entries (PDPTE)
+				nptm->pdpt.virt[k].value=0;
+				nptm->pdpt.virt[k].present=1;
+				nptm->pdpt.virt[k].write=1;
+				nptm->pdpt.virt[k].user=1;
+				nptm->pdpt.virt[k].huge_pdpte=1;
+				nptm->pdpt.virt[k].page_base=k;
 			}
-			// Build Page-Directory Pointer Table Entries (PDPTE)
-			nptm->pdpt.virt[i].value=0;
-			nptm->pdpt.virt[i].present=1;
-			nptm->pdpt.virt[i].write=1;
-			nptm->pdpt.virt[i].user=1;
-			nptm->pdpt.virt[i].pde_base=(nptm->pde.phys>>12)+i;
+			// Build Page Map Level 4 Entries (PML4E)
+			nptm->ncr3.virt[i].value=0;
+			nptm->ncr3.virt[i].present=1;
+			nptm->ncr3.virt[i].write=1;
+			nptm->ncr3.virt[i].user=1;
+			nptm->ncr3.virt[i].pdpte_base=(nptm->pdpt.phys>>12)+i;
 		}
-		// Build Page Map Level 4 Entries (PML4E)
-		nptm->ncr3.virt->value=0;
-		nptm->ncr3.virt->present=1;
-		nptm->ncr3.virt->write=1;
-		nptm->ncr3.virt->user=1;
-		nptm->ncr3.virt->pdpte_base=nptm->pdpt.phys>>12;
 #if !defined(_hv_type1)
-		// Distribute the hook pages to each vCPU.
+		// Copy the hook-page info to the NPT Manager.
 		noir_copy_memory(&nptm->hook_pages,noir_hook_pages,sizeof(noir_hook_page)*noir_hook_pages_count);
 #endif
 	}
@@ -386,22 +524,22 @@ noir_npt_manager_p nvc_npt_build_identity_map()
 // Reverse Map: Essentials of NoirVisor Secure Virtualization.
 void nvc_npt_build_reverse_map()
 {
+	noir_npt_manager_p pri_nptm=hvm_p->relative_hvm->primary_nptm;
+	noir_npt_manager_p sec_nptm=hvm_p->relative_hvm->secondary_nptm;
 	// This is an initialization routine, call this at subversion only.
 	for(u32 i=0;i<hvm_p->cpu_count;i++)
 	{
 		noir_svm_vcpu_p vcpu=&hvm_p->virtual_cpu[i];
-		noir_npt_manager_p pri_nptm=(noir_npt_manager_p)vcpu->primary_nptm;
-		noir_npt_manager_p sec_nptm=(noir_npt_manager_p)vcpu->secondary_nptm;
 		// Critical Hypervisor Pages...
 		nvc_configure_reverse_mapping(vcpu->vmcb.phys,vcpu->vmcb.phys,0,true,noir_nsv_rmt_noirvisor);
 		nvc_configure_reverse_mapping(vcpu->hvmcb.phys,vcpu->hvmcb.phys,0,true,noir_nsv_rmt_noirvisor);
 		nvc_configure_reverse_mapping(vcpu->hsave.phys,vcpu->hsave.phys,0,true,noir_nsv_rmt_noirvisor);
-		// Nested Paging Structures...
-		nvc_configure_reverse_mapping(pri_nptm->ncr3.phys,pri_nptm->ncr3.phys,0,true,noir_nsv_rmt_noirvisor);
-		nvc_configure_reverse_mapping(pri_nptm->pdpt.phys,pri_nptm->pdpt.phys,0,true,noir_nsv_rmt_noirvisor);
-		for(u32 j=0;j<512;j++)nvc_configure_reverse_mapping(pri_nptm->pde.phys+page_mult(i),pri_nptm->pde.phys+page_mult(i),0,true,noir_nsv_rmt_noirvisor);
-		for(noir_npt_pte_descriptor_p cur=pri_nptm->pte.head;cur;cur=cur->next)nvc_configure_reverse_mapping(cur->phys,cur->phys,0,true,noir_nsv_rmt_noirvisor);
 	}
+	// Nested Paging Structures...
+	nvc_configure_reverse_mapping(pri_nptm->ncr3.phys,pri_nptm->ncr3.phys,0,true,noir_nsv_rmt_noirvisor);
+	for(u32 j=0;j<512;j++)nvc_configure_reverse_mapping(pri_nptm->pdpt.phys+page_mult(j),pri_nptm->pdpt.phys+page_mult(j),0,true,noir_nsv_rmt_noirvisor);
+	for(noir_npt_pde_descriptor_p cur=pri_nptm->pde.head;cur;cur=cur->next)nvc_configure_reverse_mapping(cur->phys,cur->phys,0,true,noir_nsv_rmt_noirvisor);
+	for(noir_npt_pte_descriptor_p cur=pri_nptm->pte.head;cur;cur=cur->next)nvc_configure_reverse_mapping(cur->phys,cur->phys,0,true,noir_nsv_rmt_noirvisor);
 	// MSRPM & IOPM
 	nvc_configure_reverse_mapping(hvm_p->relative_hvm->msrpm.phys,hvm_p->relative_hvm->msrpm.phys,0,true,noir_nsv_rmt_noirvisor);
 	nvc_configure_reverse_mapping(hvm_p->relative_hvm->msrpm.phys+page_size,hvm_p->relative_hvm->msrpm.phys+page_size,0,true,noir_nsv_rmt_noirvisor);
@@ -412,162 +550,119 @@ void nvc_npt_build_reverse_map()
 
 void nvc_npt_reassign_page_ownership_hvrt(noir_svm_vcpu_p vcpu,noir_rmt_remap_context_p context)
 {
-	// Hypervisor Routine for Page-Ownership Reassignment.
-	noir_npt_manager_p nptm=vcpu->primary_nptm;
+	noir_npt_manager_p nptm=hvm_p->relative_hvm->primary_nptm;
 	noir_rmt_entry_p rmt=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
+	// Perform remapping.
 	for(u32 i=0;i<context->pages;i++)
 	{
-		noir_npt_pte_descriptor_p pte_p=nptm->pte.head;
-		u64 hpa=context->hpa_list[i];
-		amd64_addr_translator trans;
-		trans.value=hpa;
-		context->status[vcpu->proc_id]=noir_unsuccessful;
-		while(pte_p)
+		const u64 hpa=context->hpa_list[i];
+		noir_npt_pde_descriptor_p pde_p=nvc_npt_split_pdpte(nptm,hpa,true,false);
+		noir_npt_pte_descriptor_p pte_p=nvc_npt_split_pde(nptm,hpa,true,false);
+		if(pde_p==null || pte_p==null)
 		{
-			if(hpa>=pte_p->gpa_start && hpa<pte_p->gpa_start+page_2mb_size)
+			context->status=noir_unsuccessful;
+			break;
+		}
+		else
+		{
+			const u64 index=page_4kb_count(hpa);
+			const u64 pte_i=page_entry_index64(index);
+			if(rmt[index].low.ownership==noir_nsv_rmt_noirvisor)
 			{
-				u64 index=page_2mb_count(hpa);
-				// If this large page was newly splitted, then split the PDE.
-				if(nptm->pde.virt[index].large_pde)
-				{
-					amd64_npt_pde_p pde_p=(amd64_npt_pde_p)&nptm->pde.virt[index];
-					const u64 pte_pfn=page_count(pte_p->phys);
-					pde_p->reserved1=0;
-					pde_p->pte_base=pte_pfn;
-				}
-				// The PDE is already splitted, process the page.
-				// If the page is reassigned to NoirVisor or Secure Guest, then revoke the access.
-				index=page_count(hpa);
-				if(rmt[index].low.ownership==noir_nsv_rmt_noirvisor)
-				{
-					// For debugging-purpose, pages assigned to NoirVisor can be readable.
-					pte_p->virt[trans.pte_offset].present=true;
-					pte_p->virt[trans.pte_offset].write=false;
-					pte_p->virt[trans.pte_offset].user=true;
-				}
-				else if(rmt[index].low.ownership==noir_nsv_rmt_secure_guest)
-				{
-					// If the page is assigned to a secure guest, no accesses should be granted.
-					pte_p->virt[trans.pte_offset].present=false;
-					pte_p->virt[trans.pte_offset].write=false;
-					pte_p->virt[trans.pte_offset].user=false;
-				}
-				else
-				{
-					// For subverted-host and insecure guest, pages should be fully accessible in host.
-					pte_p->virt[trans.pte_offset].present=true;
-					pte_p->virt[trans.pte_offset].write=true;
-					pte_p->virt[trans.pte_offset].user=true;
-				}
-				pte_p->virt[trans.pte_offset].no_execute=false;
-				context->status[vcpu->proc_id]=noir_success;
-				break;
+				// For debugging-purpose, pages assigned to NoirVisor can be readable.
+				pte_p->virt[pte_i].present=true;
+				pte_p->virt[pte_i].write=false;
+				pte_p->virt[pte_i].user=true;
 			}
-			pte_p=pte_p->next;
+			else if(rmt[index].low.ownership==noir_nsv_rmt_secure_guest)
+			{
+				// If the page is assigned to a secure guest, no accesses should be granted.
+				pte_p->virt[pte_i].present=false;
+				pte_p->virt[pte_i].write=false;
+				pte_p->virt[pte_i].user=false;
+			}
+			else
+			{
+				// For subverted-host and insecure guest, pages should be fully accessible in host.
+				pte_p->virt[pte_i].present=true;
+				pte_p->virt[pte_i].write=true;
+				pte_p->virt[pte_i].user=true;
+			}
+			pte_p->virt[pte_i].no_execute=false;
+			context->status=noir_success;
 		}
 	}
 	// This operation changes the mapping, so flush the TLB.
 	noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
 }
 
-void static nvc_npt_reassign_page_ownership_routine(void* context,u32 processor_id)
+void static nvc_npt_flush_tlb_generic_worker(void* context,u32 processor_id)
 {
-	// Broadcast Routine for Page-Ownership Reassignment.
-	noir_svm_vmmcall(noir_svm_nsv_remap_by_rmt,(ulong_ptr)context);
+	// Flush TLBs
+	noir_svm_vmmcall(noir_svm_call_flush_tlb,(ulong_ptr)context);
 }
 
 bool static nvc_npt_reassign_page_ownership_unsafe(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership)
 {
 	noir_rmt_entry_p rmt=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
-	noir_rmt_remap_context_p remap=noir_alloc_nonpg_memory(sizeof(noir_rmt_remap_context)+sizeof(noir_status)*hvm_p->cpu_count);
+	noir_rmt_remap_context remap;
 	noir_rmt_reassignment_context reassignment;
 	bool result=false;
-	if(remap)
+	noir_npt_manager_p pri_nptm=hvm_p->relative_hvm->primary_nptm;
+	// Stage I: Split the PDPTEs and PDEs, if haven't done already.
+	for(u32 i=0;i<pages;i++)
 	{
-		// Stage I: Check if the PDEs of the pages have been splitted.
-		for(u32 i=0;i<hvm_p->cpu_count;i++)
+		// Get splitted PDPTE and PDE.
+		noir_npt_pde_descriptor_p pde_p=nvc_npt_split_pdpte(pri_nptm,hpa[i],false,false);
+		noir_npt_pte_descriptor_p pte_p=nvc_npt_split_pde(pri_nptm,hpa[i],false,false);
+		if(pde_p==null)
 		{
-			noir_svm_vcpu_p vcpu=&hvm_p->virtual_cpu[i];
-			noir_npt_manager_p pri_nptm=(noir_npt_manager_p)vcpu->primary_nptm;
-			for(u32 j=0;j<pages;j++)
-			{
-				noir_npt_pte_descriptor_p pte_p=pri_nptm->pte.head;
-				while(pte_p)
-				{
-					if(hpa[j]>=pte_p->gpa_start && hpa[j]<pte_p->gpa_start+page_2mb_size)
-						break;		// This page has been splitted.
-					pte_p=pte_p->next;
-				}
-				if(!pte_p)
-				{
-					// This page has not been splitted yet. Describe the 2MiB page.
-					pte_p=noir_alloc_nonpg_memory(sizeof(noir_npt_pte_descriptor));
-					if(!pte_p)
-						goto alloc_failure;
-					else
-					{
-						pte_p->virt=noir_alloc_contd_memory(page_size);
-						if(!pte_p->virt)
-						{
-							noir_free_nonpg_memory(pte_p);
-							goto alloc_failure;
-						}
-						else
-						{
-							// Metadata of PTE descriptor.
-							pte_p->phys=noir_get_physical_address(pte_p->virt);
-							pte_p->gpa_start=page_2mb_base(hpa[j]);
-							// Insert to the end of linked list.
-							pri_nptm->pte.tail->next=pte_p;
-							pri_nptm->pte.tail=pte_p;
-							// Initialize the PTEs.
-							for(u32 k=0;k<512;k++)
-							{
-								pte_p->virt[k].value=pte_p->gpa_start+page_mult(k);
-								pte_p->virt[k].present=true;
-								pte_p->virt[k].write=true;
-								pte_p->virt[k].user=true;
-							}
-							// PTEs of NPT should be assigned to NoirVisor.
-							result=nvc_npt_reassign_page_ownership_unsafe(&pte_p->phys,&pte_p->phys,1,0,true,noir_nsv_rmt_noirvisor);
-							if(result==false)goto alloc_failure;
-						}
-					}
-				}
-			}
+			// Retry: PDPTE was not splitted yet. Split it now.
+			pde_p=nvc_npt_split_pdpte(pri_nptm,hpa[i],false,true);
+			// PDEs should be assigned to NoirVisor.
+			if(pde_p==null)goto alloc_failure;
+			result=nvc_npt_reassign_page_ownership_unsafe(&pde_p->phys,&pde_p->phys,1,0,true,noir_nsv_rmt_noirvisor);
+			if(result==false)goto alloc_failure;
 		}
-		// Stage II: Modify Reverse-Mapping Table
-		reassignment.hpa_list=hpa;
-		reassignment.gpa_list=gpa;
-		reassignment.pages=pages;
-		reassignment.asid=asid;
-		reassignment.shared=shared;
-		reassignment.ownership=ownership;
-		noir_svm_vmmcall(noir_svm_nsv_reassign_rmt,(ulong_ptr)&reassignment);
-		result=reassignment.result;
-		if(result)
+		if(pte_p==null)
 		{
-			// Stage III: Broadcast to all processors.
-			remap->hpa_list=hpa;
-			remap->pages=pages;
-			noir_generic_call(nvc_npt_reassign_page_ownership_routine,remap);
-			for(u32 i=0;i<hvm_p->cpu_count;i++)
-			{
-				result&=(remap->status[i]==noir_success);
-				if(!result)
-				{
-					nv_dprintf("[NoirVisor RMT] Failed to remap in processor %u! Status=0x%X\n",i,remap->status[i]);
-					noir_int3();
-				}
-			}
+			// Retry: PDE was not splitted yet. Split it now.
+			pte_p=nvc_npt_split_pde(pri_nptm,hpa[i],false,true);
+			// PTEs should be assigned to NoirVisor.
+			if(pte_p==null)goto alloc_failure;
+			result=nvc_npt_reassign_page_ownership_unsafe(&pte_p->phys,&pte_p->phys,1,0,true,noir_nsv_rmt_noirvisor);
+			if(result==false)goto alloc_failure;
 		}
+	}
+	// Stage II: Modify Reverse-Mapping Table
+	reassignment.hpa_list=hpa;
+	reassignment.gpa_list=gpa;
+	reassignment.pages=pages;
+	reassignment.asid=asid;
+	reassignment.shared=shared;
+	reassignment.ownership=ownership;
+	noir_svm_vmmcall(noir_svm_nsv_reassign_rmt,(ulong_ptr)&reassignment);
+	result=reassignment.result;
+	if(result)
+	{
+		// Stage III: Acquire exclusive executor.
+		remap.hpa_list=hpa;
+		remap.pages=pages;
+		noir_svm_vmmcall(noir_svm_nsv_remap_by_rmt,(ulong_ptr)&remap);
+		result=remap.status==noir_success;
+		if(result)		// Flush TLBs on all processors.
+			noir_generic_call(nvc_npt_flush_tlb_generic_worker,null);
 		else
 		{
-			nv_dprintf("[NoirVisor RMT] Failed to reassign RMT!\n");
+			nv_dprintf("[NoirVisor RMT] Failed to remap! Status=0x%X\n",remap.status);
 			noir_int3();
-			result=false;
 		}
-		noir_free_nonpg_memory(remap);
+	}
+	else
+	{
+		nv_dprintf("[NoirVisor RMT] Failed to reassign RMT!\n");
+		noir_int3();
+		result=false;
 	}
 alloc_failure:
 	if(!result)nv_dprintf("Failed to allocate memory for remapping!\n");
@@ -579,16 +674,14 @@ alloc_failure:
 bool nvc_npt_reassign_page_ownership(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership)
 {
 	bool result;
-	// Lock everything here we need in order to circumvent race condition and reentrance of locks.
-	for(u32 i=0;i<hvm_p->cpu_count;i++)
-		noir_acquire_pushlock_exclusive(&hvm_p->virtual_cpu[i].primary_nptm->nptm_lock);
+	// Lock everything we need here in order to circumvent race condition and reentrance of locks.
+	noir_acquire_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
 	noir_acquire_pushlock_exclusive(&hvm_p->rmt.lock);
 	// Now, perform reassignment.
 	result=nvc_npt_reassign_page_ownership_unsafe(hpa,gpa,pages,asid,shared,ownership);
 	// Unlock everything we locked.
 	noir_release_pushlock_exclusive(&hvm_p->rmt.lock);
-	for(u32 i=0;i<hvm_p->cpu_count;i++)
-		noir_release_pushlock_exclusive(&hvm_p->virtual_cpu[i].primary_nptm->nptm_lock);
+	noir_release_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
 	// Return
 	return result;
 }
@@ -601,15 +694,14 @@ bool nvc_npt_reassign_cvm_all_pages_ownership(noir_svm_custom_vm_p vm,u32 asid,b
 	noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
 	const u64 total_pages=hvm_p->rmt.size>>4;
 	u32 pages=0;
-	// Lock everything here we need in order to circumvent race condition and reentrance of locks.
-	for(u32 i=0;i<hvm_p->cpu_count;i++)
-		noir_acquire_pushlock_exclusive(&hvm_p->virtual_cpu[i].primary_nptm->nptm_lock);
+	// Lock everything we need here in order to circumvent race condition and reentrance of locks.
+	noir_acquire_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
 	noir_acquire_pushlock_exclusive(&hvm_p->rmt.lock);
 	// Stage I: Scan the Reverse-Mapping Table.
 	for(u64 i=0;i<total_pages;i++)
 		if(rm_table[i].low.asid==vm->asid)
-			pages++;	// Count the number of pages in the VM.
-	// Stage II: Make the list.
+			pages++;
+	// Stage II: Construct the list.
 	if(pages)
 	{
 		u64p gpa_list=noir_alloc_nonpg_memory(pages<<3);
@@ -627,7 +719,7 @@ bool nvc_npt_reassign_cvm_all_pages_ownership(noir_svm_custom_vm_p vm,u32 asid,b
 				}
 			}
 		}
-		// Stage III: Perform reassignment
+		// Stage III: Perform reassignment.
 		if(j==pages)result=nvc_npt_reassign_page_ownership_unsafe(hpa_list,gpa_list,pages,asid,shared,ownership);
 		// Release list...
 		if(gpa_list)noir_free_nonpg_memory(gpa_list);
@@ -635,8 +727,7 @@ bool nvc_npt_reassign_cvm_all_pages_ownership(noir_svm_custom_vm_p vm,u32 asid,b
 	}
 	// Unlock everything we locked.
 	noir_release_pushlock_exclusive(&hvm_p->rmt.lock);
-	for(u32 i=0;i<hvm_p->cpu_count;i++)
-		noir_release_pushlock_exclusive(&hvm_p->virtual_cpu[i].primary_nptm->nptm_lock);
+	noir_release_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
 	// Return
 	return result;
 }

@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file is the central HyperVisor of NoirVisor.
 
@@ -183,7 +183,7 @@ u64 nvc_translate_address_l2(u64 cr3,u32 gva,bool write,bool *fault)
 		// Large Page.
 		phys|=trans.pte<<page_shift;
 		phys|=pde[trans.pde].large_pde.base_lo<<(page_shift+page_shift_diff32);
-		phys|=pde[trans.pde].large_pde.base_hi<<(page_shift+page_shift_diff32+page_shift_diff32);
+		phys|=((u64)pde[trans.pde].large_pde.base_hi)<<(page_shift+page_shift_diff32+page_shift_diff32);
 	}
 	else
 	{
@@ -1013,6 +1013,8 @@ noir_status nvc_release_vm(noir_cvm_virtual_machine_p vm)
 		// Remove the vCPU list Resource Lock.
 		if(vm->vcpu_list_lock)noir_finalize_reslock(vm->vcpu_list_lock);
 		noir_release_reslock(noir_vm_list_lock);
+		// Release VM Structure.
+		noir_free_nonpg_memory(vm);
 	}
 	return st;
 }
@@ -1250,96 +1252,88 @@ bool nvc_build_reverse_mapping_table()
 
 noir_status nvc_build_hypervisor()
 {
-	hvm_p=noir_alloc_nonpg_memory(sizeof(noir_hypervisor));
-	if(hvm_p)
+	noir_get_vendor_string(hvm_p->vendor_string);
+	hvm_p->cpu_manuf=nvc_confirm_cpu_manufacturer(hvm_p->vendor_string);
+	hvm_p->options.value=noir_query_enabled_features_in_system();
+	nvc_store_image_info(&hvm_p->hv_image.base,&hvm_p->hv_image.size);
+	switch(hvm_p->cpu_manuf)
 	{
-		noir_get_vendor_string(hvm_p->vendor_string);
-		hvm_p->cpu_manuf=nvc_confirm_cpu_manufacturer(hvm_p->vendor_string);
-		hvm_p->options.value=noir_query_enabled_features_in_system();
-		nvc_store_image_info(&hvm_p->hv_image.base,&hvm_p->hv_image.size);
-		switch(hvm_p->cpu_manuf)
+		case intel_processor:
+			goto vmx_subversion;
+		case amd_processor:
+			goto svm_subversion;
+		case via_processor:
+			goto vmx_subversion;
+		case zhaoxin_processor:
+			goto vmx_subversion;
+		case hygon_processor:
+			goto svm_subversion;
+		case centaur_processor:
+			goto vmx_subversion;
+		default:
 		{
-			case intel_processor:
-				goto vmx_subversion;
-			case amd_processor:
-				goto svm_subversion;
-			case via_processor:
-				goto vmx_subversion;
-			case zhaoxin_processor:
-				goto vmx_subversion;
-			case hygon_processor:
-				goto svm_subversion;
-			case centaur_processor:
-				goto vmx_subversion;
-			default:
-			{
-				if(hvm_p->cpu_manuf==unknown_processor)
-					nv_dprintf("You are using unknown manufacturer's processor!\n");
-				else
-					nv_dprintf("Your processor is manufactured by rare known vendor that NoirVisor currently failed to support!\n");
-				return noir_unknown_processor;
-			}
+			if(hvm_p->cpu_manuf==unknown_processor)
+				nv_dprintf("You are using unknown manufacturer's processor!\n");
+			else
+				nv_dprintf("Your processor is manufactured by rare known vendor that NoirVisor currently failed to support!\n");
+			return noir_unknown_processor;
+		}
 vmx_subversion:
-			hvm_p->selected_core=use_vt_core;
-			if(nvc_is_vt_supported())
-			{
-				nv_dprintf("Starting subversion with VMX Engine!\n");
-				return nvc_vt_subvert_system(hvm_p);
-			}
-			else
-			{
-				nv_dprintf("Your processor does not support Intel VT-x!\n");
-				return noir_vmx_not_supported;
-			}
+		hvm_p->selected_core=use_vt_core;
+		if(nvc_is_vt_supported())
+		{
+			nv_dprintf("Starting subversion with VMX Engine!\n");
+			return nvc_vt_subvert_system(hvm_p);
+		}
+		else
+		{
+			nv_dprintf("Your processor does not support Intel VT-x!\n");
+			return noir_vmx_not_supported;
+		}
 svm_subversion:
-			hvm_p->selected_core=use_svm_core;
-			if(nvc_is_svm_supported())
-			{
-				nv_dprintf("Starting subversion with SVM Engine!\n");
-				return nvc_svm_subvert_system(hvm_p);
-			}
-			else
-			{
-				nv_dprintf("Your processor does not support AMD-V!\n");
-				return noir_svm_not_supported;
-			}
+		hvm_p->selected_core=use_svm_core;
+		if(nvc_is_svm_supported())
+		{
+			nv_dprintf("Starting subversion with SVM Engine!\n");
+			return nvc_svm_subvert_system(hvm_p);
+		}
+		else
+		{
+			nv_dprintf("Your processor does not support AMD-V!\n");
+			return noir_svm_not_supported;
 		}
 	}
-	return noir_insufficient_resources;
+	return noir_unsuccessful;
 }
 
 void nvc_teardown_hypervisor()
 {
-	if(hvm_p)
+	switch(hvm_p->cpu_manuf)
 	{
-		switch(hvm_p->cpu_manuf)
+		case intel_processor:
+			goto vmx_restoration;
+		case amd_processor:
+			goto svm_restoration;
+		case via_processor:
+			goto vmx_restoration;
+		case zhaoxin_processor:
+			goto vmx_restoration;
+		case hygon_processor:
+			goto svm_restoration;
+		case centaur_processor:
+			goto vmx_restoration;
+		default:
 		{
-			case intel_processor:
-				goto vmx_restoration;
-			case amd_processor:
-				goto svm_restoration;
-			case via_processor:
-				goto vmx_restoration;
-			case zhaoxin_processor:
-				goto vmx_restoration;
-			case hygon_processor:
-				goto svm_restoration;
-			case centaur_processor:
-				goto vmx_restoration;
-			default:
-			{
-				nv_dprintf("Unknown Processor!\n");
-				goto end_restoration;
-			}
-vmx_restoration:
-			nvc_vt_restore_system(hvm_p);
+			nv_dprintf("Unknown Processor!\n");
 			goto end_restoration;
-svm_restoration:
-			nvc_svm_restore_system(hvm_p);
-			goto end_restoration;
-end_restoration:
-			nv_dprintf("Restoration Complete...\n");
 		}
-		noir_free_nonpg_memory(hvm_p);
+vmx_restoration:
+		nvc_vt_restore_system(hvm_p);
+		goto end_restoration;
+svm_restoration:
+		nvc_svm_restore_system(hvm_p);
+		goto end_restoration;
+end_restoration:
+		nv_dprintf("Restoration Complete...\n");
 	}
 }

@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file is the basic driver of AMD-V.
 
@@ -240,7 +240,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	if(vcpu->enabled_feature & noir_svm_nested_paging)
 	{
 		// Enable NPT
-		noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->primary_nptm;
+		noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->relative_hvm->primary_nptm;
 		nvc_svm_npt_control npt_ctrl;
 		npt_ctrl.value=0;
 		npt_ctrl.enable_npt=1;
@@ -513,18 +513,18 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 				noir_free_nonpg_memory(vcpu->hv_stack);
 			if(vcpu->cvm_state.xsave_area)
 				noir_free_contd_memory(vcpu->cvm_state.xsave_area,page_size);
-			if(vcpu->primary_nptm)
-				nvc_npt_cleanup(vcpu->primary_nptm);
-#if !defined(_hv_type1)
-			if(vcpu->secondary_nptm)
-				nvc_npt_cleanup(vcpu->secondary_nptm);
-#endif
 			for(u32 j=0;j<noir_svm_cached_nested_vmcb;j++)
 				if(vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt)
 					noir_free_contd_memory(vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt,page_size);
 		}
 		noir_free_nonpg_memory(hvm_p->virtual_cpu);
 	}
+	if(hvm_p->relative_hvm->primary_nptm)
+		nvc_npt_cleanup(hvm_p->relative_hvm->primary_nptm);
+#if !defined(_hv_type1)
+	if(hvm_p->relative_hvm->secondary_nptm)
+		nvc_npt_cleanup(hvm_p->relative_hvm->secondary_nptm);
+#endif
 	if(hvm_p->relative_hvm->msrpm.virt)
 		noir_free_contd_memory(hvm_p->relative_hvm->msrpm.virt,page_size*2);
 	if(hvm_p->relative_hvm->iopm.virt)
@@ -584,24 +584,6 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			vcpu->cvm_state.xsave_area=noir_alloc_contd_memory(hvm_p->xfeat.supported_size_max);
 			if(vcpu->cvm_state.xsave_area==null)goto alloc_failure;
 			vcpu->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
-			vcpu->primary_nptm=nvc_npt_build_identity_map();
-			if(vcpu->primary_nptm==null)goto alloc_failure;
-#if !defined(_hv_type1)
-			// Only Type-II Hypervisor would hook into guest.
-			vcpu->secondary_nptm=nvc_npt_build_identity_map();
-			if(vcpu->secondary_nptm==null)goto alloc_failure;
-			if(hvm_p->options.stealth_inline_hook)
-				nvc_npt_build_hook_mapping(vcpu);		// This feature does not have a good performance.
-#else
-			// Type-I Hypervisor must set up shadowed APIC page.
-			vcpu->sapic.virt=noir_alloc_contd_memory(page_size);
-			if(vcpu->sapic.virt)
-				vcpu->sapic.phys=noir_get_physical_address(vcpu->sapic.virt);
-			else
-				goto alloc_failure;
-			if(nvc_npt_build_apic_shadowing(vcpu)==false)
-				goto alloc_failure;
-#endif
 			if(hvm_p->options.nested_virtualization)		// Setup Nested Hypervisor
 			{
 				for(u32 j=0;j<noir_svm_cached_nested_vmcb;j++)
@@ -614,7 +596,6 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 				}
 				nvc_svm_initialize_nested_vcpu_node_pool(&vcpu->nested_hvm);
 			}
-			if(nvc_npt_initialize_ci(vcpu->primary_nptm)==false)goto alloc_failure;
 #if !defined(_hv_type1)
 			if(hvm_p->options.stealth_msr_hook)vcpu->enabled_feature|=noir_svm_syscall_hook;
 			if(hvm_p->options.stealth_inline_hook)vcpu->enabled_feature|=noir_svm_npt_with_hooks;
@@ -626,6 +607,19 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 #endif
 		}
 	}
+	hvm_p->relative_hvm->primary_nptm=nvc_npt_build_identity_map();
+	if(hvm_p->relative_hvm->primary_nptm==null)goto alloc_failure;
+#if !defined(_hv_type1)
+	// Only Type-II Hypervisor would hook into guest.
+	hvm_p->relative_hvm->secondary_nptm=nvc_npt_build_identity_map();
+	if(hvm_p->relative_hvm->secondary_nptm==null)goto alloc_failure;
+	if(hvm_p->options.stealth_inline_hook)		// This feature does not have a good performance.
+		nvc_npt_build_hook_mapping(hvm_p->relative_hvm->primary_nptm,hvm_p->relative_hvm->secondary_nptm);
+#else
+	if(nvc_npt_build_apic_shadowing(vcpu)==false)
+		goto alloc_failure;
+#endif
+	if(nvc_npt_initialize_ci(hvm_p->relative_hvm->primary_nptm)==false)goto alloc_failure;
 	hvm_p->host_pat.value=noir_rdmsr(amd64_pat);
 	hvm_p->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();
 	if(hvm_p->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;

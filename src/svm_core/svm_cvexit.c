@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file is the Exit Handler of CVM in SVM-Core.
 
@@ -23,6 +23,41 @@
 #include "svm_npt.h"
 #include "svm_exit.h"
 #include "svm_def.h"
+
+void noir_hvcode nvc_svm_inject_cvm_exception(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu,u8 vector,bool ev,u32 error_code,u64 pf_addr,u8 fetch_length,u8p fetched_instruction)
+{
+	// FIXME: If guest enabled SVM, injection should consider L1 hypervisor's interceptions.
+	if(noir_bt(&cvcpu->header.exception_bitmap,vector)==false)
+	{
+		noir_svm_inject_event(cvcpu->vmcb.virt,vector,amd64_fault_trap_exception,ev,true,error_code);
+		if(vector==amd64_page_fault)
+		{
+			// For #PF exceptions, CR2 must be taken care of.
+			noir_svm_vmwrite64(cvcpu->vmcb.virt,guest_cr2,pf_addr);
+			noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_cr2);
+		}
+		// Profiler: Classify the interception as emulation.
+		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
+	}
+	else
+	{
+		// The host specified interception on this exception.
+		nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+		cvcpu->header.exit_context.intercept_code=cv_exception;
+		cvcpu->header.exit_context.exception.vector=vector;
+		cvcpu->header.exit_context.exception.ev_valid=ev;
+		cvcpu->header.exit_context.exception.reserved=0;
+		cvcpu->header.exit_context.exception.error_code=error_code;
+		if(vector==amd64_page_fault)
+		{
+			cvcpu->header.exit_context.exception.pf_addr=pf_addr;
+			cvcpu->header.exit_context.exception.fetched_bytes=fetch_length<15?fetch_length:15;
+			noir_movsb(cvcpu->header.exit_context.exception.instruction_bytes,fetched_instruction,cvcpu->header.exit_context.exception.fetched_bytes);
+		}
+		// Profiler: Classify the interception as exception interception.
+		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.exception;
+	}
+}
 
 // Unexpected VM-Exit occured!
 void static noir_hvcode fastcall nvc_svm_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
@@ -222,7 +257,7 @@ void static noir_hvcode fastcall nvc_svm_exception_cvexit_handler(noir_gpr_state
 void static noir_hvcode fastcall nvc_svm_mc_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// Machine-Check is intercepted.
-	// CVM User is not supposed to intercept an #MC exception.
+	// CVM User is not supposed to intercept a physical #MC exception.
 	// Transfer the #MC exception to the host.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 	// Treat #MC as a scheduler's exit.
@@ -376,23 +411,9 @@ void static noir_hvcode fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p g
 // Expected Intercept Code: 0x73
 void static noir_hvcode fastcall nvc_svm_rsm_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	noir_nsv_virtual_cpu_p nsvcpu=(noir_nsv_virtual_cpu_p)cvcpu->header.vmsa.virt;
-	if(cvcpu->vm->header.properties.nsv_guest)
-	{
-		// For NSV guests, interceptions should be converted into Non-Automatic Exits.
-		nvc_svm_nsv_load_nae_synthetic_msr_state(cvcpu);
-		nsvcpu->nsvs.vc_error_code=cv_rsm_instruction;
-		nsvcpu->nsvs.vc_info1=nsvcpu->nsvs.vc_info2=0;
-	}
-	else
-	{
-		// NoirVisor does not know if the vCPU is running in SMM.
-		// Let the User Hypervisor emulate the SMM for the Guest.
-		nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
-		cvcpu->header.exit_context.intercept_code=cv_rsm_instruction;
-		// Profiler: Classify the interception.
-		cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.rsm;
-	}
+	// FIXME: Implement SMM.
+	// Current implementation will inject #UD.
+	nvc_svm_inject_cvm_exception(gpr_state,vcpu,cvcpu,amd64_invalid_opcode,false,0,0,0,null);
 }
 
 // Expected Intercept Code: 0x74

@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file is header file for Customizable VM of NoirVisor.
 
@@ -54,7 +54,6 @@ typedef enum _noir_cvm_intercept_code
 	cv_interrupt_window=14,
 	cv_task_switch=15,
 	cv_single_step=16,
-	cv_monitor_trap=18,
 	// The rest are scheduler-relevant.
 	cv_scheduler_exit=0x80000000,
 	cv_scheduler_pause=0x80000001,
@@ -658,7 +657,7 @@ typedef struct _noir_rmt_remap_context
 {
 	u64p hpa_list;
 	u32 pages;
-	noir_status status[1];
+	noir_status status;
 }noir_rmt_remap_context,*noir_rmt_remap_context_p;
 
 typedef struct _noir_rmt_reassignment_context

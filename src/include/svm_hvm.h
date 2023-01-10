@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file defines structures and constants for SVM Driver of NoirVisor.
 
@@ -15,7 +15,8 @@
 #include <nvdef.h>
 
 // Definition of vmmcall Codes
-#define noir_svm_callexit					0x1
+#define noir_svm_callexit					0x1		// Restore from subversion.
+#define noir_svm_call_flush_tlb				0x2		// Flush TLBs.
 
 #define noir_svm_init_custom_vmcb			0x10000
 #define noir_svm_run_custom_vcpu			0x10001
@@ -36,7 +37,7 @@
 #define noir_svm_npt_with_hooks				64		// Bit 6
 #define noir_svm_kva_shadow_present			128		// Bit 7
 
-// Definition of vCPU Global Status Bit Fields
+// Definition of vCPU APIC Global Status Bit Fields
 #define noir_svm_sipi_sent					0
 #define noir_svm_init_receiving				1
 #define noir_svm_apic_access				2
@@ -83,6 +84,13 @@ typedef struct _noir_svm_hvm
 	memory_descriptor msrpm;
 	memory_descriptor iopm;
 	memory_descriptor blank_page;
+	struct _noir_npt_manager* primary_nptm;
+#if !defined(_hv_type1)
+	struct _noir_npt_manager* secondary_nptm;
+#else
+	u64 apic_base;
+	union _amd64_npt_pte *apic_pte;
+#endif
 	struct
 	{
 		u32 asid_limit;
@@ -182,14 +190,6 @@ typedef struct _noir_svm_vcpu
 		ulong_ptr rip;
 		u64 fault_info;
 	}fallback;
-	struct _noir_npt_manager* primary_nptm;
-#if !defined(_hv_type1)
-	struct _noir_npt_manager* secondary_nptm;
-#else
-	memory_descriptor sapic;
-	u64 apic_base;
-	union _amd64_npt_pte *apic_pte;
-#endif
 	noir_mshv_vcpu mshvcpu;
 	u32 proc_id;
 	u32 apic_id;
@@ -349,6 +349,7 @@ void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void nvc_svm_inject_cvm_exception(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu,u8 vector,bool ev,u32 error_code,u64 pf_addr,u8 fetch_length,u8p fetched_instruction);
 bool nvc_svm_nsv_save_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 bool nvc_svm_nsv_load_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_load_basic_exit_context(noir_svm_custom_vcpu_p vcpu);

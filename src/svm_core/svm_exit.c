@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file is the basic Exit Handler of SVM Driver.
 
@@ -1210,6 +1210,15 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_st
 				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,false,0);
 			break;
 		}
+		case noir_svm_call_flush_tlb:
+		{
+			// Validate the caller. Only Layered Hypervisor is authorized to flush TLBs.
+			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
+				noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+			else
+				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,false,0);
+			break;
+		}
 		case noir_svm_init_custom_vmcb:
 		{
 			// Validate the caller. Only Layered Hypervisor is authorized to invoke CVM hypercalls.
@@ -1551,14 +1560,14 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 			while(hi>=lo)
 			{
 				i32 mid=(lo+hi)>>1;
-				noir_hook_page_p nhp=&vcpu->secondary_nptm->hook_pages[mid];
+				noir_hook_page_p nhp=&vcpu->relative_hvm->secondary_nptm->hook_pages[mid];
 				if(gpa>=nhp->orig.phys+page_size)
 					lo=mid+1;
 				else if(gpa<nhp->orig.phys)
 					hi=mid-1;
 				else
 				{
-					noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->secondary_nptm;
+					noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->relative_hvm->secondary_nptm;
 					noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
 					advance=false;
 					break;
@@ -1568,7 +1577,7 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 			{
 				// Execution is outside hooked page.
 				// We should switch to primary.
-				noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->primary_nptm;
+				noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->relative_hvm->primary_nptm;
 				noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
 				advance=false;
 			}

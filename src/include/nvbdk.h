@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2022, Zero Tang. All rights reserved.
+  Copyright 2018-2023, Zero Tang. All rights reserved.
 
   This file is the basic development kit of NoirVisor.
   Do not include definitions related to virtualization in this header.
@@ -25,11 +25,19 @@
 
 #if defined(_amd64)
 #define page_shift_diff			9
+#define page_table_entries		512
+#define page_entry_index(x)		((x)&511)
 #else
 #define page_shift_diff			10
+#define page_table_entries		1024
+#define page_entry_index(x)		((x)&1023)
 #endif
-#define page_shift_diff32		9
+#define page_shift_diff32		10
+#define page_table_entries32	1024
+#define page_entry_index32(x)	((x)&1023)
 #define page_shift_diff64		9
+#define page_table_entries64	512
+#define page_entry_index64(x)	((x)&511)
 
 #define page_shift				12
 #define page_4kb_shift			12

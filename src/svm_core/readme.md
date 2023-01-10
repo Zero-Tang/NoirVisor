@@ -490,27 +490,20 @@ In NoirVisor x Columbia Crossover Event, `#NPF` fault is now associated with MMI
 NoirVisor does not keep GPA-to-HVA translation on track. However, NoirVisor, if installed as a Type-II hypervisor, loads a special page table that maps both an identity map of physical memory and regular system memory. Therefore, when NoirVisor has to operate the guest pages, the only required actions are translating the GVA to HPA. Not to mention if NoirVisor is installed as a Type-I hypervisor, only HPA can be accessed.
 
 ## SMM Virtualization
-SMM, abbreviation that stands for System Management Mode, is a standard x86 component to handle critical system-control activities (e.g.: Power Management, Interactions with NVRAM on motherboard, etc.). <br>
-Current implementation of NoirVisor does not emulate System Management Mode. Support to NoirVisor's virtualization will be implemented in future.
+SMM, abbreviation that stands for System Management Mode, is a standard x86 component to handle critical system-control activities (e.g.: Power Management, Interactions with NVRAM on motherboard, etc.). \
+This chapter provides a preliminary draft of virtualizing SMM.
 
 ### SMRAM Virtualization
-SMRAM is a special memory area consists of 64KiB of memory. It is an independent RAM storage and is not located on the main system memory. For example, if the `SMBASE` is pointed to 0x00030000, memory accesses to `0x00030000-0x0003FFFF` are different from inside and outside of SMM. By virtue of this, User Hypervisor is responsible to set up a different mapping when the vCPU is entering SMM. <br>
+SMRAM is a special memory area consists of 64KiB of memory. It is an independent RAM storage and is not located on the main system memory. For example, if the `SMBASE` is pointed to 0x00030000, memory accesses to `0x00030000-0x0003FFFF` are different from inside and outside of SMM. By virtue of this, User Hypervisor is responsible to set up a different mapping when the vCPU is entering SMM. \
+The User Hypervisor may specify support for SMM so that, on VM creation, two sets of mapping will be created: one for regular mode, and the other for mapping SMRAM. They will have different ASIDs.
 
-### Guidelines for SMM Emulation
-As previously pointed out, SMM Emulation is User Hypervisor's responsibility. NoirVisor is completely unaware of whether the vCPU is running in SMM or not. <br>
+### Virtualizing SMI
+NoirVisor defines a new type of interrupt to indicate the SMI. When `vGIF` is set and the processor is not in SMM, the pending SMI will be immediately injected by NoirVisor. The state of the vCPU is reset by NoirVisor when virtualizing SMM.
 
-1. User Hypervisor must specify to intercept `rsm` instruction. Otherwise, any execution of `rsm` instruction will be treated as `#UD` exception and thereby guest can not leave `SMM`.
-2. User Hypervisor must emulate the entrance and exit of `SMM`.
-	- For entrance to SMM, User Hypervisor must map the SMRAM to the guest. Then save and initialize the processor state for the guest.
-	- For exit from SMM, User Hypervisor must unmap the SMRAM from the guest. Then restore the processor state for the guest.
-	- User Hypervisor may use Memory-Mapping Swapping Facility to accelerate the remappings of SMRAM.
-3. User Hypervisor must intercept accesses to MSRs for SMM. Note that definitions for System Management Mode MSRs on AMD are different from Intel.
-4. User Hypervisor must revoke any pending interrupts when emulating the entrance of SMM.
-	- SMM is a highly atomic execution environment. No external interrupts should be taken while in SMM.
-	- Guest may purposefully execute `iret` instruction in order to allow NMIs to be taken in SMM. User Hypervisors must intercept NMI-window in order to emulate this aspect.
-	- SMIs must be held pending while the vCPU is in SMM.
-5. User Hypervisor must treat `rsm` as undefined instruction outside SMM. User Hypervisors may cancel the interception of `rsm` instructions outside SMM. Unintercepted `rsm` instructions will be automatically treated as unrecognizable instructions (i.e.: trigger `#UD` exception).
-6. Some fields in SMRAM State Save Area are read-only. According to the processor manual, writing them would cause unpredictable results. It is User Hypervisor's responsibility to emulate the "unpredictable results". Because the State Save Area is smaller than a page (512 bytes), use integrity-cryptographical validation approach (e.g.: CRC32C, MD5, SHA, SM3, etc.) is recommended rather than intercepting the writes.
+Returning from SMM is virtualized by NoirVisor by intercepting the `rsm` instructions.
+
+### SMRAM Relocation
+SMRAM relocation must be supported on multi-processing systems, or otherwise the system will face serious race conditions when multiple SMIs arrive on different cores simultaneously.
 
 ## APIC Virtualization
 APIC, acronym that stands for Advance Programmable Interrupt Controller, is a standard x86 component to utilize multi-core processing. Although Customizable VM does not necessarily need APIC to call other cores - hypercalls can be used instead - virtualization of APIC is favorable at best. <br>
@@ -533,30 +526,19 @@ When NoirVisor schedules a vCPU onto the physical core, the `Is Running` bit and
 When NoirVisor schedules a vCPU out of the physical core, the `Is Running` bit should be cleared so AVIC will not deliver IPI to a wrong physical core but will trigger a VM-Exit instead.
 
 ### APIC Virtualization without AVIC
-Currently implementation of NoirVisor requires the User Hypervisor to emulate the behavior of APIC accesses.
+Currently implementation of NoirVisor requires the User Hypervisor to emulate the behavior of APIC accesses. \
+User hypervisor must explicitly unmap the memory region of the APIC page so that any APIC-page accesses will result in Memory-Access interceptions. NoirVisor will help decoding the MMIO instruction. Contents in APIC page, however, must be virtualized by user hypervisor.
 
-#### MSR Interception and Nested Paging
-When write to the APIC Base Address Register `MSR[0x1B]` is intercepted, set the APIC page to be uncacheable and unwritable (read and execution are allowed) via nested paging mechanism. <br>
-In that paging structure is being revised, halt all vCPUs before revising the NPT to mitigate race conditions, and flush the guest TLB within all vCPUs.
-
-#### Nested Paging Interception
-When `#NPF` is intercepted, check the address being written. Something needs to be checked:
-
-- Is the address to be written 16-byte aligned?
-- Is the APIC register valid?
-
-If the address is unaligned, according to AMD64 architecture, it may cause undefined behavior. We may ignore it. <br>
-If the APIC register is invalid, transfer the VM-Exit to the guest, and indicate that an invalid APIC access is intercepted. <br>
-If the APIC register is valid, we may emulate the behavior of register. If NoirVisor cannot emulate the behavior (e.g.: writing APIC timer), exit to the User Hypervisor.
+In future implementations of NoirVisor CVM, IPI-virtualization, without AVIC, can be handled by NoirVisor.
 
 ## NoirVisor Secure Virtualization
-The NoirVisor Secure Virtualization is a secure extension to NoirVisor Customizable Virtual Machines.
+The NoirVisor Secure Virtualization (NoirVisor NSV) is a security extension to NoirVisor Customizable Virtual Machines.
 
 ### Secure Memory
 NoirVisor NSV separates Guest Physical Memory from Host Physical Memory by construting isolated paging, meaning that permissions for accessing physical pages assigned to the guest would be revoked from the host and granted to the guest exclusively.
 
 ### NSV Violation
-If the subverted host accesses Secure Memory, then `#NPF` is triggered. Such `#NPF` is refered as NSV-Violation. Current implementation of NoirVisor injects an `#PF` exception with 31st bit of error code set, and the `cr2` register is filled with the faulting physical address.
+If the subverted host accesses Secure Memory, then `#NPF` is triggered. Such `#NPF` is refered as NSV-Violation. Current implementation of NoirVisor simply ignores these memory access instructions and continues the execution of the host.
 
 ## Encrypted Virtual Machine
 AMD-V provides a mechanism for encrypted guests. This mechanism enables a guest to run in a manner where codes and data are encrypted and the only decrypted version of them are only available within the guest itself. It would require the hypervisor to enable the `SEV` (Secure Encrypted Virtualization) feature. Please note that, as the hypervisor is no longer able to inspect or alter all guest code or data, the hypervisor model is departing from the standard x86 virtualization model. <br>

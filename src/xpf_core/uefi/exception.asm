@@ -1,6 +1,6 @@
 ; NoirVisor - Hardware-Accelerated Hypervisor solution
 ; 
-; Copyright 2018-2022, Zero Tang. All rights reserved.
+; Copyright 2018-2023, Zero Tang. All rights reserved.
 ;
 ; This file is the host exception handler for NoirVisor.
 ;
