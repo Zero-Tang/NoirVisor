@@ -89,7 +89,6 @@ typedef struct _noir_svm_hvm
 	struct _noir_npt_manager* secondary_nptm;
 #else
 	u64 apic_base;
-	union _amd64_npt_pte *apic_pte;
 #endif
 	struct
 	{

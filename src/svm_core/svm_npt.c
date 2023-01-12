@@ -409,37 +409,12 @@ void nvc_npt_build_hook_mapping(noir_npt_manager_p pri_nptm,noir_npt_manager_p s
 	}
 }
 #else
-bool nvc_npt_build_apic_shadowing(noir_svm_vcpu_p vcpu)
+bool nvc_npt_build_apic_interceptions()
 {
-	vcpu->primary_nptm->pte.apic.virt=noir_alloc_contd_memory(page_size);
-	if(vcpu->primary_nptm->pte.apic.virt)
-	{
-		vcpu->primary_nptm->pte.apic.phys=noir_get_physical_address(vcpu->primary_nptm->pte.apic.virt);
-		return true;
-	}
-	return false;
-}
-
-void nvc_npt_setup_apic_shadowing(noir_svm_vcpu_p vcpu)
-{
-	amd64_addr_translator trans;
-	amd64_npt_pte_p pte_p=vcpu->primary_nptm->pte.apic.virt;
-	amd64_npt_pde_p pde_base=null;
-	vcpu->apic_base=trans.value=page_base(noir_rdmsr(amd64_apic_base));
-	nv_dprintf("APIC Base=0x%llX\n",vcpu->apic_base);
-	pde_base=(amd64_npt_pde_p)&vcpu->primary_nptm->pde.virt[(trans.pdpte_offset<<page_shift_diff)+trans.pde_offset];
-	pde_base->reserved1=0;
-	pde_base->pte_base=vcpu->primary_nptm->pte.apic.phys>>page_shift;
-	for(u32 i=0;i<512;i++)
-	{
-		pte_p[i].value=0;
-		pte_p[i].present=1;
-		pte_p[i].write=1;
-		pte_p[i].user=1;
-		pte_p[i].page_base=(trans.pdpte_offset<<(page_shift_diff*2))+(trans.pde_offset<<page_shift_diff)+i;
-	}
-	vcpu->apic_pte=&pte_p[trans.pte_offset];
-	vcpu->apic_pte->write=0;
+	noir_npt_manager_p nptm=hvm_p->relative_hvm->primary_nptm;
+	const u64 apic_base=page_base(noir_rdmsr(amd64_apic_base));
+	hvm_p->relative_hvm->apic_base=apic_base;
+	return nvc_npt_update_pte(nptm,apic_base,apic_base,true,false,true,true);
 }
 #endif
 
@@ -464,7 +439,6 @@ void nvc_npt_setup_apic_shadowing(noir_svm_vcpu_p vcpu)
 
 noir_npt_manager_p nvc_npt_build_identity_map()
 {
-	u64 tom=noir_get_top_of_memory();
 	bool alloc_success=false;
 #if defined(_hv_type1)
 	noir_npt_manager_p nptm=noir_alloc_nonpg_memory(sizeof(noir_npt_manager));
@@ -525,7 +499,9 @@ noir_npt_manager_p nvc_npt_build_identity_map()
 void nvc_npt_build_reverse_map()
 {
 	noir_npt_manager_p pri_nptm=hvm_p->relative_hvm->primary_nptm;
+#if !defined(_hv_type1)
 	noir_npt_manager_p sec_nptm=hvm_p->relative_hvm->secondary_nptm;
+#endif
 	// This is an initialization routine, call this at subversion only.
 	for(u32 i=0;i<hvm_p->cpu_count;i++)
 	{
@@ -596,6 +572,7 @@ void nvc_npt_reassign_page_ownership_hvrt(noir_svm_vcpu_p vcpu,noir_rmt_remap_co
 	noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
 }
 
+#if !defined(_hv_type1)
 void static nvc_npt_flush_tlb_generic_worker(void* context,u32 processor_id)
 {
 	// Flush TLBs
@@ -731,3 +708,4 @@ bool nvc_npt_reassign_cvm_all_pages_ownership(noir_svm_custom_vm_p vm,u32 asid,b
 	// Return
 	return result;
 }
+#endif

@@ -730,7 +730,6 @@ noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu)
 				}
 				if(hpa_list)noir_free_nonpg_memory(hpa_list);
 				if(gpa_list)noir_free_nonpg_memory(gpa_list);
-				// Don't let user hypervisor know about security claim.
 				break;
 			}
 		}

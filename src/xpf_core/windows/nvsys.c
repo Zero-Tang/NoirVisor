@@ -634,9 +634,86 @@ void* noir_alloc_contd_memory_for_numa(ULONG32 numa_node,ULONG64 alignment,size_
 }
 */
 
+NTSTATUS NoirPrintPhysicalMemoryLayoutAndFindTom(OUT PULONG64 Tom)
+{
+	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
+	PKEY_VALUE_PARTIAL_INFORMATION KvPartInfo=NoirAllocatePagedMemory(PAGE_SIZE);
+	if(KvPartInfo)
+	{
+		HANDLE hKey=NULL;
+		UNICODE_STRING uniKeyName=RTL_CONSTANT_STRING(L"\\Registry\\Machine\\Hardware\\RESOURCEMAP\\System Resources\\Physical Memory");
+		OBJECT_ATTRIBUTES oa;
+		InitializeObjectAttributes(&oa,&uniKeyName,OBJ_CASE_INSENSITIVE|OBJ_KERNEL_HANDLE,NULL,NULL);
+		st=ZwOpenKey(&hKey,GENERIC_READ,&oa);
+		if(NT_SUCCESS(st))
+		{
+			UNICODE_STRING uniKvName=RTL_CONSTANT_STRING(L".Translated");
+			ULONG KvRetLen;
+			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInfo,PAGE_SIZE,&KvRetLen);
+			if(NT_SUCCESS(st))
+			{
+				PCM_RESOURCE_LIST CmResList=(PCM_RESOURCE_LIST)KvPartInfo->Data;
+				*Tom=0;
+				for(ULONG i=0;i<CmResList->List->PartialResourceList.Count;i++)
+				{
+					PCM_PARTIAL_RESOURCE_DESCRIPTOR Prd=&CmResList->List->PartialResourceList.PartialDescriptors[i];
+					switch(Prd->Type)
+					{
+						case CmResourceTypeMemory:
+						{
+							ULONG64 Top=Prd->u.Memory.Start.QuadPart+Prd->u.Memory.Length;
+							NoirDebugPrint("Start: 0x%llX, Length: 0x%X\n",Prd->u.Memory.Start.QuadPart,Prd->u.Memory.Length);
+							if(Top>*Tom)*Tom=Top;
+							break;
+						}
+						case CmResourceTypeMemoryLarge:
+						{
+							ULONG64 Length=(ULONG64)Prd->u.Memory.Length;
+							ULONG64 Top=Prd->u.Memory.Start.QuadPart;
+							if(Prd->Flags & CM_RESOURCE_MEMORY_LARGE_40)
+								Length<<=8ui64;
+							else if(Prd->Flags & CM_RESOURCE_MEMORY_LARGE_48)
+								Length<<=16ui64;
+							else if(Prd->Flags & CM_RESOURCE_MEMORY_LARGE_64)
+								Length<<=32ui32;
+							else
+								NoirDebugPrint("Unknown Flags (0x%04X) was encountered!\n",Prd->Flags);
+							Top+=Length;
+							NoirDebugPrint("Start: 0x%llX, Length: 0x%X\n",Prd->u.Memory.Start.QuadPart,Prd->u.Memory.Length);
+							if(Top>=*Tom)*Tom=Top;
+							break;
+						}
+						default:
+						{
+							NoirDebugPrint("Unknown Resource Type: 0x%X!\n",Prd->Type);
+							break;
+						}
+					}
+				}
+				NoirDebugPrint("Top-of-Memory: 0x%llX\n",*Tom);
+			}
+			else
+			{
+				NoirDebugPrint("Failed to query physical memory layout! Status=0x%X, Length: 0x%X\n",st,KvRetLen);
+				__debugbreak();
+			}
+			ZwClose(hKey);
+		}
+		else
+		{
+			NoirDebugPrint("Failed to query physical memory layout! Status=0x%X\n");
+			__debugbreak();
+		}
+		NoirFreePagedMemory(KvPartInfo);
+	}
+	return st;
+}
+
 ULONG64 noir_get_top_of_memory()
 {
-	return SharedUserData->NumberOfPhysicalPages<<12;
+	ULONG64 Tom=0;
+	NTSTATUS st=NoirPrintPhysicalMemoryLayoutAndFindTom(&Tom);
+	return Tom;
 }
 
 ULONG64 noir_get_current_process_cr3()

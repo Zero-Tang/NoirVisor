@@ -597,13 +597,6 @@ typedef struct _noir_cvm_lockers_list
 	void* lockers[noir_cvm_lockers_per_array];
 }noir_cvm_lockers_list,*noir_cvm_lockers_list_p;
 
-typedef struct _noir_cvm_memblock_registration
-{
-	u64 start;
-	u64 size;
-	void* host;
-}noir_cvm_memblock_registration,*noir_cvm_memblock_registration_p;
-
 typedef union _noir_cvm_vm_properties
 {
 	struct
@@ -621,8 +614,6 @@ typedef union _noir_cvm_vm_properties
 	u32 value;
 }noir_cvm_vm_properties,*noir_cvm_vm_properties_p;
 
-#define noir_cvm_memblock_registration_limit	64
-
 typedef struct _noir_cvm_virtual_machine
 {
 	list_entry active_vm_list;
@@ -632,8 +623,6 @@ typedef struct _noir_cvm_virtual_machine
 	noir_cvm_vm_properties properties;
 	noir_cvm_lockers_list_p locker_head;
 	noir_cvm_lockers_list_p locker_tail;
-	u64 memblock_bitmap;
-	noir_cvm_memblock_registration memblock_registrations[noir_cvm_memblock_registration_limit];
 	noir_cvm_cpuid_quickpath_info cpuid_quickpath[64];
 	noir_reslock vcpu_list_lock;
 }noir_cvm_virtual_machine,*noir_cvm_virtual_machine_p;
@@ -746,8 +735,6 @@ noir_status nvc_view_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 noir_status nvc_set_guest_vcpu_options(noir_cvm_virtual_cpu_p vcpu,noir_cvm_vcpu_option_type option_type,u32 data);
 noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info);
 noir_status nvc_operate_guest_memory(noir_cvm_virtual_cpu_p vcpu,u64 guest_address,void* buffer,u32 size,bool write,bool virtual_address);
-noir_status nvc_translate_gpa_to_hva(noir_cvm_virtual_machine vm,u64 gpa,void* *hva);
-noir_status nvc_translate_gva_to_hva(noir_cvm_virtual_cpu_p vcpu,u64 gva,void* *hva);
 void nvc_synchronize_vcpu_state(noir_cvm_virtual_cpu_p vcpu);
 noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context);
 #endif

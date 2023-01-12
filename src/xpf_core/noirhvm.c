@@ -758,21 +758,6 @@ noir_status nvc_deref_vcpu(noir_cvm_virtual_cpu_p vcpu)
 	}
 }
 
-noir_status nvc_translate_gpa_to_hva(noir_cvm_virtual_machine_p vm,u64 gpa,void* *hva)
-{
-	for(u32 i=0;i<noir_cvm_memblock_registration_limit;i++)
-	{
-		u64 gpa_start=vm->memblock_registrations[i].start;
-		u64 gpa_end=vm->memblock_registrations[i].start+vm->memblock_registrations[i].size;
-		if(gpa>=gpa_start && gpa<gpa_end)
-		{
-			*hva=(void*)((ulong_ptr)vm->memblock_registrations[i].host+(gpa-gpa_start));
-			return noir_success;
-		}
-	}
-	return noir_unsuccessful;
-}
-
 noir_status nvc_translate_gva_to_gpa(noir_cvm_virtual_cpu_p vcpu,u64 gva,u64p gpa)
 {
 	noir_cr_state crs;
@@ -877,33 +862,6 @@ void** nvc_alloc_locker_slot(noir_cvm_virtual_machine_p virtual_machine)
 	return null;
 }
 
-noir_status nvc_register_memblock(noir_cvm_virtual_machine_p vm,u64 start,u64 size,void* host)
-{
-	u32 index;
-	if(noir_bsf64(&index,~vm->memblock_bitmap))
-	{
-		noir_bts64(&vm->memblock_bitmap,index);
-		vm->memblock_registrations[index].start=start;
-		vm->memblock_registrations[index].size=size;
-		vm->memblock_registrations[index].host=host;
-		return noir_success;
-	}
-	return noir_insufficient_resources;
-}
-
-void nvc_unregister_memblock(noir_cvm_virtual_machine_p vm,u64 start,u64 size)
-{
-	for(u32 i=0;i<noir_cvm_memblock_registration_limit;i++)
-	{
-		if(vm->memblock_registrations[i].start==start && vm->memblock_registrations[i].size==size)
-		{
-			noir_stosb(&vm->memblock_registrations[i],0,sizeof(noir_cvm_memblock_registration));
-			noir_btr64(&vm->memblock_bitmap,i);
-			break;
-		}
-	}
-}
-
 noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info)
 {
 	noir_status st=noir_hypervision_absent;
@@ -939,7 +897,6 @@ alloc_failure:
 				if(phys_array)noir_free_nonpg_memory(phys_array);
 				st=noir_insufficient_resources;
 			}
-			nvc_register_memblock(virtual_machine,mapping_info->gpa,page_mult(mapping_info->pages),(void*)mapping_info->hva);
 		}
 		else
 		{
@@ -950,7 +907,6 @@ alloc_failure:
 				st=nvc_svmc_set_unmapping(virtual_machine,mapping_info->gpa,mapping_info->pages);
 			else
 				st=noir_unknown_processor;
-			nvc_unregister_memblock(virtual_machine,mapping_info->gpa,page_mult(mapping_info->pages));
 		}
 		noir_release_reslock(virtual_machine->vcpu_list_lock);
 	}
@@ -1204,14 +1160,17 @@ bool nvc_validate_rmt_reassignment(u64p hpa,u64p gpa,u32 pages,u32 asid,bool sha
 	for(u32 j=0;j<pages;j++)
 	{
 		const u64 i=page_count(hpa[j]);
-		if(rm_table[i].low.ownership==noir_nsv_rmt_noirvisor)
-			return false;	// If the page was assigned to NoirVisor, fail the validation.
-		else if(rm_table[i].low.ownership==noir_nsv_rmt_secure_guest && ownership==noir_nsv_rmt_secure_guest)
-			return false;	// Secure Memory are not allowed to be remapped in one shot.
-		else if(ownership==noir_nsv_rmt_secure_guest && shared)
-			return false;	// Secure Memory are not allowed to be shared.
-		else if((i<<3)>=hvm_p->rmt.size)
+		if((i<<3)>=hvm_p->rmt.size)
 			return false;	// The HPA has exceeded the TOM.
+		else
+		{
+			if(rm_table[i].low.ownership==noir_nsv_rmt_noirvisor)
+				return false;	// If the page was assigned to NoirVisor, fail the validation.
+			else if(rm_table[i].low.ownership==noir_nsv_rmt_secure_guest && ownership==noir_nsv_rmt_secure_guest)
+				return false;	// Secure Memory are not allowed to be remapped in one shot.
+			else if(ownership==noir_nsv_rmt_secure_guest && shared)
+				return false;	// Secure Memory are not allowed to be shared.
+		}
 	}
 	return true;
 }

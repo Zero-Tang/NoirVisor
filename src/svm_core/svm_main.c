@@ -245,10 +245,6 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 		npt_ctrl.value=0;
 		npt_ctrl.enable_npt=1;
 		noir_svm_vmwrite64(vcpu->vmcb.virt,npt_control,npt_ctrl.value);
-#if defined(_hv_type1)
-		// Update the NPT by APIC
-		nvc_npt_setup_apic_shadowing(vcpu);
-#endif
 		// Write NPT CR3
 		noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
 	}
@@ -505,10 +501,6 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 				noir_free_contd_memory(vcpu->hsave.virt,page_size);
 			if(vcpu->hvmcb.virt)
 				noir_free_contd_memory(vcpu->hvmcb.virt,page_size);
-#if defined(_hv_type1)
-			if(vcpu->sapic.virt)
-				noir_free_contd_memory(vcpu->sapic.virt,page_size);
-#endif
 			if(vcpu->hv_stack)
 				noir_free_nonpg_memory(vcpu->hv_stack);
 			if(vcpu->cvm_state.xsave_area)
@@ -616,7 +608,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	if(hvm_p->options.stealth_inline_hook)		// This feature does not have a good performance.
 		nvc_npt_build_hook_mapping(hvm_p->relative_hvm->primary_nptm,hvm_p->relative_hvm->secondary_nptm);
 #else
-	if(nvc_npt_build_apic_shadowing(vcpu)==false)
+	if(nvc_npt_build_apic_interceptions()==false)
 		goto alloc_failure;
 #endif
 	if(nvc_npt_initialize_ci(hvm_p->relative_hvm->primary_nptm)==false)goto alloc_failure;

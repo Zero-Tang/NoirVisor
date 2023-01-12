@@ -165,62 +165,6 @@ void static noir_hvcode fastcall nvc_svm_db_exception_handler(noir_gpr_state_p g
 		else if(noir_svm_vmcb_bt32(vmcb,guest_dr6,amd64_dr6_bd) || noir_svm_vmcb_bt32(vmcb,guest_dr6,amd64_dr6_bt))
 			noir_svm_inject_event(vmcb,amd64_debug_exception,amd64_fault_trap_exception,false,true,0);
 	}
-#if defined(_hv_type1)
-	// The guest might be accessing APIC. Clear the flag by the way.
-	if(noir_btr(&vcpu->global_state,noir_svm_apic_access))
-	{
-		nvd_printf("Single-stepped on APIC-Access!\n");
-		// If the APIC-Access is issuing IPI, inspect what's inside.
-		if(noir_btr(&vcpu->global_state,noir_svm_issuing_ipi))
-		{
-			amd64_apic_register_icr_lo icr_lo;
-			amd64_apic_register_icr_hi icr_hi;
-			// The value of ICR-Lo is in shadowed APIC page.
-			icr_lo.value=*(u32p)((ulong_ptr)vcpu->sapic.virt+amd64_apic_icr_lo);
-			// The value of ICR-Hi is in original APIC page.
-			// It does not matter if we read by physical address.
-			icr_hi.value=*(u32p)(vcpu->apic_base+amd64_apic_icr_hi);
-			nvd_printf("ICR_LO: 0x%08x, ICR_HI: 0x%08x\n",icr_lo.value,icr_hi.value);
-			switch(icr_lo.msg_type)
-			{
-				case amd64_apic_icr_msg_init:
-				{
-					u32 proc_id=nvc_svm_convert_apic_id(icr_hi.destination);
-					// INIT signal must be discarded if target processor is still waiting for SIPI.
-					if(!noir_locked_bts(&hvm_p->virtual_cpu[proc_id].global_state,noir_svm_init_receiving))
-						*(u32p)(vcpu->apic_base+amd64_apic_icr_lo)=icr_lo.value;	// Forward the write to APIC page.
-					break;
-				}
-				case amd64_apic_icr_msg_sipi:
-				{
-					u32 proc_id=nvc_svm_convert_apic_id(icr_hi.destination);
-					// SIPI signal must be discarded if target processor is out of Wait-for-SIPI state.
-					if(!noir_locked_btr(&hvm_p->virtual_cpu[proc_id].global_state,noir_svm_init_receiving))
-					{
-						hvm_p->virtual_cpu[proc_id].sipi_vector=icr_lo.vector;		// Notify the target processor about the vector.
-						// Signal the target processor to leave the spin-lock.
-						noir_locked_bts(&hvm_p->virtual_cpu[proc_id].global_state,noir_svm_sipi_sent);
-					}
-					break;
-				}
-				default:
-				{
-					// Irrelevant IPI. Simply forward it.
-					*(u32p)(vcpu->apic_base+amd64_apic_icr_lo)=icr_lo.value;
-					break;
-				}
-			}
-			// Switch the APIC back to original page.
-			vcpu->apic_pte->page_base=vcpu->apic_base>>page_shift;
-			vcpu->apic_pte->write=false;		// Revoke the write-permission.
-			noir_svm_vmwrite8(vmcb,tlb_control,nvc_svm_tlb_control_flush_guest);
-		}
-		// Stop single-stepping.
-		noir_svm_vmcb_btr32(vmcb,guest_rflags,amd64_rflags_tf);
-		noir_svm_vmcb_btr32(vmcb,intercept_exceptions,amd64_debug_exception);
-		noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_interception);
-	}
-#endif
 }
 
 // Expected Intercept Code: 0x46
@@ -1588,35 +1532,16 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 		}
 #else
 		// For Type-I Hypervisors, #NPF can be triggerred by virtue of interceptions on writes to APIC pages.
+		// We do not intercept reads from APIC page.
 		if(fault.write)
 		{
-			u64 apic_bar=noir_rdmsr(amd64_apic_base);
-			u64 apic_base=page_base(apic_bar);
+			const u64 apic_base=hvm_p->relative_hvm->apic_base;
 			if(gpa>=apic_base && gpa<apic_base+page_size)
 			{
 				const u64 offset=gpa-apic_base;
 				nvd_printf("APIC-write is intercepted! Offset=0x%x\n",(u32)offset);
-				noir_bts(&vcpu->global_state,noir_svm_apic_access);
-				switch(offset)
-				{
-					case amd64_apic_icr_lo:
-					{
-						// Write to Interrupt Control Register (Low) is intercepted.
-						// Deactivate APIC by redirecting the APIC access to the shadowed page.
-						// Mark this vCPU is issuing IPI.
-						noir_bts(&vcpu->global_state,noir_svm_issuing_ipi);
-						vcpu->apic_pte->page_base=vcpu->sapic.phys>>page_shift;
-						break;
-					}
-				}
-				// Grant the access to write for the sake of single-stepping.
-				vcpu->apic_pte->write=true;
-				noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
-				// Single-step the guest execution.
-				noir_svm_vmcb_bts32(vcpu->vmcb.virt,guest_rflags,amd64_rflags_tf);
-				noir_svm_vmcb_bts32(vcpu->vmcb.virt,intercept_exceptions,amd64_debug_exception);
-				noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
-				// Do not advance the rip in order to single-step.
+				// FIXME: Emulate the APIC-write instruction.
+				// Because emulation was done here, there is no need for advancement later.
 				advance=false;
 			}
 		}

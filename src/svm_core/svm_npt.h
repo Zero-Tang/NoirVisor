@@ -194,14 +194,6 @@ typedef struct _noir_npt_manager
 	{
 		noir_npt_pte_descriptor_p head;
 		noir_npt_pte_descriptor_p tail;
-#if defined(_hv_type1)
-		struct
-		{
-			amd64_npt_pte_p virt;
-			u64 phys;
-			u64 gpa_start;
-		}apic;
-#endif
 	}pte;
 #if !defined(_hv_type1)
 	noir_pushlock nptm_lock;
@@ -240,8 +232,7 @@ void nvc_npt_build_reverse_map();
 bool nvc_npt_update_pde(noir_npt_manager_p nptm,u64 gpa,u64 hpa,bool r,bool w,bool x,bool l,bool alloc);
 bool nvc_npt_update_pte(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bool x,bool alloc);
 #if defined(_hv_type1)
-bool nvc_npt_build_apic_shadowing(noir_svm_vcpu_p vcpu);
-void nvc_npt_setup_apic_shadowing(noir_svm_vcpu_p vcpu);
+bool nvc_npt_build_apic_interceptions();
 #else
 void nvc_npt_build_hook_mapping(noir_npt_manager_p pri_nptm,noir_npt_manager_p sec_nptm);
 #endif

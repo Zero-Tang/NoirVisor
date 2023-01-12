@@ -205,8 +205,6 @@ NOIR_STATUS nvc_hax_set_msrs(IN PVOID VirtualMachine,IN PVOID Buffer,IN ULONG32 
 NOIR_STATUS nvc_hax_get_msrs(IN PVOID VirtualProcessor,OUT PVOID Buffer,IN ULONG32 Size,OUT PULONG32 ReturnSize OPTIONAL);
 NOIR_STATUS nvc_hax_run_vcpu(IN PVOID VirtualProcessor);
 
-NOIR_STATUS nvc_register_memblock(IN PVOID VirtualMachine,IN ULONG64 Start,IN ULONG64 Size,IN PVOID Host);
-
 extern PDRIVER_OBJECT NoirDriverObject;
 extern PDEVICE_OBJECT HaxDeviceObject;
 

@@ -148,7 +148,9 @@ APIs to invoke Customizable VMs are available in the [NoirCvmApi](https://github
 NoirVisor CVM is implementing a wrapper of HAX-compatible APIs in order to accelerate QEMU. \
 You may visit [Intel HAXM Repository](https://github.com/intel/haxm) for further information.
 
-# NSV
+Note that Intel has discontinued the development of HAXM, so the plan is currently halted. Future implementation may either complete implementing a HAX-compatible API or completely remove the interface.
+
+# NoirVisor Secure Virtualization
 NSV (a.k.a NoirVisor Secure Virtualization) is a security extension to NoirVisor CVM. This extension is a crossover project with Columbia University's Operating Systems II course project. Read [this document](./doc/nsv.md) for further details.
 
 # NPIEP

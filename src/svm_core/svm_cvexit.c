@@ -26,7 +26,7 @@
 
 void noir_hvcode nvc_svm_inject_cvm_exception(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu,u8 vector,bool ev,u32 error_code,u64 pf_addr,u8 fetch_length,u8p fetched_instruction)
 {
-	// FIXME: If guest enabled SVM, injection should consider L1 hypervisor's interceptions.
+	// FIXME: If guest enabled SVM and under nested virtualization, injection should consider L1 hypervisor's interceptions.
 	if(noir_bt(&cvcpu->header.exception_bitmap,vector)==false)
 	{
 		noir_svm_inject_event(cvcpu->vmcb.virt,vector,amd64_fault_trap_exception,ev,true,error_code);
@@ -470,8 +470,7 @@ void static noir_hvcode fastcall nvc_svm_hlt_cvexit_handler(noir_gpr_state_p gpr
 void static noir_hvcode fastcall nvc_svm_invlpga_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
-	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
-	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	nvc_svm_inject_cvm_exception(gpr_state,vcpu,cvcpu,amd64_invalid_opcode,false,0,0,0,null);
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
@@ -854,23 +853,7 @@ void static noir_hvcode fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr
 		if(advance)
 			noir_svm_advance_rip(cvcpu);
 		else
-		{
-			// If rip is not being advanced, this means #GP exception is subject to be injected.
-			if(!cvcpu->header.vcpu_options.intercept_exceptions)
-				noir_svm_inject_event(cvcpu->vmcb.virt,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
-			else
-			{
-				// If user hypervisor specifies interception of exceptions, pass to the user hypervisor.
-				nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
-				cvcpu->header.exit_context.intercept_code=cv_exception;
-				cvcpu->header.exit_context.exception.vector=amd64_general_protection;
-				cvcpu->header.exit_context.exception.ev_valid=true;
-				cvcpu->header.exit_context.exception.reserved=0;
-				cvcpu->header.exit_context.exception.error_code=0;
-				// Profiler: Classify the interception as exception interception.
-				cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.exception;
-			}
-		}
+			nvc_svm_inject_cvm_exception(gpr_state,vcpu,cvcpu,amd64_invalid_opcode,false,0,0,0,null);
 	}
 }
 
@@ -888,8 +871,7 @@ void static noir_hvcode fastcall nvc_svm_shutdown_cvexit_handler(noir_gpr_state_
 void static noir_hvcode fastcall nvc_svm_vmrun_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
-	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
-	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	nvc_svm_inject_cvm_exception(gpr_state,vcpu,cvcpu,amd64_invalid_opcode,false,0,0,0,null);
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
@@ -912,8 +894,7 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_cvexit_handler(noir_gpr_state_p
 void static noir_hvcode fastcall nvc_svm_vmload_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
-	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
-	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	nvc_svm_inject_cvm_exception(gpr_state,vcpu,cvcpu,amd64_invalid_opcode,false,0,0,0,null);
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
@@ -922,8 +903,7 @@ void static noir_hvcode fastcall nvc_svm_vmload_cvexit_handler(noir_gpr_state_p 
 void static noir_hvcode fastcall nvc_svm_vmsave_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
-	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
-	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	nvc_svm_inject_cvm_exception(gpr_state,vcpu,cvcpu,amd64_invalid_opcode,false,0,0,0,null);
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
@@ -932,8 +912,7 @@ void static noir_hvcode fastcall nvc_svm_vmsave_cvexit_handler(noir_gpr_state_p 
 void static noir_hvcode fastcall nvc_svm_stgi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
-	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
-	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	nvc_svm_inject_cvm_exception(gpr_state,vcpu,cvcpu,amd64_invalid_opcode,false,0,0,0,null);
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
@@ -942,8 +921,7 @@ void static noir_hvcode fastcall nvc_svm_stgi_cvexit_handler(noir_gpr_state_p gp
 void static noir_hvcode fastcall nvc_svm_clgi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
-	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
-	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	nvc_svm_inject_cvm_exception(gpr_state,vcpu,cvcpu,amd64_invalid_opcode,false,0,0,0,null);
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
@@ -952,8 +930,7 @@ void static noir_hvcode fastcall nvc_svm_clgi_cvexit_handler(noir_gpr_state_p gp
 void static noir_hvcode fastcall nvc_svm_skinit_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// NoirVisor currently does not support Nested Virtualization. Inject a #UD.
-	noir_svm_inject_event(cvcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
-	noir_svm_advance_rip(cvcpu->vmcb.virt);
+	nvc_svm_inject_cvm_exception(gpr_state,vcpu,cvcpu,amd64_invalid_opcode,false,0,0,0,null);
 	// Profiler: Classify the interception.
 	cvcpu->header.statistics_internal.selector=&cvcpu->header.statistics.interceptions.emulation;
 }
@@ -964,7 +941,6 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state
 	amd64_npt_fault_code fault;
 	u64 gpa=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info2);
 	bool is_mmio=false;
-	noir_cvm_memblock_registration_p memblocks=cvcpu->vm->header.memblock_registrations;
 	// #NPF occured, tell the subverted host there is a memory access fault.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 	fault.value=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info1);

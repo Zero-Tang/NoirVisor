@@ -384,7 +384,6 @@ NTSTATUS NoirHaxVmControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 				if(VM)
 				{
 					PHAX_ALLOC_RAM_INFO Info=(PHAX_ALLOC_RAM_INFO)InputBuffer;
-					// NOIR_STATUS nst=nvc_register_memblock(VM,Info->VA,(ULONG64)Info->Size);
 					NOIR_STATUS nst=NOIR_SUCCESS;
 					st=nst==NOIR_SUCCESS?STATUS_SUCCESS:STATUS_UNSUCCESSFUL;
 				}
@@ -401,7 +400,6 @@ NTSTATUS NoirHaxVmControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 				if(VM)
 				{
 					PHAX_RAMBLOCK_INFO Info=(PHAX_RAMBLOCK_INFO)InputBuffer;
-					// NOIR_STATUS nst=nvc_register_memblock(VM,Info->StartVa,Info->Size);
 					NOIR_STATUS nst=NOIR_SUCCESS;
 					st=nst==NOIR_SUCCESS?STATUS_SUCCESS:STATUS_UNSUCCESSFUL;
 				}

@@ -52,6 +52,8 @@ for %%1 in (..\src\xpf_core\msvc\*.asm) do (ml64 /W3 /WX /D"_amd64" /Zf /Zd /Fo"
 echo Compiling Core of Drivers...
 cl ..\src\drv_core\serial\serial.c /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_drv_serial" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\serial.cod" /Fo"%objpath%\serial.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue
 
+for %%1 in (..\src\drv_core\acpi\*.c) do (cl %%1 /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_%%~n1" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue)
+
 echo ============Start Linking============
 link "%objpath%\*.obj" "%objpath%\version.res" /LIBPATH:"%libpath%\10.0.22621.0\km\x64" /NODEFAULTLIB "ntoskrnl.lib" "hal.lib" "..\src\disasm\bin\compchk_win11x64\zydis.lib" /NOLOGO /DEBUG /PDB:"%binpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
 

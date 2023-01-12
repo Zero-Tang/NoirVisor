@@ -72,6 +72,12 @@
 #define bytes_to_1gb_pages(x)	(page_1gb_count(x)+(page_1gb_offset(x)!=0))
 #define bytes_to_512gb_pages(x)	(page_512gb_count(x)+(page_512gb_offset(x)!=0))
 
+#define bytes_span_pages(x)			(page_mult(bytes_to_pages(x)))
+#define bytes_span_4kb_pages(x)		(page_4kb_mult(bytes_to_4kb_pages(x)))
+#define bytes_span_2mb_pages(x)		(page_2mb_mult(bytes_to_2mb_pages(x)))
+#define bytes_span_1gb_pages(x)		(page_1gb_mult(bytes_to_1gb_pages(x)))
+#define bytes_span_512gb_pages(x)	(page_512gb_mult(bytes_to_512gb_pages(x)))
+
 #if defined(_amd64)
 #define page_base(x)			(x&0xfffffffffffff000)
 #define page_4kb_base(x)		(x&0xfffffffffffff000)
