@@ -140,16 +140,6 @@ cr4_handler_over:
 	noir_svm_advance_rip(vmcb);
 }
 
-#if defined(_hv_type1)
-u32 static fastcall nvc_svm_convert_apic_id(u32 apic_id)
-{
-	for(u32 i=0;i<hvm_p->cpu_count;i++)
-		if(hvm_p->virtual_cpu[i].apic_id==apic_id)
-			return hvm_p->virtual_cpu[i].proc_id;
-	return 0xFFFFFFFF;
-}
-#endif
-
 // Expected Intercept Code: 0x41
 void static noir_hvcode fastcall nvc_svm_db_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
@@ -170,7 +160,7 @@ void static noir_hvcode fastcall nvc_svm_db_exception_handler(noir_gpr_state_p g
 // Expected Intercept Code: 0x46
 void static noir_hvcode fastcall nvc_svm_ud_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-#if defined(_hv_type1)
+#if !defined(_hv_type1)
 	// This exception handler is intended for kva-shadowing.
 	void* vmcb=vcpu->vmcb.virt;
 	u64 gcr3k=noir_get_current_process_cr3();
@@ -922,6 +912,32 @@ void static noir_hvcode fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_stat
 	{
 		switch(index)
 		{
+#if defined(_hv_type1)
+			case amd64_apic_base:
+			{
+				// Current implementation does not support relocating the APIC page.
+				// Only disabling APIC or enabling x2APIC are supported.
+				const u64 new_base=page_base(val.value);
+				if(new_base!=hvm_p->relative_hvm->apic_base)
+					noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
+				else
+					noir_wrmsr(amd64_apic_base,val.value);	// Reflect to host.
+				break;
+			}
+			case amd64_x2apic_icr:
+			{
+				amd64_x2apic_register_icr icr;
+				icr.value=val.value;
+				switch(icr.msg_type)
+				{
+					case amd64_apic_icr_msg_init:
+					{
+						break;
+					}
+				}
+				break;
+			}
+#endif
 			case amd64_efer:
 			{
 				// If Nested Virtualization is disabled, attempts to set the SVME bit must be thrown exceptions.
@@ -1464,6 +1480,24 @@ void static noir_hvcode fastcall nvc_svm_skinit_handler(noir_gpr_state_p gpr_sta
 	noir_svm_inject_event(vmcb,amd64_invalid_opcode,amd64_fault_trap_exception,false,true,0);
 }
 
+#if defined(_hv_type1)
+u32 static fastcall nvc_svm_convert_apic_id(u8 apic_id)
+{
+	for(u32 i=0;i<hvm_p->cpu_count;i++)
+		if(hvm_p->virtual_cpu[i].apic_id==apic_id)
+			return hvm_p->virtual_cpu[i].proc_id;
+	return 0xFFFFFFFF;
+}
+
+u32 static fastcall nvc_svm_convert_x2apic_id(u32 x2apic_id)
+{
+	for(u32 i=0;i<hvm_p->cpu_count;i++)
+		if(hvm_p->virtual_cpu[i].x2apic_id==x2apic_id)
+			return hvm_p->virtual_cpu[i].proc_id;
+	return 0xFFFFFFFF;
+}
+#endif
+
 // Expected Intercept Code: 0x400
 void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
@@ -1539,8 +1573,88 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 			if(gpa>=apic_base && gpa<apic_base+page_size)
 			{
 				const u64 offset=gpa-apic_base;
-				nvd_printf("APIC-write is intercepted! Offset=0x%x\n",(u32)offset);
-				// FIXME: Emulate the APIC-write instruction.
+				nvd_printf("APIC-write is intercepted! Offset=0x%X\n",(u32)offset);
+				if(gpa & 3)		// In NoirVisor's implementation, accesses not aligned on 4-byte boundary causes #GP fault.
+					noir_svm_inject_event(vcpu->vmcb.virt,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
+				else
+				{
+					u8 ins_len;
+					u8 write_operand[64];
+					size_t write_size;
+					// In order to make emulator work, we have to set up the CVM state.
+					noir_movsp(&vcpu->cvm_state.gpr,gpr_state,sizeof(void*)*2);
+					gpr_state->rsp=noir_svm_vmread64(vcpu->vmcb.virt,guest_rsp);
+					gpr_state->rax=noir_svm_vmread64(vcpu->vmcb.virt,guest_rax);
+					ins_len=nvc_emu_try_vmexit_write_memory(gpr_state,(noir_seg_state_p)((ulong_ptr)vcpu->vmcb.virt+guest_es_selector),(u8p)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes),write_operand,&write_size);
+					if(ins_len==0 || write_size!=4)
+						noir_svm_inject_event(vcpu->vmcb.virt,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
+					else
+					{
+						bool write=true;
+						u64 gip=noir_svm_vmread64(vcpu->vmcb.virt,guest_rip);
+						// Emulate the write.
+						if(offset==amd64_apic_icr_lo)
+						{
+							// If the write is toward the Interrupt Command Register (ICR),
+							// then the write operation should be filtered.
+							amd64_apic_register_icr_lo icr_lo;
+							icr_lo.value=*(u32p)write_operand;
+							if(icr_lo.msg_type==amd64_apic_icr_msg_sipi)
+							{
+								// Start-up IPIs must be emulated.
+								// Check the destination short-hand.
+								switch(icr_lo.dest_shorthand)
+								{
+									case amd64_apic_icr_dsh_destination:
+									{
+										// This means ICR-HI is used to determine destination.
+										amd64_apic_register_icr_hi icr_hi;
+										icr_hi.value=*(u32p)(hvm_p->relative_hvm->apic_base+amd64_apic_icr_hi);
+										if(icr_hi.destination==0xff)		// SIPI must be broadcasted by Destination-Shorthand.
+											noir_svm_inject_event(vcpu->vmcb.virt,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
+										else
+										{
+											const u32 proc_id=nvc_svm_convert_apic_id((u8)icr_hi.destination);
+											noir_svm_vcpu_p dest_vcpu=&hvm_p->virtual_cpu[proc_id];
+											dest_vcpu->sipi_vector=(u8)icr_lo.vector;
+											// Signal the target processor.
+											noir_locked_bts(&dest_vcpu->global_state,noir_svm_sipi_sent);
+										}
+										break;
+									}
+									case amd64_apic_icr_dsh_exclusive:
+									{
+										// This means SIPI is broadcasted to all processors excluding the current processor.
+										for(u32 i=0;i<hvm_p->cpu_count;i++)
+										{
+											if(vcpu->proc_id!=i)
+											{
+												noir_svm_vcpu_p dest_vcpu=&hvm_p->virtual_cpu[i];
+												dest_vcpu->sipi_vector=(u8)icr_lo.vector;
+												// Signal the target processor.
+												noir_locked_bts(&dest_vcpu->global_state,noir_svm_sipi_sent);
+											}
+										}
+										break;
+									}
+									default:
+									{
+										// This DSH is invalid for sending SIPIs.
+										noir_svm_inject_event(vcpu->vmcb.virt,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
+										break;
+									}
+								}
+								// SIPIs are fully emulated by NoirVisor. Do not write to APIC page.
+								write=false;
+							}
+						}
+						if(write)*(u32p)gpa=*(u32p)write_operand;
+						// Advance the rip.
+						gip+=ins_len;
+						if(noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9)==false)gip&=maxu32;
+						noir_svm_vmwrite64(vcpu->vmcb.virt,guest_rip,gip);
+					}
+				}
 				// Because emulation was done here, there is no need for advancement later.
 				advance=false;
 			}

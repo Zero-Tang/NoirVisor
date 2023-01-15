@@ -355,6 +355,9 @@ noir_status noir_configure_serial_port_debugger(u8 port_number,u16 port_base,u32
 noir_status noir_dbgport_read(void* buffer,size_t length);
 noir_status noir_dbgport_write(void* buffer,size_t length);
 
+// Functions from NoirVisor Emulator.
+u8 nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_seg_state_p seg_state,u8p instruction,void* operand,size_t *size);
+
 // Miscellaneous
 u64 noir_query_enabled_features_in_system();
 void noir_system_call(void);

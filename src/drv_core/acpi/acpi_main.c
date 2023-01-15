@@ -20,5 +20,14 @@
 
 noir_status nvc_acpi_initialize()
 {
-	return noir_not_implemented;
+	noir_status st=noir_unsuccessful;
+	acpi_rsdt_ptr=noir_locate_acpi_rsdt(&acpi_rsdt_len);
+	if(acpi_rsdt_ptr)st=noir_success;
+	return st;
+}
+
+void nvc_acpi_finalize()
+{
+	if(acpi_rsdt_ptr)
+		noir_free_nonpg_memory(acpi_rsdt_ptr);
 }

@@ -54,6 +54,7 @@ void NoirDriverUnload(IN PDRIVER_OBJECT DriverObject)
 	NoirTeardownProtectedFile();
 	NoirFinalizeCodeIntegrity();
 	NoirFinalizePowerStateCallback();
+	NoirAcpiFinalize();
 	NoirReportMemoryIntrospectionCounter();
 	NoirFinalizeAsyncDebugPrinter();
 	IoDeleteSymbolicLink(&uniLinkName);
@@ -353,6 +354,7 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	NoirInitializePowerStateCallback();
 	NoirSubvertSystemOnDriverLoad(&SubvertOnDriverLoad);
 	NoirConfigureInternalDebugger();
+	NoirAcpiInitialize();
 	if(SubvertOnDriverLoad)
 		if(NoirQueryVirtualizationSupportability())
 			if(NoirIsVirtualizationEnabled())

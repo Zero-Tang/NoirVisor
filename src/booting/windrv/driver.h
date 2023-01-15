@@ -168,6 +168,8 @@ void NoirFinalizeAsyncDebugPrinter();
 ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();
 NTSTATUS NoirConfigureInternalDebugger();
+BOOL NoirAcpiInitialize();
+void NoirAcpiFinalize();
 ULONG NoirVisorVersion();
 ULONG NoirQueryVirtualizationSupportability();
 BOOLEAN NoirIsVirtualizationEnabled();

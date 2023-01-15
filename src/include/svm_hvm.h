@@ -39,9 +39,6 @@
 
 // Definition of vCPU APIC Global Status Bit Fields
 #define noir_svm_sipi_sent					0
-#define noir_svm_init_receiving				1
-#define noir_svm_apic_access				2
-#define noir_svm_issuing_ipi				3
 
 // Number of nested VMCBs to be cached.
 #define noir_svm_cached_nested_vmcb			31
@@ -190,15 +187,16 @@ typedef struct _noir_svm_vcpu
 		u64 fault_info;
 	}fallback;
 	noir_mshv_vcpu mshvcpu;
-	u32 proc_id;
-	u32 apic_id;
 	noir_svm_virtual_msr virtual_msr;
 	noir_svm_nested_vcpu nested_hvm;
 	noir_cvm_virtual_cpu cvm_state;
 	u32 cpuid_fms;
 	u32 enabled_feature;
 	u32v global_state;
-	u8v sipi_vector;
+	u32 proc_id;
+	u32 x2apic_id;
+	u8 apic_id;
+	u8 sipi_vector;
 	u8 status;
 	u8 vcpu_property;
 	align_at(16) noir_gate_descriptor idt_buffer[0x100];

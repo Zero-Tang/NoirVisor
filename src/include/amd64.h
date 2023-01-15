@@ -247,6 +247,7 @@
 #define amd64_cpuid_std_monitor_feat		0x5
 #define amd64_cpuid_std_thermal_feat		0x6
 #define amd64_cpuid_std_struct_extid		0x7
+#define amd64_cpuid_std_ext_topo_inf		0xB
 #define amd64_cpuid_std_pestate_enum		0xD
 
 // Index of Extended Leaves
@@ -364,6 +365,24 @@ typedef union _amd64_apic_register_icr_hi
 	u32 value;
 }amd64_apic_register_icr_hi,*amd64_apic_register_icr_hi_p;
 
+typedef union _amd64_x2apic_register_icr
+{
+	struct
+	{
+		u64 vector:8;				// Bits	0-7
+		u64 msg_type:3;				// Bits	8-10
+		u64 dest_mode:1;			// Bit	11
+		u64 reserved0:2;			// Bits	12-13
+		u64 level:1;				// Bit	14
+		u64 trigger_mode:1;			// Bit	15
+		u64 reserved1:2;			// Bits	16-17
+		u64 dest_shorthand:2;		// Bits	18-19
+		u64 reserved2:12;			// Bits	20-31
+		u64 destination:32;			// Bits	32-63
+	};
+	u64 value;
+}amd64_x2apic_register_icr,*amd64_x2apic_register_icr_p;
+
 #define amd64_apic_icr_msg_fixed		0
 #define amd64_apic_icr_msg_lowest_prio	1
 #define amd64_apic_icr_msg_smi			2
@@ -372,6 +391,11 @@ typedef union _amd64_apic_register_icr_hi
 #define amd64_apic_icr_msg_init			5
 #define amd64_apic_icr_msg_sipi			6
 #define amd64_apic_icr_msg_extint		7
+
+#define amd64_apic_icr_dsh_destination	0
+#define amd64_apic_icr_dsh_self			1
+#define amd64_apic_icr_dsh_inclusive	2
+#define amd64_apic_icr_dsh_exclusive	3
 
 // This is used for defining AMD64 architectural memory types.
 #define amd64_memory_type_uc			0x00	// Uncacheable

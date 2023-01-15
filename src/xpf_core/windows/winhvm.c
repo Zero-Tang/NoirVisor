@@ -252,6 +252,16 @@ NTSTATUS NoirConfigureInternalDebugger()
 	return st;
 }
 
+BOOL NoirAcpiInitialize()
+{
+	return nvc_acpi_initialize()==0;
+}
+
+void NoirAcpiFinalize()
+{
+	nvc_acpi_finalize();
+}
+
 NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 {
 	// Setup default values. Hooking becomes a very unstable feature in Windows with post-2018 updates!

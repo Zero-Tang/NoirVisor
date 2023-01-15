@@ -175,6 +175,12 @@ void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)
 		noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_sysenter_eip,1));		// Mask MSR Hook
 #endif
 	}
+#if defined(_hv_type1)
+	// Current implementation do not allow relocating APIC base...
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_apic_base,1));
+	// We will virtualize x2APIC's ICR accesses...
+	noir_set_bitmap(bitmap1,svm_msrpm_bit(1,amd64_x2apic_icr,1));
+#endif
 }
 
 void static nvc_svm_setup_virtual_msr(noir_svm_vcpu_p vcpu)
@@ -302,6 +308,15 @@ void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu,noir_processor_state
 	noir_writecr4(state->cr4|amd64_cr4_osfxsr_bit|amd64_cr4_osxsave_bit);
 }
 
+void nvc_svm_setup_apic_id(noir_svm_vcpu_p vcpu)
+{
+	u32 xid,x2id;
+	noir_cpuid(amd64_cpuid_std_proc_feature,0,null,&xid,null,null);
+	noir_cpuid(amd64_cpuid_std_ext_topo_inf,0,null,null,null,&x2id);
+	vcpu->apic_id=(u8)(xid>>24);
+	vcpu->x2apic_id=x2id;
+}
+
 // This function has context of cleared GIF.
 ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp)
 {
@@ -310,6 +325,8 @@ ulong_ptr nvc_svm_subvert_processor_i(noir_svm_vcpu_p vcpu,ulong_ptr gsp)
 	noir_save_processor_state(&state);
 	// Setup Host State
 	nvc_svm_load_host_processor_state(vcpu,&state);
+	// Setup APIC ID
+	nvc_svm_setup_apic_id(vcpu);
 	// Setup State-Save Area
 	// Save Segment State - CS
 	noir_svm_vmwrite16(vcpu->vmcb.virt,guest_cs_selector,state.cs.selector);

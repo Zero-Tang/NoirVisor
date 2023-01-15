@@ -368,3 +368,68 @@ noir_status nvc_emu_decode_memory_access(noir_cvm_virtual_cpu_p vcpu)
 	}
 	return st;
 }
+
+/*
+  Emulating Instructions for Subverted Host:
+  
+  According to Microsoft Hypervisor Top-Level Functionality Specification,
+  only a few instructions are supported for Local-APIC memory-accesses.
+
+  89 /r		mov m32,r32
+  8B /r		mov r32,m32
+  A1 disp	mov eax,moffset32
+  A3 disp	mov moffset32,eax
+  C7 /0		mov m32,imm32
+  FF /6		push m32
+*/
+
+// This emulator function works only in subverted host.
+u8 noir_hvcode nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_seg_state_p seg_state,u8p instruction,void* operand,size_t *size)
+{
+	ulong_ptr *gpr=(ulong_ptr*)gpr_state;
+	ZyanStatus zst;
+	ZydisDecoder *SelectedDecoder;
+	ZydisDecodedInstruction ZyIns;
+	if(noir_bt(&seg_state->cs.attrib,13))		// Long Mode?
+		SelectedDecoder=&ZyDec64;
+	else if(noir_bt(&seg_state->cs.attrib,14))	// Default-Big?
+		SelectedDecoder=&ZyDec32;
+	else
+		SelectedDecoder=&ZyDec16;
+	zst=ZydisDecoderDecodeBuffer(SelectedDecoder,instruction,15,&ZyIns);
+	if(ZYAN_SUCCESS(zst))
+	{
+		ZydisDecodedOperand *ZyOp=nvc_emu_get_read_operand(&ZyIns);
+		*size=ZyIns.operand_width>>3;
+		switch(ZyIns.mnemonic)
+		{
+			case ZYDIS_MNEMONIC_MOV:
+			{
+				switch(ZyOp->type)
+				{
+					case ZYDIS_OPERAND_TYPE_REGISTER:
+					{
+						if(ZyOp->reg.value>=ZYDIS_REGISTER_EAX && ZyOp->reg.value<=ZYDIS_REGISTER_R15D)
+						{
+							*(u32p)operand=(u32)gpr[ZyOp->reg.value-ZYDIS_REGISTER_EAX];
+							return ZyIns.length;
+						}
+						break;
+					}
+					case ZYDIS_OPERAND_TYPE_IMMEDIATE:
+					{
+						noir_movsb(operand,&ZyOp->imm.value,*size);
+						return ZyIns.length;
+						break;
+					}
+				}
+				break;
+			}
+			case ZYDIS_MNEMONIC_PUSH:
+			{
+				break;
+			}
+		}
+	}
+	return 0;
+}

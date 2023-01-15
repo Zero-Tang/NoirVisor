@@ -14,5 +14,7 @@
 
 #include <nvdef.h>
 
-memory_descriptor acpi_rsdt={0};
-size_t acpi_rsdt_length=0;
+void* noir_locate_acpi_rsdt(size_t *length);
+
+void* acpi_rsdt_ptr;
+size_t acpi_rsdt_len;

@@ -410,6 +410,106 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 	}
 }
 
+NTSTATUS NoirCopyAcpiTableRootFromRegistry(OUT PVOID *Rsdt,OUT PSIZE_T Length)
+{
+	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
+	PKEY_BASIC_INFORMATION KeyBasInf=NoirAllocatePagedMemory(PAGE_SIZE);
+	if(KeyBasInf)
+	{
+		HANDLE hKey=NULL;
+		UNICODE_STRING uniKeyName=RTL_CONSTANT_STRING(L"\\Registry\\Machine\\Hardware\\ACPI\\RSDT");
+		OBJECT_ATTRIBUTES oa;
+		InitializeObjectAttributes(&oa,&uniKeyName,OBJ_CASE_INSENSITIVE|OBJ_KERNEL_HANDLE,NULL,NULL);
+		st=ZwOpenKey(&hKey,GENERIC_READ,&oa);
+		if(NT_SUCCESS(st))
+		{
+			ULONG RetLen=0;
+			st=ZwEnumerateKey(hKey,0,KeyBasicInformation,KeyBasInf,PAGE_SIZE,&RetLen);
+			if(NT_ERROR(st))
+				NoirDebugPrint("Failed to enumerate %wZ! Status=0x%X, Return-Length=0x%X\n",&uniKeyName,st,RetLen);
+			else
+			{
+				HANDLE hSubKey1=NULL;
+				UNICODE_STRING uniSubKeyName={(USHORT)KeyBasInf->NameLength,PAGE_SIZE,KeyBasInf->Name};
+				NoirDebugPrint("ACPI Registry Key Name (Lv1): %wZ\n",&uniSubKeyName);
+				oa.RootDirectory=hKey;
+				oa.ObjectName=&uniSubKeyName;
+				st=ZwOpenKey(&hSubKey1,GENERIC_READ,&oa);
+				if(NT_SUCCESS(st))
+				{
+					st=ZwEnumerateKey(hSubKey1,0,KeyBasicInformation,KeyBasInf,PAGE_SIZE,&RetLen);
+					if(NT_ERROR(st))
+						NoirDebugPrint("Failed to enumerate %wZ! Status=0x%X, Return-Length=0x%X\n",&uniSubKeyName,st,RetLen);
+					else
+					{
+						HANDLE hSubKey2=NULL;
+						uniSubKeyName.Length=(USHORT)KeyBasInf->NameLength;
+						oa.RootDirectory=hSubKey1;
+						NoirDebugPrint("ACPI Registry Key Name (Lv2): %wZ\n",&uniSubKeyName);
+						st=ZwOpenKey(&hSubKey2,GENERIC_READ,&oa);
+						if(NT_SUCCESS(st))
+						{
+							st=ZwEnumerateKey(hSubKey2,0,KeyBasicInformation,KeyBasInf,PAGE_SIZE,&RetLen);
+							if(NT_ERROR(st))
+								NoirDebugPrint("Failed to enumerate %wZ! Status=0x%X, Return-Length=0x%X\n",&uniSubKeyName,st,RetLen);
+							else
+							{
+								HANDLE hSubKey3=NULL;
+								uniSubKeyName.Length=(USHORT)KeyBasInf->NameLength;
+								oa.RootDirectory=hSubKey2;
+								NoirDebugPrint("ACPI Registry Key Name (Lv3): %wZ\n",&uniSubKeyName);
+								st=ZwOpenKey(&hSubKey3,GENERIC_READ,&oa);
+								if(NT_SUCCESS(st))
+								{
+									UNICODE_STRING uniKvName=RTL_CONSTANT_STRING(L"00000000");
+									PKEY_VALUE_PARTIAL_INFORMATION KvPartInfo=(PKEY_VALUE_PARTIAL_INFORMATION)KeyBasInf;
+									st=ZwQueryValueKey(hSubKey3,&uniKvName,KeyValuePartialInformation,KvPartInfo,PAGE_SIZE,&RetLen);
+									if(NT_SUCCESS(st))
+									{
+										if(KvPartInfo->Type!=REG_BINARY)
+										{
+											NoirDebugPrint("Unknown Key-Value type of ACPI RSDT: 0x%X!\n",KvPartInfo->Type);
+											st=STATUS_UNSUCCESSFUL;
+										}
+										else
+										{
+											*Length=(SIZE_T)KvPartInfo->DataLength;
+											*Rsdt=NoirAllocateNonPagedMemory(KvPartInfo->DataLength);
+											if(*Rsdt)
+												RtlCopyMemory(*Rsdt,KvPartInfo->Data,KvPartInfo->DataLength);
+											else
+											{
+												NoirDebugPrint("Failed to copy ACPI Root Table!");
+												st=STATUS_INSUFFICIENT_RESOURCES;
+											}
+										}
+									}
+									ZwClose(hSubKey3);
+								}
+							}
+							ZwClose(hSubKey2);
+						}
+					}
+					ZwClose(hSubKey1);
+				}
+			}
+			ZwClose(hKey);
+		}
+		NoirFreePagedMemory(KeyBasInf);
+	}
+	return st;
+}
+
+void* noir_locate_acpi_rsdt(size_t *length)
+{
+	PVOID Rsdt=NULL;
+	SIZE_T Length=0;
+	NTSTATUS st=NoirCopyAcpiTableRootFromRegistry(&Rsdt,&Length);
+	NoirDebugPrint("Copy ACPI Table Root Status=0x%X\n",st);
+	if(ARGUMENT_PRESENT(length))*length=Length;
+	return Rsdt;
+}
+
 ULONG32 noir_get_instruction_length(IN PVOID code,IN BOOLEAN LongMode)
 {
 	if(LongMode)
