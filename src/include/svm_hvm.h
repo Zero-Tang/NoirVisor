@@ -190,6 +190,15 @@ typedef struct _noir_svm_vcpu
 	noir_svm_virtual_msr virtual_msr;
 	noir_svm_nested_vcpu nested_hvm;
 	noir_cvm_virtual_cpu cvm_state;
+	union
+	{
+		struct
+		{
+			u64 x2apic:1;
+			u64 reserved:63;
+		};
+		u64 value;
+	}flags;
 	u32 cpuid_fms;
 	u32 enabled_feature;
 	u32v global_state;
@@ -288,6 +297,7 @@ typedef struct _noir_svm_custom_vm
 	memory_descriptor avic_logical;
 	memory_descriptor avic_physical;
 	struct _noir_svm_custom_npt_manager nptm;
+	struct _noir_svm_custom_npt_manager smm_nptm;
 }noir_svm_custom_vm,*noir_svm_custom_vm_p;
 
 // Virtual Processor defined for Encrypted CVM.

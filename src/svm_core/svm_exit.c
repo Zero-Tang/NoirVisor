@@ -840,7 +840,37 @@ void static noir_hvcode fastcall nvc_svm_rdmsr_handler(noir_gpr_state_p gpr_stat
 	if(noir_is_synthetic_msr(index))
 	{
 		if(hvm_p->options.cpuid_hv_presence)
-			val.value=nvc_mshv_rdmsr_handler(&vcpu->mshvcpu,index);
+		{
+			switch(index)
+			{
+				// SynIC MSRs should be virtualized here, instead of passing to the MSHV handlers.
+				case hv_x64_msr_eoi:
+				{
+					// Reading from SynIC EOI register results in #GP(0) exception.
+					noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
+					break;
+				}
+				case hv_x64_msr_icr:
+				{
+					// Interrupt Command Register. Used for virtualizing IPIs.
+					val.value=vcpu->mshvcpu.local_synic.icr;
+					break;
+				}
+				case hv_x64_msr_tpr:
+				{
+					// TPR is actually CR8.
+					val.value=noir_readcr8();
+					break;
+				}
+				default:
+				{
+					vcpu->mshvcpu.event.value=0;
+					val.value=nvc_mshv_rdmsr_handler(&vcpu->mshvcpu,index);
+					noir_svm_vmwrite64(vmcb,event_injection,vcpu->mshvcpu.event.value);
+					break;
+				}
+			}
+		}
 		else
 			// Synthetic MSR is not allowed, inject #GP to Guest.
 			noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
@@ -903,7 +933,47 @@ void static noir_hvcode fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_stat
 	if(noir_is_synthetic_msr(index))
 	{
 		if(hvm_p->options.cpuid_hv_presence)
-			nvc_mshv_wrmsr_handler(&vcpu->mshvcpu,index,val.value);
+		{
+			switch(index)
+			{
+#if defined(_hv_type1)
+				// SynIC MSRs should be virtualized here, instead of passing to the MSHV handlers.
+				case hv_x64_msr_eoi:
+				{
+					// Writing to EOI...
+					if(vcpu->flags.x2apic)
+						noir_wrmsr(amd64_x2apic_eoi,val.value);
+					else
+						*(u32p)(hvm_p->relative_hvm->apic_base+amd64_apic_eoi)=val.low;
+					break;
+				}
+				case hv_x64_msr_icr:
+				{
+					// Interrupt Command Register. Used for virtualizing IPIs...
+					amd64_apic_register_icr_lo icr_lo;
+					amd64_apic_register_icr_hi icr_hi;
+					vcpu->mshvcpu.local_synic.icr=val.value;
+					if(vcpu->flags.x2apic)
+					icr_lo.value=val.low;
+					icr_hi.value=val.high;
+					break;
+				}
+				case hv_x64_msr_tpr:
+				{
+					// TPR is actually CR8.
+					val.value=noir_readcr8();
+					break;
+				}
+#endif
+				default:
+				{
+					vcpu->mshvcpu.event.value=0;
+					nvc_mshv_wrmsr_handler(&vcpu->mshvcpu,index,val.value);
+					noir_svm_vmwrite64(vmcb,event_injection,vcpu->mshvcpu.event.value);
+					break;
+				}
+			}
+		}
 		else
 			// Synthetic MSR is not allowed, inject #GP to Guest.
 			noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
@@ -921,7 +991,10 @@ void static noir_hvcode fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_stat
 				if(new_base!=hvm_p->relative_hvm->apic_base)
 					noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
 				else
+				{
+					vcpu->flags.x2apic=noir_bt(&val.low,amd64_apic_extd);
 					noir_wrmsr(amd64_apic_base,val.value);	// Reflect to host.
+				}
 				break;
 			}
 			case amd64_x2apic_icr:

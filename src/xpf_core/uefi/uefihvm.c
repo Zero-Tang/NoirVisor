@@ -13,10 +13,13 @@
 */
 
 #include <Uefi.h>
+#include <Guid/Acpi.h>
 #include <IndustryStandard/Acpi.h>
 #include <IndustryStandard/PeImage.h>
 #include <Library/BaseLib.h>
+#include <Library/BaseMemoryLib.h>
 #include <Library/PrintLib.h>
+#include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 #include <Register/Intel/Cpuid.h>
 #include "uefihvm.h"
@@ -106,6 +109,39 @@ EFI_STATUS NoirConfigureInternalDebugger()
 {
 	noir_configure_serial_port_debugger(1,0x2F8,115200);
 	return EFI_SUCCESS;
+}
+
+VOID* noir_locate_acpi_rsdt(OUT UINTN *Length)
+{
+	EFI_ACPI_DESCRIPTION_HEADER *Rsdt=NULL,*Xsdt=NULL;
+	for(UINTN i=0;i<gST->NumberOfTableEntries;i++)
+	{
+		EFI_CONFIGURATION_TABLE *CurrentEntry=(EFI_CONFIGURATION_TABLE*)&gST->ConfigurationTable[i];
+		if(CompareGuid(&CurrentEntry->VendorGuid,&gEfiAcpi20TableGuid))
+		{
+			EFI_ACPI_2_0_ROOT_SYSTEM_DESCRIPTION_POINTER* Rsdp=(EFI_ACPI_2_0_ROOT_SYSTEM_DESCRIPTION_POINTER*)CurrentEntry->VendorTable;
+			if(Rsdp->Signature==EFI_ACPI_2_0_ROOT_SYSTEM_DESCRIPTION_POINTER_SIGNATURE)
+			{
+				Rsdt=(EFI_ACPI_DESCRIPTION_HEADER*)((UINTN)Rsdp->RsdtAddress);
+				Xsdt=(EFI_ACPI_DESCRIPTION_HEADER*)((UINTN)Rsdp->XsdtAddress);
+			}
+		}
+		else if(CompareGuid(&CurrentEntry->VendorGuid,&gEfiAcpi10TableGuid))
+		{
+			EFI_ACPI_1_0_ROOT_SYSTEM_DESCRIPTION_POINTER* Rsdp=(EFI_ACPI_1_0_ROOT_SYSTEM_DESCRIPTION_POINTER*)CurrentEntry->VendorTable;
+			if(Rsdp->Signature==EFI_ACPI_1_0_ROOT_SYSTEM_DESCRIPTION_POINTER_SIGNATURE)Rsdt=(EFI_ACPI_DESCRIPTION_HEADER*)((UINTN)Rsdp->RsdtAddress);
+		}
+	}
+	if(Xsdt)
+	{
+		*Length=(UINTN)Xsdt->Length;
+		return Xsdt;
+	}
+	else
+	{
+		*Length=(UINTN)Rsdt->Length;
+		return Rsdt;
+	}
 }
 
 BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)

@@ -414,6 +414,12 @@ noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 				vcpu->nsvs.ghcb=*(u64*)buffer;
 				break;
 			}
+			case noir_cvm_apic_bar_register:
+			{
+				vcpu->msrs.apic.value=*(u64*)buffer;
+				vcpu->state_cache.ap_valid=0;
+				break;
+			}
 			default:
 			{
 				st=noir_invalid_parameter;
@@ -583,6 +589,11 @@ noir_status nvc_view_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 				*(u64*)buffer=vcpu->nsvs.ghcb;
 				break;
 			}
+			case noir_cvm_apic_bar_register:
+			{
+				*(u64*)buffer=vcpu->msrs.apic.value;
+				break;
+			}
 			default:
 			{
 				st=noir_invalid_parameter;
@@ -661,7 +672,8 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 		}
 		if(st==noir_success)
 		{
-			if(vcpu->exit_context.intercept_code==cv_memory_access)nvc_emu_decode_memory_access(vcpu);
+			if(vcpu->exit_context.intercept_code==cv_memory_access && vcpu->vcpu_options.decode_memory_access_instruction)
+				nvc_emu_decode_memory_access(vcpu);
 			if(!vcpu->vcpu_options.use_tunnel)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
 		}
 	}

@@ -403,6 +403,74 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 	}
 }
 
+EFI_STATUS NoirPrintMemoryMapAndGetTom(OUT UINT64 *Tom)
+{
+	EFI_MEMORY_DESCRIPTOR *MemoryDescriptor=NULL;
+	UINTN MemoryDescriptorSize=0,MapKey,DescriptorSize;
+	UINT32 DescriptorVersion;
+	EFI_STATUS st=gBS->GetMemoryMap(&MemoryDescriptorSize,MemoryDescriptor,&MapKey,&DescriptorSize,&DescriptorVersion);
+	*Tom=0;
+	if(st==EFI_BUFFER_TOO_SMALL)
+	{
+		MemoryDescriptorSize+=DescriptorSize<<1;
+		MemoryDescriptor=AllocatePool(MemoryDescriptorSize);
+		if(MemoryDescriptor==NULL)
+			st=EFI_OUT_OF_RESOURCES;
+		else
+		{
+			EFI_MEMORY_DESCRIPTOR *CurrentEntry=MemoryDescriptor;
+			st=gBS->GetMemoryMap(&MemoryDescriptorSize,MemoryDescriptor,&MapKey,&DescriptorSize,&DescriptorVersion);
+			if(st!=EFI_SUCCESS)
+				Print(L"Failed to get memory map! Status=0x%X\n",st);
+			else
+			{
+				do
+				{
+					CHAR8 *MemoryTypeName=CurrentEntry->Type<EfiMaxMemoryType?EfiMemoryTypeNames[CurrentEntry->Type]:"Unknown";
+					Print(L"Memory Map Start: 0x%llX\t Pages: 0x%llX\t Type: %a\t Attributes: ",CurrentEntry->PhysicalStart,CurrentEntry->NumberOfPages,MemoryTypeName);
+					if(CurrentEntry->Attribute==0)
+						Print(L"None\n");
+					else
+					{
+						for(UINT8 i=0;i<64;i++)
+							if(_bittest64(&CurrentEntry->Attribute,i))
+								Print(L"%a ",EfiMemoryAttributeNames[i]);
+						Print(L"\n");
+					}
+					switch(CurrentEntry->Type)
+					{
+						case EfiLoaderCode:
+						case EfiLoaderData:
+						case EfiBootServicesCode:
+						case EfiBootServicesData:
+						case EfiRuntimeServicesCode:
+						case EfiRuntimeServicesData:
+						case EfiConventionalMemory:
+						case EfiACPIReclaimMemory:
+						{
+							// These types of memory could be treated as General-Purpose Physical Memory.
+							UINT64 RangeMax=CurrentEntry->PhysicalStart+(CurrentEntry->NumberOfPages<<EFI_PAGE_SHIFT);
+							if(RangeMax>*Tom)*Tom=RangeMax;
+							break;
+						}
+					}
+					CurrentEntry=(EFI_MEMORY_DESCRIPTOR*)((UINTN)CurrentEntry+DescriptorSize);
+				}while((UINTN)CurrentEntry<(UINTN)MemoryDescriptor+MemoryDescriptorSize);
+			}
+			FreePool(MemoryDescriptor);
+		}
+	}
+	return st;
+}
+
+UINT64 noir_get_top_of_memory()
+{
+	UINT64 Tom;
+	EFI_STATUS st=NoirPrintMemoryMapAndGetTom(&Tom);
+	Print(L"Get TOM Status: 0x%X\t TOM=0x%llX\n",st,Tom);
+	return Tom;
+}
+
 UINT32 noir_get_current_processor()
 {
 	if(NoirEfiInRuntimeStage)

@@ -940,7 +940,6 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state
 {
 	amd64_npt_fault_code fault;
 	u64 gpa=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info2);
-	bool is_mmio=false;
 	// #NPF occured, tell the subverted host there is a memory access fault.
 	nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 	fault.value=noir_svm_vmread64(cvcpu->vmcb.virt,exit_info1);

@@ -16,6 +16,7 @@
 #include <nvbdk.h>
 #include <nvstatus.h>
 #include <nv_intrin.h>
+#include "acpi_def.h"
 #include "acpi_main.h"
 
 noir_status nvc_acpi_initialize()
@@ -28,6 +29,7 @@ noir_status nvc_acpi_initialize()
 
 void nvc_acpi_finalize()
 {
-	if(acpi_rsdt_ptr)
-		noir_free_nonpg_memory(acpi_rsdt_ptr);
+#if !defined(_hv_type1)
+	if(acpi_rsdt_ptr)noir_free_nonpg_memory(acpi_rsdt_ptr);
+#endif
 }

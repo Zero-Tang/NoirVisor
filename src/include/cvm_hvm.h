@@ -54,6 +54,7 @@ typedef enum _noir_cvm_intercept_code
 	cv_interrupt_window=14,
 	cv_task_switch=15,
 	cv_single_step=16,
+	cv_apic_msr=17,
 	// The rest are scheduler-relevant.
 	cv_scheduler_exit=0x80000000,
 	cv_scheduler_pause=0x80000001,
@@ -87,6 +88,7 @@ typedef enum _noir_cvm_register_type
 	noir_cvm_last_branch_record_register,
 	noir_cvm_time_stamp_counter,
 	noir_cvm_ghcb_register,
+	noir_cvm_apic_bar_register,
 	noir_cvm_maximum_register_type
 }noir_cvm_register_type,*noir_cvm_register_type_p;
 
@@ -206,6 +208,21 @@ typedef struct _noir_cvm_task_switch_context
 	u16 initiator_id;
 }noir_cvm_task_switch_context,*noir_cvm_task_switch_context_p;
 
+// For Memory-Access interceptions, decoding is required to help implementing MMIO.
+#define noir_cvm_operand_class_gpr			0		// al, dx, esp, r15, etc.
+#define noir_cvm_operand_class_gpr8hi		1		// ah, ch, etc.
+#define noir_cvm_operand_class_memory		2		// No specification yet.
+#define noir_cvm_operand_class_farptr		3		// No specification yet.
+#define noir_cvm_operand_class_immediate	4		// No specification yet.
+#define noir_cvm_operand_class_segsel		5		// cs, gs, etc...
+#define noir_cvm_operand_class_fpr			6		// mm0, st(4), etc.
+#define noir_cvm_operand_class_simd			7		// xmm0, ymm9, zmm22, etc.
+#define noir_cvm_operand_class_unknown		31
+
+#define noir_cvm_instruction_code_mov			0
+// NoirVisor's internal emulator cannot emulate this instruction...
+#define noir_cvm_instruction_code_unknown		0xffff
+
 typedef struct _noir_cvm_memory_access_context
 {
 	struct
@@ -219,16 +236,40 @@ typedef struct _noir_cvm_memory_access_context
 	u8 instruction_bytes[15];
 	u64 gpa;
 	u64 gva;
+	// The flags member is indicating the operand intended for MMIO.
 	union
 	{
 		struct
 		{
 			u64 operand_size:16;
-			u64 reserved:47;
+			u64 instruction_code:16;
+			u64 operand_class:5;
+			u64 operand_code:7;
+			u64 reserved:19;
 			u64 decoded:1;
 		};
 		u64 value;
 	}flags;
+	union
+	{
+		struct
+		{
+			bool is_signed;
+			struct
+			{
+				u64 u;
+				i64 s;
+			};
+		}imm;
+		u64 mem;
+		struct
+		{
+			u16 segment;
+			u16 reserved0;
+			u32 offset;
+			u64 reserved1;
+		}far;
+	}operand;
 }noir_cvm_memory_access_context,*noir_cvm_memory_access_context_p;
 
 typedef struct _noir_cvm_interrupt_window_context
@@ -391,9 +432,10 @@ typedef union _noir_cvm_vcpu_options
 		u32 blocking_by_nmi:1;
 		u32 hidden_tf:1;
 		u32 interrupt_shadow:1;
+		u32 decode_memory_access_instruction:1;
 		u32 use_tunnel:1;
 		u32 tunnel_format:3;
-		u32 reserved:15;
+		u32 reserved:14;
 	};
 	u32 value;
 }noir_cvm_vcpu_options,*noir_cvm_vcpu_options_p;
@@ -723,7 +765,8 @@ noir_hvdata u32 noir_cvm_register_buffer_limit[noir_cvm_maximum_register_type]=
 	8,								// PAT Register
 	sizeof(u64)*5,					// LBR Register
 	8,								// TSC Register
-	8								// GHCB Register
+	8,								// GHCB Register
+	8								// APIC-BAR Register
 };
 #elif defined(_vt_core) || defined(_svm_core)
 void nvc_release_lockers(noir_cvm_virtual_machine_p virtual_machine);
