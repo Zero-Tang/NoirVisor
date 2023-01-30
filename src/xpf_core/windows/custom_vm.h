@@ -304,7 +304,6 @@ NOIR_STATUS nvc_view_vcpu_registers(IN PVOID VirtualProcessor,IN NOIR_CVM_REGIST
 NOIR_STATUS nvc_edit_vcpu_registers(IN PVOID VirtualProcessor,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS nvc_set_event_injection(IN PVOID VirtualProcessor,IN ULONG64 InjectedEvent);
 NOIR_STATUS nvc_set_guest_vcpu_options(IN PVOID VirtualProcessor,IN ULONG32 OptionType,IN ULONG32 Options);
-NOIR_STATUS nvc_emu_try_cvexit_emulation(IN PVOID VirtualProcessor,IN OUT PVOID Emulation);
 PVOID nvc_reference_vcpu(IN PVOID VirtualMachine,IN ULONG32 VpIndex);
 HANDLE nvc_get_vm_pid(IN PVOID VirtualMachine);
 

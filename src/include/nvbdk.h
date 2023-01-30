@@ -403,36 +403,16 @@ typedef struct _noir_disasm_request
 	char mnemonic[1];
 }noir_disasm_request,*noir_disasm_request_p;
 
-typedef struct _noir_basic_operand
+typedef struct _noir_npiep_operand
 {
-	union
+	struct
 	{
-		struct
-		{
-			u64 displacement:32;	// Bits 0-31
-			u64 si_valid:1;			// Bit	32
-			u64 scale:2;			// Bits	33-34
-			u64 index:4;			// Bits	35-38
-			u64 base:4;				// Bits	39-42
-			u64 segment:3;			// Bits	43-45
-			u64 address_size:2;		// Bits	46-47
-			u64 reg1:4;				// Bits	48-51
-			u64 reg2:4;				// Bits	52-55
-			u64 operand_size:2;		// Bits	56-57
-			u64 base_valid:1;		// Bit	58
-			u64 reserved:1;			// Bit	59
-			u64 mem_valid:1;		// Bit	60
-			u64 reg_valid:2;		// Bits	61-62
-			u64 imm_valid:1;		// Bit	63
-		};
-		u64 value;
-	}complex;
-	union
-	{
-		u64 s;
-		u64 u;
-	}immediate;
-}noir_basic_operand,*noir_basic_operand_p;
+		u64 reg:4;
+		u64 reserved:59;
+		u64 use_register:1;
+	}flags;
+	u64 memory_address;
+}noir_npiep_operand,*noir_npiep_operand_p;
 
 typedef union _noir_addr32_translator
 {
@@ -544,10 +524,6 @@ u32 noir_get_current_processor();
 u32 noir_get_instruction_length(void* code,bool long_mode);
 u32 noir_get_instruction_length_ex(void* code,u8 bits);
 u32 noir_disasm_instruction(void* code,char* mnemonic,size_t mnemonic_length,u8 bits,u64 virtual_address);
-void noir_decode_instruction16(u8* code,size_t code_length,void* decode_result);
-void noir_decode_instruction32(u8* code,size_t code_length,void* decode_result);
-void noir_decode_instruction64(u8* code,size_t code_length,void* decode_result);
-void noir_decode_basic_operand(void* decode_result,noir_basic_operand_p basic_operand);
 
 void* noir_get_host_gdt_base(u32 processor_number);
 void* noir_get_host_idt_base(u32 processor_number);

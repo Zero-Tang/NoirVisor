@@ -152,7 +152,6 @@ NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpInde
 NOIR_STATUS NoirSetVirtualProcessorOptions(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 OptionType,IN ULONG32 Options);
 NOIR_STATUS NoirRunVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID ExitContext);
 NOIR_STATUS NoirRescindVirtualProcessor(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex);
-NOIR_STATUS NoirTryCvExitEmulation(IN CVM_HANDLE Handle,IN ULONG32 VpIndex,IN OUT PVOID Emulation);
 
 void NoirInitializeDisassembler();
 NTSTATUS NoirReportWindowsVersion();

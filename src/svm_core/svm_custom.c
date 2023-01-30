@@ -69,7 +69,7 @@ void noir_hvcode nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm
 	if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
 	{
 		nvc_svm_avic_physical_apic_id_entry_p apic_physical=(nvc_svm_avic_physical_apic_id_entry_p)cvcpu->vm->avic_physical.virt;
-		apic_physical[cvcpu->proc_id].is_running=false;
+		apic_physical[cvcpu->vcpu_id].is_running=false;
 	}
 	// The rest of processor states are already saved in VMCB.
 	// Step 2: Load Host State.
@@ -341,8 +341,8 @@ void noir_hvcode nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_sv
 	if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
 	{
 		nvc_svm_avic_physical_apic_id_entry_p apic_physical=(nvc_svm_avic_physical_apic_id_entry_p)cvcpu->vm->avic_physical.virt;
-		apic_physical[cvcpu->proc_id].is_running=true;
-		apic_physical[cvcpu->proc_id].host_physical_apic_id=cvcpu->proc_id;
+		apic_physical[cvcpu->vcpu_id].is_running=true;
+		apic_physical[cvcpu->vcpu_id].host_physical_apic_id=cvcpu->proc_id;
 	}
 	// Step 3. Switch vCPU to Guest.
 	loader_stack->custom_vcpu=cvcpu;
@@ -376,6 +376,38 @@ void noir_hvcode nvc_svm_load_basic_exit_context(noir_svm_custom_vcpu_p cvcpu)
 	cvcpu->header.exit_context.vcpu_state.loaded=true;
 }
 
+void noir_hvcode nvc_svm_dump_guest_segments(noir_cvm_virtual_cpu_p vcpu,void* vmcb)
+{
+	vcpu->seg.cs.selector=noir_svm_vmread16(vmcb,guest_cs_selector);
+	vcpu->seg.ds.selector=noir_svm_vmread16(vmcb,guest_ds_selector);
+	vcpu->seg.es.selector=noir_svm_vmread16(vmcb,guest_es_selector);
+	vcpu->seg.ss.selector=noir_svm_vmread16(vmcb,guest_ss_selector);
+	vcpu->seg.cs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_cs_attrib));
+	vcpu->seg.ds.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_ds_attrib));
+	vcpu->seg.es.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_es_attrib));
+	vcpu->seg.ss.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_ss_attrib));
+	vcpu->seg.cs.limit=noir_svm_vmread32(vmcb,guest_cs_limit);
+	vcpu->seg.ds.limit=noir_svm_vmread32(vmcb,guest_ds_limit);
+	vcpu->seg.es.limit=noir_svm_vmread32(vmcb,guest_es_limit);
+	vcpu->seg.ss.limit=noir_svm_vmread32(vmcb,guest_ss_limit);
+	vcpu->seg.cs.base=noir_svm_vmread64(vmcb,guest_cs_base);
+	vcpu->seg.ds.base=noir_svm_vmread64(vmcb,guest_ds_base);
+	vcpu->seg.es.base=noir_svm_vmread64(vmcb,guest_es_base);
+	vcpu->seg.ss.base=noir_svm_vmread64(vmcb,guest_ss_base);
+}
+
+void noir_hvcode nvc_svm_dump_guest_fs_gs(noir_cvm_virtual_cpu_p vcpu,void* vmcb)
+{
+	vcpu->seg.fs.selector=noir_svm_vmread16(vmcb,guest_fs_selector);
+	vcpu->seg.gs.selector=noir_svm_vmread16(vmcb,guest_gs_selector);
+	vcpu->seg.fs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_fs_attrib));
+	vcpu->seg.gs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_gs_attrib));
+	vcpu->seg.fs.limit=noir_svm_vmread32(vmcb,guest_fs_limit);
+	vcpu->seg.gs.limit=noir_svm_vmread32(vmcb,guest_gs_limit);
+	vcpu->seg.fs.base=noir_svm_vmread64(vmcb,guest_fs_base);
+	vcpu->seg.gs.base=noir_svm_vmread64(vmcb,guest_gs_base);
+}
+
 // This function only dumps state saved in VMCB.
 void noir_hvcode nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu)
 {
@@ -396,35 +428,9 @@ void noir_hvcode nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu)
 		vcpu->header.drs.dr7=noir_svm_vmread64(vmcb,guest_dr7);
 	}
 	if(vcpu->header.state_cache.sr_valid)
-	{
-		vcpu->header.seg.cs.selector=noir_svm_vmread16(vmcb,guest_cs_selector);
-		vcpu->header.seg.ds.selector=noir_svm_vmread16(vmcb,guest_ds_selector);
-		vcpu->header.seg.es.selector=noir_svm_vmread16(vmcb,guest_es_selector);
-		vcpu->header.seg.ss.selector=noir_svm_vmread16(vmcb,guest_ss_selector);
-		vcpu->header.seg.cs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_cs_attrib));
-		vcpu->header.seg.ds.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_ds_attrib));
-		vcpu->header.seg.es.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_es_attrib));
-		vcpu->header.seg.ss.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_ss_attrib));
-		vcpu->header.seg.cs.limit=noir_svm_vmread32(vmcb,guest_cs_limit);
-		vcpu->header.seg.ds.limit=noir_svm_vmread32(vmcb,guest_ds_limit);
-		vcpu->header.seg.es.limit=noir_svm_vmread32(vmcb,guest_es_limit);
-		vcpu->header.seg.ss.limit=noir_svm_vmread32(vmcb,guest_ss_limit);
-		vcpu->header.seg.cs.base=noir_svm_vmread64(vmcb,guest_cs_base);
-		vcpu->header.seg.ds.base=noir_svm_vmread64(vmcb,guest_ds_base);
-		vcpu->header.seg.es.base=noir_svm_vmread64(vmcb,guest_es_base);
-		vcpu->header.seg.ss.base=noir_svm_vmread64(vmcb,guest_ss_base);
-	}
+		nvc_svm_dump_guest_segments(&vcpu->header,vmcb);
 	if(vcpu->header.state_cache.fg_valid)
-	{
-		vcpu->header.seg.fs.selector=noir_svm_vmread16(vmcb,guest_fs_selector);
-		vcpu->header.seg.gs.selector=noir_svm_vmread16(vmcb,guest_gs_selector);
-		vcpu->header.seg.fs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_fs_attrib));
-		vcpu->header.seg.gs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_gs_attrib));
-		vcpu->header.seg.fs.limit=noir_svm_vmread32(vmcb,guest_fs_limit);
-		vcpu->header.seg.gs.limit=noir_svm_vmread32(vmcb,guest_gs_limit);
-		vcpu->header.seg.fs.base=noir_svm_vmread64(vmcb,guest_fs_base);
-		vcpu->header.seg.gs.base=noir_svm_vmread64(vmcb,guest_gs_base);
-	}
+		nvc_svm_dump_guest_fs_gs(&vcpu->header,vmcb);
 	if(vcpu->header.state_cache.dt_valid)
 	{
 		vcpu->header.seg.gdtr.limit=noir_svm_vmread32(vmcb,guest_gdtr_limit);
@@ -921,8 +927,8 @@ void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 			// Remove from AVIC Logical & Physical APIC ID Table.
 			nvc_svm_avic_physical_apic_id_entry_p avic_physical=(nvc_svm_avic_physical_apic_id_entry_p)vcpu->vm->avic_physical.virt;
 			nvc_svm_avic_logical_apic_id_entry_p avic_logical=(nvc_svm_avic_logical_apic_id_entry_p)vcpu->vm->avic_logical.virt;
-			avic_physical[vcpu->proc_id].value=0;
-			avic_logical[vcpu->proc_id].value=0;
+			avic_physical[vcpu->vcpu_id].value=0;
+			avic_logical[vcpu->vcpu_id].value=0;
 			// Release APIC Backing Page.
 			if(vcpu->apic_backing.virt)noir_free_contd_memory(vcpu->apic_backing.virt,page_size);
 		}

@@ -353,6 +353,8 @@ void fastcall nvc_svm_reserved_cpuid_handler(u32* info);
 void nvc_svm_set_mshv_handler(bool option);
 void nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vmcb);
 void nvc_svm_dump_guest_vcpu_state(noir_svm_custom_vcpu_p vcpu);
+void nvc_svm_dump_guest_segments(noir_cvm_virtual_cpu_p vcpu,void* vmcb);
+void nvc_svm_dump_guest_fs_gs(noir_cvm_virtual_cpu_p vcpu,void* vmcb);
 void nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
@@ -376,3 +378,5 @@ bool nvc_npt_reassign_cvm_all_pages_ownership(noir_svm_custom_vm_p vm,u32 asid,b
 u8 nvc_npt_get_host_pat_index(u8 type);
 noir_status nvc_svmc_initialize_cvm_module();
 void nvc_svmc_finalize_cvm_module();
+
+u8 nvc_emu_decode_npiep_instruction(noir_cvm_virtual_cpu_p vcpu,u8p buffer,size_t buffer_limit,noir_npiep_operand_p operand);

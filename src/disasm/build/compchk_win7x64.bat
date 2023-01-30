@@ -12,9 +12,9 @@ echo Copyright (c) 2014-2021, zyantific. All Rights Reserved.
 pause
 
 echo ============Start Compiling============
-for %%1 in (..\zydis\src\*.c) do (cl %%1 /I"..\zydis\include" /I"..\zydis\dependencies\zycore\include" /I"..\zydis\msvc" /I"..\zydis\src" /nologo /Zi /W3 /WX /Od /Oi /D"ZYDIS_STATIC_DEFINE" /D"ZYAN_NO_LIBC" /FAcs /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c /errorReport:queue)
+for %%1 in (..\zydis\src\*.c) do (cl %%1 /I"..\zydis\include" /I"..\zydis\dependencies\zycore\include" /I"..\zydis\msvc" /I"..\zydis\src" /nologo /Zi /W3 /WX /Od /Oi /D"ZYDIS_STATIC_BUILD" /D"ZYAN_NO_LIBC" /FAcs /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c /errorReport:queue)
 
-cl ..\disasm.c /I"..\zydis\include" /I"..\zydis\dependencies\zycore\include" /I"..\zydis\msvc" /nologo /Zi /W3 /WX /Od /Oi /D"ZYDIS_STATIC_DEFINE" /D"ZYAN_NO_LIBC" /FAcs /Fa"%objpath%\disasm.cod" /Fo"%objpath%\disasm.obj" /Fd"%objpath%\vc140.pdb" /GS- /Gr /Qspectre /TC /c /errorReport:queue
+cl ..\disasm.c /I"..\zydis\include" /I"..\zydis\dependencies\zycore\include" /I"..\zydis\msvc" /nologo /Zi /W3 /WX /Od /Oi /D"ZYDIS_STATIC_BUILD" /D"ZYAN_NO_LIBC" /FAcs /Fa"%objpath%\disasm.cod" /Fo"%objpath%\disasm.obj" /Fd"%objpath%\vc140.pdb" /GS- /Gr /Qspectre /TC /c /errorReport:queue
 
 echo =============Start Linking=============
 lib "%objpath%\*.obj" /NOLOGO /OUT:"%binpath%\zydis.lib" /MACHINE:X64 /ERRORREPORT:QUEUE

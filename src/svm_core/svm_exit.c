@@ -357,58 +357,21 @@ bool static fastcall nvc_svm_parse_npiep_operand(noir_gpr_state_p gpr_state,noir
 {
 	void* vmcb=vcpu->vmcb.virt;
 	u64 grip=noir_svm_vmread64(vmcb,guest_rip),nrip=noir_svm_vmread64(vmcb,next_rip);
-	svm_segment_access_rights cs_attrib;
-	noir_basic_operand opr_info;
+	// Dump into CVM state in order to invoke emulator.
+	noir_movsp(&vcpu->cvm_state.gpr,gpr_state,sizeof(void*)*2);
+	nvc_svm_dump_guest_segments(&vcpu->cvm_state,vmcb);
+	nvc_svm_dump_guest_fs_gs(&vcpu->cvm_state,vmcb);
+	vcpu->cvm_state.rip=grip;
+	// Invoke emulator's decoder for NPIEP.
+	noir_npiep_operand npiep_op;
 #if defined(_hv_type1)
 	u8 instruction[15];
 #else
-	// It is assumed that NoirVisor is now in the same address space with the guest.
-	u8 *instruction=(u8*)grip;
+	u8p instruction=(u8p)grip;
 #endif
-	cs_attrib.value=noir_svm_vmread16(vmcb,guest_cs_attrib);
-	// Determine the mode of guest then decode the instruction.
-	// Save the decode information to the bottom of the hypervisor stack.
-	if(likely(cs_attrib.long_mode))
-		noir_decode_instruction64(instruction,nrip-grip,vcpu->hv_stack);
-	else if(noir_svm_vmcb_bt32(vmcb,guest_cr0,amd64_cr0_pe))
-		noir_decode_instruction32(instruction,nrip-grip,vcpu->hv_stack);
-	else
-		noir_decode_instruction16(instruction,nrip-grip,vcpu->hv_stack);
-	// Extract needed decoded information for NPIEP.
-	noir_decode_basic_operand(vcpu->hv_stack,&opr_info);
-	if(opr_info.complex.mem_valid)
-	{
-		ulong_ptr *gpr_array=(ulong_ptr*)gpr_state;
-		ulong_ptr pointer=0;
-		i32 disp=(i32)opr_info.complex.displacement;
-		// If the base register is rsp, load the register from VMCB.
-		if(opr_info.complex.base_valid)
-			pointer+=opr_info.complex.base==4?noir_svm_vmread(vmcb,guest_rsp):gpr_array[opr_info.complex.base];
-		if(opr_info.complex.si_valid)
-			pointer+=(gpr_array[opr_info.complex.index]<<opr_info.complex.scale);
-		// Apply displacement to the pointer.
-		pointer+=disp;
-		// Apply segment base to the pointer.
-		// Check if the guest is under protected mode or real mode.
-		// Let branch predictor prefer protected mode (and long mode).
-		if(likely(noir_svm_vmcb_bt32(vmcb,guest_cr0,amd64_cr0_pe)))
-			pointer+=noir_svm_vmread(vmcb,guest_es_base+(opr_info.complex.segment<<4));
-		else
-			pointer+=(noir_svm_vmread16(vmcb,guest_es_selector+(opr_info.complex.segment<<4))<<4);
-		// Check the size of address width of the operand. Truncate the pointer if needed.
-		if(opr_info.complex.address_size==1)
-			pointer&=0xffffffff;
-		else if(opr_info.complex.address_size==0)
-			pointer&=0xffff;
-		*result=pointer;
-	}
-	else if(opr_info.complex.reg_valid)
-	{
-		// Save the operand size and the register index.
-		*result=opr_info.complex.reg1;
-		*result|=(opr_info.complex.operand_size<<30);
-	}
-	return opr_info.complex.mem_valid;
+	u8 inslen=nvc_emu_decode_npiep_instruction(&vcpu->cvm_state,instruction,nrip-grip,&npiep_op);
+	// FIXME: Reimplement based on NPIEP-purpose emulator.
+	return true;
 }
 
 // Expected Intercept Code: 0x66
@@ -1568,6 +1531,53 @@ u32 static fastcall nvc_svm_convert_x2apic_id(u32 x2apic_id)
 		if(hvm_p->virtual_cpu[i].x2apic_id==x2apic_id)
 			return hvm_p->virtual_cpu[i].proc_id;
 	return 0xFFFFFFFF;
+}
+
+void static nvc_svm_handle_apic_write_npf(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	noir_cvm_virtual_cpu_p cvcpu=&vcpu->cvm_state;
+	amd64_npt_fault_code fault;
+	fault.value=noir_svm_vmread64(vcpu->vmcb.virt,exit_info1);
+	// Dump the state of vCPU in order to invoke the emulator.
+	noir_movsp(&cvcpu->gpr,gpr_state,sizeof(void*)*2);	// General-Purpose Registers...
+	// Segment Registers...
+	cvcpu->seg.cs.selector=noir_svm_vmread16(vmcb,guest_cs_selector);
+	cvcpu->seg.ds.selector=noir_svm_vmread16(vmcb,guest_ds_selector);
+	cvcpu->seg.es.selector=noir_svm_vmread16(vmcb,guest_es_selector);
+	cvcpu->seg.ss.selector=noir_svm_vmread16(vmcb,guest_ss_selector);
+	cvcpu->seg.fs.selector=noir_svm_vmread16(vmcb,guest_fs_selector);
+	cvcpu->seg.gs.selector=noir_svm_vmread16(vmcb,guest_gs_selector);
+	cvcpu->seg.cs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_cs_attrib));
+	cvcpu->seg.ds.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_ds_attrib));
+	cvcpu->seg.es.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_es_attrib));
+	cvcpu->seg.ss.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_ss_attrib));
+	cvcpu->seg.fs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_fs_attrib));
+	cvcpu->seg.gs.attrib=svm_attrib_inverse(noir_svm_vmread16(vmcb,guest_gs_attrib));
+	cvcpu->seg.cs.limit=noir_svm_vmread32(vmcb,guest_cs_limit);
+	cvcpu->seg.ds.limit=noir_svm_vmread32(vmcb,guest_ds_limit);
+	cvcpu->seg.es.limit=noir_svm_vmread32(vmcb,guest_es_limit);
+	cvcpu->seg.ss.limit=noir_svm_vmread32(vmcb,guest_ss_limit);
+	cvcpu->seg.fs.limit=noir_svm_vmread32(vmcb,guest_fs_limit);
+	cvcpu->seg.gs.limit=noir_svm_vmread32(vmcb,guest_gs_limit);
+	cvcpu->seg.cs.base=noir_svm_vmread64(vmcb,guest_cs_base);
+	cvcpu->seg.ds.base=noir_svm_vmread64(vmcb,guest_ds_base);
+	cvcpu->seg.es.base=noir_svm_vmread64(vmcb,guest_es_base);
+	cvcpu->seg.ss.base=noir_svm_vmread64(vmcb,guest_ss_base);
+	cvcpu->seg.fs.base=noir_svm_vmread64(vmcb,guest_fs_base);
+	cvcpu->seg.gs.base=noir_svm_vmread64(vmcb,guest_gs_base);
+	// Exit Context...
+	cvcpu->exit_context.intercept_code=cv_memory_access;
+	cvcpu->exit_context.memory_access.access.present=(u8)fault.present;
+	cvcpu->exit_context.memory_access.access.write=(u8)fault.write;
+	cvcpu->exit_context.memory_access.access.execute=(u8)fault.execute;
+	cvcpu->exit_context.memory_access.access.user=(u8)fault.user;
+	cvcpu->exit_context.memory_access.gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
+	cvcpu->exit_context.memory_access.access.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
+	noir_movsb(cvcpu->header.exit_context.memory_access.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
+	// Invoke NoirVisor's internal emulator...
+	nvc_emu_decode_memory_access(vcpu);
+	// FIXME: Emulate by extracting data...
+	// FIXME: Filter the write to APIC-page...
 }
 #endif
 

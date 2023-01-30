@@ -312,15 +312,6 @@ NTSTATUS NoirVisorDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			st=STATUS_SUCCESS;
 			break;
 		}
-		case IOCTL_CvmTryEmuExit:
-		{
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
-			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
-			PVOID Emulation=*(PVOID*)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE)*2);
-			*(PULONG32)OutputBuffer=NoirTryCvExitEmulation(VmHandle,VpIndex,Emulation);
-			st=STATUS_SUCCESS;
-			break;
-		}
 		default:
 		{
 			break;
