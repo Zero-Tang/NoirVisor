@@ -327,6 +327,39 @@ void static noir_hvcode fastcall nvc_svm_smi_cvexit_handler(noir_gpr_state_p gpr
 	cvcpu->header.exit_context.intercept_code=cv_scheduler_exit;
 }
 
+// Expected Intercept Code: 0x63
+void static noir_hvcode fastcall nvc_svm_virtint_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+{
+	// This interception either indicates an interrupt window or the interrupt should be injected.
+	if(cvcpu->special_state.prev_virq)
+	{
+		const u8 virq_vector=noir_svm_vmread8(cvcpu->vmcb.virt,avic_virq_vector);
+		// Use the conventional method to inject virtual interrupt.
+		noir_svm_inject_event(cvcpu->vmcb.virt,virq_vector,amd64_external_virtual_interrupt,false,true,0);
+		cvcpu->special_state.prev_virq=false;	// Indicate there is no pending vIRQ anymore.
+		// When we intercept interupt-window, ignore the TPR.
+		noir_svm_vmcb_bts32(cvcpu->vmcb.virt,avic_control,nvc_svm_avic_control_ignore_vtpr);
+		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_avic);
+		// Also, since the VIRQ is activated, remove the validity.
+		cvcpu->header.injected_event.attributes.valid=false;
+	}
+	else
+	{
+		// When there is no pending vIRQ anymore, such interception is indicating an interrupt window.
+		// Cancel the VIRQ.
+		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,avic_control,nvc_svm_avic_control_ignore_vtpr);
+		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,avic_control,nvc_svm_avic_control_virq);
+		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_avic);
+		if(cvcpu->header.vcpu_options.intercept_interrupt_window)
+		{
+			// If the user hypervisor specified to intercept an interrupt window,
+			// transfer the context to the subverted host.
+			nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
+			cvcpu->header.exit_context.intercept_code=cv_interrupt_window;
+		}
+	}
+}
+
 // Expected Intercept Code: 0x72
 void static noir_hvcode fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
@@ -731,9 +764,9 @@ void static noir_hvcode fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr
 		bool no_exit=op_write?nvc_svm_wrmsr_nsvexit_handler(gpr_state,vcpu,cvcpu):nvc_svm_rdmsr_nsvexit_handler(gpr_state,vcpu,cvcpu);
 		if(!no_exit)nvc_svm_switch_to_host_vcpu(gpr_state,vcpu);
 	}
-	else if(cvcpu->header.vcpu_options.intercept_msr && !cvcpu->header.msr_interceptions.valid)
+	else if(cvcpu->header.vcpu_options.intercept_msr)
 	{
-		bool intercept=!cvcpu->header.msr_interceptions.valid;
+		bool intercept=true;
 		if(cvcpu->header.msr_interceptions.valid)
 		{
 			// User Hypervisor wants to intercept only a portion of MSRs.
@@ -954,6 +987,8 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state
 		cvcpu->header.exit_context.intercept_code=cv_memory_access;
 		cvcpu->header.exit_context.memory_access.access.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
 		noir_movsb(cvcpu->header.exit_context.memory_access.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
+		if(cvcpu->header.exit_context.intercept_code==cv_memory_access && cvcpu->header.vcpu_options.decode_memory_access_instruction)
+			nvc_emu_decode_memory_access(&cvcpu->header);
 	}
 	else if(fault.npf_table)
 	{

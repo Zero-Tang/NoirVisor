@@ -255,7 +255,7 @@ typedef struct _noir_cvm_memory_access_context
 		struct
 		{
 			bool is_signed;
-			struct
+			union
 			{
 				u64 u;
 				i64 s;
@@ -733,8 +733,6 @@ noir_status nvc_vtc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu);
 noir_cvm_virtual_cpu_p nvc_vtc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id);
 noir_status nvc_vtc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info);
 u32 nvc_vtc_get_vm_asid(noir_cvm_virtual_machine_p vm);
-// Emulator Functions
-noir_status nvc_emu_decode_memory_access(noir_cvm_virtual_cpu_p vcpu);
 
 // Idle VM is to be considered as the List Head.
 noir_cvm_virtual_machine noir_idle_vm={0};
@@ -769,6 +767,8 @@ noir_hvdata u32 noir_cvm_register_buffer_limit[noir_cvm_maximum_register_type]=
 	8								// APIC-BAR Register
 };
 #elif defined(_vt_core) || defined(_svm_core)
+// Emulator Functions
+noir_status nvc_emu_decode_memory_access(noir_cvm_virtual_cpu_p vcpu);
 void nvc_release_lockers(noir_cvm_virtual_machine_p virtual_machine);
 extern noir_cvm_virtual_machine noir_idle_vm;
 extern noir_reslock noir_vm_list_lock;

@@ -309,10 +309,12 @@ u8 noir_hvcode nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_s
 }
 
 // This is required for emulating rsm instruction in Intel VT-x.
-// AMD-V has special control mechanism to intercept rsm instructions.
+// Intel VT-x can only intercept rsm instruction by causing #UD exceptions to exit and decode the triggering exception.
 u8 noir_hvcode nvc_emu_is_rsm_instruction(u8p buffer,size_t buffer_limit)
 {
 	ZydisDecodedInstruction ZyIns;
+	// The decoding of the rsm instruction is universal on all modes,
+	// so just pick any one of the decoder.
 	ZyanStatus zst=ZydisDecoderDecodeInstruction(&ZyDec64,ZYAN_NULL,buffer,buffer_limit,&ZyIns);
 	if(ZYAN_SUCCESS(zst))
 		if(ZyIns.mnemonic==ZYDIS_MNEMONIC_RSM)

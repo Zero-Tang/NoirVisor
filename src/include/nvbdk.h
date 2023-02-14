@@ -390,19 +390,6 @@ typedef struct _noir_cpuid_general_info
 	u32 edx;
 }noir_cpuid_general_info,*noir_cpuid_general_info_p;
 
-typedef struct _noir_disasm_request
-{
-	// Input
-	u64 va;
-	u32 mnemonic_limit;
-	u8 bits;
-	u8 limit;
-	u8 buffer[15];
-	// Output
-	u8 instruction_length;
-	char mnemonic[1];
-}noir_disasm_request,*noir_disasm_request_p;
-
 typedef struct _noir_npiep_operand
 {
 	struct

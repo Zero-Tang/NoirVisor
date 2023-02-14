@@ -53,7 +53,7 @@ typedef struct _noir_ci_context
 		};
 		u32 value;
 	}options;
-	noir_ci_page page_ci[1];
+	noir_ci_page page_ci[0];
 }noir_ci_context,*noir_ci_context_p;
 
 u8 nvc_confirm_cpu_manufacturer(char* vendor_string);

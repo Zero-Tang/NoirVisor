@@ -239,18 +239,68 @@ void noir_set_host_interrupt_handler(IN UINT8 Vector,IN UINTN HandlerRoutine)
 	Host.ProcessorBlocks[CurProc].Core.Idt[Vector].Reserved1=0;
 }
 
+// The format specifiers defined by EDK II are different from the standard library.
+void static NoirConvertStandardFormatToEdk2Format(CONST CHAR8* StandardFormat,CHAR8* Edk2Format,UINTN FormatBufferSize)
+{
+	for(UINTN i=0;i<FormatBufferSize;i++)
+	{
+		Edk2Format[i]=StandardFormat[i];
+		if(Edk2Format[i]=='\0')break;
+		if(Edk2Format[i]=='%')
+		{
+			// Try to translate format specifiers.
+			Edk2Format[i++]='%';
+			while(i<FormatBufferSize)
+			{
+				BOOLEAN StopTraverse=TRUE;
+				switch(StandardFormat[i])
+				{
+					case '0':
+					case '1':
+					case '2':
+					case '3':
+					case '4':
+					case '5':
+					case '6':
+					case '7':
+					case '8':
+					case '9':
+					case 'l':
+					case 'z':
+					case '.':
+					case '*':
+					{
+						StopTraverse=FALSE;
+						break;
+					}
+					case 's':
+					{
+						StopTraverse=TRUE;
+						Edk2Format[i]='a';
+						break;
+					}
+					default:
+					{
+						StopTraverse=TRUE;
+						Edk2Format[i]=StandardFormat[i];;
+						break;
+					}
+				}
+				if(StopTraverse)break;
+				Edk2Format[i]=StandardFormat[i];
+				i++;
+			}
+		}
+	}
+}
+
 void __cdecl nv_dprintf(const char* format,...)
 {
 	CHAR8 TempBuffer[512]="[NoirVisor] ";
 	CHAR8 FormatBuffer[320];
 	UINTN Size,Start;
 	va_list arg_list;
-	for(UINTN i=0;i<sizeof(FormatBuffer);i++)
-	{
-		FormatBuffer[i]=format[i];
-		if(format[i]=='\0')break;
-		if(format[i]=='%' && format[i+1]=='s')FormatBuffer[++i]='a';
-	}
+	NoirConvertStandardFormatToEdk2Format(format,FormatBuffer,sizeof(FormatBuffer));
 	va_start(arg_list,format);
 	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
 	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,FormatBuffer,arg_list);
@@ -264,16 +314,7 @@ void __cdecl nv_panicf(const char* format,...)
 	CHAR8 FormatBuffer[320];
 	UINTN Size,Start;
 	va_list arg_list;
-	for(UINTN i=0;i<sizeof(FormatBuffer);i++)
-	{
-		FormatBuffer[i]=format[i];
-		if(format[i]=='%' && format[i+1]=='s')
-		{
-			FormatBuffer[i+1]='a';
-			i+=2;
-		}
-		if(format[i]=='\0')break;
-	}
+	NoirConvertStandardFormatToEdk2Format(format,FormatBuffer,sizeof(FormatBuffer));
 	va_start(arg_list,format);
 	Start=AsciiStrnLenS(TempBuffer,sizeof(TempBuffer));
 	Size=AsciiVSPrint(&TempBuffer[Start],sizeof(TempBuffer)-Start,FormatBuffer,arg_list);
@@ -288,16 +329,7 @@ void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...)
 	CHAR8 FormatBuffer[320];
 	UINTN Size,Start;
 	va_list ArgList;
-	for(UINTN i=0;i<sizeof(FormatBuffer);i++)
-	{
-		FormatBuffer[i]=Format[i];
-		if(Format[i]=='%' && Format[i+1]=='s')
-		{
-			FormatBuffer[i+1]='a';
-			i+=2;
-		}
-		if(Format[i]=='\0')break;
-	}
+	NoirConvertStandardFormatToEdk2Format(Format,FormatBuffer,sizeof(FormatBuffer));
 	AsmCpuid(CPUID_VERSION_INFO,NULL,NULL,&Ecx.Uint32,NULL);
 	AsciiSPrint(TempBuffer,sizeof(TempBuffer),"[NoirVisor - %a] ",Ecx.Bits.ParaVirtualized?"Guest":"Host");
 	va_start(ArgList,Format);

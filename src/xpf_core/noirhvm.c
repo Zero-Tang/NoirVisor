@@ -672,8 +672,6 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 		}
 		if(st==noir_success)
 		{
-			if(vcpu->exit_context.intercept_code==cv_memory_access && vcpu->vcpu_options.decode_memory_access_instruction)
-				nvc_emu_decode_memory_access(vcpu);
 			if(!vcpu->vcpu_options.use_tunnel)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
 		}
 	}

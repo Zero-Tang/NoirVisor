@@ -149,6 +149,7 @@ bool noir_activate_ci()
 	{
 #if !defined(_hv_type1)
 		// No need to trace-print in Type-I hypervisor.
+		// In other words, Type-I hypervisor does not support Soft-CI.
 		nvci_tracef("Number of pages protected by CI: %u\n",noir_ci->pages);
 		for(u32 i=0;i<noir_ci->pages;i++)
 			nvci_tracef("Physical: 0x%llX\t CRC32C: 0x%08X\t Virtual: 0x%p\n",noir_ci->page_ci[i].phys,noir_ci->page_ci[i].crc,noir_ci->page_ci[i].virt);
@@ -189,8 +190,8 @@ bool noir_initialize_ci(bool soft_ci,bool hard_ci)
 			noir_ci->limit=(page_size-sizeof(noir_ci_context))/sizeof(noir_ci_page);
 			noir_ci->options.soft_ci=soft_ci;
 			noir_ci->options.hard_ci=hard_ci;
-			// Add CI page to protection.
-			if(noir_add_section_to_ci(noir_ci,page_size,true))
+			// Add CI page to protection. Do not enable scanner. Otherwise CI will always report corruption.
+			if(noir_add_section_to_ci(noir_ci,page_size,false))
 				return true;
 			else
 				noir_free_contd_memory(noir_ci,page_size);

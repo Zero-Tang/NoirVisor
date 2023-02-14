@@ -55,7 +55,7 @@ void noir_hvcode nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm
 	cvcpu->header.injected_event.attributes.value=noir_svm_vmread32(cvcpu->vmcb.virt,event_injection);
 	cvcpu->header.injected_event.error_code=noir_svm_vmread32(cvcpu->vmcb.virt,event_error_code);
 	// If the injected event is not valid, check out the local APIC field in VMCB.
-	if(!cvcpu->header.injected_event.attributes.valid)
+	if(!cvcpu->header.injected_event.attributes.valid && cvcpu->special_state.prev_virq)
 	{
 		nvc_svm_avic_control avic_ctrl;
 		avic_ctrl.value=noir_svm_vmread64(cvcpu->vmcb.virt,avic_control);
@@ -319,14 +319,15 @@ void noir_hvcode nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_sv
 			noir_svm_vmwrite32(cvcpu->vmcb.virt,event_error_code,cvcpu->header.injected_event.error_code);
 		}
 	}
-	else
+	else if(cvcpu->special_state.prev_virq)
 	{
 		// Use AMD-V virtual interrupt mechanism to inject an external interrupt.
 		nvc_svm_avic_control avic_ctrl;
 		avic_ctrl.value=noir_svm_vmread64(cvcpu->vmcb.virt,avic_control);
-		avic_ctrl.virtual_irq=cvcpu->special_state.prev_virq=cvcpu->header.injected_event.attributes.valid;
+		avic_ctrl.virtual_irq=cvcpu->header.injected_event.attributes.valid;
 		avic_ctrl.virtual_interrupt_vector=cvcpu->header.injected_event.attributes.vector;
 		avic_ctrl.virtual_interrupt_priority=cvcpu->header.injected_event.attributes.priority;
+		avic_ctrl.ignore_virtual_tpr=false;
 		noir_svm_vmwrite64(cvcpu->vmcb.virt,avic_control,avic_ctrl.value);
 		// Note that the AVIC Control field is cached. Invalidate it.
 		noir_svm_vmcb_btr32(cvcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_tpr);
@@ -500,6 +501,8 @@ void noir_hvcode nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	vector1.intercept_intr=1;
 	vector1.intercept_nmi=1;
 	vector1.intercept_smi=1;
+	// Intercept Interrupt-Window
+	vector1.intercept_vint=1;
 	// We need to hook the cpuid instruction.
 	vector1.intercept_cpuid=1;
 	// The invd instruction could corrupt main memory globally. Intercept it.
@@ -682,61 +685,68 @@ noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu)
 	if(noir_locked_btr64(&vcpu->special_state,63))
 		vcpu->header.exit_context.intercept_code=cv_rescission;
 	else
-		noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
-	// Check if the world-switch is successful.
-	if(vcpu->special_state.switch_success==false)
-		st=noir_nsv_violation;
-	else
 	{
-		switch(vcpu->header.exit_context.intercept_code)
+		if(vcpu->header.injected_event.attributes.valid && vcpu->header.injected_event.attributes.type==0)
+			vcpu->special_state.prev_virq=true;
+		noir_svm_vmmcall(noir_svm_run_custom_vcpu,(ulong_ptr)vcpu);
+		// Check if the world-switch is successful.
+		if(vcpu->special_state.switch_success==false)
 		{
-			// Some NoirVisor-specific interceptions cannot be handled in atomic state (GIF=0).
-			case cv_scheduler_nsv_activate:
+			st=noir_nsv_violation;
+			noir_int3();
+		}
+		else
+		{
+			switch(vcpu->header.exit_context.intercept_code)
 			{
-				// (De)Activation of NSV must be done under exclusion.
-				nvc_svmc_gain_exclusion(vcpu);
-				vcpu->vm->header.properties.nsv_guest=(u32)vcpu->header.exit_context.nsv_activation.activation;
-				nv_dprintf("VM 0x%p is %s NSV!\n",vcpu->vm,vcpu->vm->header.properties.nsv_guest?"activating":"deactivating");
-				u64p pa_list=noir_alloc_nonpg_memory(vcpu->vm->vcpu_count<<3);
-				if(pa_list)
+				// Some NoirVisor-specific interceptions cannot be handled in atomic state (GIF=0).
+				case cv_scheduler_nsv_activate:
 				{
-					u32 j=0;
-					for(u32 i=0;i<256;i++)
-						if(vcpu->vm->vcpu[i])
-							pa_list[j++]=vcpu->vm->vcpu[i]->vmcb.phys;
-					if(!vcpu->vm->header.properties.nsv_guest)	// If NSV is being deactivated, all pages must be reassigned as insecure memory.
-						nvc_npt_reassign_cvm_all_pages_ownership(vcpu->vm,vcpu->vm->asid,true,noir_nsv_rmt_insecure_guest);
-					// VMCB pages must be reassigned in order to (un)protect their state.
-					nvc_npt_reassign_page_ownership(pa_list,pa_list,vcpu->vm->vcpu_count,0,false,vcpu->vm->header.properties.nsv_guest?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest);
-					noir_free_nonpg_memory(pa_list);
-				}
-				nvc_svmc_free_exclusion(vcpu);
-				break;
-			}
-			case cv_scheduler_nsv_claim_security:
-			{
-				// Claiming security of guest pages must be done under exclusion.
-				u32 pages=(u32)page_count(vcpu->header.nsvs.claim_gpa_end-vcpu->header.nsvs.claim_gpa_start);
-				u64p hpa_list=noir_alloc_nonpg_memory(pages<<3);
-				u64p gpa_list=noir_alloc_nonpg_memory(pages<<3);
-				if(hpa_list && gpa_list)
-				{
-					u8 ownership=vcpu->header.exit_context.claim_pages.claim?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest;
+					// (De)Activation of NSV must be done under exclusion.
 					nvc_svmc_gain_exclusion(vcpu);
-					// Fill the list for reassignment.
-					for(u32 i=0;i<pages;i++)
+					vcpu->vm->header.properties.nsv_guest=(u32)vcpu->header.exit_context.nsv_activation.activation;
+					nv_dprintf("VM 0x%p is %s NSV!\n",vcpu->vm,vcpu->vm->header.properties.nsv_guest?"activating":"deactivating");
+					u64p pa_list=noir_alloc_nonpg_memory(vcpu->vm->vcpu_count<<3);
+					if(pa_list)
 					{
-						gpa_list[i]=vcpu->header.nsvs.claim_gpa_start+page_mult(i);
-						nvc_svmc_get_physical_mapping(&vcpu->vm->nptm,gpa_list[i],&hpa_list[i],true,false,false);
+						u32 j=0;
+						for(u32 i=0;i<256;i++)
+							if(vcpu->vm->vcpu[i])
+								pa_list[j++]=vcpu->vm->vcpu[i]->vmcb.phys;
+						if(!vcpu->vm->header.properties.nsv_guest)	// If NSV is being deactivated, all pages must be reassigned as insecure memory.
+							nvc_npt_reassign_cvm_all_pages_ownership(vcpu->vm,vcpu->vm->asid,true,noir_nsv_rmt_insecure_guest);
+						// VMCB pages must be reassigned in order to (un)protect their state.
+						nvc_npt_reassign_page_ownership(pa_list,pa_list,vcpu->vm->vcpu_count,0,false,vcpu->vm->header.properties.nsv_guest?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest);
+						noir_free_nonpg_memory(pa_list);
 					}
-					// Perform reassignment.
-					nvc_npt_reassign_page_ownership(hpa_list,gpa_list,pages,vcpu->vm->asid,vcpu->header.exit_context.claim_pages.claim==false,ownership);
 					nvc_svmc_free_exclusion(vcpu);
-					nv_dprintf("NSV-VM 0x%p has claimed security of GPA range 0x%llX-0x%llX!\n",vcpu->vm,vcpu->header.nsvs.claim_gpa_start,vcpu->header.nsvs.claim_gpa_end);
+					break;
 				}
-				if(hpa_list)noir_free_nonpg_memory(hpa_list);
-				if(gpa_list)noir_free_nonpg_memory(gpa_list);
-				break;
+				case cv_scheduler_nsv_claim_security:
+				{
+					// Claiming security of guest pages must be done under exclusion.
+					u32 pages=(u32)page_count(vcpu->header.nsvs.claim_gpa_end-vcpu->header.nsvs.claim_gpa_start);
+					u64p hpa_list=noir_alloc_nonpg_memory(pages<<3);
+					u64p gpa_list=noir_alloc_nonpg_memory(pages<<3);
+					if(hpa_list && gpa_list)
+					{
+						u8 ownership=vcpu->header.exit_context.claim_pages.claim?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest;
+						nvc_svmc_gain_exclusion(vcpu);
+						// Fill the list for reassignment.
+						for(u32 i=0;i<pages;i++)
+						{
+							gpa_list[i]=vcpu->header.nsvs.claim_gpa_start+page_mult(i);
+							nvc_svmc_get_physical_mapping(&vcpu->vm->nptm,gpa_list[i],&hpa_list[i],true,false,false);
+						}
+						// Perform reassignment.
+						nvc_npt_reassign_page_ownership(hpa_list,gpa_list,pages,vcpu->vm->asid,vcpu->header.exit_context.claim_pages.claim==false,ownership);
+						nvc_svmc_free_exclusion(vcpu);
+						nv_dprintf("NSV-VM 0x%p has claimed security of GPA range 0x%llX-0x%llX!\n",vcpu->vm,vcpu->header.nsvs.claim_gpa_start,vcpu->header.nsvs.claim_gpa_end);
+					}
+					if(hpa_list)noir_free_nonpg_memory(hpa_list);
+					if(gpa_list)noir_free_nonpg_memory(gpa_list);
+					break;
+				}
 			}
 		}
 	}
@@ -1360,13 +1370,14 @@ noir_status nvc_svmc_set_unmapping(noir_svm_custom_vm_p virtual_machine,u64 gpa,
 	{
 		for(u32 i=0;i<pages;i++)
 			nvc_svmc_get_physical_mapping(&virtual_machine->nptm,gpa+page_4kb_mult(i),&hpa_list[i],true,false,false);
+		st=noir_nsv_violation;
 		// FIXME: Encrypt the pages if these pages are secure.
-		if(nvc_npt_reassign_page_ownership(hpa_list,hpa_list,pages,1,true,noir_nsv_rmt_subverted_host))
+		if(nvc_npt_reassign_page_ownership(hpa_list,hpa_list,pages,1,false,noir_nsv_rmt_subverted_host))
 		{
 			noir_cvm_mapping_attributes map_attrib={0};
 			for(u32 i=0;i<pages;i++)
 			{
-				noir_status st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,0,map_attrib);
+				st=nvc_svmc_set_page_map(&virtual_machine->nptm,gpa,0,map_attrib);
 				if(st!=noir_success)return st;
 			}
 		}

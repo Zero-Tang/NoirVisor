@@ -302,6 +302,7 @@ void static fastcall nvc_svm_sx_cvexit_handler(noir_gpr_state_p gpr_state,noir_s
 void static fastcall nvc_svm_extint_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_nmi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_smi_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static fastcall nvc_svm_virtint_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_cpuid_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_iret_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_invd_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
@@ -355,7 +356,7 @@ noir_hvdata noir_svm_cvexit_handler_routine svm_cvexit_handler_group1[noir_svm_m
 	nvc_svm_nmi_cvexit_handler,			// Physical Non-Maskable Interrupt
 	nvc_svm_smi_cvexit_handler,			// Physical System Management Interrupt
 	nvc_svm_default_cvexit_handler,		// Physical INIT Signal
-	nvc_svm_default_cvexit_handler,		// Virtual Interrupt
+	nvc_svm_virtint_cvexit_handler,		// Virtual Interrupt
 	nvc_svm_default_cvexit_handler,		// CR0 Selective Write
 	nvc_svm_default_cvexit_handler,		// sidt Instruction
 	nvc_svm_default_cvexit_handler,		// sgdt Instruction

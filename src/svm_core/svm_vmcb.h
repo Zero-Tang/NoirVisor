@@ -85,6 +85,7 @@ typedef enum _svm_vmcb_offset
 	guest_asid=0x58,
 	tlb_control=0x5C,
 	avic_control=0x60,
+	avic_virq_vector=0x64,
 	guest_interrupt=0x68,
 	exit_code=0x70,
 	exit_info1=0x78,

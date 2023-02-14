@@ -1535,6 +1535,7 @@ u32 static fastcall nvc_svm_convert_x2apic_id(u32 x2apic_id)
 
 void static nvc_svm_handle_apic_write_npf(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
+	const void* vmcb=vcpu->vmcb.virt;
 	noir_cvm_virtual_cpu_p cvcpu=&vcpu->cvm_state;
 	amd64_npt_fault_code fault;
 	fault.value=noir_svm_vmread64(vcpu->vmcb.virt,exit_info1);
@@ -1572,10 +1573,10 @@ void static nvc_svm_handle_apic_write_npf(noir_gpr_state_p gpr_state,noir_svm_vc
 	cvcpu->exit_context.memory_access.access.execute=(u8)fault.execute;
 	cvcpu->exit_context.memory_access.access.user=(u8)fault.user;
 	cvcpu->exit_context.memory_access.gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
-	cvcpu->exit_context.memory_access.access.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
-	noir_movsb(cvcpu->header.exit_context.memory_access.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
+	cvcpu->exit_context.memory_access.access.fetched_bytes=noir_svm_vmread8(vmcb,number_of_bytes_fetched);
+	noir_movsb(cvcpu->exit_context.memory_access.instruction_bytes,(u8*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes),15);
 	// Invoke NoirVisor's internal emulator...
-	nvc_emu_decode_memory_access(vcpu);
+	nvc_emu_decode_memory_access(cvcpu);
 	// FIXME: Emulate by extracting data...
 	// FIXME: Filter the write to APIC-page...
 }
@@ -1866,6 +1867,7 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 					nvc_svm_load_basic_exit_context(cvcpu);
 				else if(noir_locked_btr64(&cvcpu->special_state,63))		// User Hypervisor rescinded execution of vCPU.
 					cvcpu->header.exit_context.intercept_code=cv_rescission;
+				/*
 				else if(cvcpu->header.vcpu_options.intercept_interrupt_window)
 				{
 					if(cvcpu->special_state.prev_virq && !noir_svm_vmcb_bt32(vmcb_va,avic_control,nvc_svm_avic_control_virq))
@@ -1881,6 +1883,7 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 						cvcpu->special_state.prev_virq=0;
 					}
 				}
+				*/
 			}
 		}
 		// Profiler: accumulate the Hypervisor runtime.
