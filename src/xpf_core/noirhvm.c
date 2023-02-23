@@ -976,6 +976,8 @@ noir_status nvc_release_vm(noir_cvm_virtual_machine_p vm)
 			nvc_svmc_release_vm(vm);
 		else
 			st=noir_unknown_processor;
+		// Release lockers...
+		nvc_release_lockers(vm);
 		// Remove the vCPU list Resource Lock.
 		if(vm->vcpu_list_lock)noir_finalize_reslock(vm->vcpu_list_lock);
 		noir_release_reslock(noir_vm_list_lock);
@@ -1017,11 +1019,18 @@ noir_status nvc_create_vm_ex(noir_cvm_virtual_machine_p* vm,u32 process_id,noir_
 				noir_acquire_reslock_exclusive(noir_vm_list_lock);
 				noir_insert_to_prev(&noir_idle_vm.active_vm_list,&(*vm)->active_vm_list);
 				noir_release_reslock(noir_vm_list_lock);
-				st=noir_success;
+				// Allocate Locker list.
+				(*vm)->locker_head=(*vm)->locker_tail=noir_alloc_nonpg_memory(page_size);
+				if((*vm)->locker_head)st=noir_success;
 			}
-			(*vm)->properties=properties;
-			(*vm)->pid=process_id;
-			(*vm)->ref_count=1;
+			if(st!=noir_success)
+				nvc_release_vm(*vm);
+			else
+			{
+				(*vm)->properties=properties;
+				(*vm)->pid=process_id;
+				(*vm)->ref_count=1;
+			}
 		}
 	}
 	return st;

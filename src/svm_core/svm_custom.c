@@ -1717,8 +1717,6 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 		nvc_svmc_release_all_guest_pages(vm);
 		// Reassign all pages to the subverted host.
 		nvc_npt_reassign_cvm_all_pages_ownership(vm,1,true,noir_nsv_rmt_subverted_host);
-		// Release lockers...
-		nvc_release_lockers(&vm->header);
 		// Release VMSA...
 		if(vm->header.vmsa.virt)
 		{
@@ -1797,9 +1795,6 @@ noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine)
 			// VMSA must be placed in Secure Memory.
 			if(!nvc_npt_reassign_page_ownership(&vm->header.vmsa.phys,&vm->header.vmsa.phys,1,0,false,noir_nsv_rmt_secure_guest))
 				goto alloc_failure;
-			// Allocate Locker list.
-			vm->header.locker_head=vm->header.locker_tail=noir_alloc_nonpg_memory(page_size);
-			if(vm->header.locker_head==null)goto alloc_failure;
 			// Allocate vCPU pointer list.
 			// According to AVIC, 255 physical cores are permitted.
 			vm->vcpu=noir_alloc_nonpg_memory(sizeof(void*)*256);

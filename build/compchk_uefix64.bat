@@ -1,8 +1,8 @@
 @echo off
 set ddkpath=V:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.31.31103
 set path=%ddkpath%\bin\Hostx64\x64;%path%
-set mdepath=%EDK2_PATH%\MdePkg
-set libpath=%EDK2_PATH%\Bin\MdePkg
+set mdepath=%EDK2_PATH%\edk2\MdePkg
+set libpath=%EDK2_PATH%\bin\MdePkg
 set binpath=..\bin\compchk_uefix64
 set objpath=..\bin\compchk_uefix64\Intermediate
 

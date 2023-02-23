@@ -103,9 +103,11 @@ typedef enum
 
 #define align_at(n)		__declspec(align(n))
 
+#pragma section("subhvt",read,execute,nopage)
 #pragma section("hvtext",read,execute,nopage)
 #pragma section("hvdata",read,write,nopage)
 
+#define noir_subhvt		__declspec(code_seg("subhvt"))
 #define noir_hvcode		__declspec(code_seg("hvtext"))
 #define noir_hvdata		__declspec(allocate("hvdata"))
 #endif

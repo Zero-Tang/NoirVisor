@@ -1867,23 +1867,6 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 					nvc_svm_load_basic_exit_context(cvcpu);
 				else if(noir_locked_btr64(&cvcpu->special_state,63))		// User Hypervisor rescinded execution of vCPU.
 					cvcpu->header.exit_context.intercept_code=cv_rescission;
-				/*
-				else if(cvcpu->header.vcpu_options.intercept_interrupt_window)
-				{
-					if(cvcpu->special_state.prev_virq && !noir_svm_vmcb_bt32(vmcb_va,avic_control,nvc_svm_avic_control_virq))
-					{
-						// User Hypervisor specifies intercepting the interrupt windows.
-						// If there was a previously injected IRQ and the interrupt was already taken, consider this an interrupt window.
-						// Notify the User Hypervisor of this information.
-						cvcpu->header.exit_context.intercept_code=cv_interrupt_window;
-						cvcpu->header.exit_context.interrupt_window.nmi=false;
-						cvcpu->header.exit_context.interrupt_window.iret_passed=false;
-						cvcpu->header.exit_context.interrupt_window.reserved=0;
-						// Reset the status of previous vIRQ.
-						cvcpu->special_state.prev_virq=0;
-					}
-				}
-				*/
 			}
 		}
 		// Profiler: accumulate the Hypervisor runtime.
