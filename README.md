@@ -73,7 +73,23 @@ NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit
 
 ## Disassembler
 Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should pre-compile Zydis as a static library. Visit the [documents for disassembler](src/disasm/readme.md) for further details. <br>
-In that Zydis is included as a submodule, you must clone this repository recursively.
+In that Zydis is included as a submodule, and because Zydis itself has a submodule, you must clone this repository recursively.
+
+## Python script
+Since June 2023, NoirVisor can be built using Python script. The minimum version required for building NoirVisor is 3.9. There is no `pip` package requirements. \
+Enter the `build` directory, execute the following command:
+```
+make /target disasm
+make
+```
+The first command will build the `zydis` disassembler engine, a required library used by NoirVisor. \
+The second command will build the NoirVisor itself.
+
+Python-based compilation is parallel. It will achieve a great performance in building NoirVisor.
+
+Current implementation only supports building NoirVisor as Windows Driver.
+
+See [documentation](./doc/make.md) for more information using python script to build NoirVisor.
 
 # Test
 
