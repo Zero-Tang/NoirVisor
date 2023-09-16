@@ -17,7 +17,8 @@
 typedef enum _noir_debug_media_type
 {
 	noir_debug_unknown_medium,	// Unknown medium means debugger is deactivated.
-	noir_debug_serial_port
+	noir_debug_serial_port,
+	noir_debug_qemu_debugcon
 }noir_debug_media_type,*noir_debug_media_type_p;
 
 typedef enum _noir_debug_mode
@@ -38,6 +39,10 @@ typedef struct _noir_debugger
 			u8 pad;
 			u16 port_base;
 		}serial;
+		struct
+		{
+			u16 port;
+		}qemu_debugcon;
 	}debug_port;
 }noir_debugger,*noir_debugger_p;
 
@@ -45,6 +50,10 @@ typedef struct _noir_debugger
 noir_status nvc_io_serial_init(u8 port_number,u16 port_base,u32 baudrate);
 noir_status nvc_io_serial_read(u8 port_number,u8p buffer,size_t length);
 noir_status nvc_io_serial_write(u8 port_number,u8p buffer,size_t length);
+// QEMU Debug Console Driver
+noir_status nvc_io_qemu_debugcon_init(u16 port_number);
+noir_status nvc_io_qemu_debugcon_read(u8p buffer,size_t length);
+noir_status nvc_io_qemu_debugcon_write(u8p buffer,size_t length);
 
 #if defined(_nvdbg)
 // String Facility

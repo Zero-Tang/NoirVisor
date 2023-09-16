@@ -40,10 +40,6 @@ bool nvc_is_svm_supported()
 		noir_cpuid(amd64_cpuid_ext_svm_features,0,&a,&b,&c,&d);
 		// At least one ASID should be available.
 		basic_supported&=(b>0);
-		// Decode Assists is the required feature.
-		basic_supported&=noir_bt(&d,amd64_cpuid_decoder);
-		// Next RIP Saving is the required feature.
-		basic_supported&=noir_bt(&d,amd64_cpuid_nrips);
 		return basic_supported;
 	}
 	return false;
@@ -560,6 +556,11 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	hvm_p->relative_hvm=(noir_svm_hvm_p)hvm_p->reserved;
 	// Query available virtualization capabilities.
 	nvc_query_svm_capability();
+	if(!noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_decoder) || !noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_nrips))
+	{
+		hvm_p->options.software_decoder=true;	// If decode-assist or next-rip saving is unsupported, we will have to enable software decoder.
+		nv_dprintf("Warning: Software decoder is enabled because this processor does not assist!\n");
+	}
 	// Query Extended State Enumeration - Useful for xsetbv handler, CVM scheduler, etc.
 	noir_cpuid(amd64_cpuid_std_pestate_enum,0,&hvm_p->xfeat.support_mask.low,&hvm_p->xfeat.enabled_size_max,&hvm_p->xfeat.supported_size_max,&hvm_p->xfeat.support_mask.high);
 	noir_cpuid(amd64_cpuid_std_pestate_enum,1,&hvm_p->xfeat.supported_instructions,null,&hvm_p->xfeat.supported_xss_bits,null);

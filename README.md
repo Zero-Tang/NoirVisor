@@ -13,6 +13,8 @@ NoirVisor - The Grimoire Hypervisor solution for AMD64 Processors.
     </a>
 </p>
 
+Tips: if the link does not work, try to hover the shield icon and see text.
+
 # Introduction
 NoirVisor is a hardware-accelerated hypervisor (a.k.a VMM, Virtual Machine Monitor) with support to complex functions and purposes. It is designed to support processors based on x86 architecture with hardware-accelerated virtualization feature. For example, Intel processors supporting Intel VT-x or AMD processors supporting AMD-V meet the requirement. By design, NoirVisor determines the processor manufacturer and selects the function core.
 
@@ -157,14 +159,6 @@ For CVM Algorithm on AMD-V, visit [here](src/svm_core/readme.md#customizable-vm-
 For CVM Algorithm on Intel VT-x, visit [here](src/vt_core/readme.md#customizable-vm-scheduler-algorithm).
 
 APIs to invoke Customizable VMs are available in the [NoirCvmApi](https://github.com/Zero-Tang/NoirCvmApi) repository. The documentation of the APIs is available in the [wiki page](https://github.com/Zero-Tang/NoirCvmApi/wiki).
-
-## Intel HAXM
-<img src="https://github.com/intel/haxm/blob/master/Installer/res/haxm_logo.ico" align=right>
-
-NoirVisor CVM is implementing a wrapper of HAX-compatible APIs in order to accelerate QEMU. \
-You may visit [Intel HAXM Repository](https://github.com/intel/haxm) for further information.
-
-Note that Intel has discontinued the development of HAXM, so the plan is currently halted. Future implementation may either complete implementing a HAX-compatible API or completely remove the interface.
 
 # NoirVisor Secure Virtualization
 NSV (a.k.a NoirVisor Secure Virtualization) is a security extension to NoirVisor CVM. This extension is a crossover project with Columbia University's Operating Systems II course project. Read [this document](./doc/nsv.md) for further details.

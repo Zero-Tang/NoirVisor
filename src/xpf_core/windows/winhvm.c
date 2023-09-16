@@ -243,6 +243,15 @@ NTSTATUS NoirConfigureInternalDebugger()
 						noir_configure_serial_port_debugger(PortNumber-1,PortBase,BaudRate);
 						st=STATUS_SUCCESS;
 					}
+					else if(_wcsnicmp((PWSTR)KvPartInf->Data,L"qemu_debugcon",KvPartInf->DataLength>>1)==0)
+					{
+						USHORT Port=0x402;
+						RtlInitUnicodeString(&uniKvName,L"QemuDebugConPortNumber");
+						st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+						if(NT_SUCCESS(st))Port=*(PUSHORT)KvPartInf->Data;
+						noir_configure_qemu_debug_console(Port);
+						st=STATUS_SUCCESS;
+					}
 				}
 			}
 			ZwClose(hKey);

@@ -1815,9 +1815,15 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 		// Check if the interception is due to invalid guest state.
 		// Invoke the handler accordingly.
 		if(unlikely(intercept_code<0))		// Rare circumstance.
-			svm_exit_handler_negative[-intercept_code-1](gpr_state,vcpu);
+		{
+			svm_decoder_handler_negative[~intercept_code](gpr_state,vcpu,null);
+			svm_exit_handler_negative[~intercept_code](gpr_state,vcpu);
+		}
 		else
+		{
+			svm_decoder_handlers[code_group][code_num](gpr_state,vcpu,null);
 			svm_exit_handlers[code_group][code_num](gpr_state,vcpu);
+		}
 		// Since rax register is operated, save to VMCB.
 		// If world is switched, do not write to VMCB.
 		if(loader_stack->guest_vmcb_pa==vcpu->vmcb.phys)noir_svm_vmwrite(vmcb_va,guest_rax,gpr_state->rax);
@@ -1849,9 +1855,15 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 		// Check if the interception is due to invalid guest state.
 		// Invoke the handler accordingly.
 		if(unlikely(intercept_code<0))		// Rare circumstance.
-			svm_cvexit_handler_negative[-intercept_code-1](gpr_state,vcpu,loader_stack->custom_vcpu);
+		{
+			svm_decoder_handler_negative[~intercept_code](gpr_state,vcpu,loader_stack->custom_vcpu);
+			svm_cvexit_handler_negative[~intercept_code](gpr_state,vcpu,loader_stack->custom_vcpu);
+		}
 		else
+		{
+			svm_decoder_handlers[code_group][code_num](gpr_state,vcpu,loader_stack->custom_vcpu);
 			svm_cvexit_handlers[code_group][code_num](gpr_state,vcpu,loader_stack->custom_vcpu);
+		}
 		// Since rax register is operated, save to VMCB.
 		// If world is switched, do not write to VMCB.
 		if(loader_stack->guest_vmcb_pa==cvcpu->vmcb.phys)
@@ -1897,7 +1909,7 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 		noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_debug_reg);
 		// Do additional filtering. Note that the rax register is not processed.
 		if(unlikely(intercept_code<0))
-			svm_nvexit_handler_negative[-intercept_code-1](gpr_state,vcpu,loader_stack->nested_vcpu);
+			svm_nvexit_handler_negative[~intercept_code](gpr_state,vcpu,loader_stack->nested_vcpu);
 		else
 			svm_nvexit_handlers[code_group][code_num](gpr_state,vcpu,loader_stack->nested_vcpu);
 		// Switch to Nested Hypervisor.

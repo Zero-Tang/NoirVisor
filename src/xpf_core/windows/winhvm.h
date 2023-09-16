@@ -129,6 +129,7 @@ void __cdecl NoirDebugPrint(const char* Format,...);
 ULONG nvc_build_hypervisor();
 void nvc_teardown_hypervisor();
 ULONG noir_configure_serial_port_debugger(IN BYTE PortNumber,IN USHORT PortBase,IN ULONG32 BaudRate);
+ULONG noir_configure_qemu_debug_console(IN USHORT Port);
 ULONG nvc_acpi_initialize();
 void nvc_acpi_finalize();
 ULONG noir_visor_version();

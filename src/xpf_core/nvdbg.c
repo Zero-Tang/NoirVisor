@@ -31,6 +31,13 @@ noir_status noir_configure_serial_port_debugger(u8 port_number,u16 port_base,u32
 	return nvc_io_serial_init(port_number,port_base,baudrate);
 }
 
+noir_status noir_configure_qemu_debug_console(u16 port)
+{
+	nvdbg.medium_type=noir_debug_qemu_debugcon;
+	nvdbg.debug_port.qemu_debugcon.port=port;
+	return nvc_io_qemu_debugcon_init(port);
+}
+
 noir_status noir_dbgport_read(void* buffer,size_t length)
 {
 	noir_status st=noir_unsuccessful;
@@ -39,6 +46,11 @@ noir_status noir_dbgport_read(void* buffer,size_t length)
 		case noir_debug_serial_port:
 		{
 			st=nvc_io_serial_read(nvdbg.debug_port.serial.port_number,(u8p)buffer,length);
+			break;
+		}
+		case noir_debug_qemu_debugcon:
+		{
+			st=nvc_io_qemu_debugcon_read(buffer,length);
 			break;
 		}
 	}
@@ -53,6 +65,11 @@ noir_status noir_dbgport_write(void* buffer,size_t length)
 		case noir_debug_serial_port:
 		{
 			st=nvc_io_serial_write(nvdbg.debug_port.serial.port_number,(u8p)buffer,length);
+			break;
+		}
+		case noir_debug_qemu_debugcon:
+		{
+			st=nvc_io_qemu_debugcon_write(buffer,length);
 			break;
 		}
 	}

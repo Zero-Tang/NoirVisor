@@ -24,7 +24,7 @@
 #define intercepted_smi				0x62
 #define intercepted_init			0x63
 #define intercepted_vintr			0x64
-#define intercepted_cr0_tsmp		0x65
+#define intercepted_cr0_nottsmp		0x65
 #define intercepted_sidt			0x66
 #define intercepted_sgdt			0x67
 #define intercepted_sldt			0x68
@@ -115,6 +115,13 @@ typedef void (fastcall *noir_svm_nvexit_handler_routine)
  noir_gpr_state_p gpr_state,
  noir_svm_vcpu_p vcpu,
  noir_svm_nested_vcpu_node_p nvcpu
+);
+
+typedef void (fastcall *noir_svm_decoder_handler_routine)
+(
+ noir_gpr_state_p gpr_state,
+ noir_svm_vcpu_p vcpu,
+ noir_svm_custom_vcpu_p cvcpu
 );
 
 typedef union _amd64_event_injection
@@ -289,6 +296,8 @@ extern noir_svm_cvexit_handler_routine* svm_cvexit_handlers[];
 extern noir_svm_cvexit_handler_routine svm_cvexit_handler_negative[];
 extern noir_svm_nvexit_handler_routine* svm_nvexit_handlers[];
 extern noir_svm_nvexit_handler_routine svm_nvexit_handler_negative[];
+extern noir_svm_decoder_handler_routine* svm_decoder_handlers[];
+extern noir_svm_decoder_handler_routine svm_decoder_handler_negative[];
 #elif defined(_svm_cvexit)
 void static fastcall nvc_svm_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static fastcall nvc_svm_invalid_state_cvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
@@ -552,6 +561,129 @@ noir_hvdata noir_svm_nvexit_handler_routine* svm_nvexit_handlers[4]=
 {
 	svm_nvexit_handler_group1,
 	svm_nvexit_handler_group2,
+	null,null
+};
+#elif defined(_svm_decode)
+void static nvc_svm_decoder_instruction_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static nvc_svm_decoder_event_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static nvc_svm_decoder_cr_access_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static nvc_svm_decoder_dr_access_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static nvc_svm_decoder_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static nvc_svm_decoder_int_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static nvc_svm_decoder_invlpg_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static nvc_svm_decoder_cr_write_trap_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static nvc_svm_decoder_npf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+
+noir_hvdata noir_svm_decoder_handler_routine svm_decoder_group1[noir_svm_maximum_code1]=
+{
+	// Decodings of Control-Register Accesses are assisted by the processor.
+	nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,
+	nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,
+	nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,
+	nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,
+	nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,
+	nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,
+	nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,
+	nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,nvc_svm_decoder_cr_access_handler,
+	// Decodings of Debug-Register Accesses are assisted by the processor.
+	nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,
+	nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,
+	nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,
+	nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,
+	nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,
+	nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,
+	nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,
+	nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,nvc_svm_decoder_dr_access_handler,
+	// Decodings of Exceptions, except #PF, are not assisted by the processor.
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_pf_handler,nvc_svm_decoder_event_handler,
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,
+	// Interception Vector 1
+	nvc_svm_decoder_event_handler,			// Physical Interrupts
+	nvc_svm_decoder_event_handler,			// Non-Maskable Interrupts
+	nvc_svm_decoder_event_handler,			// System-Management Interrupts
+	nvc_svm_decoder_event_handler,			// INIT Signals
+	nvc_svm_decoder_event_handler,			// Virtual Interrupts
+	nvc_svm_decoder_instruction_handler,	// Write-to-CR0 other than TS/MP bits
+	nvc_svm_decoder_instruction_handler,	// sidt
+	nvc_svm_decoder_instruction_handler,	// sgdt
+	nvc_svm_decoder_instruction_handler,	// sldt
+	nvc_svm_decoder_instruction_handler,	// str
+	nvc_svm_decoder_instruction_handler,	// lidt
+	nvc_svm_decoder_instruction_handler,	// lgdt
+	nvc_svm_decoder_instruction_handler,	// lldt
+	nvc_svm_decoder_instruction_handler,	// ltr
+	nvc_svm_decoder_instruction_handler,	// rdtsc
+	nvc_svm_decoder_instruction_handler,	// rdpmc
+	nvc_svm_decoder_instruction_handler,	// pushf
+	nvc_svm_decoder_instruction_handler,	// popf
+	nvc_svm_decoder_instruction_handler,	// cpuid
+	nvc_svm_decoder_instruction_handler,	// rsm
+	nvc_svm_decoder_instruction_handler,	// iret
+	nvc_svm_decoder_int_handler,			// int
+	nvc_svm_decoder_instruction_handler,	// invd
+	nvc_svm_decoder_instruction_handler,	// pause
+	nvc_svm_decoder_instruction_handler,	// hlt
+	nvc_svm_decoder_invlpg_handler,			// invlpg
+	nvc_svm_decoder_instruction_handler,	// invlpga
+	nvc_svm_decoder_instruction_handler,	// I/O instructions
+	nvc_svm_decoder_instruction_handler,	// MSR instructions
+	nvc_svm_decoder_instruction_handler,	// Task Switches
+	nvc_svm_decoder_event_handler,			// FP-Error Freezing
+	nvc_svm_decoder_event_handler,			// Shutdown Condition
+	// Interception Vector 2
+	nvc_svm_decoder_instruction_handler,	// vmrun
+	nvc_svm_decoder_instruction_handler,	// vmmcall
+	nvc_svm_decoder_instruction_handler,	// vmload
+	nvc_svm_decoder_instruction_handler,	// vmsave
+	nvc_svm_decoder_instruction_handler,	// stgi
+	nvc_svm_decoder_instruction_handler,	// clgi
+	nvc_svm_decoder_instruction_handler,	// skinit
+	nvc_svm_decoder_instruction_handler,	// rdtscp
+	nvc_svm_decoder_instruction_handler,	// icebp
+	nvc_svm_decoder_instruction_handler,	// wb(no)invd
+	nvc_svm_decoder_instruction_handler,	// monitor(x)
+	nvc_svm_decoder_instruction_handler,	// mwait(x)
+	nvc_svm_decoder_instruction_handler,	// Conditional mwait(x)
+	nvc_svm_decoder_instruction_handler,	// rdpru
+	nvc_svm_decoder_instruction_handler,	// xsetbv
+	nvc_svm_decoder_event_handler,			// wrmsr EFER trap
+	// Decodings of Control-Register Write-Traps are assisted by the processor.
+	nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,
+	nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,
+	nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,
+	nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,
+	// Interception Vector 3
+	nvc_svm_decoder_instruction_handler,	// invlpgb
+	nvc_svm_decoder_instruction_handler,	// invlpgb (illegal)
+	nvc_svm_decoder_instruction_handler,	// invpcid
+	nvc_svm_decoder_instruction_handler,	// mcommit
+	nvc_svm_decoder_instruction_handler		// tlbsync
+};
+
+noir_hvdata noir_svm_decoder_handler_routine svm_decoder_group2[noir_svm_maximum_code2]=
+{
+	nvc_svm_decoder_npf_handler,			// Nested Page Fault
+	nvc_svm_decoder_event_handler,			// Incomplete VIPI
+	nvc_svm_decoder_event_handler,			// Unaccelerated AVIC
+	nvc_svm_decoder_instruction_handler		// vmgexit
+};
+
+noir_hvdata noir_svm_decoder_handler_routine svm_decoder_handler_negative[noir_svm_maximum_negative]=
+{
+	nvc_svm_decoder_event_handler,			// Invalid State
+	nvc_svm_decoder_event_handler			// Busy VMSA
+};
+
+noir_hvdata noir_svm_decoder_handler_routine* svm_decoder_handlers[4]=
+{
+	svm_decoder_group1,
+	svm_decoder_group2,
 	null,null
 };
 #endif
