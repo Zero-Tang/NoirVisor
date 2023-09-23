@@ -1228,6 +1228,82 @@ bool nvc_build_reverse_mapping_table()
 	return false;
 }
 
+// Caveat: this routine currently does not consider shadow-stack and protection-key.
+// Use this routine only when Identity-Mapping is enabled.
+bool nvc_translate_host_virtual_address_routine64(u64 pt,u64 va,u32 level,u64p pa,u32p error_code,bool r,bool w,bool x,bool u)
+{
+	const u64 shift_diff=(level-1)*page_shift_diff64;
+	const u64 index=page_entry_index64(va>>(shift_diff+page_4kb_shift));
+	noir_paging64_general_entry_p table=(noir_paging64_general_entry_p)pt;
+	noir_page_fault_error_code_p pf_err=(noir_page_fault_error_code_p)error_code;
+	// Check permission.
+	pf_err->value=0;
+	pf_err->present=table[index].present>=r;
+	pf_err->write=table[index].write>=w;
+	pf_err->user=table[index].user>=u;
+	pf_err->execute=table[index].no_execute<=x;
+	if(pf_err->value)
+		return false;
+	else
+	{
+		// Permission is granted.
+		if(level)
+		{
+			// This either is large-page or has sub levels.
+			if(table[index].psize)
+			{
+				const u64 offset_mask=(1<<(shift_diff+page_4kb_shift))-1;
+				const u64 base=(table[index].base>>shift_diff)<<(shift_diff+page_4kb_shift);
+				*pa=base+(va&offset_mask);
+				nvd_printf("[Translate] VA 0x%p is translated into PA 0x%llX at level %u!\n",va,*pa,level);
+				return true;
+			}
+			else
+			{
+				const u64 base=page_4kb_mult(table[index].base);
+				nvd_printf("[Translate] Base of Next Level (%u): 0x%p\n",level-1,base);
+				return nvc_translate_host_virtual_address_routine64(base,va,level-1,pa,error_code,r,w,x,u);
+			}
+		}
+		else
+		{
+			// Final level.
+			const u64 base=page_4kb_mult(table[index].base);
+			*pa=base+page_offset(va);
+			nvd_printf("[Translate] VA 0x%p is translated into PA 0x%llX!\n",va,*pa);
+			return true;
+		}
+	}
+}
+
+// This function will return copied length.
+// If copied length is less than requested length, a page-fault is estimated.
+size_t nvc_copy_host_virtual_memory64(u64 pt,u64 va,void* buffer,size_t length,bool write,bool la57,u32p error_code)
+{
+	const u32 levels=la57+4;
+	if(page_offset(va)+length>=page_size)
+	{
+		// FIXME: This operation spans multiple pages.
+		nvd_printf("[Copy] This copy operation spans multiple pages!\n");
+		return 0;
+	}
+	else
+	{
+		// No page-span.
+		u64 pa;
+		bool success=nvc_translate_host_virtual_address_routine64(pt,va,levels,&pa,error_code,true,write,false,false);
+		if(success)
+		{
+			if(write)
+				noir_movsb(buffer,(u8p)pa,length);
+			else
+				noir_movsb((u8p)pa,buffer,length);
+			return length;
+		}
+		return 0;
+	}
+}
+
 noir_status nvc_build_hypervisor()
 {
 	noir_get_vendor_string(hvm_p->vendor_string);

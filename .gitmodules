@@ -1,3 +1,6 @@
 [submodule "src/disasm/zydis"]
 	path = src/disasm/zydis
 	url = https://github.com/zyantific/zydis
+[submodule "src/xpf_core/c99-snprintf"]
+	path = src/xpf_core/c99-snprintf
+	url = https://github.com/Zero-Tang/c99-snprintf.git

@@ -571,7 +571,6 @@ void static nvc_svm_decoder_dr_access_handler(noir_gpr_state_p gpr_state,noir_sv
 void static nvc_svm_decoder_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static nvc_svm_decoder_int_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static nvc_svm_decoder_invlpg_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
-void static nvc_svm_decoder_cr_write_trap_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static nvc_svm_decoder_npf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 
 noir_hvdata noir_svm_decoder_handler_routine svm_decoder_group1[noir_svm_maximum_code1]=
@@ -653,11 +652,11 @@ noir_hvdata noir_svm_decoder_handler_routine svm_decoder_group1[noir_svm_maximum
 	nvc_svm_decoder_instruction_handler,	// rdpru
 	nvc_svm_decoder_instruction_handler,	// xsetbv
 	nvc_svm_decoder_event_handler,			// wrmsr EFER trap
-	// Decodings of Control-Register Write-Traps are assisted by the processor.
-	nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,
-	nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,
-	nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,
-	nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,nvc_svm_decoder_cr_write_trap_handler,
+	// No need to decode write-traps of control registers.
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,
+	nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,nvc_svm_decoder_event_handler,
 	// Interception Vector 3
 	nvc_svm_decoder_instruction_handler,	// invlpgb
 	nvc_svm_decoder_instruction_handler,	// invlpgb (illegal)

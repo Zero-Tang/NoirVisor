@@ -39,6 +39,7 @@ RC*
 *.x86_64
 *.hex
 *.efi
+*.img
 
 # Debug files
 *.dSYM/

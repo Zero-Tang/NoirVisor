@@ -359,6 +359,10 @@ noir_status noir_dbgport_write(void* buffer,size_t length);
 // Functions from NoirVisor Emulator.
 u8 nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_seg_state_p seg_state,u8p instruction,void* operand,size_t *size);
 
+// Functions from NoirVisor Memory Operator.
+bool nvc_translate_host_virtual_address_routine64(u64 pt,u64 va,u32 level,u64p pa,u32p error_code,bool r,bool w,bool x,bool u);
+size_t nvc_copy_host_virtual_memory64(u64 pt,u64 va,void* buffer,size_t length,bool write,bool la57,u32p error_code);
+
 // Miscellaneous
 u64 noir_query_enabled_features_in_system();
 void noir_system_call(void);

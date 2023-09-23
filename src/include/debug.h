@@ -44,6 +44,7 @@ typedef struct _noir_debugger
 			u16 port;
 		}qemu_debugcon;
 	}debug_port;
+	u32v port_lock;
 }noir_debugger,*noir_debugger_p;
 
 // Serial Driver
@@ -57,8 +58,8 @@ noir_status nvc_io_qemu_debugcon_write(u8p buffer,size_t length);
 
 #if defined(_nvdbg)
 // String Facility
-size_t cdecl nv_snprintf(char* buffer,size_t limit,const char* format,...);
-size_t cdecl nv_vsnprintf(char* buffer,size_t limit,const char* format,va_list arg_list);
+i32 cdecl nv_snprintf(char* buffer,size_t limit,const char* format,...);
+i32 cdecl nv_vsnprintf(char* buffer,size_t limit,const char* format,va_list arg_list);
 
 noir_hvdata noir_debugger nvdbg={0};
 #else

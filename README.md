@@ -125,12 +125,36 @@ reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "SubvertOnDriverLoad" /t REG_DWOR
 The `SubvertOnDriverLoad` registry key value specifies whether the driver should subvert the system or not on the entry. This key value conflicts with NoirVisor Loader. You must delete or disable this key value in order to use NoirVisor Loader.
 
 ## EFI Application and Runtime Driver
-Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a partition and format it info FAT32 file system. After you successfully build the image, you should see two images: `bootx64.efi` and `NoirVisor.efi` <br> 
-Those two files are EFI Application and Runtime Driver respectively. <br>
-Copy EFI Application to `\EFI\BOOT\bootx64.efi` <br>
-Copy EFI Runtime Driver to `\NoirVisor.efi` <br>
-As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system. Disable Secure Boot feature unless you can sign the executable. <br>
+There are two methods to test NoirVisor.
+
+### Running on a physical machine
+This method can also be used on VMware. \
+Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a partition and format it info FAT32 file system. After you successfully build the image, you should see two images: `bootx64.efi` and `NoirVisor.efi` \
+Those two files are EFI Application and Runtime Driver respectively. \
+Copy EFI Application to `\EFI\BOOT\bootx64.efi` \
+Copy EFI Runtime Driver to `\NoirVisor.efi` \
+As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system. Disable Secure Boot feature unless you can sign the executable. \
 NoirVisor has defined its own vendor GUID `{2B1F2A1E-DBDF-44AC-DABCC7A130E2E71E}`. Developments regarding Layered Hypervisor would require accessing NoirVisor's UEFI variables.
+
+### Running on a virtual machine
+The point of this method is to build a virtual disk image. \
+You may use `mtools` in order to make a virtual disk image. The pre-built `mtools` executables are provided [here](https://github.com/Zero-Tang/NoirVisor/files/12706542/mtools-4.0.43-bin.zip). Put them into directories listed in `PATH` environment variable. \
+First, create a 2.88M disk image with `fsutil`.
+```
+fsutil file createNew disk.img 2949120
+```
+Next, format the disk image and create directories.
+```
+mformat -i disk.img -f 2880 ::
+mmd -i disk.img ::/EFI
+mmd -i disk.img ::/EFI/BOOT
+```
+Finally, copy the NoirVisor EFI executables into the disk image.
+```
+mcopy -i disk.img bootx64.efi ::/EFI/BOOT
+mcopy -i disk.img NoirVisor.efi ::
+```
+In VMware, you will have to add the disk image as an optical disk. Floppy disk may work if and only if the size is 1.44M. When NoirVisor grows over this size, it won't work.
 
 # Documents
 This repository provides [additional documents](/doc/readme.md) which help new developers to join development.

@@ -4,9 +4,9 @@ This document describes the debugging facility integrated with NoirVisor.
 ## System Debugger
 Opearting Systems come with a debugging facility. However, they come with limitations:
 
-- Certain system components are disaled when debugging mode is enabled.
+- Certain system components (e.g.: PatchGuard in Windows) are disabled when debugging mode is enabled.
 - Most things, including debug-printing, are unavailable in host context due to the highest TPL context.
-- Type-I hypervisor do not come with a debugging facility. EXDI is very powerful. However, very few models support EXDI.
+- Type-I hypervisor do not come with a debugging facility. EXDI is very powerful. However, very few hardware support EXDI.
 
 Therefore, NoirVisor must have a special primitive for debugger.
 
@@ -21,6 +21,8 @@ This method utilizes QEMU's ISA Debug Console so that NoirVisor can run inside Q
 
 ## Text-Mode Debugging
 For this debugging mode, the connection is considered a console. The remote host will be receiving texts only. So programs like PuTTY should do the job well in terms of a serial console.
+
+NoirVisor uses buffers with a size of 512 bytes. Therefore, any single print should not exceed this limit. Overflown parts will be discarded.
 
 ## Interactive Debugging
 The specification is unavailable yet.

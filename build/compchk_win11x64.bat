@@ -45,6 +45,8 @@ cl ..\src\xpf_core\nvdbg.c /I"..\src\include" /I"%ddkpath%\include" /Zi /nologo 
 
 cl ..\src\xpf_core\cvhax.c /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_cvhax" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\cvhax.cod" /Fo"%objpath%\cvhax.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue
 
+cl ..\src\xpf_core\c99-snprintf\snprintf.c /I"%incpath%\shared" /I"%incpath%\um" /I"%incpath%\ucrt" /I"%ddkpath%\include" /Zi /nologo /W3 /WX /wd4267 /wd4244 /Od /D"HAVE_STDARG_H" /D"HAVE_LOCALE_H" /D"HAVE_STDDEF_H" /D"HAVE_FLOAT_H" /D"HAVE_STDINT_H" /D"HAVE_INTTYPES_H" /D"HAVE_LONG_LONG_INT" /D"HAVE_UNSIGNED_LONG_LONG_INT" /D"HAVE_ASPRINTF" /D"HAVE_VASPRINTF" /D"HAVE_SNPRINTF" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\snprintf.cod" /Fo"%objpath%\snprintf.obj" /Fd"vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue
+
 ml64 /W3 /WX /D"_amd64" /Zf /Zd /Fo"%objpath%\msrhook.obj" /c /nologo ..\src\xpf_core\windows\msrhook.asm
 
 for %%1 in (..\src\xpf_core\msvc\*.asm) do (ml64 /W3 /WX /D"_amd64" /Zf /Zd /Fo"%objpath%\%%~n1.obj" /c /nologo %%1)

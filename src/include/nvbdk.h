@@ -427,6 +427,22 @@ typedef union _noir_addr64_translator
 	u64 pointer;
 }noir_addr64_translator,*noir_addr64_translator_p;
 
+typedef union _noir_page_fault_error_code
+{
+	struct
+	{
+		u32 present:1;
+		u32 write:1;
+		u32 user:1;
+		u32 reserved_bits:1;
+		u32 execute:1;
+		u32 protection_key:1;
+		u32 shadow_stack:1;
+		u32 reserved:25;
+	};
+	u32 value;
+}noir_page_fault_error_code,*noir_page_fault_error_code_p;
+
 typedef union _noir_paging64_general_entry
 {
 	struct

@@ -226,7 +226,9 @@ NTSTATUS NoirConfigureInternalDebugger()
 			{
 				if(KvPartInf->Type==REG_SZ)
 				{
-					if(_wcsnicmp((PWSTR)KvPartInf->Data,L"serial",KvPartInf->DataLength>>1)==0)
+					PWSTR DebugPortName=(PWSTR)KvPartInf->Data;
+					ULONG DebugPortCch=KvPartInf->DataLength>>1;
+					if(_wcsnicmp(DebugPortName,L"serial",DebugPortCch)==0)
 					{
 						ULONG32 BaudRate=115200;
 						BYTE PortNumber=2;
@@ -243,16 +245,28 @@ NTSTATUS NoirConfigureInternalDebugger()
 						noir_configure_serial_port_debugger(PortNumber-1,PortBase,BaudRate);
 						st=STATUS_SUCCESS;
 					}
-					else if(_wcsnicmp((PWSTR)KvPartInf->Data,L"qemu_debugcon",KvPartInf->DataLength>>1)==0)
+					else if(_wcsnicmp(DebugPortName,L"qemu_debugcon",DebugPortCch)==0)
 					{
 						USHORT Port=0x402;
 						RtlInitUnicodeString(&uniKvName,L"QemuDebugConPortNumber");
 						st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 						if(NT_SUCCESS(st))Port=*(PUSHORT)KvPartInf->Data;
+						NoirDebugPrint("NoirVisor will use QEMU ISA Debug Console at Port 0x%04X!\n",Port);
 						noir_configure_qemu_debug_console(Port);
+						NoirDebugPrint("Make sure you see a message on your debug console!\n");
 						st=STATUS_SUCCESS;
 					}
+					else
+					{
+						NoirDebugPrint("Warning: Internal Debugger is disabled because unknown DebugPort medium (%.*ws) is specified!\n",DebugPortCch,DebugPortName);
+						st=STATUS_UNRECOGNIZED_MEDIA;
+					}
 				}
+			}
+			else
+			{
+				NoirDebugPrint("Warning: Failed to initialize Internal Debugger while querying DebugPort medium! NTSTATUS: 0x%X\n",st);
+				st=STATUS_NO_SUCH_DEVICE;
 			}
 			ZwClose(hKey);
 		}

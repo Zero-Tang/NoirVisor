@@ -1,6 +1,7 @@
 @echo off
 set ddkpath=V:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.31.31103
 set path=%ddkpath%\bin\Hostx64\x64;%path%
+set incpath=T:\Program Files\Windows Kits\10\Include\10.0.22000.0
 set mdepath=%EDK2_PATH%\edk2\MdePkg
 set libpath=%EDK2_PATH%\bin\MdePkg
 set binpath=..\bin\compchk_uefix64
@@ -33,7 +34,7 @@ echo Compiling Core Engine of Microsoft Hypervisor (MSHV)...
 for %%1 in (..\src\mshv_core\*.c) do (cl %%1 /I"..\src\include" /nologo /Zi /W3 /WX /Od /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_mshv_core" /D"_%%~n1" /FAcs /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c)
 
 echo Compiling Core of Cross-Platform Framework (XPF)...
-for %%1 in (..\src\xpf_core\uefi\*.c) do (cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /I"%ddkpath%\include" /I"..\src\disasm\zydis\include" /I"..\src\disasm\zydis\dependencies\zycore\include" /nologo /Zi /W3 /WX /Od /Oi /D"_efi_boot" /FAcs /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c)
+for %%1 in (..\src\xpf_core\uefi\*.c) do (cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /I"%ddkpath%\include" /I"..\src\disasm\zydis\include" /I"..\src\disasm\zydis\dependencies\zycore\include" /nologo /Zi /W3 /WX /Od /Oi /D"_efi_boot" /FAcs /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /utf-8 /c)
 
 ml64 /X /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\exception.obj" /c ..\src\xpf_core\uefi\exception.asm
 
@@ -47,10 +48,12 @@ cl ..\src\xpf_core\devkits.c /I"..\src\include" /I"%ddkpath%\include" /nologo /Z
 
 cl ..\src\xpf_core\nvdbg.c /I"..\src\include" /I"%ddkpath%\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_nvdbg" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\driver\nvdbg.cod" /Fo"%objpath%\driver\nvdbg.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue
 
+cl ..\src\xpf_core\c99-snprintf\snprintf.c /I"%incpath%\shared" /I"%incpath%\um" /I"%incpath%\ucrt" /I"%ddkpath%\include" /Zi /nologo /W3 /WX /wd4267 /wd4244 /Od /D"HAVE_STDARG_H" /D"HAVE_LOCALE_H" /D"HAVE_STDDEF_H" /D"HAVE_FLOAT_H" /D"HAVE_STDINT_H" /D"HAVE_INTTYPES_H" /D"HAVE_LONG_LONG_INT" /D"HAVE_UNSIGNED_LONG_LONG_INT" /D"HAVE_ASPRINTF" /D"HAVE_VASPRINTF" /D"HAVE_SNPRINTF" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\driver\snprintf.cod" /Fo"%objpath%\driver\snprintf.obj" /Fd"vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue
+
 echo Compiling Core of Drivers...
 cl ..\src\drv_core\serial\serial.c /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_drv_serial" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\driver\serial.cod" /Fo"%objpath%\driver\serial.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue
 
-cl ..\src\drv_core\qemu_debugcon\qemu_debugcon.c /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_drv_qemu_debugcon" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\qemu_debugcon.cod" /Fo"%objpath%\qemu_debugcon.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue
+cl ..\src\drv_core\qemu_debugcon\qemu_debugcon.c /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_drv_qemu_debugcon" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\driver\qemu_debugcon.cod" /Fo"%objpath%\driver\qemu_debugcon.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue
 
 for %%1 in (..\src\drv_core\acpi\*.c) do (cl %%1 /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_%%~n1" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue)
 
@@ -60,5 +63,18 @@ link "%objpath%\efiapp\*.obj" /NODEFAULTLIB /LIBPATH:"%libpath%\compchk_uefix64"
 
 echo Linking NoirVisor EFI Hypervisor Runtime Driver...
 link "%objpath%\driver\*.obj"  /NODEFAULTLIB /LIBPATH:"%libpath%\compchk_uefix64" "MdePkgGuids.lib" "BaseLib.lib" "BaseDebugPrintErrorLevelLib.lib" "BaseIoLibIntrinsic.Lib" "BaseMemoryLib.lib" "BasePrintLib.lib" "FilterLibNull.Lib" "UefiLib.lib" "UefiDebugLibConOut.lib" "UefiMemoryAllocationLib.lib" "UefiDevicePathLibDevicePathProtocol.Lib" "UefiBootServicesTableLib.Lib" "UefiRuntimeServicesTableLib.Lib" "..\src\disasm\bin\compchk_win11x64\zydis.lib" /NOLOGO /OUT:"%binpath%\NoirVisor.efi" /SUBSYSTEM:EFI_RUNTIME_DRIVER /ENTRY:"NoirDriverEntry" /DEBUG /PDB:"%binpath%\NoirVisor.pdb" /Machine:X64
+
+echo ============Start Imaging============
+echo Creating Disk Image...
+set /A imagesize_kb=2880
+set /A imagesize_b=%imagesize_kb*1024
+if exist %binpath%\NoirVisor-Uefi.img (fsutil file setzerodata offset=0 length=%imagesize_b% %binpath%\NoirVisor-Uefi.img) else (fsutil file createnew %binpath%\NoirVisor-Uefi.img %imagesize_b%)
+echo Formatting Disk Image...
+mformat -i %binpath%\NoirVisor-Uefi.img -f %imagesize_kb% ::
+mmd -i %binpath%\NoirVisor-Uefi.img ::/EFI
+mmd -i %binpath%\NoirVisor-Uefi.img ::/EFI/BOOT
+echo Copying into Disk Image...
+mcopy -i %binpath%\NoirVisor-Uefi.img %binpath%\NoirVisor.efi ::/
+mcopy -i %binpath%\NoirVisor-Uefi.img %binpath%\bootx64.efi ::/EFI/BOOT
 
 if "%~1"=="/s" (echo Completed!) else (pause)

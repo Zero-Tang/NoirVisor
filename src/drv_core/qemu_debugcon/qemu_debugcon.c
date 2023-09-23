@@ -18,12 +18,6 @@
 #include <nvstatus.h>
 #include "qemu_debugcon.h"
 
-noir_status nvc_io_qemu_debugcon_init(u16 port_number)
-{
-	qemu_debugcon_port=port_number;
-	return noir_success;
-}
-
 noir_status nvc_io_qemu_debugcon_read(u8p buffer,size_t length)
 {
 	for(size_t i=0;i<length;i++)
@@ -35,5 +29,12 @@ noir_status nvc_io_qemu_debugcon_write(u8p buffer,size_t length)
 {
 	for(size_t i=0;i<length;i++)
 		noir_outb(qemu_debugcon_port,buffer[i]);
+	return noir_success;
+}
+
+noir_status nvc_io_qemu_debugcon_init(u16 port_number)
+{
+	qemu_debugcon_port=port_number;
+	nvd_printf("[NoirVisor] QEMU ISA DebugCon is initialized!\n");
 	return noir_success;
 }

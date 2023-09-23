@@ -15,6 +15,7 @@
 #include <nvdef.h>
 #include <nvbdk.h>
 #include <nvstatus.h>
+#include <nv_intrin.h>
 #include <stdarg.h>
 #include <debug.h>
 
@@ -76,6 +77,31 @@ noir_status noir_dbgport_write(void* buffer,size_t length)
 	return st;
 }
 
+void noir_dbgport_acquire_lock()
+{
+	while(noir_locked_cmpxchg(&nvdbg.port_lock,1,0))noir_pause();
+}
+
+void noir_dbgport_release_lock()
+{
+	noir_locked_xchg(&nvdbg.port_lock,0);
+}
+
+void cdecl nvd_vprintf(const char* src_file,const u32 ln,const char* format,va_list arg_list)
+{
+	char buffer[512];
+	i32 prefix_len,content_len;
+	if(src_file)
+		prefix_len=nv_snprintf(buffer,sizeof(buffer),"[NoirVisor | (%s@%u)] ",src_file,ln);
+	else
+		prefix_len=nv_snprintf(buffer,sizeof(buffer),"[NoirVisor] ");
+	content_len=nv_vsnprintf(&buffer[prefix_len],sizeof(buffer)-prefix_len,format,arg_list);
+	noir_dbgport_acquire_lock();
+	if(nvdbg.mode!=noir_debug_interactive)
+		noir_dbgport_write(buffer,prefix_len+content_len);
+	noir_dbgport_release_lock();
+}
+
 void cdecl nvd_printf(const char* format,...)
 {
 	va_list arg_list;
@@ -84,7 +110,9 @@ void cdecl nvd_printf(const char* format,...)
 	va_start(arg_list,format);
 	len=nv_vsnprintf(buffer,sizeof(buffer),format,arg_list);
 	va_end(arg_list);
+	noir_dbgport_acquire_lock();
 	if(nvdbg.mode!=noir_debug_interactive)noir_dbgport_write(buffer,len);
+	noir_dbgport_release_lock();
 }
 
 void cdecl nvd_panicf(const char* format,...)
@@ -95,10 +123,12 @@ void cdecl nvd_panicf(const char* format,...)
 	va_start(arg_list,format);
 	len=nv_vsnprintf(buffer,sizeof(buffer),format,arg_list);
 	va_end(arg_list);
+	noir_dbgport_acquire_lock();
 	if(nvdbg.mode==noir_debug_interactive)return;
 	// For panicking output, write the console with red-colored characters.
 	noir_dbgport_write("\x1b[31m",5);
 	noir_dbgport_write(buffer,len);
 	// Reset to white characters.
 	noir_dbgport_write("\x1b[37m",5);
+	noir_dbgport_release_lock();
 }

@@ -17,7 +17,8 @@ Given the circumstances, a few points should be addressed:
 - The `telnet=on` is intended for programs like `telnet` and `PuTTY` to display debug messages. Otherwise, it should be off so that data are not encoded with telnet protocol.
 
 ## Configure NoirVisor's Driver
-You will have to configure the port number of QEMU's Debug Console so that innate driver in NoirVisor can choose a correct port number.
+You will have to configure the port number of QEMU's Debug Console so that innate driver in NoirVisor can choose a correct port number. \
+If NoirVisor is loaded and the configured debug port is QEMU Debug Console, NoirVisor will send a message. Check the message to see if debugger connection is working.
 
 ### Windows
 In registry `HKLM\SOFTWARE\Zero-Tang\NoirVisor`, write the following key values before loading NoirVisor:
