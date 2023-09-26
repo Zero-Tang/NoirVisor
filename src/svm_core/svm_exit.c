@@ -57,7 +57,7 @@ void static noir_hvcode fastcall nvc_svm_default_handler(noir_gpr_state_p gpr_st
 	  This means you enabled nested paging but did not set a #NPF handler.
 	*/
 	noir_svm_stgi();
-	nv_dprintf("Unhandled VM-Exit! Intercept Code: 0x%X\n",code);
+	nvd_printf("Unhandled VM-Exit! Intercept Code: 0x%X\n",code);
 	noir_int3();
 }
 
@@ -173,9 +173,14 @@ void static noir_hvcode fastcall nvc_svm_ud_exception_handler(noir_gpr_state_p g
 // Expected Intercept Code: 0x4E
 void static noir_hvcode fastcall nvc_svm_pf_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-#if !defined(_hv_type1)
 	void* vmcb=vcpu->vmcb.virt;
 	ulong_ptr fault_address=noir_svm_vmread(vmcb,exit_info2);
+#if defined(_hv_type1)
+	amd64_page_fault_error_code error_code;
+	error_code.value=noir_svm_vmread32(vmcb,exit_info1);
+	u64 grip=noir_svm_vmread64(vmcb,guest_rip);
+	nvd_printf("#PF is intercepted at rip=0x%016llX! Error Code: 0x%08X\n",grip,error_code.value);
+#else
 	if(fault_address==(ulong_ptr)noir_system_call)
 	{
 		// The page fault occured at system call.
@@ -298,6 +303,8 @@ void static noir_hvcode fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p g
 {
 	void* vmcb=vcpu->vmcb.virt;
 	u32 error_code=noir_svm_vmread32(vmcb,exit_info1);
+	u64 grip=noir_svm_vmread64(vmcb,guest_rip);
+	nvd_printf("#SX exception is intercepted at 0x%016llX! Error-Code: 0x%08X\n",grip,error_code);
 	switch(error_code)
 	{
 		case amd64_sx_init_redirection:
@@ -340,7 +347,12 @@ void static noir_hvcode fastcall nvc_svm_sx_exception_handler(noir_gpr_state_p g
 // Expected Intercept Code: 0x40-0x5F, excluding other already-defined exceptions.
 void static noir_hvcode fastcall nvc_svm_exception_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	;
+	u64 vector=noir_svm_vmread64(vcpu->vmcb.virt,exit_code)-intercepted_exception(0);
+	u64 grip=noir_svm_vmread64(vcpu->vmcb.virt,guest_rip);
+	u32 error_code=noir_svm_vmread32(vcpu->vmcb.virt,exit_info1);
+	u32 ec_mask=amd64_exception_has_error_code_mask;
+	nvd_printf("Exception was intercepted at 0x%016llX! Vector=%u, Error-Code: 0x%08X\n",grip,vector,error_code);
+	noir_svm_inject_event(vcpu->vmcb.virt,(u8)vector,amd64_fault_trap_exception,noir_bt(&ec_mask,vector),true,error_code);
 }
 
 // Expected Intercept Code: 0x61
@@ -1333,7 +1345,6 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_st
 		{
 			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
 			{
-				noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
 #if defined(_hv_type1)
 				noir_rmt_crypto_context_p crypto=null;
 #else
@@ -1342,10 +1353,10 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_st
 				noir_nsv_virtual_machine_p vm=crypto->vm;
 				for(u32 i=0;i<crypto->pages;i++)
 				{
-					const u64 pfn=page_count(crypto->hpa_list[i]);
+					noir_rmt_entry_p rm_table=nvc_get_rmt_entry(crypto->hpa_list[i]);
 					void* page=(void*)crypto->hpa_list[i];
 					// If the page is assigned to a secure guest, then decryption is required.
-					if(rm_table[pfn].low.ownership==noir_nsv_rmt_secure_guest)
+					if(rm_table->low.ownership==noir_nsv_rmt_secure_guest)
 						noir_aes128_decrypt_pages(page,vm->expanded_decryption_keys,1,vm->aes_key);
 					else
 						noir_aes128_encrypt_pages(page,vm->expanded_encryption_keys,1,vm->aes_key);
@@ -1586,13 +1597,12 @@ void static nvc_svm_handle_apic_write_npf(noir_gpr_state_p gpr_state,noir_svm_vc
 void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
 	bool advance=true;
-	noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
 	// Necessary Information for #NPF VM-Exit.
 	const u64 gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
-	const u64 guest_pfn=page_count(gpa);
 	amd64_npt_fault_code fault;
 	fault.value=noir_svm_vmread64(vcpu->vmcb.virt,exit_info1);
-	if(rm_table[guest_pfn].low.asid==0)
+	noir_rmt_entry_p rm_table=nvc_get_rmt_entry(gpa);
+	if(rm_table->low.asid==0)
 	{
 		// If the assigned ASID is zero, then the logic for treating
 		// this #NPF should be considered as reserved area of NoirVisor.
@@ -1609,7 +1619,7 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 		// Complete the advancement of rip register.
 		noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
 	}
-	else if(rm_table[guest_pfn].low.asid==1)
+	else if(rm_table->low.asid==1)
 	{
 		// If the assigned ASID is one, then the logic for treating this
 		// #NPF should be considered as special subverted host operations.

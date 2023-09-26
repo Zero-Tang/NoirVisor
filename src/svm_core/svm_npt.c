@@ -307,6 +307,7 @@ bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm)
 	if(hvm->relative_hvm->blank_page.virt)
 	{
 		noir_npt_manager_p pri_nptm=(noir_npt_manager_p)hvm->relative_hvm->primary_nptm;
+		noir_rmt_directory_entry_p rmt_dir=(noir_rmt_directory_entry_p)hvm->rmd.directory.virt;
 		bool result=true;
 		hvm->relative_hvm->blank_page.phys=noir_get_physical_address(hvm->relative_hvm->blank_page.virt);
 		// Protect HSAVE and VMCB
@@ -329,9 +330,15 @@ bool nvc_npt_protect_critical_hypervisor(noir_hypervisor_p hvm)
 		// Update PTEs...
 		for(noir_npt_pte_descriptor_p cur=pri_nptm->pte.head;cur;cur=cur->next)
 			result&=nvc_npt_update_pte(pri_nptm,cur->phys,hvm->relative_hvm->blank_page.phys,true,true,true,true);
-		// Protect Reverse-Mapping Table...
-		for(u64 phys=hvm->rmt.table.phys;phys<hvm->rmt.table.phys+hvm->rmt.size;phys+=page_size)
-			result&=nvc_npt_update_pte(pri_nptm,phys,phys,true,false,true,true);
+		// Protect Reverse-Mapping Directory...
+		result&=nvc_npt_update_pte(pri_nptm,hvm_p->rmd.directory.phys,hvm_p->rmd.directory.phys,true,false,true,true);
+		// Protect Reverse-Mapping Tables...
+		for(u64 i=0;i<hvm_p->rmd.dir_count;i++)
+		{
+			const u64 size=page_4kb_count(rmt_dir[i].hpa_end-rmt_dir[i].hpa_start)<<4;
+			for(u64 phys=rmt_dir[i].table.phys;phys<rmt_dir[i].table.phys+size;phys+=page_size)
+				result&=nvc_npt_update_pte(pri_nptm,phys,phys,true,false,true,true);
+		}
 		return result;
 	}
 	return false;
@@ -527,11 +534,11 @@ void nvc_npt_build_reverse_map()
 void nvc_npt_reassign_page_ownership_hvrt(noir_svm_vcpu_p vcpu,noir_rmt_remap_context_p context)
 {
 	noir_npt_manager_p nptm=hvm_p->relative_hvm->primary_nptm;
-	noir_rmt_entry_p rmt=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
 	// Perform remapping.
 	for(u32 i=0;i<context->pages;i++)
 	{
 		const u64 hpa=context->hpa_list[i];
+		noir_rmt_entry_p rmt=nvc_get_rmt_entry(hpa);
 		noir_npt_pde_descriptor_p pde_p=nvc_npt_split_pdpte(nptm,hpa,true,false);
 		noir_npt_pte_descriptor_p pte_p=nvc_npt_split_pde(nptm,hpa,true,false);
 		if(pde_p==null || pte_p==null)
@@ -543,14 +550,14 @@ void nvc_npt_reassign_page_ownership_hvrt(noir_svm_vcpu_p vcpu,noir_rmt_remap_co
 		{
 			const u64 index=page_4kb_count(hpa);
 			const u64 pte_i=page_entry_index64(index);
-			if(rmt[index].low.ownership==noir_nsv_rmt_noirvisor)
+			if(rmt->low.ownership==noir_nsv_rmt_noirvisor)
 			{
 				// For debugging-purpose, pages assigned to NoirVisor can be readable.
 				pte_p->virt[pte_i].present=true;
 				pte_p->virt[pte_i].write=false;
 				pte_p->virt[pte_i].user=true;
 			}
-			else if(rmt[index].low.ownership==noir_nsv_rmt_secure_guest)
+			else if(rmt->low.ownership==noir_nsv_rmt_secure_guest)
 			{
 				// If the page is assigned to a secure guest, no accesses should be granted.
 				pte_p->virt[pte_i].present=false;
@@ -581,7 +588,6 @@ void static nvc_npt_flush_tlb_generic_worker(void* context,u32 processor_id)
 
 bool static nvc_npt_reassign_page_ownership_unsafe(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership)
 {
-	noir_rmt_entry_p rmt=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
 	noir_rmt_remap_context remap;
 	noir_rmt_reassignment_context reassignment;
 	bool result=false;
@@ -653,11 +659,11 @@ bool nvc_npt_reassign_page_ownership(u64p hpa,u64p gpa,u32 pages,u32 asid,bool s
 	bool result;
 	// Lock everything we need here in order to circumvent race condition and reentrance of locks.
 	noir_acquire_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
-	noir_acquire_pushlock_exclusive(&hvm_p->rmt.lock);
+	noir_acquire_pushlock_exclusive(&hvm_p->rmd.lock);
 	// Now, perform reassignment.
 	result=nvc_npt_reassign_page_ownership_unsafe(hpa,gpa,pages,asid,shared,ownership);
 	// Unlock everything we locked.
-	noir_release_pushlock_exclusive(&hvm_p->rmt.lock);
+	noir_release_pushlock_exclusive(&hvm_p->rmd.lock);
 	noir_release_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
 	// Return
 	return result;
@@ -668,42 +674,51 @@ bool nvc_npt_reassign_page_ownership(u64p hpa,u64p gpa,u32 pages,u32 asid,bool s
 bool nvc_npt_reassign_cvm_all_pages_ownership(noir_svm_custom_vm_p vm,u32 asid,bool shared,u8 ownership)
 {
 	bool result=false;
-	noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
-	const u64 total_pages=hvm_p->rmt.size>>4;
+	noir_rmt_directory_entry_p rmt_dir=(noir_rmt_directory_entry_p)hvm_p->rmd.directory.virt;
 	u32 pages=0;
 	// Lock everything we need here in order to circumvent race condition and reentrance of locks.
 	noir_acquire_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
-	noir_acquire_pushlock_exclusive(&hvm_p->rmt.lock);
+	noir_acquire_pushlock_exclusive(&hvm_p->rmd.lock);
 	// Stage I: Scan the Reverse-Mapping Table.
-	for(u64 i=0;i<total_pages;i++)
-		if(rm_table[i].low.asid==vm->asid)
-			pages++;
+	for(u64 i=0;i<hvm_p->rmd.dir_count;i++)
+	{
+		noir_rmt_entry_p rm_table=(noir_rmt_entry_p)rmt_dir[i].table.virt;
+		const u64 total_pages=page_4kb_count(rmt_dir[i].hpa_end-rmt_dir[i].hpa_start);
+		for(u64 j=0;j<total_pages;j++)
+			if(rm_table[j].low.asid==vm->asid)
+				pages++;
+	}
 	// Stage II: Construct the list.
 	if(pages)
 	{
 		u64p gpa_list=noir_alloc_nonpg_memory(pages<<3);
 		u64p hpa_list=noir_alloc_nonpg_memory(pages<<3);
-		u32 j=0;
+		u32 k=0;
 		if(gpa_list && hpa_list)
 		{
-			for(u64 i=0;i<total_pages;i++)
+			for(u64 i=0;i<hvm_p->rmd.dir_count;i++)
 			{
-				if(rm_table[i].low.asid==vm->asid)
+				noir_rmt_entry_p rm_table=(noir_rmt_entry_p)rmt_dir[i].table.virt;
+				const u64 total_pages=page_4kb_count(rmt_dir[i].hpa_end-rmt_dir[i].hpa_start);
+				for(u64 j=0;j<total_pages;j++)
 				{
-					gpa_list[j]=page_4kb_mult(rm_table[i].high.guest_pfn);
-					hpa_list[j]=page_4kb_mult(i);
-					j++;
+					if(rm_table[j].low.asid==vm->asid)
+					{
+						gpa_list[k]=page_4kb_mult(rm_table[j].high.guest_pfn);
+						hpa_list[k]=page_4kb_mult(j)+rmt_dir[i].hpa_start;
+						k++;
+					}
 				}
 			}
 		}
 		// Stage III: Perform reassignment.
-		if(j==pages)result=nvc_npt_reassign_page_ownership_unsafe(hpa_list,gpa_list,pages,asid,shared,ownership);
+		if(k==pages)result=nvc_npt_reassign_page_ownership_unsafe(hpa_list,gpa_list,pages,asid,shared,ownership);
 		// Release list...
 		if(gpa_list)noir_free_nonpg_memory(gpa_list);
 		if(hpa_list)noir_free_nonpg_memory(hpa_list);
 	}
 	// Unlock everything we locked.
-	noir_release_pushlock_exclusive(&hvm_p->rmt.lock);
+	noir_release_pushlock_exclusive(&hvm_p->rmd.lock);
 	noir_release_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
 	// Return
 	return result;

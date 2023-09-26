@@ -148,6 +148,13 @@ typedef struct _noir_rmt_entry
 	}high;
 }noir_rmt_entry,*noir_rmt_entry_p;
 
+typedef struct _noir_rmt_directory_entry
+{
+	memory_descriptor table;
+	u64 hpa_start;
+	u64 hpa_end;
+}noir_rmt_directory_entry,*noir_rmt_directory_entry_p;
+
 // Hypervisor Structure
 typedef struct _noir_hypervisor
 {
@@ -276,10 +283,10 @@ typedef struct _noir_hypervisor
 	}protected_ports;
 	struct
 	{
-		memory_descriptor table;
-		u64 size;
+		memory_descriptor directory;
+		u64 dir_count;
 		noir_pushlock lock;
-	}rmt;
+	}rmd;
 	u32 cpu_count;
 	char vendor_string[13];
 	u8 cpu_manuf;
@@ -335,6 +342,7 @@ char virtual_nstr[49]="AMD Ryzen 7 1700 Eight-Core Processor\0";
 bool nvc_build_reverse_mapping_table();
 void nvc_configure_reverse_mapping(u64 hpa,u64 gpa,u32 asid,bool shared,u8 ownership);
 bool nvc_validate_rmt_reassignment(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership);
+noir_rmt_entry_p nvc_get_rmt_entry(u64 hpa);
 extern noir_hypervisor_p hvm_p;
 extern ulong_ptr system_cr3;
 extern ulong_ptr orig_system_call;

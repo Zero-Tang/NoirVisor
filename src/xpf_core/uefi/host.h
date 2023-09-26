@@ -33,6 +33,19 @@
 
 #define GDT_SELECTOR_MASK		0xFFF8
 
+typedef void (*NOIR_PHYSICAL_MEMORY_RANGE_CALLBACK)
+(
+	IN UINT64 Start,
+	IN UINT64 Length,
+	IN OUT VOID* Context
+);
+
+typedef struct _MEMORY_RANGE
+{
+	UINT64 BaseAddress;
+	UINT64 RangeSize;
+}MEMORY_RANGE,*PMEMORY_RANGE;
+
 typedef struct _SEGMENT_REGISTER
 {
 	UINT16 Selector;

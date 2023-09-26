@@ -297,6 +297,9 @@
 // #SX Exception Error Codes
 #define amd64_sx_init_redirection		1
 
+// Exceptions that have error codes
+#define amd64_exception_has_error_code_mask		0x60227D00	
+
 // This is used for defining AMD64 APIC Page Offsets
 #define amd64_apic_id					0x020
 #define amd64_apic_version				0x030

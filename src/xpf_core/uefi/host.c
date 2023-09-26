@@ -435,19 +435,34 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 	}
 }
 
-EFI_STATUS NoirPrintMemoryMapAndGetTom(OUT UINT64 *Tom)
+INTN EFIAPI NoirMemoryRangeComparator(IN CONST VOID *Buffer1,IN CONST VOID* Buffer2)
+{
+	PMEMORY_RANGE a=(PMEMORY_RANGE)Buffer1,b=(PMEMORY_RANGE)Buffer2;
+	if(a->BaseAddress<b->BaseAddress)
+		return -1;
+	else if(a->BaseAddress>b->BaseAddress)
+		return 1;
+	return 0;
+}
+
+void noir_enum_physical_memory_ranges(IN NOIR_PHYSICAL_MEMORY_RANGE_CALLBACK CallbackRoutine,IN OUT VOID* Context)
 {
 	EFI_MEMORY_DESCRIPTOR *MemoryDescriptor=NULL;
+	MEMORY_RANGE *MemoryRanges=NULL,DummyRange;
 	UINTN MemoryDescriptorSize=0,MapKey,DescriptorSize;
 	UINT32 DescriptorVersion;
 	EFI_STATUS st=gBS->GetMemoryMap(&MemoryDescriptorSize,MemoryDescriptor,&MapKey,&DescriptorSize,&DescriptorVersion);
-	*Tom=0;
 	if(st==EFI_BUFFER_TOO_SMALL)
 	{
 		MemoryDescriptorSize+=DescriptorSize<<1;
 		MemoryDescriptor=AllocatePool(MemoryDescriptorSize);
-		if(MemoryDescriptor==NULL)
+		MemoryRanges=AllocatePool(MemoryDescriptorSize);
+		if(MemoryDescriptor==NULL || MemoryRanges==NULL)
+		{
+			if(MemoryDescriptor)FreePool(MemoryDescriptor);
+			if(MemoryRanges)FreePool(MemoryDescriptor);
 			st=EFI_OUT_OF_RESOURCES;
+		}
 		else
 		{
 			EFI_MEMORY_DESCRIPTOR *CurrentEntry=MemoryDescriptor;
@@ -456,8 +471,10 @@ EFI_STATUS NoirPrintMemoryMapAndGetTom(OUT UINT64 *Tom)
 				Print(L"Failed to get memory map! Status=0x%X\n",st);
 			else
 			{
+				UINTN Ranges=0;
 				do
 				{
+					/*
 					CHAR8 *MemoryTypeName=CurrentEntry->Type<EfiMaxMemoryType?EfiMemoryTypeNames[CurrentEntry->Type]:"Unknown";
 					Print(L"Memory Map Start: 0x%llX\t Pages: 0x%llX\t Type: %a\t Attributes: ",CurrentEntry->PhysicalStart,CurrentEntry->NumberOfPages,MemoryTypeName);
 					if(CurrentEntry->Attribute==0)
@@ -469,6 +486,7 @@ EFI_STATUS NoirPrintMemoryMapAndGetTom(OUT UINT64 *Tom)
 								Print(L"%a ",EfiMemoryAttributeNames[i]);
 						Print(L"\n");
 					}
+					*/
 					switch(CurrentEntry->Type)
 					{
 						case EfiLoaderCode:
@@ -481,26 +499,35 @@ EFI_STATUS NoirPrintMemoryMapAndGetTom(OUT UINT64 *Tom)
 						case EfiACPIReclaimMemory:
 						{
 							// These types of memory could be treated as General-Purpose Physical Memory.
-							UINT64 RangeMax=CurrentEntry->PhysicalStart+(CurrentEntry->NumberOfPages<<EFI_PAGE_SHIFT);
-							if(RangeMax>*Tom)*Tom=RangeMax;
+							// Add to ranges.
+							MemoryRanges[Ranges].BaseAddress=CurrentEntry->PhysicalStart;
+							MemoryRanges[Ranges].RangeSize=CurrentEntry->NumberOfPages<<EFI_PAGE_SHIFT;
+							Ranges++;
 							break;
 						}
 					}
 					CurrentEntry=(EFI_MEMORY_DESCRIPTOR*)((UINTN)CurrentEntry+DescriptorSize);
 				}while((UINTN)CurrentEntry<(UINTN)MemoryDescriptor+MemoryDescriptorSize);
+				// Sort the memory range.
+				QuickSort(MemoryRanges,Ranges,sizeof(MEMORY_RANGE),NoirMemoryRangeComparator,&DummyRange);
+				// Merge the ranges.
+				UINT32 BaseIndex=0;
+				for(UINT32 i=1;i<Ranges;i++)
+				{
+					PMEMORY_RANGE a=&MemoryRanges[BaseIndex],b=&MemoryRanges[i];
+					if(a->BaseAddress+a->RangeSize>=b->BaseAddress && a->BaseAddress+a->RangeSize<=b->BaseAddress+b->RangeSize)
+						a->RangeSize=b->BaseAddress+b->RangeSize-a->BaseAddress;
+					else
+						MemoryRanges[++BaseIndex]=*b;
+				}
+				for(UINT32 i=0;i<=BaseIndex;i++)
+					CallbackRoutine(MemoryRanges[i].BaseAddress,MemoryRanges[i].RangeSize,Context);
 			}
 			FreePool(MemoryDescriptor);
+			FreePool(MemoryRanges);
 		}
 	}
-	return st;
-}
-
-UINT64 noir_get_top_of_memory()
-{
-	UINT64 Tom;
-	EFI_STATUS st=NoirPrintMemoryMapAndGetTom(&Tom);
-	Print(L"Get TOM Status: 0x%X\t TOM=0x%llX\n",st,Tom);
-	return Tom;
+	Print(L"Query Memory Map Layout Status: 0x%X\n",st);
 }
 
 UINT32 noir_get_current_processor()

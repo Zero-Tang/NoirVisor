@@ -51,7 +51,6 @@ bool nvc_is_npt_supported()
 	bool npt_support=true;
 	noir_cpuid(amd64_cpuid_ext_svm_features,0,&a,&b,&c,&d);
 	npt_support&=noir_bt(&d,amd64_cpuid_npt);
-	npt_support&=noir_bt(&d,amd64_cpuid_vmcb_clean);
 	return npt_support;
 }
 
@@ -131,9 +130,11 @@ void static nvc_svm_setup_io_hook(noir_hypervisor_p hvm_p)
 	// e.g.: Protect Serial Port communications in order to transmit debug messages.
 	// If you can't add your I/O ports into the predefined array, add the ports here.
 	// Protect the Serial Ports.
+	/*
 	if(noir_query_serial_port_base(&hvm_p->protected_ports.serial))
 		for(u32 i=0;i<8;i++)
 			noir_set_bitmap(bitmap,hvm_p->protected_ports.serial+i);
+	*/
 #if defined(_hv_type1)
 	// Protect the Power Management I/O Ports.
 	if(noir_query_pm1_port_address(&hvm_p->protected_ports.pm1a,&hvm_p->protected_ports.pm1b))
@@ -253,6 +254,10 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	// Solution of MSR-Hook with KVA-shadow mechanism: Intercept #PF exceptions.
 	if((vcpu->enabled_feature & noir_svm_syscall_hook) && (vcpu->enabled_feature & noir_svm_kva_shadow_present))
 		noir_bts(&exception_bitmap,amd64_page_fault);
+#if defined(_hv_type1)
+	noir_bts(&exception_bitmap,amd64_security_exception);
+	exception_bitmap=0x702F7FFB;
+#endif
 	// Write to VMCB.
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_access_cr,crx_intercept.value);
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_exceptions,exception_bitmap);
@@ -546,8 +551,16 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 	if(hvm_p->host_memmap.pdpt.virt)
 		noir_free_contd_memory(hvm_p->host_memmap.pdpt.virt,page_size);
 #endif
-	if(hvm_p->rmt.table.virt)
-		noir_free_contd_memory(hvm_p->rmt.table.virt,hvm_p->rmt.size);
+	if(hvm_p->rmd.directory.virt)
+	{
+		for(u64 i=0;i<hvm_p->rmd.dir_count;i++)
+		{
+			noir_rmt_directory_entry_p entry=(noir_rmt_directory_entry_p)hvm_p->rmd.directory.virt;
+			const u64 size=page_4kb_count(entry[i].hpa_end-entry[i].hpa_start)<<4;
+			noir_free_contd_memory(entry[i].table.virt,size);
+		}
+		noir_free_contd_memory(hvm_p->rmd.directory.virt,page_size);
+	}
 }
 
 noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)

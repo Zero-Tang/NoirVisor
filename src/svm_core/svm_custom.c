@@ -1625,26 +1625,41 @@ void nvc_svmc_setup_msr_interception_exception(void* msrpm)
 
 void nvc_svmc_release_all_guest_pages(noir_svm_custom_vm_p vm)
 {
-	noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
-	const u64 total_pages=hvm_p->rmt.size>>4;
+	noir_rmt_directory_entry_p rmt_dir=(noir_rmt_directory_entry_p)hvm_p->rmd.directory.virt;
 	u32 pages=0;
 	// Lock the RMT
-	noir_acquire_pushlock_exclusive(&hvm_p->rmt.lock);
+	noir_acquire_pushlock_exclusive(&hvm_p->rmd.lock);
 	// Stage I: Scan the Reverse-Mapping Table.
-	for(u64 i=0;i<total_pages;i++)
-		if(rm_table[i].low.asid==vm->asid && rm_table[i].low.ownership==noir_nsv_rmt_secure_guest)
-			pages++;	// Count the number of pages in the VM.
+	for(u64 i=0;i<hvm_p->rmd.dir_count;i++)
+	{
+		const u64 total_pages=page_count(rmt_dir[i].hpa_end-rmt_dir[i].hpa_start);
+		for(u64 j=0;j<total_pages;j++)
+		{
+			noir_rmt_entry_p rm_table=(noir_rmt_entry_p)rmt_dir[i].table.virt;
+			if(rm_table[j].low.asid==vm->asid && rm_table[j].low.ownership==noir_nsv_rmt_secure_guest)
+				pages++;	// Count the number of pages in the VM.
+		}
+	}
 	// Stage II: Make the list.
 	if(pages)
 	{
 		u64p hpa_list=noir_alloc_nonpg_memory(pages<<3);
-		u32 j=0;
+		u32 k=0;
 		if(hpa_list)
-			for(u64 i=0;i<total_pages;i++)
-				if(rm_table[i].low.asid==vm->asid && rm_table[i].low.ownership==noir_nsv_rmt_secure_guest)
-					hpa_list[j++]=page_4kb_mult(i);
+		{
+			for(u64 i=0;i<hvm_p->rmd.dir_count;i++)
+			{
+				const u64 total_pages=page_count(rmt_dir[i].hpa_end-rmt_dir[i].hpa_start);
+				for(u64 j=0;j<total_pages;j++)
+				{
+					noir_rmt_entry_p rm_table=(noir_rmt_entry_p)rmt_dir[i].table.virt;
+					if(rm_table[j].low.asid==vm->asid && rm_table[j].low.ownership==noir_nsv_rmt_secure_guest)
+						hpa_list[k++]=page_4kb_mult(j)+rmt_dir[i].hpa_start;
+				}
+			}
+		}
 		// Stage III: Perform Crypto Operation
-		if(j==pages)
+		if(k==pages)
 		{
 			noir_rmt_crypto_context crypto;
 			crypto.vm=(noir_nsv_virtual_machine_p)vm->header.vmsa.virt;
@@ -1656,7 +1671,7 @@ void nvc_svmc_release_all_guest_pages(noir_svm_custom_vm_p vm)
 		if(hpa_list)noir_free_nonpg_memory(hpa_list);
 	}
 	// Unlock the RMT
-	noir_release_pushlock_exclusive(&hvm_p->rmt.lock);
+	noir_release_pushlock_exclusive(&hvm_p->rmd.lock);
 }
 
 void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)

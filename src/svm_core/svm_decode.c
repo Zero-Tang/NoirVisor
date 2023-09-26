@@ -105,6 +105,17 @@ void static nvc_svm_decoder_invlpg_handler(noir_gpr_state_p gpr_state,noir_svm_v
 	;
 }
 
+void static nvc_svm_decoder_io_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
+{
+	// AMD-V will always assist decoding I/O instructions, regardless of the support to Decode-Assists!
+	// The next rip is always saved in Exit-Info 2, regardless of the support to Next-Rip Saving!
+	if(!noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_nrips))
+	{
+		const void* vmcb=(cvcpu?cvcpu->vmcb:vcpu->vmcb).virt;
+		noir_svm_vmwrite64(vmcb,next_rip,noir_svm_vmread64(vmcb,exit_info2));
+	}
+}
+
 void static nvc_svm_decoder_npf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
 	// For #NPF interceptions, fetching the instructions is just what we need to do.

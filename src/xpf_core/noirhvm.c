@@ -1163,67 +1163,132 @@ void nvc_print_vm_list()
 
 void nvc_configure_reverse_mapping(u64 hpa,u64 gpa,u32 asid,bool shared,u8 ownership)
 {
-	noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
-	const u64 i=page_count(hpa);
-	rm_table[i].low.asid=asid;
-	rm_table[i].low.shared=shared;
-	rm_table[i].low.ownership=ownership;
-	rm_table[i].low.reserved=0;
-	rm_table[i].high.value=gpa;
-	rm_table[i].high.reserved=0;
-}
-
-bool nvc_validate_rmt_reassignment(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership)
-{
-	noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
-	for(u32 j=0;j<pages;j++)
+	noir_rmt_directory_entry_p rmt_dir=(noir_rmt_directory_entry_p)hvm_p->rmd.directory.virt;
+	u64 hi=hvm_p->rmd.dir_count,lo=0;
+	// Use binary search to reduce time complexity.
+	while(hi>=lo)
 	{
-		const u64 i=page_count(hpa[j]);
-		if((i<<3)>=hvm_p->rmt.size)
-			return false;	// The HPA has exceeded the TOM.
+		const u64 mid=(hi+lo)>>1;
+		if(hpa<rmt_dir[mid].hpa_start)		// If HPA is lower than median range,
+			hi=mid-1;						// Reduce the higher bound.
+		else if(hpa>=rmt_dir[mid].hpa_end)	// If HPA is higher than median range,
+			lo=mid+1;						// Raise the lower bound.
 		else
 		{
+			noir_rmt_entry_p rm_table=(noir_rmt_entry_p)rmt_dir[mid].table.virt;
+			const u64 i=page_4kb_count(hpa-rmt_dir[mid].hpa_start);
+			rm_table[i].low.asid=asid;
+			rm_table[i].low.shared=shared;
+			rm_table[i].low.ownership=ownership;
+			rm_table[i].low.reserved=0;
+			rm_table[i].high.value=gpa;
+			rm_table[i].high.reserved=0;
+			break;
+		}
+	}
+}
+
+bool nvc_validate_single_rmt_reassignment(u64 hpa,u64 gpa,u32 asid,bool shared,u8 ownership)
+{
+	noir_rmt_directory_entry_p rmt_dir=(noir_rmt_directory_entry_p)hvm_p->rmd.directory.virt;
+	u64 hi=hvm_p->rmd.dir_count,lo=0;
+	// Use binary search to reduce time complexity.
+	while(hi>=lo)
+	{
+		const u64 mid=(hi+lo)>>1;
+		if(hpa<rmt_dir[mid].hpa_start)		// If HPA is lower than median range,
+			hi=mid-1;						// Reduce the higher bound.
+		else if(hpa>=rmt_dir[mid].hpa_end)	// If HPA is higher than median range,
+			lo=mid+1;						// Raise the lower bound.
+		else
+		{
+			noir_rmt_entry_p rm_table=(noir_rmt_entry_p)rmt_dir[mid].table.virt;
+			const u64 i=page_4kb_count(hpa-rmt_dir[mid].hpa_start);
 			if(rm_table[i].low.ownership==noir_nsv_rmt_noirvisor)
 				return false;	// If the page was assigned to NoirVisor, fail the validation.
 			else if(rm_table[i].low.ownership==noir_nsv_rmt_secure_guest && ownership==noir_nsv_rmt_secure_guest)
 				return false;	// Secure Memory are not allowed to be remapped in one shot.
 			else if(ownership==noir_nsv_rmt_secure_guest && shared)
 				return false;	// Secure Memory are not allowed to be shared.
+			return true;
 		}
+	}
+	// This HPA is not pointing to physical RAM.
+	return false;
+}
+
+bool nvc_validate_rmt_reassignment(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership)
+{
+	for(u32 i=0;i<pages;i++)
+	{
+		bool result=nvc_validate_single_rmt_reassignment(hpa[i],gpa[i],asid,shared,ownership);
+		if(!result)return false;
 	}
 	return true;
 }
 
-bool nvc_build_reverse_mapping_table()
+noir_rmt_entry_p nvc_get_rmt_entry(u64 hpa)
 {
-	// Get the top-of-memory address.
-	u64 tom=noir_get_top_of_memory();
-	u64 pages=page_count(tom);
-	hvm_p->rmt.size=pages*sizeof(noir_rmt_entry);
-	nv_dprintf("Size of RMT: 0x%llX\n",hvm_p->rmt.size);
-	// Allocate pages...
-	hvm_p->rmt.table.virt=noir_alloc_contd_memory(hvm_p->rmt.size);
-	if(hvm_p->rmt.table.virt)
+	noir_rmt_directory_entry_p rmt_dir=(noir_rmt_directory_entry_p)hvm_p->rmd.directory.virt;
+	u64 hi=hvm_p->rmd.dir_count,lo=0;
+	// Use binary search to reduce time complexity.
+	while(hi>=lo)
 	{
-		noir_rmt_entry_p rm_table=(noir_rmt_entry_p)hvm_p->rmt.table.virt;
-		hvm_p->rmt.table.phys=noir_get_physical_address(rm_table);
-		// Initialize the table.
+		const u64 mid=(hi+lo)>>1;
+		if(hpa<rmt_dir[mid].hpa_start)		// If HPA is lower than median range,
+			hi=mid-1;						// Reduce the higher bound.
+		else if(hpa>=rmt_dir[mid].hpa_end)	// If HPA is higher than median range,
+			lo=mid+1;						// Raise the lower bound.
+		else
+		{
+			const u64 index=page_4kb_count(hpa-rmt_dir[mid].hpa_start);
+			noir_rmt_entry_p rm_table=rmt_dir[mid].table.virt;
+			return &rm_table[index];
+		}
+	}
+	return null;
+}
+
+void static nvc_enum_physical_range_callback(u64 start,u64 length,void* context)
+{
+	noir_rmt_directory_entry_p rmt_dir=(noir_rmt_directory_entry_p)hvm_p->rmd.directory.virt;
+	const u64 index=hvm_p->rmd.dir_count++;
+	u32p alloc_count=(u32p)context;
+	rmt_dir[index].hpa_start=start;
+	rmt_dir[index].hpa_end=start+length;
+	rmt_dir[index].table.virt=noir_alloc_contd_memory(page_count(length)<<4);
+	if(rmt_dir[index].table.virt)
+	{
+		const u64 pages=page_count(length);
+		noir_rmt_entry_p rm_table=(noir_rmt_entry_p)rmt_dir[index].table.virt;
+		rmt_dir[index].table.phys=noir_get_physical_address(rm_table);
+		(*alloc_count)++;
 		for(u64 i=0;i<pages;i++)
 		{
-			// All pages are initially assigned to the subverted host.
 			rm_table[i].low.asid=1;
 			rm_table[i].low.shared=false;
 			rm_table[i].low.ownership=noir_nsv_rmt_subverted_host;
-			rm_table[i].high.value=page_mult(i);		// GPA.
+			rm_table[i].high.value=page_mult(i)+start;
 		}
-		// RMT pages are reserved by NoirVisor.
-		for(u64 i=0;i<page_count(hvm_p->rmt.size);i++)
+	}
+}
+
+bool nvc_build_reverse_mapping_table()
+{
+	// Initialize Reverse-Mapping Directory
+	hvm_p->rmd.directory.virt=noir_alloc_contd_memory(page_size);
+	if(hvm_p->rmd.directory.virt)
+	{
+		u32 alloc_count=0;
+		hvm_p->rmd.directory.phys=noir_get_physical_address(hvm_p->rmd.directory.virt);
+		noir_enum_physical_memory_ranges(nvc_enum_physical_range_callback,&alloc_count);
+		if(alloc_count==hvm_p->rmd.dir_count)
 		{
-			u64 pfn=page_count(hvm_p->rmt.table.phys);
-			rm_table[pfn+i].low.asid=0;
-			rm_table[pfn+i].low.ownership=noir_nsv_rmt_noirvisor;
+			noir_rmt_directory_entry_p rmt_dir=(noir_rmt_directory_entry_p)hvm_p->rmd.directory.virt;
+			for(u64 i=0;i<alloc_count;i++)nv_dprintf("[Memory Map] Start: 0x%016llX, End: 0x%016llX\n",rmt_dir[i].hpa_start,rmt_dir[i].hpa_end);
+			return true;
 		}
-		return true;
+		nv_dprintf("Failed to allocate all tables for reverse-mapping! Failed directory entries: %u\n",hvm_p->rmd.dir_count-alloc_count);
 	}
 	return false;
 }

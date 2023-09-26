@@ -18,6 +18,13 @@
 #define NOIR_DEBUG_LOG_RECORD_LIMIT		160
 #define NOIR_DEBUG_PRINT_DELAY			2000
 
+typedef void (*NOIR_PHYSICAL_MEMORY_RANGE_CALLBACK)
+(
+	IN ULONG64 Start,
+	IN ULONG64 Length,
+	IN OUT PVOID Context
+);
+
 typedef union _MEMORY_WORKING_SET_EX_BLOCK
 {
 	struct

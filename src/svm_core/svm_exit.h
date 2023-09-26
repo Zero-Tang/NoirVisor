@@ -571,6 +571,7 @@ void static nvc_svm_decoder_dr_access_handler(noir_gpr_state_p gpr_state,noir_sv
 void static nvc_svm_decoder_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static nvc_svm_decoder_int_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static nvc_svm_decoder_invlpg_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
+void static nvc_svm_decoder_io_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void static nvc_svm_decoder_npf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 
 noir_hvdata noir_svm_decoder_handler_routine svm_decoder_group1[noir_svm_maximum_code1]=
@@ -630,7 +631,7 @@ noir_hvdata noir_svm_decoder_handler_routine svm_decoder_group1[noir_svm_maximum
 	nvc_svm_decoder_instruction_handler,	// hlt
 	nvc_svm_decoder_invlpg_handler,			// invlpg
 	nvc_svm_decoder_instruction_handler,	// invlpga
-	nvc_svm_decoder_instruction_handler,	// I/O instructions
+	nvc_svm_decoder_io_handler,				// I/O instructions
 	nvc_svm_decoder_instruction_handler,	// MSR instructions
 	nvc_svm_decoder_instruction_handler,	// Task Switches
 	nvc_svm_decoder_event_handler,			// FP-Error Freezing
