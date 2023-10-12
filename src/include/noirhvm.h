@@ -371,6 +371,26 @@ u8 nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_seg_state_p s
 bool nvc_translate_host_virtual_address_routine64(u64 pt,u64 va,u32 level,u64p pa,u32p error_code,bool r,bool w,bool x,bool u);
 size_t nvc_copy_host_virtual_memory64(u64 pt,u64 va,void* buffer,size_t length,bool write,bool la57,u32p error_code);
 
+// Exception Handlers in Assembly
+void noir_divide_error_fault_handler_a(void);
+void noir_debug_fault_trap_handler_a(void);
+void noir_breakpoint_trap_handler_a(void);
+void noir_overflow_trap_handler_a(void);
+void noir_bound_range_fault_handler_a(void);
+void noir_invalid_opcode_fault_handler_a(void);
+void noir_device_not_available_fault_handler_a(void);
+void noir_double_fault_abort_handler_a(void);
+void noir_invalid_tss_fault_handler_a(void);
+void noir_segment_not_present_fault_handler_a(void);
+void noir_stack_fault_handler_a(void);
+void noir_general_protection_fault_handler_a(void);
+void noir_page_fault_handler_a(void);
+void noir_x87_floating_point_fault_handler_a(void);
+void noir_alignment_check_fault_handler_a(void);
+void noir_machine_check_abort_handler_a(void);
+void noir_simd_floating_point_fault_handler_a(void);
+void noir_control_protection_fault_handler_a(void);
+
 // Miscellaneous
 u64 noir_query_enabled_features_in_system();
 void noir_system_call(void);

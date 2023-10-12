@@ -352,6 +352,9 @@ void static noir_hvcode fastcall nvc_svm_exception_handler(noir_gpr_state_p gpr_
 	u32 error_code=noir_svm_vmread32(vcpu->vmcb.virt,exit_info1);
 	u32 ec_mask=amd64_exception_has_error_code_mask;
 	nvd_printf("Exception was intercepted at 0x%016llX! Vector=%u, Error-Code: 0x%08X\n",grip,vector,error_code);
+#if defined(_hv_type1)
+	while(1)noir_pause();
+#endif
 	noir_svm_inject_event(vcpu->vmcb.virt,(u8)vector,amd64_fault_trap_exception,noir_bt(&ec_mask,vector),true,error_code);
 }
 
@@ -1626,37 +1629,18 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 #if !defined(_hv_type1)
 		if(fault.execute)
 		{
-			i32 lo=0,hi=noir_hook_pages_count;
-			// Check if we should switch to secondary.
-			// Use binary search to reduce searching time complexity.
-			while(hi>=lo)
-			{
-				i32 mid=(lo+hi)>>1;
-				noir_hook_page_p nhp=&vcpu->relative_hvm->secondary_nptm->hook_pages[mid];
-				if(gpa>=nhp->orig.phys+page_size)
-					lo=mid+1;
-				else if(gpa<nhp->orig.phys)
-					hi=mid-1;
-				else
-				{
-					noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->relative_hvm->secondary_nptm;
-					noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
-					advance=false;
-					break;
-				}
-			}
-			if(advance)
-			{
-				// Execution is outside hooked page.
-				// We should switch to primary.
-				noir_npt_manager_p nptm=(noir_npt_manager_p)vcpu->relative_hvm->primary_nptm;
-				noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,nptm->ncr3.phys);
-				advance=false;
-			}
+			// For #NPF due to execution, it is assumed to be due to stealthy hooks.
+			noir_npt_manager_p pri_nptm=vcpu->relative_hvm->primary_nptm;
+			noir_npt_manager_p sec_nptm=vcpu->relative_hvm->secondary_nptm;
+			u64 cur_ncr3=noir_svm_vmread64(vcpu->vmcb.virt,npt_cr3);
+			// Switch the page table.
+			noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,pri_nptm->ncr3.phys==cur_ncr3?sec_nptm->ncr3.phys:pri_nptm->ncr3.phys);
 			// We switched NPT. Thus we should clean VMCB cache state.
-			noir_btr((u32*)((ulong_ptr)vcpu->vmcb.virt+vmcb_clean_bits),noir_svm_clean_npt);
+			noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_npt);
 			// It is necessary to flush TLB.
 			noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+			// Switching NPT does not advance rip.
+			advance=false;
 		}
 #else
 		// For Type-I Hypervisors, #NPF can be triggerred by virtue of interceptions on writes to APIC pages.

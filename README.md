@@ -21,9 +21,9 @@ NoirVisor is a hardware-accelerated hypervisor (a.k.a VMM, Virtual Machine Monit
 Namesake: NoirVisor is named after the [***Grimoire Noir***](https://nier.fandom.com/wiki/Grimoire_Noir) in NieR:Gestalt/Replicant.
 
 # Processor Requirement
-Intel Processors based on Intel 64 and IA-32 Architecture, with support to Intel VT-x. Intel EPT is prefered, but not required. <br>
-AMD Processors based on AMD64 Architecture, with support to AMD-V. Nested Paging is prefered, but not required. <br>
-Other processors based on x86 architecture may be supported in future. <br>
+Intel Processors based on Intel 64 and IA-32 Architecture, with support to Intel VT-x. Intel EPT is prefered, but not required. \
+AMD Processors based on AMD64 Architecture, with support to AMD-V. Nested Paging is prefered, but not required. \
+Other processors based on x86 architecture may be supported in future. \
 Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hygon supports Hardware-Accelerated Virtualization Technology. In summary, certain facts are observed that:
 - Processors produced by Intel Corporation may support Intel VT-x.
 - Processors produced by Advanced Micro Devices Inc. may support AMD-V.
@@ -34,21 +34,21 @@ Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hyg
 Note that early Zhaoxin and VIA use Centaur as vendor.
 
 # Nested Virtualization
-NoirVisor is developed in highest focus on nested virtualization. It is not currently supported, but will be developed in future. <br>
-Algorithm regarding the Nested Virtualization was stated down in the readme files in both VT-Core and SVM-Core directories. <br>
-For Nested Intel VT-x Algorithm, visit [here](src/vt_core/readme.md#vmx-nesting-algorithm-incomplete-version). <br>
+NoirVisor is developed in highest focus on nested virtualization. It is not currently supported, but will be developed in future. \
+Algorithm regarding the Nested Virtualization was stated down in the readme files in both VT-Core and SVM-Core directories. \
+For Nested Intel VT-x Algorithm, visit [here](src/vt_core/readme.md#vmx-nesting-algorithm-incomplete-version). \
 For Nested AMD-V Algorithm, visit [here](src/svm_core/readme.md#svm-nesting-algorithm-incomplete-version).
 
 Nested AMD-V is now in debugging stage.
 
 # Announcement to all contributors
-NoirVisor is coded in the C programming language and the assembly since it is procedure-oriented designed. <br>
-Contributing Guidelines are available in repository. For details, see the markdown file in the root directory of repository. <br>
+NoirVisor is coded in the C programming language and the assembly since it is procedure-oriented designed. \
+Contributing Guidelines are available in repository. For details, see the markdown file in the root directory of repository. \
 **DO NOT PROVIDE CODES WITH C++ WHICH INVOLVES THE NoirVisor Core IN YOUR PULL-REQUEST!**
 
 # Build
-To build NoirVisor, using batch is essential. <br>
-Note that you should execute the `build_prep.bat` to make directories for first-time compilation. <br>
+To build NoirVisor, using batch is essential. \
+Note that you should execute the `build_prep.bat` to make directories for first-time compilation. \
 Once NoirVisor is updated, it is recommended to execute `cleanup.bat` script before building.
 
 If you use terminal, you may add `/s` option in order to bypass the `pause` command. For example:
@@ -57,24 +57,24 @@ If you use terminal, you may add `/s` option in order to bypass the `pause` comm
 ```
 
 ## Windows Driver
-To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 11 (Visual Studio Build Tools 16.9.2 and 17.1.5) ISO file to T: and V: drives. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. <br>
-Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. If you use WinCDEmu, however, you may order the system to mount EWDK10 and specify its drive letter during startup. <br>
-You may download the EWDK11 (with VS Build Tools 16.9.2) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019-New <br>
-You may download the EWDK11 (with VS Build Tools 17.1.5) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022 <br>
-Make sure you have downloaded the correct version. NoirVisor would continue updating. If not using correct version, you might fail to compile the latest version of NoirVisor. <br>
-Note that EWDK11 with VS Build Tools **newer than 16.9.2 has removed import library for Windows 7**. <br>
+To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 11 (Visual Studio Build Tools 16.9.2 and 17.1.5) ISO file to T: and V: drives. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. \
+Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. If you use WinCDEmu, however, you may order the system to mount EWDK10 and specify its drive letter during startup. \
+You may download the EWDK11 (with VS Build Tools 16.9.2) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019-New \
+You may download the EWDK11 (with VS Build Tools 17.1.5) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022 \
+Make sure you have downloaded the correct version. NoirVisor would continue updating. If not using correct version, you might fail to compile the latest version of NoirVisor. \
+Note that EWDK11 with VS Build Tools **newer than 16.9.2 has removed import library for Windows 7**. \
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
 ## EFI Application and Runtime Driver
-Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. <br>
-To build a EFI Runtime Driver and Application, you should NASM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. Also, you should mount [EWDK11 with VS Build Tools 17.1.5](https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022) to V: drive. <br>
-You may download NASM from its official website: https://www.nasm.us/pub/nasm/stable/win64/. Make sure you have added the directory to the `PATH` environment variable. <br>
-You may download LLVM from GitHub: https://github.com/llvm/llvm-project/releases. Download the Win64 option. <br>
-You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases. Download the source code. <br>
+Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. \
+To build a EFI Runtime Driver and Application, you should NASM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. Also, you should mount [EWDK11 with VS Build Tools 17.1.5](https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022) to V: drive. \
+You may download NASM from its official website: https://www.nasm.us/pub/nasm/stable/win64/. Make sure you have added the directory to the `PATH` environment variable. \
+You may download LLVM from GitHub: https://github.com/llvm/llvm-project/releases. Download the Win64 option. \
+You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases. Download the source code. \
 NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) on GitHub in order to build them.
 
 ## Disassembler
-Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should pre-compile Zydis as a static library. Visit the [documents for disassembler](src/disasm/readme.md) for further details. <br>
+Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should pre-compile Zydis as a static library. Visit the [documents for disassembler](src/disasm/readme.md) for further details. \
 In that Zydis is included as a submodule, and because Zydis itself has a submodule, you must clone this repository recursively.
 
 ## Python script
@@ -96,10 +96,10 @@ See [documentation](./doc/make.md) for more information using python script to b
 # Test
 
 ## Windows Driver
-There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://github.com/Zero-Tang/NoirVisorLoader <br>
-If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher. <br>
-If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine. <br>
-You may enable Stealth SSDT Hook by setting up registry. Please note that since hooking is a very dangerous behavior, NoirVisor disables them on default. <br>
+There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://github.com/Zero-Tang/NoirVisorLoader \
+If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher. \
+If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine. \
+You may enable Stealth SSDT Hook by setting up registry. Please note that since hooking is a very dangerous behavior, NoirVisor disables them on default. \
 **Caveat: The stealth hook functionalities are *deprecated* by virtue of Windows kernel-mode patch dections. They are disabled by default. Future updates of NoirVisor will rarely address issues from them. If you encountered issues from stealth hook features, expect no fixes will be applied. This project has no interest in fixing them.** 
 ```bat
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "StealthMsrHook" /t REG_DWORD /d 1 /f
@@ -162,9 +162,9 @@ This repository provides [additional documents](/doc/readme.md) which help new d
 # Detection of NoirVisor
 As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]` indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors defines leaf 0x40000000 is used to identify hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is `VMwareVMware`. In NoirVisor, hypervisor vendor string is defined as `NoirVisor ZT`.
 
-You may disable the detection for NoirVisor in Windows via setting up the registry. <br>
-Locate the registry key: `HKLM\Software\Zero-Tang\NoirVisor`. If this key does not exist then create it. <br>
-Edit the `CpuidPresence` Key Value to 0. Feel free to execute the following command if you find it less taxing to do: <br>
+You may disable the detection for NoirVisor in Windows via setting up the registry. \
+Locate the registry key: `HKLM\Software\Zero-Tang\NoirVisor`. If this key does not exist then create it. \
+Edit the `CpuidPresence` Key Value to 0. Feel free to execute the following command if you find it less taxing to do: \
 ```bat
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 0 /f
 ```
@@ -173,13 +173,13 @@ reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 0
 If NoirVisor is subverting a system under a virtualized environment with exposed detection (e.g: VMware virtual machines with `hypervisor.cpuid.v0 = TRUE` configuration) as a Type-II hypervisor, the operating system may have already been using functionalities provided by the hypervisor. In this regard, NoirVisor should pass-through the access to hypervisor functionalities (e.g: `cpuid` instructions, accesses to Microsoft Synthetic MSRs, hypercalls, etc.)
 
 ## TSC-Omission
-Since the end of 2020, NoirVisor implemented a simple Time-Profiler Countermeasure. According to the half-year test, this technique is deemed unstable with multiprocessing systems. For example, TSC-omission may cause external hardwares to trigger drivers resetting themselves. Everything could be messed up: Timer, Graphics Card, NIC, etc. In a nutshell, system may go haywire. <br>
+Since the end of 2020, NoirVisor implemented a simple Time-Profiler Countermeasure. According to the half-year test, this technique is deemed unstable with multiprocessing systems. For example, TSC-omission may cause external hardwares to trigger drivers resetting themselves. Everything could be messed up: Timer, Graphics Card, NIC, etc. In a nutshell, system may go haywire. \
 By virtue of this unexpected and unpleasant side-effect, this feature is now obsolete. Codes addressing this feature are now removed.
 
 # Customizable VM
-Customizable VM is the true explanation of "complex functions and purposes". As the project creator and director, Zero's true intention to create this project is for studying Hardware-Acclerated Virtualization Technology. Therefore, any features which is related to virtualization and which Zero has ideas to implement will be added in the project. <br>
-Customizable VM is the feature that Zero researches about Virtualization: to run an arbitrary guest, instead of to just subvert the host system. In a word, it is aimed to be a competitor of the Windows Hypervisor Platform (WHP). <br>
-For CVM Algorithm on AMD-V, visit [here](src/svm_core/readme.md#customizable-vm-scheduler-algorithm). <br>
+Customizable VM is the true explanation of "complex functions and purposes". As the project creator and director, Zero's true intention to create this project is for studying Hardware-Acclerated Virtualization Technology. Therefore, any features which is related to virtualization and which Zero has ideas to implement will be added in the project. \
+Customizable VM is the feature that Zero researches about Virtualization: to run an arbitrary guest, instead of to just subvert the host system. In a word, it is aimed to be a competitor of the Windows Hypervisor Platform (WHP). \
+For CVM Algorithm on AMD-V, visit [here](src/svm_core/readme.md#customizable-vm-scheduler-algorithm). \
 For CVM Algorithm on Intel VT-x, visit [here](src/vt_core/readme.md#customizable-vm-scheduler-algorithm).
 
 APIs to invoke Customizable VMs are available in the [NoirCvmApi](https://github.com/Zero-Tang/NoirCvmApi) repository. The documentation of the APIs is available in the [wiki page](https://github.com/Zero-Tang/NoirCvmApi/wiki).
@@ -200,13 +200,13 @@ For further details of NPIEP, visit [here](src/mshv_core/readme.md#non-privilege
 You should not report security vulnerabilities through the GitHub issue. You should [read this document](./security.md) to check out the steps to report security vulnerability.
 
 # Supported Platforms
-NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. <br>
-Currently, NoirVisor supports the Windows Operating System newer than or same as Windows XP, running as a kernel-mode driver. <br>
-Porting to Unified Extensible Firmware Interface (UEFI) is in progress. <br>
+NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. \
+Currently, NoirVisor supports the Windows Operating System newer than or same as Windows XP, running as a kernel-mode driver. \
+Porting to Unified Extensible Firmware Interface (UEFI) is in progress. \
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has six future development plans: <br>
+Project NoirVisor has six future development plans: \
 - Develop Customizable VM engine for complex purposes.
 - Develop Nested Virtualization.
 - Develop IOMMU Core on Intel VT-d and AMD-Vi.
@@ -236,7 +236,7 @@ Here lists some informal publications (blogs) regarding hypervisor development:
 - Hardware-Level Code Integrity Enforcement, both Intel EPT and AMD NPT.
 
 # License
-This repository is under MIT license. <br>
+This repository is under MIT license. \
 
 # Code of Conduct
 The Code of Conduct is added to NoirVisor Project since May.5th, 2019. Please follow the rules when contributing.

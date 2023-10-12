@@ -1,31 +1,31 @@
 # NoirVisor VT-Core
-This directory is the virtualization engine based on Intel VT-x. <br>
+This directory is the virtualization engine based on Intel VT-x. \
 All code in this directory should be cross-platform designed.
 
 # Files
-vt_main.c is the code file that initializes, sets up, and finalizes the virtualization engine based on Intel VT-x. <br>
-vt_exit.c is the code file that handles all the VM-Exits derived from the processor. <br>
-vt_ept.c is the code file that initializes, sets up, and finalizes the page table based on Intel EPT. Note that it does not handle the EPT Violation. EPT Violation handler is in vt_exit.c <br>
-vt_nvcpu.c is the code file that supports Nested Virtualization for vCPU. <br>
-vt_def.h defines basic structures for Intel VT-x, including the MSR-based supporting facility. <br>
-vt_ept.h defines basic structures for Intel EPT, plus the EPT manager. <br>
-vt_exit.h defines basic constants, structures on VM-Exit. <br>
-vt_vmcs.h defines VMCS fields encoding. <br>
+vt_main.c is the code file that initializes, sets up, and finalizes the virtualization engine based on Intel VT-x. \
+vt_exit.c is the code file that handles all the VM-Exits derived from the processor. \
+vt_ept.c is the code file that initializes, sets up, and finalizes the page table based on Intel EPT. Note that it does not handle the EPT Violation. EPT Violation handler is in vt_exit.c \
+vt_nvcpu.c is the code file that supports Nested Virtualization for vCPU. \
+vt_def.h defines basic structures for Intel VT-x, including the MSR-based supporting facility. \
+vt_ept.h defines basic structures for Intel EPT, plus the EPT manager. \
+vt_exit.h defines basic constants, structures on VM-Exit. \
+vt_vmcs.h defines VMCS fields encoding. \
 
 # Features
-NoirVisor uses the following Intel VT-x features: <br>
-MSR-Bitmap. This feature enables the stealth MSR-hook. (For syscall and sysenter hook) <br>
-Virtual Processor Identifier. This is also known as VPID. This feature would tag the TLBs with a VPID so that - on VM-Entry and VM-Exit - processor would not invalidate TLB. <br>
+NoirVisor uses the following Intel VT-x features: \
+MSR-Bitmap. This feature enables the stealth MSR-hook. (For syscall and sysenter hook) \
+Virtual Processor Identifier. This is also known as VPID. This feature would tag the TLBs with a VPID so that - on VM-Entry and VM-Exit - processor would not invalidate TLB. \
 Extended Page Table. This is also known as EPT. This feature enables the stealth Inline Hook.
 
 # Stealth MSR-hook Algorithm
-This feature utilizes the processor ability to intercept rdmsr instruction. <br>
-Set the bit in bitmap to intercept the `LSTAR` or `SYSENTER_EIP` MSR-read. <br>
-On interception, edit the eax and edx register to represent the original value. <br>
+This feature utilizes the processor ability to intercept rdmsr instruction. \
+Set the bit in bitmap to intercept the `LSTAR` or `SYSENTER_EIP` MSR-read. \
+On interception, edit the eax and edx register to represent the original value. \
 Don't forget to set the bit in primary processor-based execution control in VMCS.
 
 ## The KVA-Shadow Problem upon MSR-Hook
-By virtue of the [meltdown attack](https://meltdownattack.com/) released in early 2018, the [KVA-shadow](https://msrc-blog.microsoft.com/2018/03/23/kva-shadow-mitigating-meltdown-on-windows/) mechanism is implemented as mitigation upon this attack. With this mitigation, program in user mode is loaded with a special page table that only a few critical pages that include transitions between user-mode and kernel-mode are present. Other kernel pages are absent in this page table and are only to be present when transition is completed. The `KiSystemCall64Shadow` routine is present in such page table. However, the proxy procedure that we used to hook the `syscall` handler are definitely absent in that page table. Therefore, if we hook into `syscall` handler with MSR without special handling, `#PF` exception would occur when the processor enters our proxy procedure. What is even worse is that the `KiPageFaultShadow` routine, which handles the `#PF` exception, is absent in that page table. Therefore, another `#PF` occurs during IDT delivery. Combining these two `#PF` exceptions, they result into `#DF` exception. It seems that the `KiDoubleFaultAbortShadow` routine, which handles the `#DF` exception, is present in that page table, or elsewise triple-fault is being triggered. Hence, Bug-Check `UNEXPECTED_KERNEL_MODE_TRAP` with first parameter `0x8` (double-fault) is issued eventually. <br>
+By virtue of the [meltdown attack](https://meltdownattack.com/) released in early 2018, the [KVA-shadow](https://msrc-blog.microsoft.com/2018/03/23/kva-shadow-mitigating-meltdown-on-windows/) mechanism is implemented as mitigation upon this attack. With this mitigation, program in user mode is loaded with a special page table that only a few critical pages that include transitions between user-mode and kernel-mode are present. Other kernel pages are absent in this page table and are only to be present when transition is completed. The `KiSystemCall64Shadow` routine is present in such page table. However, the proxy procedure that we used to hook the `syscall` handler are definitely absent in that page table. Therefore, if we hook into `syscall` handler with MSR without special handling, `#PF` exception would occur when the processor enters our proxy procedure. What is even worse is that the `KiPageFaultShadow` routine, which handles the `#PF` exception, is absent in that page table. Therefore, another `#PF` occurs during IDT delivery. Combining these two `#PF` exceptions, they result into `#DF` exception. It seems that the `KiDoubleFaultAbortShadow` routine, which handles the `#DF` exception, is present in that page table, or elsewise triple-fault is being triggered. Hence, Bug-Check `UNEXPECTED_KERNEL_MODE_TRAP` with first parameter `0x8` (double-fault) is issued eventually. \
 
 ### Solution of KVA-Shadow Problem
 The most intuitive solution to solve the problem is to resolve the `#PF` exception when `syscall` handler is entered. This would of course require intercepting `#PF` exceptions. Upon interception, read the `Exit Qualification`, which refers to the faulting address during `#PF` exit, field from the VMCS. Compare the faulting address and the address of `syscall` proxy procedure. If they match, switch the guest `CR3` register so that the page table of the guest would include the proxy procedure. In addition to switching `CR3`, flush TLB via `invvpid` instruction if `VPID` feature is enabled. Otherwise, forward the exception into the guest. `CR2` register should be updated during the exception forwarding.
@@ -38,33 +38,33 @@ u32 pfec_cmp=pfec&pfec_mask;
 bool match=pfec_cmp==pfec_match;
 if(match ^ !intercept)vmexit(exception,ia32_page_fault);
 ```
-For example, if `pfec_mask` and `pfec_match` are both 0 and page-fault interception is set, all page-fault exceptions will be intercepted because `pfec_cmp` will always be 0 so that `pfec_match` would be matched. Because `match` is `true` and `!intercept` is `false`, the `xor` operation will make the statement within the if condition being `true`. The exception will take place. <br>
+For example, if `pfec_mask` and `pfec_match` are both 0 and page-fault interception is set, all page-fault exceptions will be intercepted because `pfec_cmp` will always be 0 so that `pfec_match` would be matched. Because `match` is `true` and `!intercept` is `false`, the `xor` operation will make the statement within the if condition being `true`. The exception will take place. \
 Therefore, we can set `pfec_match` to be "instruction-fetch only", and set `pfec_mask` to be masking both "user-mode access" and "instruction-fetch" so that only kernel-mode instruction fetch faults will be intercepted.
 
 ## The New PatchGuard Mechanism
 Recently, there is a new PatchGuard Mechanism which detects LSTAR MSR-Hook. It is called `KiErrata704Present`. This mechanism would write a temporary address to the LSTAR MSR then execute `syscall` instruction to verify the result. This is a hypervisor-specific technique to detect hooks in that writing a temporary address to LSTAR could unhook LSTAR permanently. In order to mitigate this mechanism, we should intercept writes to LSTAR MSR. If the value to be written equal to the original `syscall` handler, set the MSR to be the proxy handler. Otherwise, set the MSR as is. On interception upon reads from LSTAR MSR, return the original `syscall` handler if current LSTAR is set to the proxy handler, and otherwise return the value previously written to LSTAR MSR.
 
 ## Supervisor-Mode Access Prevention Problem
-SMAP, acronym that stands for Supervisor-Mode Access Prevention, is an (Should it be "an" or "a"? Do you pronounce "x" in "x86" as "eks" or "cross"?) x86 processor feature that prevents supervisor-mode code from accessing user-mode data. It should be noticed that SMAP does not aim to prevent malicious privileged program from stealing or tampering user-mode data. It, instead, prevents benevolent supervisor-mode code from accessing malevolent user-mode data. For example, the infamous [CVE-2018-8897 vulnerability](https://everdox.net/popss.pdf) deceives the OS `#DB` handler that the `fs`/`gs` segment is pointing to kernel-mode data (e.g: `KPCR` structure in Windows) while, in fact, the `fs`/`gs` segment is pointing to user-mode data (e.g: `TEB` structure in Windows). <br>
+SMAP, acronym that stands for Supervisor-Mode Access Prevention, is an (Should it be "an" or "a"? Do you pronounce "x" in "x86" as "eks" or "cross"?) x86 processor feature that prevents supervisor-mode code from accessing user-mode data. It should be noticed that SMAP does not aim to prevent malicious privileged program from stealing or tampering user-mode data. It, instead, prevents benevolent supervisor-mode code from accessing malevolent user-mode data. For example, the infamous [CVE-2018-8897 vulnerability](https://everdox.net/popss.pdf) deceives the OS `#DB` handler that the `fs`/`gs` segment is pointing to kernel-mode data (e.g: `KPCR` structure in Windows) while, in fact, the `fs`/`gs` segment is pointing to user-mode data (e.g: `TEB` structure in Windows). \
 The problem is that, if this feature is enabled, the proxy `syscall` handler will be forbidden from reading parameters in user-mode memory (e.g: user stack). 
 
 ### Solution of the SMAP Problem
-The solution of the SMAP problem is actually simple: execute the `stac` instruction to set `RFlags.AC` bit so that supervisor-mode code can access user-mode memory freely. <br>
+The solution of the SMAP problem is actually simple: execute the `stac` instruction to set `RFlags.AC` bit so that supervisor-mode code can access user-mode memory freely. \
 
 # Stealth Inline Hook Algorithm
-This feature utilizes the Intel EPT feature. <br>
-To maximize performance - to reduce unnecessary VM-Exit - we use 4KB-paging for hooked page. <br>
-There are two pages for one hooked page: the original page and hooked page. <br>
-These two pages should have following attributes: <br>
-The original page has R+/W+/X- access rights. This means, on execution to the page, EPT violation should occur. <br>
-The hooked page has R-/W-/X+ access rights. This means, on read/write to the page, EPT violation should occur. <br>
-In this regard, NoirVisor requires that Intel EPT should supports execution-only paging. Otherwise, NoirVisor cannot hide Inline Hooks. <br>
-Hooked page includes the hook code, whereas the original page includes the original code. <br>
+This feature utilizes the Intel EPT feature. \
+To maximize performance - to reduce unnecessary VM-Exit - we use 4KB-paging for hooked page. \
+There are two pages for one hooked page: the original page and hooked page. \
+These two pages should have following attributes: \
+The original page has R+/W+/X- access rights. This means, on execution to the page, EPT violation should occur. \
+The hooked page has R-/W-/X+ access rights. This means, on read/write to the page, EPT violation should occur. \
+In this regard, NoirVisor requires that Intel EPT should supports execution-only paging. Otherwise, NoirVisor cannot hide Inline Hooks. \
+Hooked page includes the hook code, whereas the original page includes the original code. \
 On VM-Exit, NoirVisor should locate the hook page by GPA (Guest Physical Address) then swap the PTE entry.
 
 ## Hide Read and Write Accesses from the Same Page
-If an instruction in the hooked page accesses some data in the same page, it would infinitely trigger EPT violations. Therefore, care must be taken when the `rip` and `GPA` are in the same page. <br>
-Intel VT-x provides the `Monitor Trap Flags` feature that triggers VM-Exits per instruction. We may use this feature to circumvent the this possibility. <br>
+If an instruction in the hooked page accesses some data in the same page, it would infinitely trigger EPT violations. Therefore, care must be taken when the `rip` and `GPA` are in the same page. \
+Intel VT-x provides the `Monitor Trap Flags` feature that triggers VM-Exits per instruction. We may use this feature to circumvent the this possibility. \
 When EPT violation handler detects that `GPA` and `rip` are in the same page, grant `R+/W+/X+` permission, map to the original page and enable MTF. An MTF VM-Exit will be immediately triggered after this instruction completes. In this MTF VM-Exit, revoke `R+/W+` permissions, map to the hooked page, and disable the MTF.
 
 ## The New PatchGuard Mechanism
@@ -76,8 +76,8 @@ inc eax
 ret
 ```
 
-The invoker of `KiErrata671Present` would replace the `inc eax,eax` instruction with `ret` instruction. Then calls this function to see the result. <br>
-If the `KiErrata671Present` locates in the same page with our hooked function, then the `KiErrata671Present` function would return one, in that the write was redirected to the original page instead of the hooked page. <br>
+The invoker of `KiErrata671Present` would replace the `inc eax,eax` instruction with `ret` instruction. Then calls this function to see the result. \
+If the `KiErrata671Present` locates in the same page with our hooked function, then the `KiErrata671Present` function would return one, in that the write was redirected to the original page instead of the hooked page. \
 This becomes a dilemma in that there is always a spot to detect inconsistency no matter where we redirect the hook.
 
 # Critical Hypervisor Protection
@@ -114,11 +114,11 @@ In order to return from NMI without unblocking NMIs, following steps may be take
 7. Execute `retf` instruction to load `cs` and `rip` registers.
 
 # MTRR Emulation
-According to Intel 64 Architecture Manual, the MTRRs have **no effect** on the memory type used for an access to a guest physical address. If we map all memory as write-back with EPT, there could be conflicts in that not all memory are defined as write-back by OS. For example, OS could define MMIO region as uncacheable memory. Similarly, graphics buffer could be mapped as write-combined by OS. Failure to map these memory accordingly could cause certain issues. For example, it is observed that some processors could encounter an `#MC` exception due to L2 cache data-read error. <br>
+According to Intel 64 Architecture Manual, the MTRRs have **no effect** on the memory type used for an access to a guest physical address. If we map all memory as write-back with EPT, there could be conflicts in that not all memory are defined as write-back by OS. For example, OS could define MMIO region as uncacheable memory. Similarly, graphics buffer could be mapped as write-combined by OS. Failure to map these memory accordingly could cause certain issues. For example, it is observed that some processors could encounter an `#MC` exception due to L2 cache data-read error. \
 On AMD-V/NPT, there is no need for MTRR Emulation in that Nested Paging automatically combines the memory type from NPT and MTRR.
 
 ## Algorithm
-There are two types of MTRRs: Fixed MTRRs and Variable MTRRs. The Fixed MTRRs map the first MiB of system memory. The Variable MTRRs map a variable range of system memory. <br>
+There are two types of MTRRs: Fixed MTRRs and Variable MTRRs. The Fixed MTRRs map the first MiB of system memory. The Variable MTRRs map a variable range of system memory. \
 The general layout of MTRR Emulation algorithm is described as the following:
 
 1. Check the values of MSRs: `IA32_MTRRCAP` (MSR Index=0xFE), `IA32_MTRR_DEF_TYPE` (MSR Index=0x2FF).
@@ -128,20 +128,20 @@ The general layout of MTRR Emulation algorithm is described as the following:
 5. If Fixed MTRR is enabled as indicated by `IA32_MTRR_DEF_TYPE` MSR, then emulation of variable MTRR is required.
 
 ### Variable MTRR Emulation
-According to the definition of variable MTRR, there are two registers: the `base` register and `mask` register. <br>
+According to the definition of variable MTRR, there are two registers: the `base` register and `mask` register. \
 The pseudo-code of Variable MTRR logics would be like:
 ```C
 mask_base = phys_mask.mask & phys_base.base;
 mask_target = phys_mask.mask & (target_address >> 12);
 if(mask_base == mask_target)set_memory_type(phys_base.type);
 ```
-For simplicity, we may traverse all possible pages, check if the page is within the range, and set the memory type if the page is in range. <br>
-Current EPT implementation of NoirVisor only supports 512GiB of Guest Memory. Therefore, we may simply traverse 512GiB. <br>
-Set the bit 11 (a bit ignored by processor) in the final paging structure to indicate that this page is described by a variable MTRR. This bit will be used for checking MTRR overlaps. <br>
+For simplicity, we may traverse all possible pages, check if the page is within the range, and set the memory type if the page is in range. \
+Current EPT implementation of NoirVisor only supports 512GiB of Guest Memory. Therefore, we may simply traverse 512GiB. \
+Set the bit 11 (a bit ignored by processor) in the final paging structure to indicate that this page is described by a variable MTRR. This bit will be used for checking MTRR overlaps. \
 If overlapping is detected, decision should be made to choose the correct memory type. The logics described by Intel and AMD are quite complex. For hypervisors, we can reduce the complexity of this logic by simply comparing the value of memory types for overlapped region: the smallest one is to be chosen. See Chapter 11.11.4.1, "MTRR Precedences", Volume 3, Intel 64 and IA-32 Architecture Software Developer's Manual for further details regarding the overlapping variable MTRRs.
 
 ### Fixed MTRR Emulation
-The logic of Fixed MTRR is quite simple: read all MSRs related to the Fixed MTRRs and set them accordingly. Each MSR for Fixed MTRR defines eight memory types for eight ranges. The size of range depends on which MSR. For example, the `IA32_MTRR_FIX64K_00000` MSR defines eight memory types for eight 64KiB ranges (i.e: 16 pages per range). <br>
+The logic of Fixed MTRR is quite simple: read all MSRs related to the Fixed MTRRs and set them accordingly. Each MSR for Fixed MTRR defines eight memory types for eight ranges. The size of range depends on which MSR. For example, the `IA32_MTRR_FIX64K_00000` MSR defines eight memory types for eight 64KiB ranges (i.e: 16 pages per range). \
 Please note that the Fixed MTRRs take higher priority than Variable MTRRs when there are overlappings. Therefore, setting memory types for the Fixed MTRRs are to be done after setting for the Variable MTRRs.
 
 ## MTRR-Write Interception
@@ -170,7 +170,7 @@ In future, NoirVisor has following plans:
 - Implement NPIEP. (Non-Privileged Instruction Execution Prevention)
 
 # VMX-Nesting Algorithm (Incomplete Version)
-To nest another working hypervisor is the highest focus of Project NoirVisor. However, starting from the repository creation, this goal has not been satisfied yet. Here, I will state down the algorithm and it will be updated in future as problems arises. <br>
+To nest another working hypervisor is the highest focus of Project NoirVisor. However, starting from the repository creation, this goal has not been satisfied yet. Here, I will state down the algorithm and it will be updated in future as problems arises. \
 We will divide the problem into several sub-problems, as stated below:
 
 - Enable/Disable Nested VMX
@@ -184,20 +184,20 @@ We will divide the problem into several sub-problems, as stated below:
 - Devirtualize on-the-fly.
 
 ## Glossary
-L0: This term refers to the Host context. <br>
-L1: This term refers to the Guest Context. <br>
+L0: This term refers to the Host context. \
+L1: This term refers to the Guest Context. \
 L2: This term refers to the Nested Guest Context.
 
 ## Enable/Disable Nested VMX
-For this sub-problem, we intercept the VMXON/VMXOFF instructions and write to CR4.VMXE field. <br>
-On VM-Exit by VMXON, check CR4.VMXE. If the bit is set, setup the nested vcpu. Otherwise, setup the rflags for error. Then issue a VM-Entry. If nested vcpu was already setup, issue an error through rflags. <br>
-At the same time, save the address given by VMXON instruction. We may utilize the page in future. <br>
-On VM-Exit by VMXOFF, mark the nested vcpu as disabled. Then issue a VM-Entry. <br>
-On VM-Exit by setting CR4.VMXE, set nested vcpu as ready-for-vmxon. Then issue a VM-Entry. <br>
-On VM-Exit by resetting CR4.VMXE, if nested vcpu was not disabled, issue an exception. <br>
+For this sub-problem, we intercept the VMXON/VMXOFF instructions and write to CR4.VMXE field. \
+On VM-Exit by VMXON, check CR4.VMXE. If the bit is set, setup the nested vcpu. Otherwise, setup the rflags for error. Then issue a VM-Entry. If nested vcpu was already setup, issue an error through rflags. \
+At the same time, save the address given by VMXON instruction. We may utilize the page in future. \
+On VM-Exit by VMXOFF, mark the nested vcpu as disabled. Then issue a VM-Entry. \
+On VM-Exit by setting CR4.VMXE, set nested vcpu as ready-for-vmxon. Then issue a VM-Entry. \
+On VM-Exit by resetting CR4.VMXE, if nested vcpu was not disabled, issue an exception. \
 
 ## Virtualize capability MSRs
-For this sub-problem, we intercept the RDMSR instruction from 0x480 to 0x491. <br>
+For this sub-problem, we intercept the RDMSR instruction from 0x480 to 0x491. \
 This sub-problem addresses the reporting VMX capability. We should only report features that we can successfully emulate, instead of forwarding the original values.
 
 ## Virtualize VM-Entry
@@ -210,7 +210,7 @@ For Guest State Area, things are simple: copy everything to L2 VMCS.
 For Host State Area, we should not copy from Guest VMM's VMCS. Instead, we setup our own context, since context goes to L0 as VM-Exit occurs.
 
 ### Set up L2 VMCS - VM-Execution Control Fields.
-For VM-Execution Control Fields, we first copy from Guest VMM's VMCS. Then add additional controls that we need. Compare with the fields that we support, fail the VM-Entry if unsupported fields was set. <br>
+For VM-Execution Control Fields, we first copy from Guest VMM's VMCS. Then add additional controls that we need. Compare with the fields that we support, fail the VM-Entry if unsupported fields was set. \
 Details regarding the "additional controls" will be stated in future.
 
 ### Issue VM-Entry.
@@ -251,23 +251,23 @@ In case that guest disabled VPID, we should also enable VPID in L2 VMCS. Set L2'
 Exactly, what we should do is to redirect the VPID (increment by 1).
 
 ## Virtualize EPT
-To virtualize EPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the VMX-nesting feature in future NoirVisor may not support EPT unless I have one. <br>
+To virtualize EPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the VMX-nesting feature in future NoirVisor may not support EPT unless I have one. \
 An easier, and high-performance, but protection-degraded approach to achieve this goal is to simply pass the EPT Pointer from the guest to the processor. This approach is fine for virtual machine monitors like VMware Workstation, VirtualBox, etc. because the physical memories to be virtualized do not conflict with NoirVisor's EPT Protection. However, this approach is indeed unsuitable to global hypervisors like NoirVisor itself.
 
 ## Utilize VMCS-Shadowing
-This feature could be a hard-point for me because my lab does not own a processor that supports this feature. The newest Intel CPU I have is the Intel Core i7-7500U, where the VMCS-Shadowing feature is unsupported. <br>
-In addition, VMware WorkStation (by now, version 16.1.2) does not emulate VMCS shadowing, even if the host machine supports it. (Tested on Intel i5-6400 CPU, a machine that does not belong to my lab) <br>
+This feature could be a hard-point for me because my lab does not own a processor that supports this feature. The newest Intel CPU I have is the Intel Core i7-7500U, where the VMCS-Shadowing feature is unsupported. \
+In addition, VMware WorkStation (by now, version 16.1.2) does not emulate VMCS shadowing, even if the host machine supports it. (Tested on Intel i5-6400 CPU, a machine that does not belong to my lab) \
 With VMCS-Shadowing, we can reduce the VM-Exits induced by vmread and vmwrite instructions.
 
 ## L2 Virtual Machine Control Structure
-Since I do not have sufficient supplies to develop VMCS-Shadowing support, software-based VMCS virtualization is necessary. <br>
-Here, I re-emphasize the point: <br>
-On VM-Entry the processor triggered a VM-Exit due to vmlaunch or vmresume instruction execution. In this regard, we could say processor moved from L1 to L0. To virtualize the VM-Entry, we should move processor from L0 to L2. <br>
-On VM-Exit the processor moved from L2 to L0. To virtualize the VM-Exit, we should move processor from L0 to L1. <br>
-Therefore, nested VM-Entry, in concept is moving the processor from L1 to L2, but in fact is L1 to L0 then to L2; nested VM-Exit, in concept is moving the processor from L2 to L1, but in fact is L2 to L0 then to L1. <br>
+Since I do not have sufficient supplies to develop VMCS-Shadowing support, software-based VMCS virtualization is necessary. \
+Here, I re-emphasize the point: \
+On VM-Entry the processor triggered a VM-Exit due to vmlaunch or vmresume instruction execution. In this regard, we could say processor moved from L1 to L0. To virtualize the VM-Entry, we should move processor from L0 to L2. \
+On VM-Exit the processor moved from L2 to L0. To virtualize the VM-Exit, we should move processor from L0 to L1. \
+Therefore, nested VM-Entry, in concept is moving the processor from L1 to L2, but in fact is L1 to L0 then to L2; nested VM-Exit, in concept is moving the processor from L2 to L1, but in fact is L2 to L0 then to L1. \
 
 ### L2 VMCS Programming Consideration
-In system, there might be multiple virtual machines running. Thus, there could be multiple VMCS in different states. How to implement the multi-NestedVMCS support? Followings are my algorithm design. <br>
+In system, there might be multiple virtual machines running. Thus, there could be multiple VMCS in different states. How to implement the multi-NestedVMCS support? Followings are my algorithm design. \
 Make two kinds of VMCS for L2: <b> L2C and L2T </b>.
 
 - L2C-VMCS is where vmread and vmwrite instructions result. L2C is allocated by host. It is formatted hypervisor-implementation specific.
@@ -282,16 +282,16 @@ L2C and L2T should be paired. They behave in following manner:
 In this way, VM-Entry will take heavy burden on synchronizing L2C to L2T.
 
 ### L2 VMCS Optimization: <b> State Caching </b>
-The L2 VMCS design, as previously detailed, can have a significant performance issue: heavy-weight vmwrite instructions on nested VM-Entries. To optimize, we should cache the L2C-VMCS so that vmwrite instruction executions could be reduced. I was implied this idea through AMD's design on VMCB State Caching mechanism. <br>
-This mechanism is designed for synchronizing from L2C-VMCS to L2T/L1. It should behave in the following: <br>
-Prior to guest executing vmlaunch instruction, mark all fields as "dirty" fields. This includes VM-Exit induced by vmclear instruction. <br>
-On VM-Exit induced by vmwrite instruction, mark a specific field of VMCS as "dirty" field if new data are different from old data. <br>
-On VM-Exit induced by nested VM-Entry, traverse all fields in L2C. If one field during traversal is determined to be "dirty", synchronize it from L2C to L2T, then mark it as "clean" field. <br>
+The L2 VMCS design, as previously detailed, can have a significant performance issue: heavy-weight vmwrite instructions on nested VM-Entries. To optimize, we should cache the L2C-VMCS so that vmwrite instruction executions could be reduced. I was implied this idea through AMD's design on VMCB State Caching mechanism. \
+This mechanism is designed for synchronizing from L2C-VMCS to L2T/L1. It should behave in the following: \
+Prior to guest executing vmlaunch instruction, mark all fields as "dirty" fields. This includes VM-Exit induced by vmclear instruction. \
+On VM-Exit induced by vmwrite instruction, mark a specific field of VMCS as "dirty" field if new data are different from old data. \
+On VM-Exit induced by nested VM-Entry, traverse all fields in L2C. If one field during traversal is determined to be "dirty", synchronize it from L2C to L2T, then mark it as "clean" field. \
 On VM-Exit induced by nested VM-Exit, traverse host state fields in L2C. If one field during traversal is determined to be "dirty", then synchronize it from L2C to L1, and mark it as "clean" field.
 
 ### L2 VMCS Optimization: <b> Selective Synchronization </b>
-State Caching mechanism optimizes the synchronization from L2C-VMCS to L2T/L1, but cannot optimize synchronization from L2T-VMCS to L2C. To optimize such synchronization, we implement the Select Synchronization mechanism. <br>
-The key point is to select sufficient data to synchronize as little as possible. We do not have to read all data from L2T VMCS and synchronize them to L2C in every nested VM-Exit. <br>
+State Caching mechanism optimizes the synchronization from L2C-VMCS to L2T/L1, but cannot optimize synchronization from L2T-VMCS to L2C. To optimize such synchronization, we implement the Select Synchronization mechanism. \
+The key point is to select sufficient data to synchronize as little as possible. We do not have to read all data from L2T VMCS and synchronize them to L2C in every nested VM-Exit. \
 There are "Selective Conditions" that help reducing the performance consumption induced by synchronization.
 
 #### Selective Condition A: VM-Exit Reason
@@ -301,18 +301,18 @@ Different reasons of exits would require different data. Data not required in VM
 In fact, this is required by Intel SDM. Not doing so may result the nested hypervisor to failure. "Save XXX" in VM-Exit Control field gives us hint whether we should synchronize them of not. For example, If the "Save IA32_EFER" bit is reset, then we do not synchronize the "Guest IA32_EFER" field in L2T VMCS.
 
 ### L2 VMCS Optimization: <b> VMCS Shadowing </b>
-The performance improvement by VMCS Shadowing depends on how to setup the vmread/vmwrite bitmaps. <br>
+The performance improvement by VMCS Shadowing depends on how to setup the vmread/vmwrite bitmaps. \
 By now, I do not have a clear idea on how to effectively utilize this processor feature.
 
 ## Devirtualize on-the-fly
-Since NoirVisor is possible to be unloaded before the nested hypervisor ends, it is necessary to put nested hypervisor directly onto the processor - that is, L1 becomes L0 and L2 becomes L1. <br>
-This is a suggestion for Nested Virtualization in NoirVisor. By now, algorithm design will not be made. After the Nested Virtualization feature completes, NoirVisor may refuse unloading as long as the nested hypervisor did not leave. <br>
+Since NoirVisor is possible to be unloaded before the nested hypervisor ends, it is necessary to put nested hypervisor directly onto the processor - that is, L1 becomes L0 and L2 becomes L1. \
+This is a suggestion for Nested Virtualization in NoirVisor. By now, algorithm design will not be made. After the Nested Virtualization feature completes, NoirVisor may refuse unloading as long as the nested hypervisor did not leave. \
 
 # Customizable VM Scheduler Algorithm
 This chapter describes the CVM scheduler algorithm for VT-Core.
 
 ## World Switch - Host to Guest
-The only condition to switch the world from Host to Guest is the Host's hypercall to request switching to the Guest's vCPU. <br>
+The only condition to switch the world from Host to Guest is the Host's hypercall to request switching to the Guest's vCPU. \
 Prior to switching vCPU, the scheduler should save the Host's state, which includes:
 
 - General-Purpose Registers (Excludes `rsp`, `rip` and `rflags` in that they are already saved in VMCS)
@@ -375,8 +375,8 @@ To migrate a vCPU to another logical processor, the VMCS must undergo a sequence
 Certain interceptions must be set to ensure the correct functionality of NoirVisor CVM.
 
 ### Interrupt Interception
-In that guests are not supposed to take external interrupts from real hardware, they must be intercepted and passed to the host. We may set `external-interrupt exiting` and `NMI exiting` bits in `Pin-Based VM-Execution Controls` field in VMCS. <br>
-In terms of external interrupts, we should set the `acknowledge interrupt on exit` to `false` in `VM-Exit Controls` fields of VMCS, so external interrupts would be held pending. Simply returning to the host, like what we did in AMD-V, should have the external interrupts to be delivered. <br>
+In that guests are not supposed to take external interrupts from real hardware, they must be intercepted and passed to the host. We may set `external-interrupt exiting` and `NMI exiting` bits in `Pin-Based VM-Execution Controls` field in VMCS. \
+In terms of external interrupts, we should set the `acknowledge interrupt on exit` to `false` in `VM-Exit Controls` fields of VMCS, so external interrupts would be held pending. Simply returning to the host, like what we did in AMD-V, should have the external interrupts to be delivered. \
 In terms of NMIs, we should inject the NMIs to the host in order to deliver them. In addition to event injection, the `blocking-by-NMI` bit of `Interruptibility-State` in VMCS for the host should also be set.
 
 ### CPUID Interception
@@ -386,9 +386,9 @@ The `cpuid` instruction must be intercepted by NoirVisor, even though host may c
 The `invd` instruction must be intercepted by NoirVisor. The `invd` instruction invalidates all caches without writing them back to the main memory. In this regard, NoirVisor must take responsibility to prevent the guest purposefully corrupting the global memory. Virtualization of `invd` instruction is actually simple: execute `wbinvd` instruction on exit of `invd`. At least this is what Hyper-V would do. Intel VT-x forces any hypervisor developers to intercept `invd` instruction.
 
 ### CR8 Interception
-In that Intel VT-x lacks support of local APIC, which is instead present in AMD-V, there is no space left for the `cr8` register. Therefore, NoirVisor must emulate the behavior of the `cr8` register. <br>
-When an external interrupt is to be injected, the priority of the interrupt will be compared with `cr8` value. If the priority of the interrupt is greater, the interrupt will be injected. Otherwise, it will be held pending. <br>
-When writes to `cr8` register is intercepted, it will check if there is pending external interrupts and inject it accordingly. Nevertheless, if the guest has `RFLAGS.IF` cleared, the interrupt is still pending even if the priority is high enough. Intercept the interrupt-window in order to get it injected. <br>
+In that Intel VT-x lacks support of local APIC, which is instead present in AMD-V, there is no space left for the `cr8` register. Therefore, NoirVisor must emulate the behavior of the `cr8` register. \
+When an external interrupt is to be injected, the priority of the interrupt will be compared with `cr8` value. If the priority of the interrupt is greater, the interrupt will be injected. Otherwise, it will be held pending. \
+When writes to `cr8` register is intercepted, it will check if there is pending external interrupts and inject it accordingly. Nevertheless, if the guest has `RFLAGS.IF` cleared, the interrupt is still pending even if the priority is high enough. Intercept the interrupt-window in order to get it injected. \
 When reads from `cr8` register is intercepted, it will return the virtualized value of `cr8` register.
 
 ### I/O Interception

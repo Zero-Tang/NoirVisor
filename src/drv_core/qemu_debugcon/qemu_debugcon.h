@@ -16,5 +16,7 @@
 #include <nvbdk.h>
 #include <nvstatus.h>
 
+#define qemu_debugcon_readback	0xE9
+
 // The default I/O port for QEMU's debug console is 0x402.
 u16 qemu_debugcon_port=0x0402;

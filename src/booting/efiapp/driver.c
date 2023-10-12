@@ -115,10 +115,9 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	NoirDebugPrint("NoirVisor is loaded to base 0x%p, Size=0x%X\n",ImageInfo->ImageBase,ImageInfo->ImageSize);
 	st=NoirRegisterHypervisorVariables();
 	NoirDebugPrint("NoirVisor Variables Registration Status=0x%X\n",st);
-	st=NoirBuildHostEnvironment();
-	NoirDebugPrint("NoirVisor Runtime Driver Initialization Status: 0x%X\r\n",st);
 	StdOut->OutputString(StdOut,L"Press Enter key to continue subversion!\r\n");
 	NoirBlockUntilKeyStroke(L'\r');
+	system_cr3=AsmReadCr3();
 	NoirInitializeCodeIntegrity(ImageInfo->ImageBase);
 	NoirSuppressImageRelocation(ImageInfo->ImageBase);
 	NoirConfigureInternalDebugger();

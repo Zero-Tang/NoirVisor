@@ -34,7 +34,12 @@ noir_status nvc_io_qemu_debugcon_write(u8p buffer,size_t length)
 
 noir_status nvc_io_qemu_debugcon_init(u16 port_number)
 {
+	u8 port_ret=noir_inb(port_number);
+	bool correct_port=port_ret==qemu_debugcon_readback;
 	qemu_debugcon_port=port_number;
-	nvd_printf("[NoirVisor] QEMU ISA DebugCon is initialized!\n");
-	return noir_success;
+	if(correct_port)
+		nvd_printf("QEMU ISA DebugCon is initialized successfully!\n");
+	else
+		nv_dprintf("Port 0x%04X is not QEMU Debug-Console! Return Value: 0x%02X\n",port_number,port_ret);
+	return correct_port?noir_success:noir_unsuccessful;
 }

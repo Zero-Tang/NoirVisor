@@ -92,3 +92,5 @@ EFI_MP_SERVICES_PROTOCOL *MpServices=NULL;
 extern EFI_BOOT_SERVICES *gBS;
 extern EFI_RUNTIME_SERVICES *gRT;
 extern EFI_SYSTEM_TABLE *gST;
+
+extern UINTN system_cr3;

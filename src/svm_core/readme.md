@@ -1,14 +1,14 @@
 # NoirVisor - SVM Core
-This directory is the virtualization engine based on AMD-V. <br>
+This directory is the virtualization engine based on AMD-V. \
 All code in this directory should be cross-platform designed.
 
 # Files
-svm_main.c is the code file that initializes, sets up, and finalizes the virtualization engine based on AMD-V. <br>
-svm_exit.c is the code file that handles all the VM-Exits derived from the processor. <br>
-svm_cpuid.c is the code file that handles the VM-Exits induced by CPUID instruction. <br>
-svm_def.h defines basic structures for AMD-V, details regarding the VMCB. <br>
-svm_exit.h defines defines basic constants, and miscellaneous stuff for VM-Exit. <br>
-svm_vmcb.h defines macros for operating the VMCB and offsets of fields in VMCB. <br>
+svm_main.c is the code file that initializes, sets up, and finalizes the virtualization engine based on AMD-V. \
+svm_exit.c is the code file that handles all the VM-Exits derived from the processor. \
+svm_cpuid.c is the code file that handles the VM-Exits induced by CPUID instruction. \
+svm_def.h defines basic structures for AMD-V, details regarding the VMCB. \
+svm_exit.h defines defines basic constants, and miscellaneous stuff for VM-Exit. \
+svm_vmcb.h defines macros for operating the VMCB and offsets of fields in VMCB. \
 svm_cpuid.h defines facilities for CPUID VM-Exit handlers.
 
 # Features
@@ -20,32 +20,32 @@ NoirVisor uses the following AMD-V features:
 - VMCB Clean Bits. This is used for VMCB state caching. This feature would allow processor to cache the VMCB state so that the processor has a better performance in virtualization.
 
 # Stealth MSR-hook Algorithm
-This feature utilizes the processor ability to intercept rdmsr instruction. <br>
-Set the bit in bitmap to intercept LSTAR or SYSENTER_EIP MSR-read. <br>
-On interception, edit the eax and edx register to represent the original value. <br>
+This feature utilizes the processor ability to intercept rdmsr instruction. \
+Set the bit in bitmap to intercept LSTAR or SYSENTER_EIP MSR-read. \
+On interception, edit the eax and edx register to represent the original value. \
 Don't forget to set the bit in interception list in VMCB.
 
 ## The KVA-Shadow Problem upon MSR-Hook
-The detail of the problem is stated in the [readme document of VT-Core](../vt_core/readme.md#the-kva-shadow-problem-upon-msr-hook). However, it seems that Windows do not enable KVA-Shadow mechanism on AMD processors. <br>
+The detail of the problem is stated in the [readme document of VT-Core](../vt_core/readme.md#the-kva-shadow-problem-upon-msr-hook). However, it seems that Windows do not enable KVA-Shadow mechanism on AMD processors. \
 AMD-V does not support masking `#PF` exceptions according to the exception error-code. Therefore, there could be tons of unwanted `#PF` VM-Exits.
 
 ## Supervisor-Mode Access Prevention Problem
 The detail of the problem and its solution is stated in the [readme document of VT-Core](../vt_core/readme.md#supervisor-mode-access-prevention-problem).
 
 # Stealth Inline Hook Algorithm
-This feature utilizes the Nested Paging feature of processor. <br>
-The difference between Intel and AMD is that AMD lacks the "execution-only page" feature. In this regard, algorithm that applied on Intel EPT cannot be applied to AMD NPT. <br>
-The idea originally comes from tandasat's repository SimpleSvmHook (https://github.com/tandasat/SimpleSvmHook), but with my additional optimizations regarding it. <br>
+This feature utilizes the Nested Paging feature of processor. \
+The difference between Intel and AMD is that AMD lacks the "execution-only page" feature. In this regard, algorithm that applied on Intel EPT cannot be applied to AMD NPT. \
+The idea originally comes from tandasat's repository SimpleSvmHook (https://github.com/tandasat/SimpleSvmHook), but with my additional optimizations regarding it. \
 Note: In that AMD-V lacks the "execution-only" page feature, it is unrecommended to use stealth inline hook feature on AMD machines.
 
 ## Algorithm Detail
-Setup two page tables. They are called Primary Page Table and Secondary Page Table. <br>
-The Primary Page Table grants all accesses to all pages except that the hooked page is revoked execution access. At this moment, PTE points to original page. <br>
-The Secondary Page Table grants R/W accesses, without execution access, to all pages except that the hooked page is given execution access in addition. At this moment, PTE points to hooked page. <br>
+Setup two page tables. They are called Primary Page Table and Secondary Page Table. \
+The Primary Page Table grants all accesses to all pages except that the hooked page is revoked execution access. At this moment, PTE points to original page. \
+The Secondary Page Table grants R/W accesses, without execution access, to all pages except that the hooked page is given execution access in addition. At this moment, PTE points to hooked page. \
 Load Primary Page Table into VMCB in the first time. On execution, VM-Exit due to #NPF occurs. So swap the nCR3 to the Secondary Page Table and issue VM-Entry. When instruction pointer goes outside, #NPF occurs and then swap the nCR3 to Primary Page Table and issue VM-Entry.
 
 ## Algorithm Issue
-When instruction pointer is inside the hooked page, code may recognize the patch since the read access is granted. This is special case. <br>
+When instruction pointer is inside the hooked page, code may recognize the patch since the read access is granted. This is special case. \
 There is performance problem as well. There will be no performance cost for reading the hooked page. But performance penalty on executing the hooked page may be significant in that:
 
 1. When hooked function is called, #NPF occurs and swapped to the Secondary.
@@ -55,7 +55,7 @@ There is performance problem as well. There will be no performance cost for read
 5. The hooked function may invoke other functions in other pages.
 
 ## Potential Optimization
-Since the hooked function may invoke other functions in other pages, we may grant execution permission to these pages in the Secondary Page Table. For example, `NtSetInformationFile` routine in Windows would call functions like `ObReferenceObjectByHandle`, `NtfsFsdSetInformation`, etc., and the proxy function, so unless these pages include code which detects hooks, it is a fairly good idea to permit executions for these pages on the Secondary Page Table. <br>
+Since the hooked function may invoke other functions in other pages, we may grant execution permission to these pages in the Secondary Page Table. For example, `NtSetInformationFile` routine in Windows would call functions like `ObReferenceObjectByHandle`, `NtfsFsdSetInformation`, etc., and the proxy function, so unless these pages include code which detects hooks, it is a fairly good idea to permit executions for these pages on the Secondary Page Table. \
 
 In summary, there will be at least four #NPF occurring in a single execution of hooked function. In comparison, Intel EPT offers flexibility that intensive access can still have least performance penalty.
 
@@ -92,7 +92,7 @@ In that the Step 3 specifies single-stepping the guest, the `#DB` exception will
 5. Stop single-stepping.
 
 ## Security Exception Handler
-According to AMD-V, the INIT signal will be held pending if `VM_CR.R_INIT` is not set. Therefore, this bit must be set. To intercept INIT signal with this bit set, NoirVisor should intercept `#SX` exception. <br>
+According to AMD-V, the INIT signal will be held pending if `VM_CR.R_INIT` is not set. Therefore, this bit must be set. To intercept INIT signal with this bit set, NoirVisor should intercept `#SX` exception. \
 Upon interception on `#SX` exception:
 
 1. Emulate the `INIT` signal behavior: initialize various register states.
@@ -106,7 +106,7 @@ In future, NoirVisor has following plans:
 - Implement Type-I hypervisor.
 
 # SVM-Nesting Algorithm (Incomplete Version) for Global Hypervision
-To nest another working hypervisor is the highest focus of Project NoirVisor. However, starting from the repository creation, this goal has not been satisfied yet. Here, I will state down the algorithm and it will be updated in future as problems arises. <br>
+To nest another working hypervisor is the highest focus of Project NoirVisor. However, starting from the repository creation, this goal has not been satisfied yet. Here, I will state down the algorithm and it will be updated in future as problems arises. \
 We will divide the problem into several sub-problems, as stated below:
 
 - Host SVM-Related MSR and CPUID Virtualization
@@ -122,25 +122,25 @@ We will divide the problem into several sub-problems, as stated below:
 - Devirtualize on-the-fly
 
 ## Glossary
-L0: This term refers to the Host context. <br>
-L1: This term refers to the Guest Context. <br>
+L0: This term refers to the Host context. \
+L1: This term refers to the Guest Context. \
 L2: This term refers to the Nested Guest Context.
 
 ## Host SVM-Related MSR and CPUID Virtualization
-For this sub-problem, we intercept the rdmsr/wrmsr and cpuid instructions. <br>
-The Guest enables and disables SVM by setting EFER.SVME bit. <br>
-Also, we should intercept access to all SVM-Related MSRs. <br>
+For this sub-problem, we intercept the rdmsr/wrmsr and cpuid instructions. \
+The Guest enables and disables SVM by setting EFER.SVME bit. \
+Also, we should intercept access to all SVM-Related MSRs. \
 
 ## Virtualize SVM Instructions
-There are eight SVM instructions: `vmrun`, `vmload`, `vmsave`, `vmmcall`, `clgi`, `stgi`, `invlpga`, `skinit`. Instructions should be virtualized accordingly. <br>
-In essence, `vmrun` instruction takes the place of VM-Entry and VM-Exit. We will leave this to special chapters - Virtualize VM-Entry and Virtualize VM-Exit. <br>
-For `vmload` and `vmsave` instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Virtualize `vmload` and `vmsave`. <br>
-For `clgi` and `stgi` instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Virtualize GIF. <br>
-For `invlpga` instruction, we pass parameters to invalidate specific TLB entry in Nested Guest. <br>
+There are eight SVM instructions: `vmrun`, `vmload`, `vmsave`, `vmmcall`, `clgi`, `stgi`, `invlpga`, `skinit`. Instructions should be virtualized accordingly. \
+In essence, `vmrun` instruction takes the place of VM-Entry and VM-Exit. We will leave this to special chapters - Virtualize VM-Entry and Virtualize VM-Exit. \
+For `vmload` and `vmsave` instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Virtualize `vmload` and `vmsave`. \
+For `clgi` and `stgi` instructions, since they can be accelerated by processor's built-in acceleration feature, we will leave this to special chapter - Virtualize GIF. \
+For `invlpga` instruction, we pass parameters to invalidate specific TLB entry in Nested Guest. \
 For `skinit` instruction, this is somewhat optional since it is used only for security oriented virtualization. Even VMware's hypervisor does not emulate this.
 
 ## Virtualize VM-Entry
-Basically, this is intercepting the vmrun instructions. This instruction loads VMCB by address saved in rax register. <br>
+Basically, this is intercepting the vmrun instructions. This instruction loads VMCB by address saved in rax register. \
 Then, we follow the steps indicated in AMD64 architecture programming manual. Details will be omitted here. The steps are:
 
 - Saving Host State. We save host state to the address indicated by `SVM_HSAVE_PA` MSR.
@@ -164,29 +164,29 @@ Steps are given in the following:
 ## Differentiate Hypercall Source
 
 ## Virtualize ASID
-In NoirVisor, the L0 context use ASID=0, and L1 context use ASID=1. To virtualize ASID, we should use ASID>1 for any L2 context. For a simple algorithm, we increment ASID by 1 to virtualize it. If L2 ASID<2, then the VMCB is inconsistent. In CPUID, we decrement the ASID range by 1. <br>
+In NoirVisor, the L0 context use ASID=0, and L1 context use ASID=1. To virtualize ASID, we should use ASID>1 for any L2 context. For a simple algorithm, we increment ASID by 1 to virtualize it. If L2 ASID<2, then the VMCB is inconsistent. In CPUID, we decrement the ASID range by 1. \
 If nested virtualization is disabled, all ASIDs are reserved for Customizable VMs.
 
 ## Virtualize GIF
-GIF is quite a special feature in AMD-V. It is a global flag that controls the interrupt behavior of the processor. To virtualize GIF, we should identify two scenarios and do what should be done. <br>
+GIF is quite a special feature in AMD-V. It is a global flag that controls the interrupt behavior of the processor. To virtualize GIF, we should identify two scenarios and do what should be done. \
 - The processor provides hardware support for virtualizing GIF. As far as I know, processors starting at Ryzen should be providing this feature.
 - No hardware support for virtualizing GIF. VMware Workstation 16.1.2 does not provide this feature.
 
 ### GIF Virtualization with Hardware Support
-The hardware support of virtualizing GIF is actually irrelevant to nested virtualization in terms of global virtualization projects. The `vGIF` controls only virtual interrupts. In other words, the `vGIF` has no effects against any physical interrupts, including `NMI`s and `SMI`s. <br>
+The hardware support of virtualizing GIF is actually irrelevant to nested virtualization in terms of global virtualization projects. The `vGIF` controls only virtual interrupts. In other words, the `vGIF` has no effects against any physical interrupts, including `NMI`s and `SMI`s. \
 However, it should be useful with nested virtualization within the scope for CVM.
 
 ### GIF Virtualization without Hardware Support
-In that the hardware support of GIF virtualization is irrelevant to nested virtualization for NoirVisor, there must be something done to ensure correct behavior of GIF Virtualization. <br>
-If the `vGIF` is cleared, all interrupts affected by GIF must be intercepted. In addition to interceptions, the host IDT should be replaced by NoirVisor in order to remove pending interrupts and record corresponding information of the interrupt. <br>
+In that the hardware support of GIF virtualization is irrelevant to nested virtualization for NoirVisor, there must be something done to ensure correct behavior of GIF Virtualization. \
+If the `vGIF` is cleared, all interrupts affected by GIF must be intercepted. In addition to interceptions, the host IDT should be replaced by NoirVisor in order to remove pending interrupts and record corresponding information of the interrupt. \
 
 #### Masking Physical Interrupts
 As a matter of fact, there is no need to intercept physical interrupts. The Local APIC support provided by the AMD-V is sufficient to keep interrupts pending. Setting the `V_INTR_MASKING` bit in VMCB and clearing the `RFLAGS.IF` bit in host should hold any physical interrupts pending regardless of the value of `RFLAGS.IF` in guest.
 
 #### Masking NMIs
-There is no easy way to mask `NMI`s like we did for masking physical interrupts. The `NMI` handler must be hijacked. When `NMI`s are intercepted, execute the `stgi` instruction to let the processor discard the pending `NMI`. <br>
-The algorithm of hijacked `NMI` handler is simple: mark the vCPU has a pending `NMI`. However, do not execute the `iret` instruction in order to return because doing so would cancel the masking of `NMI`s. <br>
-Likewise, when there is a pending `NMI`, the `iret` instruction must be intercepted and emulated so that masking of `NMI` is unaffected. <br>
+There is no easy way to mask `NMI`s like we did for masking physical interrupts. The `NMI` handler must be hijacked. When `NMI`s are intercepted, execute the `stgi` instruction to let the processor discard the pending `NMI`. \
+The algorithm of hijacked `NMI` handler is simple: mark the vCPU has a pending `NMI`. However, do not execute the `iret` instruction in order to return because doing so would cancel the masking of `NMI`s. \
+Likewise, when there is a pending `NMI`, the `iret` instruction must be intercepted and emulated so that masking of `NMI` is unaffected. \
 When unmasking `NMI`s (i.e: the `vGIF` is set), remove interceptions of `NMI`s and `iret` instructions. However, emulating the `iret` instruction is required on `iret`-interception. Otherwise, the stack may conflict if the handler of `NMI` specified `IST`-mechanism.
 
 ##### NMI Masking of Matryoshka
@@ -195,16 +195,16 @@ There is a scenario where NMI is already masked but the processor has just enter
 - The program executed `clgi` instruction in an NMI handler.
 - The program triggered a VM-Exit during NMI.
 
-In either way, the processor keeps the blocking of NMI internally. NoirVisor's logically-emulated masking of NMI is ineffective: no NMIs will be intercepted, so leaving the `vGIF=0` is fine with processor's internal-blocking of NMI. <br>
-Even if the guest executed `iret` instruction while `vGIF=0`, where internal-blocking of NMI is removed by the processor, the interception of NMI is still in effect as indicated in VMCB. <br>
+In either way, the processor keeps the blocking of NMI internally. NoirVisor's logically-emulated masking of NMI is ineffective: no NMIs will be intercepted, so leaving the `vGIF=0` is fine with processor's internal-blocking of NMI. \
+Even if the guest executed `iret` instruction while `vGIF=0`, where internal-blocking of NMI is removed by the processor, the interception of NMI is still in effect as indicated in VMCB. \
 In a word, NMI Masking of Matryoshka does not affect the logic of masking NMIs from virtualized GIF.
 
 #### Masking Debug Exceptions
-The method to mask `#DB`s are simple: intercept the `#DB` exception. <br>
+The method to mask `#DB`s are simple: intercept the `#DB` exception. \
 Please note that `#DB` trace trap due to `RFLAGS.TF` bit is not to be held pending, so forward the `#DB` by injecting it.
 
 #### Masking SMIs
-General hypervisors which do not gain control of system-management mode cannot hijack SMIs, so SMIs cannot be blocked when `vGIF=0`. Plus, the firmware may lock accesses to system-management mode, so interceptions of SMIs are actually ignored by the processor. This is a thereby fundamental flaw in an otherwise perfect global hypervisor that supports nested virtualization. <br>
+General hypervisors which do not gain control of system-management mode cannot hijack SMIs, so SMIs cannot be blocked when `vGIF=0`. Plus, the firmware may lock accesses to system-management mode, so interceptions of SMIs are actually ignored by the processor. This is a thereby fundamental flaw in an otherwise perfect global hypervisor that supports nested virtualization. \
 By virtue of this, current implementation of NoirVisor would give up masking SMIs. Future implementation of NoirVisor, if to be integrated in firmware, would properly mask SMIs.
 
 #### Masking INIT signals
@@ -214,7 +214,7 @@ In that NoirVisor would specify redirecting `INIT` signals to `#SX` exceptions, 
 The logic of masking `#MC` exceptions is simple: mark the vCPU has a pending `#MC` exception, and inject the `#MC` exception once the `vGIF` is logically set.
 
 #### Unmasking Interrupts
-The AMD64 Architecture defines priorities for pending interrupts. In that `#MC` aborts, `NMI`s and `INIT` signals are held pending while `GIF=0`, we need to take care about their orders when unmasking. <br>
+The AMD64 Architecture defines priorities for pending interrupts. In that `#MC` aborts, `NMI`s and `INIT` signals are held pending while `GIF=0`, we need to take care about their orders when unmasking. \
 Generally, the relationship of their priorities are: `#MC` aborts > `INIT` signals > `NMI`s.
 
 ### GIF Logics
@@ -242,7 +242,7 @@ Here is a table that lists the conditions that change the GIF.
 There is a `V_INTR_MASKING` control bit in VMCB by virtue of the Local APIC support in AMD-V. In that the behavior of interrupt is controlled by the `RFlags.IF` bit of the host if the `V_INTR_MASKING` bit is set, ignorance of this bit may trigger deadlocking of the system: no physical interrupts can be intercepted because the `RFlags.IF` bit in host is reset. In order to address this issue, on VM-Entry of nested guest, the `V_INTR_MASKING` bit in VMCB must be checked. Copy the `RFlags.IF` bit from the guest to the host if `V_INTR_MASKING` bit is set.
 
 ## Virtualize Nested Paging
-To virtualize NPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the SVM-nesting feature in future NoirVisor may not support NPT unless I have one. <br>
+To virtualize NPT, we should merge the page tables. However, I don't have an algorithm regarding page-table merging. So, the SVM-nesting feature in future NoirVisor may not support NPT unless I have one. \
 An easier, and high-performance, but protection-degraded approach to achieve this goal is to simply pass the Nested CR3 from the guest to the processor. This approach is fine for regular virtual machine monitors like VMware Workstation, VirtualBox, etc. because the physical memories to be virtualized do not conflict with NoirVisor's NPT Protection. However, this approach is indeed unsuitable to global hypervisors like NoirVisor itself.
 
 ## Virtualize `vmload` and `vmsave`
@@ -269,7 +269,7 @@ For basic implementation, each vCPU should have one L2T-VMCB. They behave in fol
 - On VM-Exit induced by nested guest execution, we synchronize the L2T Guest State and Control Area to L2C-VMCB.
 
 ### L2 VMCB Optimization: State Caching
-AMD64 Architecture Manual stated a processor feature: VMCB State Caching. <br>
+AMD64 Architecture Manual stated a processor feature: VMCB State Caching. \
 In essence, it specifies following processor states that can be cached:
 
 - Interception Vectors, TSC Offset and Pause Filter Count.
@@ -293,12 +293,12 @@ Also, as defined in architecture manual, following processor states will not be 
 We may assume that uncached state is always dirty. If certain state is not marked as clean in L2C VMCB Clean Fields, that state is dirty. Dirty state should be synchronized to the L2T VMCB. Therefore, hypervisors that always leave VMCB-Clean Fields as zeros would suffer a great performance penalty.
 
 ### Organization of Data Structures for Nested vCPUs
-It should be expected that nested hypervisor would run multiple VMCBs. If all L2C VMCBs have to overwrite the same L2T VMCB, then performance could be a grave issue. Therefore, certain amount of VMCBs must be cached. <br>
-The data structure that holds them would be sorted arrays that allow binary searches. The array should be sorted in accordance to the physical address of VMCB so that, on VM-Exit due to `vmrun` instruction, NoirVisor can locate the corresponding L2T-VMCB with `O(logn)` complexity. <br>
+It should be expected that nested hypervisor would run multiple VMCBs. If all L2C VMCBs have to overwrite the same L2T VMCB, then performance could be a grave issue. Therefore, certain amount of VMCBs must be cached. \
+The data structure that holds them would be sorted arrays that allow binary searches. The array should be sorted in accordance to the physical address of VMCB so that, on VM-Exit due to `vmrun` instruction, NoirVisor can locate the corresponding L2T-VMCB with `O(logn)` complexity. \
 
 ## Devirtualize on-the-fly
-Since NoirVisor is possible to be unloaded before the nested hypervisor ends, it is necessary to put nested hypervisor directly onto the processor - that is, L1 becomes L0 and L2 becomes L1. <br>
-This is a suggestion for Nested Virtualization in NoirVisor. By now, algorithm design will not be made. After the Nested Virtualization feature completes, NoirVisor may refuse unloading as long as the nested hypervisor did not leave. <br>
+Since NoirVisor is possible to be unloaded before the nested hypervisor ends, it is necessary to put nested hypervisor directly onto the processor - that is, L1 becomes L0 and L2 becomes L1. \
+This is a suggestion for Nested Virtualization in NoirVisor. By now, algorithm design will not be made. After the Nested Virtualization feature completes, NoirVisor may refuse unloading as long as the nested hypervisor did not leave. \
 
 ## Nesting VMware's Hypervisor
 In order to nest VMware's hypervisor, NoirVisor has to support features that VMware's hypervisor also supports. It is observed that:
@@ -320,7 +320,7 @@ Nested Virtualization in NoirVisor will be developped in three stages:
 This chapter describes the CVM scheduler algorithm for SVM-Core.
 
 ## World Switch - Host to Guest
-The only condition to switch the processor context from the host to the guest is the host's hypercall to request runnning a guest vCPU. This hypercall specifies the target vCPU so that NoirVisor would switch to a correct vCPU. <br>
+The only condition to switch the processor context from the host to the guest is the host's hypercall to request runnning a guest vCPU. This hypercall specifies the target vCPU so that NoirVisor would switch to a correct vCPU. \
 Prior to running a vCPU, NoirVisor should save the processor states. The states subject to be manually saved by NoirVisor includes:
 - General-Purpose Registers. (Excludes `rax`,`rsp`,`rip`,`rflags` because they are saved in VMCB)
 - Debug Registers. (Excludes `dr6` and `dr7` because they are saved in VMCB)
@@ -436,7 +436,7 @@ The following bits are shadowed in MTF Emulation.
 Certain interceptions must be set to ensure correct functionality of NoirVisor CVM.
 
 ### Interrupt Interception
-In that Guests of CVM are not supposed to handle external interrupts from real hardwares, any external interrupts must be intercepted. We may set interceptions upon `physical INTR`, `NMI` and `SMI`. We do not have to intercept `virtual INTR` because they are subject to be injected by hypervisor. Interceptions upon `virtual INTR` may induce dead loop. <br>
+In that Guests of CVM are not supposed to handle external interrupts from real hardwares, any external interrupts must be intercepted. We may set interceptions upon `physical INTR`, `NMI` and `SMI`. We do not have to intercept `virtual INTR` because they are subject to be injected by hypervisor. Interceptions upon `virtual INTR` may induce dead loop. \
 Upon interception, perform a world switch. Specify the reason of interception to be the scheduler's exit. For such reason of exit, because `GIF` becomes set when NoirVisor executes `vmrun` instruction in order to switch to host, interrupts will be handled by the Host.
 
 ### Interrupt Window Interception (Candidate 1 Design)
@@ -515,8 +515,8 @@ Returning from SMM is virtualized by NoirVisor by intercepting the `rsm` instruc
 SMRAM relocation must be supported on multi-processing systems, or otherwise the system will face serious race conditions when multiple SMIs arrive on different cores simultaneously.
 
 ## APIC Virtualization
-APIC, acronym that stands for Advance Programmable Interrupt Controller, is a standard x86 component to utilize multi-core processing. Although Customizable VM does not necessarily need APIC to call other cores - hypercalls can be used instead - virtualization of APIC is favorable at best. <br>
-AMD-V supports a special feature called AVIC (Advanced Virtual Interrupt Controller) to accelerate APIC virtualization. NoirVisor may consult whether AVIC is supported. <br>
+APIC, acronym that stands for Advance Programmable Interrupt Controller, is a standard x86 component to utilize multi-core processing. Although Customizable VM does not necessarily need APIC to call other cores - hypercalls can be used instead - virtualization of APIC is favorable at best. \
+AMD-V supports a special feature called AVIC (Advanced Virtual Interrupt Controller) to accelerate APIC virtualization. NoirVisor may consult whether AVIC is supported. \
 Current implementation of NoirVisor CVM does not utilize AVIC feature. Virtualization of APIC is considered as User Hypervisor's task.
 
 ### APIC Virtualization with AVIC
@@ -530,8 +530,8 @@ There are three special kinds of pages: the `AVIC Backing Page`, `Physical APIC 
 - The `Logical APIC ID Table` is unique among different virtual machines. All vCPUs within a VM share the same page. This page maps the logical APIC ID to the physical APIC ID in the VM.
 
 #### World-Switch
-AVIC won't automatically set and clear the `Is Running` bit in `Physical APIC ID Table` entry. NoirVisor should be setting this bit when scheduling vCPUs. <br>
-When NoirVisor schedules a vCPU onto the physical core, the `Is Running` bit and `Host Physical APIC ID` field in the corresponding `Physical APIC ID Table` entry should be set accordingly. <br>
+AVIC won't automatically set and clear the `Is Running` bit in `Physical APIC ID Table` entry. NoirVisor should be setting this bit when scheduling vCPUs. \
+When NoirVisor schedules a vCPU onto the physical core, the `Is Running` bit and `Host Physical APIC ID` field in the corresponding `Physical APIC ID Table` entry should be set accordingly. \
 When NoirVisor schedules a vCPU out of the physical core, the `Is Running` bit should be cleared so AVIC will not deliver IPI to a wrong physical core but will trigger a VM-Exit instead.
 
 ### APIC Virtualization without AVIC
@@ -550,7 +550,7 @@ NoirVisor NSV separates Guest Physical Memory from Host Physical Memory by const
 If the subverted host accesses Secure Memory, then `#NPF` is triggered. Such `#NPF` is refered as NSV-Violation. Current implementation of NoirVisor simply ignores these memory access instructions and continues the execution of the host.
 
 ## Encrypted Virtual Machine
-AMD-V provides a mechanism for encrypted guests. This mechanism enables a guest to run in a manner where codes and data are encrypted and the only decrypted version of them are only available within the guest itself. It would require the hypervisor to enable the `SEV` (Secure Encrypted Virtualization) feature. Please note that, as the hypervisor is no longer able to inspect or alter all guest code or data, the hypervisor model is departing from the standard x86 virtualization model. <br>
+AMD-V provides a mechanism for encrypted guests. This mechanism enables a guest to run in a manner where codes and data are encrypted and the only decrypted version of them are only available within the guest itself. It would require the hypervisor to enable the `SEV` (Secure Encrypted Virtualization) feature. Please note that, as the hypervisor is no longer able to inspect or alter all guest code or data, the hypervisor model is departing from the standard x86 virtualization model. \
 Running a VM with SEV-enabled must have coordination with AMD Secure Processor, often abbreviated as AMD-SP, which is an external PCI device. Please note that VT-Core and SVM-Core of NoirVisor are considered to be CPU-driving. As such, coordination with AMD-SP is not included as a part of SVM-Core.
 
 ### Encrypted State

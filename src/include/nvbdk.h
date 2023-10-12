@@ -182,6 +182,30 @@ typedef struct _noir_processor_state
 	u64 gsswap;
 }noir_processor_state,*noir_processor_state_p;
 
+typedef struct _noir_amd64_interrupt_frame
+{
+	u64 return_rip;
+	u16 return_cs;
+	u16 reserved1[3];
+	u64 return_rflags;
+	u64 return_rsp;
+	u16 return_ss;
+	u16 reserved2[3];
+}noir_amd64_interrupt_frame,*noir_amd64_interrupt_frame_p;
+
+typedef struct _noir_amd64_interrupt_frame_with_error_code
+{
+	u32 error_code;
+	u32 reserved0;
+	u64 return_rip;
+	u16 return_cs;
+	u16 reserved1[3];
+	u64 return_rflags;
+	u64 return_rsp;
+	u16 return_ss;
+	u16 reserved2[3];
+}noir_amd64_interrupt_frame_with_error_code,*noir_amd64_interrupt_frame_with_error_code_p;
+
 typedef struct _noir_gpr_state
 {
 	ulong_ptr rax;
@@ -314,7 +338,7 @@ typedef union _noir_segment_attributes
 	{
 		u16 type:4;
 		u16 system:1;
-		u16 dpl:1;
+		u16 dpl:2;
 		u16 present:1;
 		u16 limit_hi:4;
 		u16 avl:1;

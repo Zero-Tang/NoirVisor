@@ -1,8 +1,9 @@
 # Serial Port Driver
-NoirVisor may need to access serial ports in order to debug.
+NoirVisor may need to access serial ports in order to debug. \
+This option can be used in both interactive debugging and text-mode debugging.
 
 # Serial Driver Specification
-Non-ISA-standard serial ports are out of scope.
+Non-ISA-standard serial ports (e.g.: `virtio-serial` and PCI-serial) are out of scope, unless they provide the same specification as ISA-standard serial ports.
 
 ## Port Addresses
 The port addresses may vary. Typically, the address may be:
@@ -174,4 +175,4 @@ The Modem Status Register is defined as following:
 | 0 	| Indicates that CTS input has changed state since the last time it was read |
 
 ## Scratch Register
-The scracth register can store a byte for whatever purpose.
+The scratch register can store a byte for whatever purpose.

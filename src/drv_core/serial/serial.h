@@ -197,3 +197,15 @@ u16 noir_serial_io_ports[8]=
 	0x5E8,
 	0x4E8
 };
+
+const char* noir_serial_io_data_parity_names[8]=
+{
+	"None",
+	"Odd",
+	"None",
+	"Even",
+	"None",
+	"Mark",
+	"None",
+	"Space"
+};

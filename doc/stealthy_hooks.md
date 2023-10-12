@@ -52,7 +52,7 @@ You may add install your own stealthy Inline Hooks for your own specific purpose
 Keep in mind that NoirVisor's approach to install hooks requires overwriting a sequence of bytes. Overlapped hooks can cause undefined behavior.
 
 ### Windows
-The `/src/xpf_core/windows/hooks.c` file is subject to be revised if you wish to add your own hooks. Locate the `NoirBuildHookedPages` function. This is the function you should revise. <br>
+The `/src/xpf_core/windows/hooks.c` file is subject to be revised if you wish to add your own hooks. Locate the `NoirBuildHookedPages` function. This is the function you should revise. \
 Generally, installing a stealthy inline hook requires the following procedure:
 
 1. Locate the image. You can skip this step if you can locate the function without locating the image.

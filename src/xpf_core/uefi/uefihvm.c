@@ -51,8 +51,8 @@ UINT32 NoirBuildHypervisor()
 {
 	DisableInterrupts();
 	UINT32 st=nvc_build_hypervisor();
-	NoirTestCpuid();
 	EnableInterrupts();
+	NoirTestCpuid();
 	return st;
 }
 
@@ -109,8 +109,8 @@ BOOLEAN NoirIsVirtualizationEnabled()
 
 EFI_STATUS NoirConfigureInternalDebugger()
 {
-	// noir_configure_serial_port_debugger(1,0x2F8,115200);
-	noir_configure_qemu_debug_console(0x402);
+	noir_configure_serial_port_debugger(1,0x2F8,115200);
+	// noir_configure_qemu_debug_console(0x403);
 	return EFI_SUCCESS;
 }
 
@@ -216,7 +216,7 @@ BOOLEAN noir_query_pm1_port_address(OUT UINT16 *PM1a,OUT UINT16 *PM1b)
 		if(Fadt->XPm1aCntBlk.AddressSpaceId!=EFI_ACPI_2_0_SYSTEM_IO)
 			NoirDebugPrint("X-PM1a does not use port I/O! It use space type %u instead!\n",Fadt->XPm1aCntBlk.AddressSpaceId);
 		else
-			NoirDebugPrint("X-PM1a regoster bit width: %u\n",Fadt->XPm1aCntBlk.RegisterBitWidth);
+			NoirDebugPrint("X-PM1a register bit width: %u\n",Fadt->XPm1aCntBlk.RegisterBitWidth);
 		if(Fadt->XPm1bCntBlk.AddressSpaceId!=EFI_ACPI_2_0_SYSTEM_IO)
 			NoirDebugPrint("X-PM1b does not use port I/O! It use space type %u instead!\n",Fadt->XPm1bCntBlk.AddressSpaceId);
 		else

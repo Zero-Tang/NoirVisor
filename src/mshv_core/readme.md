@@ -1,10 +1,10 @@
 # NoirVisor - MSHV-Core
-This directory is the functionalities designed in accordance to Microsoft Hypervisor specifications. <br>
-All codes in this directory should be cross-platform designed. <br>
+This directory is the functionalities designed in accordance to Microsoft Hypervisor specifications. \
+All codes in this directory should be cross-platform designed. \
 Duly note that this is not a virtualization engine that uses Windows Hypervisor Platform (WHP).
 
 # Minimal Hv#1 Requirement
-To implement a minimal Hv#1 interface, there are following requirements: <br>
+To implement a minimal Hv#1 interface, there are following requirements: \
 - CPUID Hypervisor Leaf Maximum: `0x40000005`.
 - Indicate support of `AccessVpIndex` and `AccessHypercallMsrs` in CPUID instruction.
 - Three Synthetic MSRs: `0x40000000` to `0x40000002`.
@@ -16,8 +16,8 @@ Reference: [Requirements for Implementing the Microsoft Hypervisor Interface](ht
 NoirVisor support a few features of `Hv#1` interface. Any additional `Hv#1` interface features supported by NoirVisor will be listed below.
 
 ## Non-Privileged Instruction Execution Prevention
-This feature prevents the `sgdt`, `sidt`, `sldt` and `str` instructions to be executed in user mode. <br>
-You may enable NPIEP by configuring `MSR[0x40000040]`. (The `HV_X64_MSR_NPIEP_CONFIG` Synthetic MSR) <br>
+This feature prevents the `sgdt`, `sidt`, `sldt` and `str` instructions to be executed in user mode. \
+You may enable NPIEP by configuring `MSR[0x40000040]`. (The `HV_X64_MSR_NPIEP_CONFIG` Synthetic MSR) \
 The bit fields of this MSR is defined by Microsoft as the following:
 ```C
 union
@@ -39,7 +39,7 @@ union
 In that NPIEP is a feature of Microsoft Hypervisor, you must indicate `CPUID Presence` of NoirVisor.
 
 ### Interception Logic
-Considering that there is also a processor feature called `UMIP` (User-Mode Instruction Prevention), a feature that prevents these instructions to be executed in user mode: executions of these instructions in user would trigger `#GP(0)` exceptions. In this regard, it becomes unnecessary for NoirVisor to intercept these instructions: intercepted instructions are always in the kernel mode. <br>
+Considering that there is also a processor feature called `UMIP` (User-Mode Instruction Prevention), a feature that prevents these instructions to be executed in user mode: executions of these instructions in user would trigger `#GP(0)` exceptions. In this regard, it becomes unnecessary for NoirVisor to intercept these instructions: intercepted instructions are always in the kernel mode. \
 Here, in the following, lists some points of the interception logics of the NPIEP feature.
 
 - If the processor supports the `UMIP` feature, monitor the `CR4.UMIP` bit. Otherwise, do not monitor the `CR4.UMIP` bit.

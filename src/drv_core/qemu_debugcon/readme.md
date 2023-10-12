@@ -15,6 +15,10 @@ Given the circumstances, a few points should be addressed:
 
 - The `svm=on` should be `vmx=on` if the host has an Intel CPU.
 - The `telnet=on` is intended for programs like `telnet` and `PuTTY` to display debug messages. Otherwise, it should be off so that data are not encoded with telnet protocol.
+- If you do not specify `port=0x402` for ISA-DebugCon, QEMU will use 0xE9 as its default port number.
+
+## Caveat
+QEMU's ISA-DebugCon is a write-only device, meaning that the communication is uniplex (one-way). Thus, NoirVisor cannot enable internal interactive debugging session if QEMU's ISA-DebugCon is chosen as the debugger medium.
 
 ## Configure NoirVisor's Driver
 You will have to configure the port number of QEMU's Debug Console so that innate driver in NoirVisor can choose a correct port number. \

@@ -256,7 +256,7 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 		noir_bts(&exception_bitmap,amd64_page_fault);
 #if defined(_hv_type1)
 	noir_bts(&exception_bitmap,amd64_security_exception);
-	exception_bitmap=0x702F7FFB;
+	// exception_bitmap=0x702F7FFB;
 #endif
 	// Write to VMCB.
 	noir_svm_vmwrite32(vcpu->vmcb.virt,intercept_access_cr,crx_intercept.value);
@@ -265,32 +265,60 @@ void static nvc_svm_setup_control_area(noir_svm_vcpu_p vcpu)
 	noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
 }
 
-void nvc_svm_setup_host_idt(ulong_ptr idtr_base)
+void static nvc_svm_set_idt_entry(noir_gate_descriptor_p idt_base,u8 vector,u16 selector,void* handler)
+{
+	idt_base[vector].offset_lo=(u16)handler;
+	idt_base[vector].selector=selector;
+	idt_base[vector].attrib.value=0;
+	idt_base[vector].attrib.type=0xE;
+	idt_base[vector].attrib.present=true;
+	idt_base[vector].offset_mid=(u16)((ulong_ptr)handler>>16);
+#if defined(_amd64)
+	idt_base[vector].offset_hi=(u32)((u64)handler>>32);
+	idt_base[vector].reserved=0;
+#endif
+	nvd_printf("IDT Entry #%02u: CS=0x%04X, rip=0x%p Attributes: 0x%X\n",vector,selector,handler,idt_base[vector].attrib.value);
+}
+
+void static nvc_svm_setup_host_idt(ulong_ptr idtr_base,u16 selector)
 {
 	noir_gate_descriptor_p idt_base=(noir_gate_descriptor_p)idtr_base;
+	// Setup Standard Exception Handlers.
+	nvc_svm_set_idt_entry(idt_base,amd64_divide_error,selector,noir_divide_error_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_debug_exception,selector,noir_debug_fault_trap_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_breakpoint,selector,noir_breakpoint_trap_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_overflow,selector,noir_overflow_trap_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_exceed_bound_range,selector,noir_bound_range_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_invalid_opcode,selector,noir_invalid_opcode_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_no_math_coprocessor,selector,noir_device_not_available_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_double_fault,selector,noir_double_fault_abort_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_invalid_tss,selector,noir_invalid_tss_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_segment_not_present,selector,noir_segment_not_present_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_stack_segment_fault,selector,noir_stack_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_general_protection,selector,noir_general_protection_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_page_fault,selector,noir_page_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_x87_fp_error,selector,noir_x87_floating_point_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_alignment_check,selector,noir_alignment_check_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_machine_check,selector,noir_machine_check_abort_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_simd_exception,selector,noir_simd_floating_point_fault_handler_a);
+	nvc_svm_set_idt_entry(idt_base,amd64_control_protection,selector,noir_control_protection_fault_handler_a);
 	// NMI handler is intended for emulating cleared GIF for nested hypervisor.
-	idt_base[amd64_nmi_interrupt].offset_lo=(u16)((u64)nvc_svm_host_nmi_handler&0xFFFF);
-	idt_base[amd64_nmi_interrupt].offset_mid=(u16)((u64)nvc_svm_host_nmi_handler>>16);
-	idt_base[amd64_nmi_interrupt].offset_hi=(u32)((u64)nvc_svm_host_nmi_handler>>32);
+	nvc_svm_set_idt_entry(idt_base,amd64_nmi_interrupt,selector,nvc_svm_host_nmi_handler);
 }
 
 void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu,noir_processor_state_p state)
 {
 	descriptor_register idtr,gdtr;
-	nvc_svm_setup_host_idt((ulong_ptr)vcpu->idt_buffer);
+	nvc_svm_setup_host_idt((ulong_ptr)vcpu->idt_buffer,state->cs.selector);
 	// Use vmsave instruction to save effort.
 	noir_svm_vmsave((ulong_ptr)vcpu->hvmcb.phys);
 	// Load IDTR and GDTR. They are not indicated in VMCB during vmsave.
-	idtr.limit=(u16)state->idtr.limit;
-	gdtr.limit=(u16)state->gdtr.limit;
+	idtr.limit=0xFFF;
+	gdtr.limit=0xFFF;
 	idtr.base=(ulong_ptr)vcpu->idt_buffer;
 	gdtr.base=(ulong_ptr)vcpu->gdt_buffer;
 	// Copy from host.
-	noir_copy_memory(vcpu->idt_buffer,(void*)state->idtr.base,state->idtr.limit+1);
 	noir_copy_memory(vcpu->gdt_buffer,(void*)state->gdtr.base,state->gdtr.limit+1);
-	noir_copy_memory(vcpu->tss_buffer,(void*)state->tr.base,state->tr.limit+1);
-	// IDT requires some modifications.
-	nvc_svm_setup_host_idt(idtr.base);
 	// Load them into processor.
 	noir_lidt(&idtr);
 	noir_lgdt(&gdtr);
@@ -299,14 +327,40 @@ void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu,noir_processor_state
 	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_gs_attrib,svm_attrib(state->gs.attrib));
 	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_gs_limit,sizeof(noir_svm_vcpu));
 	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_gs_base,(ulong_ptr)vcpu);
+#if defined(_hv_type1)
+	noir_tss64_p tss_base=(noir_tss64_p)vcpu->tss_buffer;
+	// Selector
+	u16 tr_sel=(u16)(state->gdtr.limit+1);
+	// GDT Entry for TSS.
+	noir_segment_descriptor_p tr_seg=(noir_segment_descriptor_p)((ulong_ptr)vcpu->gdt_buffer+tr_sel);
+	tr_seg->limit_lo=0xffff;
+	tr_seg->base_lo=(u16)vcpu->tss_buffer;
+	tr_seg->base_mid1=(u8)((ulong_ptr)vcpu->tss_buffer>>16);
+	tr_seg->base_mid2=(u8)((ulong_ptr)vcpu->tss_buffer>>24);
+#if defined(_amd64)
+	tr_seg->base_hi=(u32)((u64)vcpu->tss_buffer>>32);
+	tr_seg->reserved=0;
+#endif
+	tr_seg->attributes.value=0;
+	tr_seg->attributes.type=0x9;
+	tr_seg->attributes.present=true;
+	tss_base->iomap_base=sizeof(noir_tss64);
 	// Load Task State Segment.
+	// noir_ltr(tr_sel);
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_selector,tr_sel);
+	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_attrib,tr_seg->attributes.value);
+	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_tr_limit,0xFFFF);
+	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_tr_base,(ulong_ptr)vcpu->tss_buffer);
+#else
 	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_selector,state->tr.selector);
 	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_tr_attrib,svm_attrib(state->tr.attrib));
 	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_tr_limit,state->tr.limit);
 	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_tr_base,(ulong_ptr)vcpu->tss_buffer);
+#endif
 	// Load Host Control Registers.
 	noir_writecr3(hvm_p->host_memmap.hcr3.phys);
 	noir_writecr4(state->cr4|amd64_cr4_osfxsr_bit|amd64_cr4_osxsave_bit);
+	nvd_printf("Host State is loaded!\n");
 }
 
 void nvc_svm_setup_apic_id(noir_svm_vcpu_p vcpu)
@@ -459,11 +513,6 @@ void static nvc_svm_subvert_processor_thunk(void* context,u32 processor_id)
 // This function builds an identity map for NoirVisor, as Type-II hypervisor, to access physical addresses.
 bool nvc_svm_build_host_page_table(noir_hypervisor_p hvm_p)
 {
-#if defined(_hv_type1)
-	hvm_p->host_memmap.hcr3.phys=system_cr3;
-	hvm_p->host_memmap.hcr3.virt=(void*)system_cr3;
-	return true;
-#else
 	void* scr3_virt=noir_find_virt_by_phys(page_base(system_cr3));
 	nv_dprintf("System CR3 Virtual Address: 0x%p\tPhysical Address: 0x%p\n",scr3_virt,system_cr3);
 	if(scr3_virt)
@@ -487,7 +536,6 @@ bool nvc_svm_build_host_page_table(noir_hypervisor_p hvm_p)
 					pdpte_p[i].present=1;
 					pdpte_p[i].write=1;
 					pdpte_p[i].huge_pdpte=1;		// Use 1GiB Huge Page.
-					pdpte_p[i].no_execute=1;		// Do not grant execution permission.
 					pdpte_p[i].page_base=i;
 				}
 				// The first PML4E points to PDPTEs.
@@ -496,14 +544,12 @@ bool nvc_svm_build_host_page_table(noir_hypervisor_p hvm_p)
 				pml4e_p->value=page_base(hvm_p->host_memmap.pdpt.phys);
 				pml4e_p->present=1;
 				pml4e_p->write=1;
-				pml4e_p->no_execute=1;
 				nv_dprintf("Host CR3: 0x%llX\n",hvm_p->host_memmap.hcr3.phys);
 				return true;
 			}
 		}
 	}
 	return false;
-#endif
 }
 
 void nvc_svm_cleanup(noir_hypervisor_p hvm_p)

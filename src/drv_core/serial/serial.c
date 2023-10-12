@@ -18,6 +18,22 @@
 #include <nv_intrin.h>
 #include "serial.h"
 
+void nvc_io_serial_print_line_status(u8 port_number)
+{
+	const u16 port=noir_serial_io_ports[port_number];
+	noir_io_serial_line_status line_st;
+	line_st.value=noir_inb(port+noir_serial_port_io_offset_lsr);
+	nv_dprintf("Serial Port COM%u (Base=0x%04X) Line Status=0x%02X\n",port_number,port,line_st.value);
+	nv_dprintf("Data-Ready: %s\n",line_st.data_ready?"Yes":"No");
+	nv_dprintf("Overrun-Error: %s\n",line_st.overrun_error?"Yes":"No");
+	nv_dprintf("Parity-Error: %s\n",line_st.parity_error?"Yes":"No");
+	nv_dprintf("Frame-Error: %s\n",line_st.frame_error?"Yes":"No");
+	nv_dprintf("Break-Interrupt: %s\n",line_st.break_interrupt?"Yes":"No");
+	nv_dprintf("Transmit-Empty: %s\n",line_st.transmit_empty?"Yes":"No");
+	nv_dprintf("Transmit-Error: %s\n",line_st.transmit_error?"Yes":"No");
+	nv_dprintf("FIFO-Error: %s\n",line_st.fifo_error?"Yes":"No");
+}
+
 noir_status nvc_io_serial_init(u8 port_number,u16 port_base,u32 baudrate)
 {
 	noir_status st=noir_invalid_parameter;
@@ -81,16 +97,20 @@ noir_status nvc_io_serial_init(u8 port_number,u16 port_base,u32 baudrate)
 		modem_ctrl.reserved=0;
 		nv_dprintf("Modem Control (Before LoopBack): %02X\n",modem_ctrl.value);
 		noir_outb(noir_serial_io_ports[port_number]+noir_serial_port_io_offset_mcr,modem_ctrl.value);
+		modem_ctrl.value=noir_inb(noir_serial_io_ports[port_number]+noir_serial_port_io_offset_mcr);
+		nv_dprintf("Modem Control (Before LoopBack, Verify Setting): %02X\n",modem_ctrl.value);
 		// Send a dummy byte to check if the serial hardware works properly.
 		noir_outb(noir_serial_io_ports[port_number]+noir_serial_port_io_offset_comm,0xa5);
 		if(noir_inb(noir_serial_io_ports[port_number]+noir_serial_port_io_offset_comm)==0xa5)
 		{
 			nv_dprintf("COM%u is initialized successfully!\n",port_number+1);
+			nvd_printf("COM%u is initialized successfully!\n",port_number+1);
 			st=noir_success;
 		}
 		else
 		{
 			nv_dprintf("COM%u hardware is faulty!\n",port_number+1);
+			nvc_io_serial_print_line_status(port_number);
 			st=noir_unsuccessful;
 		}
 		// Leave loop-back mode.

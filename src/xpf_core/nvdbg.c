@@ -19,6 +19,7 @@
 #include <stdarg.h>
 #include <debug.h>
 
+// Debug Port
 void noir_query_serial_port_base(u16p port_base)
 {
 	if(nvdbg.medium_type==noir_debug_serial_port)*port_base=nvdbg.debug_port.serial.port_base;
@@ -87,6 +88,7 @@ void noir_dbgport_release_lock()
 	noir_locked_xchg(&nvdbg.port_lock,0);
 }
 
+// Printing facilities
 void cdecl nvd_vprintf(const char* src_file,const u32 ln,const char* format,va_list arg_list)
 {
 	char buffer[512];
@@ -131,4 +133,137 @@ void cdecl nvd_panicf(const char* format,...)
 	// Reset to white characters.
 	noir_dbgport_write("\x1b[37m",5);
 	noir_dbgport_release_lock();
+}
+
+// Dead
+void nvd_deadloop()
+{
+	while(1)noir_pause();
+}
+
+// Exception Handlers
+// Vector 0 #DE - Divide-by-Zero Error Fault
+void noir_divide_error_fault_handler(noir_amd64_interrupt_frame_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Divide-Error happened at rip=0x%p!\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 1 #DB - Debug Fault or Trap
+void noir_debug_fault_trap_handler(noir_amd64_interrupt_frame_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Debug Exception happened at rip=0x%p!\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 3 #BP - Breakpoint Trap
+void noir_breakpoint_trap_handler(noir_amd64_interrupt_frame_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Breakpoint happened at rip=0x%p!\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 4 #OF - Overflow Trap
+void noir_overflow_trap_handler(noir_amd64_interrupt_frame_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Overflow happened at rip=0x%p!\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 5 #BR - Bound-Range Fault
+void noir_bound_range_fault_handler(noir_amd64_interrupt_frame_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Bound-Range Exceed happened at rip=0x%p!\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 6 #UD - Invalid Opcode Fault
+void noir_invalid_opcode_fault_handler(noir_amd64_interrupt_frame_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Invalid Opcode happened at rip=0x%p!\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 7 #NM - Device-Not-Available Fault
+void noir_device_not_available_fault_handler(noir_amd64_interrupt_frame_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Device N/A happened at rip=0x%p!\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 8 #DF - Double-Fault Abort
+void noir_double_fault_abort_handler(noir_amd64_interrupt_frame_with_error_code_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Double-Fault happened at rip=0x%p!\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 10 #TS - Invalid TSS
+void noir_invalid_tss_fault_handler(noir_amd64_interrupt_frame_with_error_code_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Invalid TSS happened at rip=0x%p!\n",exception_frame->return_rip,exception_frame->error_code);
+	nvd_deadloop();
+}
+
+// Vector 11 #NP - Segment-Not-Present Fault
+void noir_segment_not_present_fault_handler(noir_amd64_interrupt_frame_with_error_code_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Segment Absent happened at rip=0x%p! Error Code: 0x%X\n",exception_frame->return_rip,exception_frame->error_code);
+	nvd_deadloop();
+}
+
+// Vector 12 #SS - Stack Fault
+void noir_stack_fault_handler(noir_amd64_interrupt_frame_with_error_code_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Stack Fault happened at rip=0x%p! Error Code: 0x%X\n",exception_frame->return_rip,exception_frame->error_code);
+	nvd_deadloop();
+}
+
+// Vector 13 #GP - General-Protection Fault
+void noir_general_protection_fault_handler(noir_amd64_interrupt_frame_with_error_code_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("General Protection happened at rip=0x%p! Error Code: 0x%X\n",exception_frame->return_rip,exception_frame->error_code);
+	nvd_deadloop();
+}
+
+// Vector 14 #PF - Page Fault
+void noir_page_fault_handler(noir_amd64_interrupt_frame_with_error_code_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Page Fault happened at rip=0x%p! Faulting Address: 0x%p! Error Code: 0x%X!\n",exception_frame->return_rip,noir_readcr2(),exception_frame->error_code);
+	nvd_deadloop();
+}
+
+// Vector 16 #MF - x87 Floating-Point Exception-Pending Fault
+void noir_x87_floating_point_fault_handler(noir_amd64_interrupt_frame_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("x87 Floating-Point Pending-Exception happened at rip=0x%p!\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 17 #AM - Alignment-Check Fault
+void noir_alignment_check_fault_handler(noir_amd64_interrupt_frame_with_error_code_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Alignment Check happened at rip=0x%p!\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 18 #MC - Machine-Check Abort
+void noir_machine_check_abort_handler(noir_amd64_interrupt_frame_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Machine Check happened at rip=0x%p!\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 19 #XF - SIMD Floating-Point Fault
+void noir_simd_floating_point_fault_handler(noir_amd64_interrupt_frame_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("SIMD Floating Point Check happened at rip=0x%p\n",exception_frame->return_rip);
+	nvd_deadloop();
+}
+
+// Vector 21 #CP - Control-Protection Fault
+void noir_control_protection_fault_handler(noir_amd64_interrupt_frame_with_error_code_p exception_frame,noir_gpr_state_p gpr_state)
+{
+	nvd_printf("Control Protection happened at rip=0x%p! Error Code: %u\n",exception_frame->return_rip,exception_frame->error_code);
+	nvd_deadloop();
 }

@@ -12,9 +12,40 @@
 
 ifdef _amd64
 
-ktrap_frame_size	equ 190h
-mach_frame_size		equ 28h
-gpr_stack_size		equ 80h
+ktrap_frame_size		equ 190h
+mach_frame_size			equ 28h
+gpr_stack_size			equ 80h
+volatile_gpr_stack_size	equ 40h
+
+; Macro for pushing volatile GPRs to stack.
+pushvq macro
+
+	sub rsp,volatile_gpr_stack_size
+	mov qword ptr [rsp+00h],rax
+	mov qword ptr [rsp+08h],rcx
+	mov qword ptr [rsp+10h],rdx
+	mov qword ptr [rsp+18h],rsp
+	add qword ptr [rsp+18h],volatile_gpr_stack_size
+	mov qword ptr [rsp+20h],r8
+	mov qword ptr [rsp+28h],r9
+	mov qword ptr [rsp+30h],r10
+	mov qword ptr [rsp+38h],r11
+
+endm
+
+; Macro for popping volatile GPRs from stack.
+popvq macro
+
+	mov rax,qword ptr [rsp+00h]
+	mov rcx,qword ptr [rsp+08h]
+	mov rdx,qword ptr [rsp+10h]
+	mov r8,qword ptr [rsp+20h]
+	mov r9,qword ptr [rsp+28h]
+	mov r10,qword ptr [rsp+30h]
+	mov r11,qword ptr [rsp+38h]
+	add rsp,volatile_gpr_stack_size
+
+endm
 
 ; Macro for NMI-blocking iret.
 nmiret macro
