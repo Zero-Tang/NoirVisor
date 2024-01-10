@@ -1,0 +1,32 @@
+{
+	"hypervisor":
+	{
+		"c_sources":
+		[
+			"detour.c",
+			"haxm.c",
+			"hooks.c",
+			"layered.c",
+			"nvsys.c",
+			"winhvm.c"
+		],
+		"asm_sources":
+		[
+			"msrhook.asm"
+		],
+		"extra_preproc_defflag":
+		[
+			"_{target_name}",
+			"_KERNEL_MODE",
+			"_{ARCH}_",
+			"_M_{ARCH}",
+			"_UNICODE"
+		],
+		"extra_preproc_asm_defflag":
+		[
+			"_{arch}",
+			"_{compiler_family}"
+		],
+		"platform":"windrv"
+	}
+}

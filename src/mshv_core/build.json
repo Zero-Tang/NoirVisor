@@ -1,0 +1,21 @@
+{
+	"hypervisor":
+	{
+		"c_sources":
+		[
+			"mshv_cpuid.c",
+			"mshv_msr.c"
+		],
+		"c_includes":
+		[
+			"src/include"
+		],
+		"extra_preproc_defflag":
+		[
+			"_{target_name}",
+			"_mshv_core",
+			"_{arch}",
+			"_{compiler_family}"
+		]
+	}
+}

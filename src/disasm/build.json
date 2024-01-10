@@ -1,0 +1,25 @@
+{
+	"hypervisor":
+	{
+		"c_sources":
+		[
+			"emulator.c"
+		],
+		"c_includes":
+		[
+			"src/include",
+			"src/disasm/zydis/include",
+			"src/disasm/zydis/msvc",
+			"src/disasm/zydis/dependencies/zycore/include"
+		],
+		"extra_preproc_defflag":
+		[
+			"_{target_name}",
+			"_svm_core",
+			"_{arch}",
+			"_{compiler_family}",
+			"ZYDIS_STATIC_BUILD",
+			"ZYAN_NO_LIBC"
+		]
+	}
+}

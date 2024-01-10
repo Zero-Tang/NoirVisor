@@ -1,0 +1,25 @@
+{
+	"hypervisor":
+	{
+		"c_sources":
+		[
+			"vt_main.c",
+			"vt_exit.c",
+			"vt_ept.c",
+			"vt_nvcpu.c",
+			"vt_custom.c",
+			"vt_cvexit.c"
+		],
+		"c_includes":
+		[
+			"src/include"
+		],
+		"extra_preproc_defflag":
+		[
+			"_{target_name}",
+			"_vt_core",
+			"_{arch}",
+			"_{compiler_family}"
+		]
+	}
+}

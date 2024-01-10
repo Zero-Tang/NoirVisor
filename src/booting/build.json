@@ -1,0 +1,8 @@
+{
+	"hypervisor":
+	{
+		"manifests.win7x64":["windrv/build.json"],
+		"manifests.win11x64":["windrv/build.json"],
+		"manifests.uefix64":["efiapp/build.json"]
+	}
+}

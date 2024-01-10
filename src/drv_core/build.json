@@ -1,0 +1,11 @@
+{
+	"hypervisor":
+	{
+		"manifests":
+		[
+			"acpi/build.json",
+			"serial/build.json",
+			"qemu_debugcon/build.json"
+		]
+	}
+}

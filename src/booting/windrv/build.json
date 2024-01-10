@@ -1,0 +1,26 @@
+{
+	"hypervisor":
+	{
+		"c_sources":
+		[
+			"driver.c"
+		],
+		"res_sources":
+		[
+			"version.rc"
+		],
+		"extra_preproc_defflag":
+		[
+			"_{target_name}",
+			"_KERNEL_MODE",
+			"_{ARCH}_",
+			"_M_{ARCH}",
+			"_UNICODE"
+		],
+		"platform_per_file":
+		{
+			"driver.c":"windrv",
+			"version.rc":"user"
+		}
+	}
+}

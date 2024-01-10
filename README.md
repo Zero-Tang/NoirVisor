@@ -78,14 +78,16 @@ Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should p
 In that Zydis is included as a submodule, and because Zydis itself has a submodule, you must clone this repository recursively.
 
 ## Python script
-Since June 2023, NoirVisor can be built using Python script. The minimum version required for building NoirVisor is 3.9. There is no `pip` package requirements. \
-Enter the `build` directory, execute the following command:
+Since January 2024, NoirVisor can be built using Python script. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, Windows 7 is not supported. There is no `pip` package requirements for compilation. \
+In the root directory of this repository, execute the following command:
 ```
-make /target disasm
-make
+make /target disasm /j
+make /target snprintf /j
+make /j
 ```
-The first command will build the `zydis` disassembler engine, a required library used by NoirVisor. \
-The second command will build the NoirVisor itself.
+The first command will build the `zydis` disassembler engine. \
+The second command will build the `snprintf` library. \
+The third command will build the NoirVisor itself.
 
 Python-based compilation is parallel. It will achieve a great performance in building NoirVisor.
 

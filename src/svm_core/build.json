@@ -1,0 +1,28 @@
+{
+	"hypervisor":
+	{
+		"c_sources":
+		[
+			"svm_main.c",
+			"svm_exit.c",
+			"svm_decode.c",
+			"svm_npt.c",
+			"svm_nvcpu.c",
+			"svm_custom.c",
+			"svm_cvexit.c",
+			"svm_cvsev.c",
+			"svm_cvnsv.c"
+		],
+		"c_includes":
+		[
+			"src/include"
+		],
+		"extra_preproc_defflag":
+		[
+			"_{target_name}",
+			"_svm_core",
+			"_{arch}",
+			"_{compiler_family}"
+		]
+	}
+}

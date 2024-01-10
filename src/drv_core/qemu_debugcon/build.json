@@ -1,0 +1,20 @@
+{
+	"hypervisor":
+	{
+		"c_sources":
+		[
+			"qemu_debugcon.c"
+		],
+		"c_includes":
+		[
+			"src/include"
+		],
+		"extra_preproc_defflag":
+		[
+			"_{target_name}",
+			"_drv_qemu_debugcon",
+			"_{arch}",
+			"_{compiler_family}"
+		]
+	}
+}

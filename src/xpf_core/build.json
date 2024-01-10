@@ -1,0 +1,34 @@
+{
+	"hypervisor":
+	{
+		"c_sources":
+		[
+			"ci.c",
+			"cvhax.c",
+			"devkits.c",
+			"noirhvm.c",
+			"nvdbg.c"
+		],
+		"c_includes":
+		[
+			"src/include",
+			"{libc}"
+		],
+		"extra_preproc_defflag":
+		[
+			"_{arch}",
+			"_{compiler_family}"
+		],
+		"extra_preproc_defflag_per_file":
+		{
+			"noirhvm.c":["_central_hvm"],
+			"ci.c":["_code_integrity"],
+			"devkits.c":["_dev_kits"],
+			"nvdbg.c":["_nvdbg"],
+			"cvhax.c":["_cvhax"]
+		},
+		"manifests.win7x64":["windows/build.json","msvc/build.json"],
+		"manifests.win11x64":["windows/build.json","msvc/build.json"],
+		"manifests.uefix64":["uefi/build.json","msvc/build.json"]
+	}
+}

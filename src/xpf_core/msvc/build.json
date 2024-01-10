@@ -1,0 +1,19 @@
+{
+	"hypervisor":
+	{
+		"asm_sources":
+		[
+			"aes.asm",
+			"crc32.asm",
+			"interrupt.asm",
+			"kpcr.asm",
+			"svm_hv.asm",
+			"vt_hv.asm"
+		],
+		"extra_preproc_asm_defflag":
+		[
+			"_{arch}",
+			"_{compiler_family}"
+		]
+	}
+}

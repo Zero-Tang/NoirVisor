@@ -1,0 +1,29 @@
+{
+	"hypervisor":
+	{
+		"manifests":
+		[
+			"src/booting/build.json",
+			"src/disasm/build.json",
+			"src/drv_core/build.json",
+			"src/mshv_core/build.json",
+			"src/svm_core/build.json",
+			"src/vt_core/build.json",
+			"src/xpf_core/build.json"
+		]
+	},
+	"disassembler":
+	{
+		"manifests":
+		[
+			"src/disasm/disasm.json"
+		]
+	},
+	"snprintf":
+	{
+		"manifests":
+		[
+			"src/xpf_core/snprintf.json"
+		]
+	}
+}

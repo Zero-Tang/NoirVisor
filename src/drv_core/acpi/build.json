@@ -1,0 +1,20 @@
+{
+	"hypervisor":
+	{
+		"c_sources":
+		[
+			"acpi_main.c"
+		],
+		"c_includes":
+		[
+			"src/include"
+		],
+		"extra_preproc_defflag":
+		[
+			"_{target_name}",
+			"_drv_acpi",
+			"_{arch}",
+			"_{compiler_family}"
+		]
+	}
+}
