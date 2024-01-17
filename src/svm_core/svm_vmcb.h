@@ -26,6 +26,11 @@
 #define noir_svm_vmwrite32(v,o,d)		*(u32*)((ulong_ptr)v+o)=(u32)d
 #define noir_svm_vmwrite64(v,o,d)		*(u64*)((ulong_ptr)v+o)=(u64)d
 
+#define noir_svm_vmcopy8(d,s,o)			noir_svm_vmwrite8(d,o,noir_svm_vmread8(s,o))
+#define noir_svm_vmcopy16(d,s,o)		noir_svm_vmwrite16(d,o,noir_svm_vmread16(s,o))
+#define noir_svm_vmcopy32(d,s,o)		noir_svm_vmwrite32(d,o,noir_svm_vmread32(s,o))
+#define noir_svm_vmcopy64(d,s,o)		noir_svm_vmwrite64(d,o,noir_svm_vmread64(s,o))
+
 #define noir_svm_vmcb_and8(v,o,d)		*(u8*)((ulong_ptr)v+o)&=(u8)d
 #define noir_svm_vmcb_and16(v,o,d)		*(u16*)((ulong_ptr)v+o)&=(u16)d
 #define noir_svm_vmcb_and32(v,o,d)		*(u32*)((ulong_ptr)v+o)&=(u32)d
@@ -56,9 +61,11 @@
 #if defined(_amd64)
 #define noir_svm_vmread		noir_svm_vmread64
 #define noir_svm_vmwrite	noir_svm_vmwrite64
+#define noir_svm_vmcopy		noir_svm_vmcopy64
 #else
 #define noir_svm_vmread		noir_svm_vmread32
 #define noir_svm_vmwrite	noir_svm_vmwrite32
+#define noir_svm_vmcopy		noir_svm_vmcopy
 #endif
 
 // Misdefinition can be revised easily by this designation!

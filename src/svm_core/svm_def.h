@@ -280,6 +280,15 @@ typedef union _nvc_svm_guest_interrupt
 	u64 value;
 }nvc_svm_guest_interrupt,*nvc_svm_guest_interrupt_p;
 
+#define nvc_svm_npt_control_npt			0
+#define nvc_svm_npt_control_sev			1
+#define nvc_svm_npt_control_es			2
+#define nvc_svm_npt_control_gmet		3
+#define nvc_svm_npt_control_sss_check	4
+#define nvc_svm_npt_control_vte			5
+#define nvc_svm_npt_control_ro_gpt		6
+#define nvc_svm_npt_control_invlpgb		7
+
 typedef union _nvc_svm_npt_control
 {
 	struct
@@ -296,6 +305,10 @@ typedef union _nvc_svm_npt_control
 	};
 	u64 value;
 }nvc_svm_npt_control,*nvc_svm_npt_control_p;
+
+#define nvc_svm_lbr_virt_control_lbr		0
+#define nvc_svm_lbr_virt_control_vmls		1
+#define nvc_svm_lbr_virt_control_ibs		2
 
 typedef union _nvc_svm_lbr_virtualization_control
 {

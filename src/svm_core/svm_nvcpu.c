@@ -23,397 +23,351 @@
 #include "svm_vmcb.h"
 #include "svm_npt.h"
 #include "svm_exit.h"
+#include "svm_nvcpu.h"
 #include "svm_def.h"
 
-// See "cache_list.md" for specification of cache list.
-
-void static nvc_svm_reference_nested_vcpu_node_in_cache_list(noir_svm_nested_vcpu_p nvcpu,noir_svm_nested_vcpu_node_p node)
-{
-	// Remove the node from the middle.
-	if(node->cache_list.prev)node->cache_list.prev->cache_list.next=node->cache_list.next;
-	if(node->cache_list.next)node->cache_list.next->cache_list.prev=node->cache_list.prev;
-	// Place the node at the head.
-	node->cache_list.prev=null;
-	node->cache_list.next=nvcpu->nodes.head;
-	// Reset the head.
-	nvcpu->nodes.head->cache_list.prev=node;
-	nvcpu->nodes.head=node;
-}
-
-void static nvc_svm_remove_nested_vcpu_node_in_cache_list(noir_svm_nested_vcpu_p nvcpu,noir_svm_nested_vcpu_node_p node)
-{
-	// Remove the node from the middle.
-	if(node->cache_list.prev)node->cache_list.prev->cache_list.next=node->cache_list.next;
-	if(node->cache_list.next)node->cache_list.next->cache_list.prev=node->cache_list.prev;
-	// Place the node at the tail.
-	node->cache_list.next=null;
-	node->cache_list.prev=nvcpu->nodes.tail;
-	// Reset the tail.
-	nvcpu->nodes.tail->cache_list.prev=node;
-	nvcpu->nodes.tail=node;
-}
-
-void static nvc_svm_insert_nested_vcpu_node_to_cache_list(noir_svm_nested_vcpu_p nvcpu,u64 vmcb)
-{
-	noir_svm_nested_vcpu_node_p node=nvcpu->nodes.tail,tail=nvcpu->nodes.tail->cache_list.prev;
-	// Reset the tail.
-	tail->cache_list.next=null;
-	nvcpu->nodes.tail=tail;
-	// Set the node up.
-	node->l2_vmcb=vmcb;
-	node->cache_list.prev=null;
-	node->cache_list.next=nvcpu->nodes.head;
-	// Reset the head.
-	nvcpu->nodes.head->cache_list.prev=node;
-	nvcpu->nodes.head=node;
-}
-
-void nvc_svm_initialize_nested_vcpu_node_pool(noir_svm_nested_vcpu_p nvcpu)
-{
-	// Initialize the pointers.
-	nvcpu->nodes.head=nvcpu->nodes.pool;
-	nvcpu->nodes.tail=&nvcpu->nodes.pool[noir_svm_cached_nested_vmcb-1];
-	// Initialize the list head.
-	nvcpu->nodes.head->cache_list.prev=null;
-	nvcpu->nodes.head->cache_list.next=&nvcpu->nodes.pool[1];
-	nvcpu->nodes.head->l2_vmcb=maxu64;
-	// Initialize the nodes in the middle.
-	for(u32 i=1;i<noir_svm_cached_nested_vmcb-1;i++)
-	{
-		nvcpu->nodes.pool[i].cache_list.prev=&nvcpu->nodes.pool[i-1];
-		nvcpu->nodes.pool[i].cache_list.next=&nvcpu->nodes.pool[i+1];
-		nvcpu->nodes.pool[i].l2_vmcb=maxu64;
-	}
-	// Initialize the list tail.
-	nvcpu->nodes.tail->cache_list.prev=&nvcpu->nodes.pool[noir_svm_cached_nested_vmcb-1];
-	nvcpu->nodes.tail->cache_list.next=null;
-	nvcpu->nodes.tail->l2_vmcb=maxu64;
-}
-
-noir_svm_nested_vcpu_node_p nvc_svm_insert_nested_vcpu_node(noir_svm_nested_vcpu_p nvcpu,u64 vmcb)
-{
-	nvc_svm_insert_nested_vcpu_node_to_cache_list(nvcpu,vmcb);
-	return nvcpu->nodes.head;
-}
-
-noir_svm_nested_vcpu_node_p nvc_svm_search_nested_vcpu_node(noir_svm_nested_vcpu_p nvcpu,u64 vmcb)
-{
-	// FIXME: Use AVL balanced tree to reduce running time.
-	for(noir_svm_nested_vcpu_node_p node=nvcpu->nodes.head;node;node=node->cache_list.next)
-		if(vmcb>=node->l2_vmcb && vmcb<node->l2_vmcb+page_size)
-			return node;
-	return null;
-}
-
-void nvc_svmn_virtualize_entry_vmcb(noir_svm_vcpu_p vcpu,void* l2_vmcb,void* l1_vmcb)
-{
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_interception)==false)
-	{
-		// Cached states for Interception Vectors are invalid.
-		noir_svm_vmwrite32(l1_vmcb,intercept_access_cr,noir_svm_vmread32(l2_vmcb,intercept_access_cr));
-		noir_svm_vmwrite32(l1_vmcb,intercept_access_dr,noir_svm_vmread32(l2_vmcb,intercept_access_dr));
-		noir_svm_vmwrite32(l1_vmcb,intercept_exceptions,noir_svm_vmread32(l2_vmcb,intercept_exceptions));
-		noir_svm_vmwrite32(l1_vmcb,intercept_instruction1,noir_svm_vmread32(l2_vmcb,intercept_instruction1));
-		noir_svm_vmwrite16(l1_vmcb,intercept_instruction2,noir_svm_vmread16(l2_vmcb,intercept_instruction2));
-		noir_svm_vmwrite16(l1_vmcb,intercept_write_cr_post,noir_svm_vmread16(l2_vmcb,intercept_write_cr_post));
-		noir_svm_vmwrite32(l1_vmcb,intercept_instruction3,noir_svm_vmread32(l2_vmcb,intercept_instruction3));
-		noir_svm_vmwrite16(l1_vmcb,pause_filter_threshold,noir_svm_vmread16(l2_vmcb,pause_filter_threshold));
-		noir_svm_vmwrite16(l1_vmcb,pause_filter_count,noir_svm_vmread16(l2_vmcb,pause_filter_count));
-		noir_svm_vmwrite64(l1_vmcb,tsc_offset,noir_svm_vmread64(l2_vmcb,tsc_offset));
-		// Some interceptions must be taken, regardless of the settings from nested hypervisor.
-		noir_svm_vmcb_bts32(l1_vmcb,intercept_instruction1,nvc_svm_intercept_vector1_shutdown);
-	}
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_iomsrpm)==false)
-	{
-		// Cached states for I/O and MSR Permission Map are invalid.
-		noir_svm_vmwrite64(l1_vmcb,iopm_physical_address,noir_svm_vmread64(l2_vmcb,iopm_physical_address));
-		noir_svm_vmwrite64(l1_vmcb,msrpm_physical_address,noir_svm_vmread64(l2_vmcb,msrpm_physical_address));
-	}
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_asid)==false)
-	{
-		// ASID must be virtualized.
-		u32 asid=noir_svm_vmread32(l2_vmcb,guest_asid);
-		// Cached ASID is invalid.
-		noir_svm_vmwrite32(l1_vmcb,guest_asid,asid!=0?asid+hvm_p->tlb_tagging.start:0);
-	}
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_tpr)==false)
-	{
-		// Virtualized Local APIC is invalid.
-		noir_svm_vmwrite64(l1_vmcb,avic_control,noir_svm_vmread64(l2_vmcb,avic_control));
-		if(noir_svm_vmcb_bt64(l2_vmcb,avic_control,nvc_svm_avic_control_vintr_mask))
-		{
-			// If V_INTR_MASKING is enabled, Guest RFLAGS.IF must be copied to the host.
-			if(noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_rflags,amd64_rflags_if))
-				noir_sti();
-			else
-				noir_cli();
-		}
-	}
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_npt)==false)
-	{
-		// Nested Paging is invalid.
-		noir_svm_vmwrite64(l1_vmcb,npt_control,noir_svm_vmread64(l2_vmcb,npt_control));
-		noir_svm_vmwrite64(l1_vmcb,npt_cr3,noir_svm_vmread64(l2_vmcb,npt_cr3));
-		noir_svm_vmwrite64(l1_vmcb,guest_pat,noir_svm_vmread64(l2_vmcb,guest_pat));
-	}
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_control_reg)==false)
-	{
-		// Control Registers, excluding CR2, are invalid.
-		noir_svm_vmwrite64(l1_vmcb,guest_cr0,noir_svm_vmread64(l2_vmcb,guest_cr0));
-		noir_svm_vmwrite64(l1_vmcb,guest_cr3,noir_svm_vmread64(l2_vmcb,guest_cr3));
-		noir_svm_vmwrite64(l1_vmcb,guest_cr4,noir_svm_vmread64(l2_vmcb,guest_cr4));
-		noir_svm_vmwrite64(l1_vmcb,guest_efer,noir_svm_vmread64(l2_vmcb,guest_efer));
-	}
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_debug_reg)==false)
-	{
-		// Debug Registers, including dr6 and dr7, are invalid.
-		noir_svm_vmwrite64(l1_vmcb,guest_dr6,noir_svm_vmread64(l2_vmcb,guest_dr6));
-		noir_svm_vmwrite64(l1_vmcb,guest_dr7,noir_svm_vmread64(l2_vmcb,guest_dr7));
-	}
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_idt_gdt)==false)
-	{
-		// IDTR and GDTR are invalid.
-		noir_svm_vmwrite32(l1_vmcb,guest_gdtr_limit,noir_svm_vmread32(l2_vmcb,guest_gdtr_limit));
-		noir_svm_vmwrite64(l1_vmcb,guest_gdtr_base,noir_svm_vmread64(l2_vmcb,guest_gdtr_base));
-		noir_svm_vmwrite32(l1_vmcb,guest_idtr_limit,noir_svm_vmread32(l2_vmcb,guest_idtr_limit));
-		noir_svm_vmwrite64(l1_vmcb,guest_idtr_base,noir_svm_vmread64(l2_vmcb,guest_idtr_base));
-	}
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_segment_reg)==false)
-	{
-		// Segment Registers, including cs, ds, es and ss, are invalid.
-		noir_svm_vmwrite16(l1_vmcb,guest_cs_selector,noir_svm_vmread16(l2_vmcb,guest_cs_selector));
-		noir_svm_vmwrite16(l1_vmcb,guest_cs_attrib,noir_svm_vmread16(l2_vmcb,guest_cs_attrib));
-		noir_svm_vmwrite32(l1_vmcb,guest_cs_limit,noir_svm_vmread32(l2_vmcb,guest_cs_limit));
-		noir_svm_vmwrite64(l1_vmcb,guest_cs_base,noir_svm_vmread64(l2_vmcb,guest_cs_base));
-		noir_svm_vmwrite16(l1_vmcb,guest_ds_selector,noir_svm_vmread16(l2_vmcb,guest_ds_selector));
-		noir_svm_vmwrite16(l1_vmcb,guest_ds_attrib,noir_svm_vmread16(l2_vmcb,guest_ds_attrib));
-		noir_svm_vmwrite32(l1_vmcb,guest_ds_limit,noir_svm_vmread32(l2_vmcb,guest_ds_limit));
-		noir_svm_vmwrite64(l1_vmcb,guest_ds_base,noir_svm_vmread64(l2_vmcb,guest_ds_base));
-		noir_svm_vmwrite16(l1_vmcb,guest_es_selector,noir_svm_vmread16(l2_vmcb,guest_es_selector));
-		noir_svm_vmwrite16(l1_vmcb,guest_es_attrib,noir_svm_vmread16(l2_vmcb,guest_es_attrib));
-		noir_svm_vmwrite32(l1_vmcb,guest_es_limit,noir_svm_vmread32(l2_vmcb,guest_es_limit));
-		noir_svm_vmwrite64(l1_vmcb,guest_es_base,noir_svm_vmread64(l2_vmcb,guest_es_base));
-		noir_svm_vmwrite16(l1_vmcb,guest_ss_selector,noir_svm_vmread16(l2_vmcb,guest_ss_selector));
-		noir_svm_vmwrite16(l1_vmcb,guest_ss_attrib,noir_svm_vmread16(l2_vmcb,guest_ss_attrib));
-		noir_svm_vmwrite32(l1_vmcb,guest_ss_limit,noir_svm_vmread32(l2_vmcb,guest_ss_limit));
-		noir_svm_vmwrite64(l1_vmcb,guest_ss_base,noir_svm_vmread64(l2_vmcb,guest_ss_base));
-	}
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_cr2)==false)
-		noir_svm_vmwrite64(l1_vmcb,guest_cr2,noir_svm_vmread64(l2_vmcb,guest_cr2));
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_lbr)==false)
-	{
-		noir_svm_vmwrite64(l1_vmcb,guest_debug_ctrl,noir_svm_vmread64(l2_vmcb,guest_debug_ctrl));
-		noir_svm_vmwrite64(l1_vmcb,guest_last_branch_from,noir_svm_vmread64(l2_vmcb,guest_last_branch_from));
-		noir_svm_vmwrite64(l1_vmcb,guest_last_branch_to,noir_svm_vmread64(l2_vmcb,guest_last_branch_to));
-		noir_svm_vmwrite64(l1_vmcb,guest_last_exception_from,noir_svm_vmread64(l2_vmcb,guest_last_exception_from));
-		noir_svm_vmwrite64(l1_vmcb,guest_last_exception_to,noir_svm_vmread64(l2_vmcb,guest_last_exception_to));
-	}
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_avic)==false)
-	{
-		noir_svm_vmwrite64(l1_vmcb,avic_apic_bar,noir_svm_vmread64(l2_vmcb,avic_apic_bar));
-		noir_svm_vmwrite64(l1_vmcb,avic_backing_page_pointer,noir_svm_vmread64(l2_vmcb,avic_backing_page_pointer));
-		noir_svm_vmwrite64(l1_vmcb,avic_logical_table_pointer,noir_svm_vmread64(l2_vmcb,avic_logical_table_pointer));
-		noir_svm_vmwrite64(l1_vmcb,avic_physical_table_pointer,noir_svm_vmread64(l2_vmcb,avic_physical_table_pointer));
-	}
-	if(noir_svm_vmcb_bt32(l2_vmcb,vmcb_clean_bits,noir_svm_clean_cet)==false)
-	{
-		noir_svm_vmwrite64(l1_vmcb,guest_s_cet,noir_svm_vmread64(l2_vmcb,guest_s_cet));
-		noir_svm_vmwrite64(l1_vmcb,guest_ssp,noir_svm_vmread64(l2_vmcb,guest_ssp));
-		noir_svm_vmwrite64(l1_vmcb,guest_isst,noir_svm_vmread64(l2_vmcb,guest_isst));
-	}
-	// Copy states that are never to be cached.
-	noir_svm_vmwrite32(l1_vmcb,vmcb_clean_bits,noir_svm_vmread32(l2_vmcb,vmcb_clean_bits));
-	noir_svm_vmwrite8(l1_vmcb,tlb_control,noir_svm_vmread8(l2_vmcb,tlb_control));
-	noir_svm_vmwrite64(l1_vmcb,guest_interrupt,noir_svm_vmread64(l2_vmcb,guest_interrupt));
-	noir_svm_vmwrite64(l1_vmcb,event_injection,noir_svm_vmread64(l2_vmcb,event_injection));
-	noir_svm_vmwrite64(l1_vmcb,guest_rflags,noir_svm_vmread64(l2_vmcb,guest_rflags));
-	noir_svm_vmwrite64(l1_vmcb,guest_rip,noir_svm_vmread64(l2_vmcb,guest_rip));
-	noir_svm_vmwrite64(l1_vmcb,guest_rsp,noir_svm_vmread64(l2_vmcb,guest_rsp));
-	noir_svm_vmwrite64(l1_vmcb,guest_rax,noir_svm_vmread64(l2_vmcb,guest_rax));
-	noir_svm_vmwrite8(l1_vmcb,guest_cpl,noir_svm_vmread8(l2_vmcb,guest_cpl));
-	// Transfer the state from vmload. Note that the state to be copied is not from L2 VMCB.
-	noir_svm_vmwrite64(l1_vmcb,guest_fs_selector,noir_svm_vmread16(vcpu->vmcb.virt,guest_fs_selector));
-	noir_svm_vmwrite64(l1_vmcb,guest_fs_attrib,noir_svm_vmread16(vcpu->vmcb.virt,guest_fs_attrib));
-	noir_svm_vmwrite64(l1_vmcb,guest_fs_limit,noir_svm_vmread32(vcpu->vmcb.virt,guest_fs_limit));
-	noir_svm_vmwrite64(l1_vmcb,guest_fs_base,noir_svm_vmread64(vcpu->vmcb.virt,guest_fs_base));
-	noir_svm_vmwrite64(l1_vmcb,guest_gs_selector,noir_svm_vmread16(vcpu->vmcb.virt,guest_gs_selector));
-	noir_svm_vmwrite64(l1_vmcb,guest_gs_attrib,noir_svm_vmread16(vcpu->vmcb.virt,guest_gs_attrib));
-	noir_svm_vmwrite64(l1_vmcb,guest_gs_limit,noir_svm_vmread32(vcpu->vmcb.virt,guest_gs_limit));
-	noir_svm_vmwrite64(l1_vmcb,guest_gs_base,noir_svm_vmread64(vcpu->vmcb.virt,guest_gs_base));
-	noir_svm_vmwrite64(l1_vmcb,guest_tr_selector,noir_svm_vmread16(vcpu->vmcb.virt,guest_tr_selector));
-	noir_svm_vmwrite64(l1_vmcb,guest_tr_attrib,noir_svm_vmread16(vcpu->vmcb.virt,guest_tr_attrib));
-	noir_svm_vmwrite64(l1_vmcb,guest_tr_limit,noir_svm_vmread32(vcpu->vmcb.virt,guest_tr_limit));
-	noir_svm_vmwrite64(l1_vmcb,guest_tr_base,noir_svm_vmread64(vcpu->vmcb.virt,guest_tr_base));
-	noir_svm_vmwrite64(l1_vmcb,guest_ldtr_selector,noir_svm_vmread16(vcpu->vmcb.virt,guest_ldtr_selector));
-	noir_svm_vmwrite64(l1_vmcb,guest_ldtr_attrib,noir_svm_vmread16(vcpu->vmcb.virt,guest_ldtr_attrib));
-	noir_svm_vmwrite64(l1_vmcb,guest_ldtr_limit,noir_svm_vmread32(vcpu->vmcb.virt,guest_ldtr_limit));
-	noir_svm_vmwrite64(l1_vmcb,guest_ldtr_base,noir_svm_vmread64(vcpu->vmcb.virt,guest_ldtr_base));
-	noir_svm_vmwrite64(l1_vmcb,guest_star,noir_svm_vmread64(vcpu->vmcb.virt,guest_star));
-	noir_svm_vmwrite64(l1_vmcb,guest_lstar,noir_svm_vmread64(vcpu->vmcb.virt,guest_lstar));
-	noir_svm_vmwrite64(l1_vmcb,guest_cstar,noir_svm_vmread64(vcpu->vmcb.virt,guest_cstar));
-	noir_svm_vmwrite64(l1_vmcb,guest_sfmask,noir_svm_vmread64(vcpu->vmcb.virt,guest_sfmask));
-	noir_svm_vmwrite64(l1_vmcb,guest_kernel_gs_base,noir_svm_vmread64(vcpu->vmcb.virt,guest_kernel_gs_base));
-	// FIXME: Use separated vmload/vmrun to optimize the synchronization.
-}
-
-void nvc_svmn_virtualize_exit_vmcb(noir_svm_vcpu_p vcpu,void* l1_vmcb,void* l2_vmcb)
-{
-	// Copy the nested guest state to L2 VMCB.
-	// Segment Registers...
-	noir_svm_vmwrite16(l2_vmcb,guest_cs_selector,noir_svm_vmread16(l1_vmcb,guest_cs_selector));
-	noir_svm_vmwrite16(l2_vmcb,guest_cs_attrib,noir_svm_vmread16(l1_vmcb,guest_cs_attrib));
-	noir_svm_vmwrite32(l2_vmcb,guest_cs_limit,noir_svm_vmread32(l1_vmcb,guest_cs_limit));
-	noir_svm_vmwrite64(l2_vmcb,guest_cs_base,noir_svm_vmread64(l1_vmcb,guest_cs_base));
-	noir_svm_vmwrite16(l2_vmcb,guest_ds_selector,noir_svm_vmread16(l1_vmcb,guest_ds_selector));
-	noir_svm_vmwrite16(l2_vmcb,guest_ds_attrib,noir_svm_vmread16(l1_vmcb,guest_ds_attrib));
-	noir_svm_vmwrite32(l2_vmcb,guest_ds_limit,noir_svm_vmread32(l1_vmcb,guest_ds_limit));
-	noir_svm_vmwrite64(l2_vmcb,guest_ds_base,noir_svm_vmread64(l1_vmcb,guest_ds_base));
-	noir_svm_vmwrite16(l2_vmcb,guest_es_selector,noir_svm_vmread16(l1_vmcb,guest_es_selector));
-	noir_svm_vmwrite16(l2_vmcb,guest_es_attrib,noir_svm_vmread16(l1_vmcb,guest_es_attrib));
-	noir_svm_vmwrite32(l2_vmcb,guest_es_limit,noir_svm_vmread32(l1_vmcb,guest_es_limit));
-	noir_svm_vmwrite64(l2_vmcb,guest_es_base,noir_svm_vmread64(l1_vmcb,guest_es_base));
-	noir_svm_vmwrite16(l2_vmcb,guest_ss_selector,noir_svm_vmread16(l1_vmcb,guest_ss_selector));
-	noir_svm_vmwrite16(l2_vmcb,guest_ss_attrib,noir_svm_vmread16(l1_vmcb,guest_ss_attrib));
-	noir_svm_vmwrite32(l2_vmcb,guest_ss_limit,noir_svm_vmread32(l1_vmcb,guest_ss_limit));
-	noir_svm_vmwrite64(l2_vmcb,guest_ss_base,noir_svm_vmread64(l1_vmcb,guest_ss_base));
-	// Descriptor Tables..
-	noir_svm_vmwrite32(l2_vmcb,guest_gdtr_limit,noir_svm_vmread32(l1_vmcb,guest_gdtr_limit));
-	noir_svm_vmwrite64(l2_vmcb,guest_gdtr_base,noir_svm_vmread64(l1_vmcb,guest_gdtr_base));
-	noir_svm_vmwrite32(l2_vmcb,guest_idtr_limit,noir_svm_vmread32(l1_vmcb,guest_idtr_limit));
-	noir_svm_vmwrite64(l2_vmcb,guest_idtr_base,noir_svm_vmread64(l1_vmcb,guest_idtr_base));
-	// Control Registers...
-	noir_svm_vmwrite64(l2_vmcb,guest_cr0,noir_svm_vmread64(l1_vmcb,guest_cr0));
-	noir_svm_vmwrite64(l2_vmcb,guest_cr2,noir_svm_vmread64(l1_vmcb,guest_cr2));
-	noir_svm_vmwrite64(l2_vmcb,guest_cr3,noir_svm_vmread64(l1_vmcb,guest_cr3));
-	noir_svm_vmwrite64(l2_vmcb,guest_cr4,noir_svm_vmread64(l1_vmcb,guest_cr4));
-	noir_svm_vmwrite64(l2_vmcb,guest_efer,noir_svm_vmread64(l1_vmcb,guest_efer));
-	// Debug Registers
-	noir_svm_vmwrite64(l2_vmcb,guest_dr6,noir_svm_vmread64(l1_vmcb,guest_dr6));
-	noir_svm_vmwrite64(l2_vmcb,guest_dr7,noir_svm_vmread64(l1_vmcb,guest_dr7));
-	// Last Branch Record Registers
-	noir_svm_vmwrite64(l2_vmcb,guest_debug_ctrl,noir_svm_vmread64(l1_vmcb,guest_debug_ctrl));
-	noir_svm_vmwrite64(l2_vmcb,guest_last_branch_from,noir_svm_vmread64(l1_vmcb,guest_last_branch_from));
-	noir_svm_vmwrite64(l2_vmcb,guest_last_branch_to,noir_svm_vmread64(l1_vmcb,guest_last_branch_to));
-	noir_svm_vmwrite64(l2_vmcb,guest_last_exception_from,noir_svm_vmread64(l1_vmcb,guest_last_exception_from));
-	noir_svm_vmwrite64(l2_vmcb,guest_last_exception_to,noir_svm_vmread64(l1_vmcb,guest_last_exception_to));
-	// Shadow Stack Registers
-	noir_svm_vmwrite64(l2_vmcb,guest_s_cet,noir_svm_vmread64(l1_vmcb,guest_s_cet));
-	noir_svm_vmwrite64(l2_vmcb,guest_ssp,noir_svm_vmread64(l1_vmcb,guest_ssp));
-	noir_svm_vmwrite64(l2_vmcb,guest_isst,noir_svm_vmread64(l1_vmcb,guest_isst));
-	// Page Attributes Register
-	noir_svm_vmwrite64(l2_vmcb,guest_pat,noir_svm_vmread64(l1_vmcb,guest_pat));
-	// APIC Base Address Register
-	noir_svm_vmwrite64(l2_vmcb,avic_apic_bar,noir_svm_vmread64(l1_vmcb,avic_apic_bar));
-	// General-Purpose Registers
-	noir_svm_vmwrite64(l2_vmcb,guest_interrupt,noir_svm_vmread64(l1_vmcb,guest_interrupt));
-	noir_svm_vmwrite64(l2_vmcb,guest_rflags,noir_svm_vmread64(l1_vmcb,guest_rflags));
-	noir_svm_vmwrite64(l2_vmcb,guest_rip,noir_svm_vmread64(l1_vmcb,guest_rip));
-	noir_svm_vmwrite64(l2_vmcb,guest_rsp,noir_svm_vmread64(l1_vmcb,guest_rsp));
-	noir_svm_vmwrite64(l2_vmcb,guest_rax,noir_svm_vmread64(l1_vmcb,guest_rax));
-	noir_svm_vmwrite8(l2_vmcb,guest_cpl,noir_svm_vmread8(l1_vmcb,guest_cpl));
-	// Copy the VM-Exit information.
-	noir_svm_vmwrite64(l2_vmcb,exit_code,noir_svm_vmread64(l1_vmcb,exit_code));
-	noir_svm_vmwrite64(l2_vmcb,exit_info1,noir_svm_vmread64(l1_vmcb,exit_info1));
-	noir_svm_vmwrite64(l2_vmcb,exit_info2,noir_svm_vmread64(l1_vmcb,exit_info2));
-	noir_svm_vmwrite64(l2_vmcb,exit_interrupt_info,noir_svm_vmread64(l1_vmcb,exit_interrupt_info));
-	noir_svm_vmwrite64(l2_vmcb,next_rip,noir_svm_vmread64(l1_vmcb,next_rip));
-	noir_svm_vmwrite64(l2_vmcb,avic_control,noir_svm_vmread64(l1_vmcb,avic_control));
-	noir_svm_vmwrite64(l2_vmcb,event_injection,noir_svm_vmread64(l1_vmcb,event_injection));
-	// Transfer the state from vmsave. Note that the state to be copied is not from L2 VMCB.
-	noir_svm_vmwrite64(l2_vmcb,guest_fs_selector,noir_svm_vmread16(vcpu->vmcb.virt,guest_fs_selector));
-	noir_svm_vmwrite64(l2_vmcb,guest_fs_attrib,noir_svm_vmread16(vcpu->vmcb.virt,guest_fs_attrib));
-	noir_svm_vmwrite64(l2_vmcb,guest_fs_limit,noir_svm_vmread32(vcpu->vmcb.virt,guest_fs_limit));
-	noir_svm_vmwrite64(l2_vmcb,guest_fs_base,noir_svm_vmread64(vcpu->vmcb.virt,guest_fs_base));
-	noir_svm_vmwrite64(l2_vmcb,guest_gs_selector,noir_svm_vmread16(vcpu->vmcb.virt,guest_gs_selector));
-	noir_svm_vmwrite64(l2_vmcb,guest_gs_attrib,noir_svm_vmread16(vcpu->vmcb.virt,guest_gs_attrib));
-	noir_svm_vmwrite64(l2_vmcb,guest_gs_limit,noir_svm_vmread32(vcpu->vmcb.virt,guest_gs_limit));
-	noir_svm_vmwrite64(l2_vmcb,guest_gs_base,noir_svm_vmread64(vcpu->vmcb.virt,guest_gs_base));
-	noir_svm_vmwrite64(l2_vmcb,guest_tr_selector,noir_svm_vmread16(vcpu->vmcb.virt,guest_tr_selector));
-	noir_svm_vmwrite64(l2_vmcb,guest_tr_attrib,noir_svm_vmread16(vcpu->vmcb.virt,guest_tr_attrib));
-	noir_svm_vmwrite64(l2_vmcb,guest_tr_limit,noir_svm_vmread32(vcpu->vmcb.virt,guest_tr_limit));
-	noir_svm_vmwrite64(l2_vmcb,guest_tr_base,noir_svm_vmread64(vcpu->vmcb.virt,guest_tr_base));
-	noir_svm_vmwrite64(l2_vmcb,guest_ldtr_selector,noir_svm_vmread16(vcpu->vmcb.virt,guest_ldtr_selector));
-	noir_svm_vmwrite64(l2_vmcb,guest_ldtr_attrib,noir_svm_vmread16(vcpu->vmcb.virt,guest_ldtr_attrib));
-	noir_svm_vmwrite64(l2_vmcb,guest_ldtr_limit,noir_svm_vmread32(vcpu->vmcb.virt,guest_ldtr_limit));
-	noir_svm_vmwrite64(l2_vmcb,guest_ldtr_base,noir_svm_vmread64(vcpu->vmcb.virt,guest_ldtr_base));
-	noir_svm_vmwrite64(l2_vmcb,guest_star,noir_svm_vmread64(vcpu->vmcb.virt,guest_star));
-	noir_svm_vmwrite64(l2_vmcb,guest_lstar,noir_svm_vmread64(vcpu->vmcb.virt,guest_lstar));
-	noir_svm_vmwrite64(l2_vmcb,guest_cstar,noir_svm_vmread64(vcpu->vmcb.virt,guest_cstar));
-	noir_svm_vmwrite64(l2_vmcb,guest_sfmask,noir_svm_vmread64(vcpu->vmcb.virt,guest_sfmask));
-	noir_svm_vmwrite64(l2_vmcb,guest_kernel_gs_base,noir_svm_vmread64(vcpu->vmcb.virt,guest_kernel_gs_base));
-	// FIXME: Use separated vmsave/vmrun to optimize the synchronization.
-}
-
-void nvc_svmn_set_gif(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,void* target_vmcb)
+void noir_hvcode nvc_svm_clear_nested_gif(noir_svm_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
-	// De-intercept Non-Maskable Interrupts.
-	noir_svm_vmcb_btr32(vmcb,intercept_instruction1,nvc_svm_intercept_vector1_nmi);
-	// De-intercept #MC and #DB Exceptions.
-	noir_svm_vmcb_btr32(vmcb,intercept_exceptions,amd64_debug_exception);
-	noir_svm_vmcb_btr32(vmcb,intercept_exceptions,amd64_machine_check);
-	// Reset global physical interrupt masking in Local APIC Control.
-	noir_svm_vmcb_btr32(vmcb,avic_control,nvc_svm_avic_control_vintr_mask);
-	// Mark the relevant fields in VMCB as dirty.
-	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_interception);
-	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_tpr);
-	// Release the interrupts, according to the priority defined by AMD64 architecture.
-	if(vcpu->nested_hvm.pending_mc)					// Priority 0
-	{
-		vcpu->nested_hvm.pending_mc=0;
-		noir_svm_inject_event(target_vmcb,amd64_machine_check,amd64_fault_trap_exception,false,true,0);
-	}
-	else
-	{
-		if(vcpu->nested_hvm.pending_init)			// Priority 1
-		{
-			vcpu->nested_hvm.pending_init=0;
-			if(vcpu->nested_hvm.r_init)
-				noir_svm_inject_event(target_vmcb,amd64_security_exception,amd64_fault_trap_exception,true,true,amd64_sx_init_redirection);
-			else
-				nvc_svm_emulate_init_signal(gpr_state,target_vmcb,vcpu->cpuid_fms);
-		}
-		else
-		{
-			if(vcpu->nested_hvm.pending_db)			// Priority 2
-			{
-				vcpu->nested_hvm.pending_db=0;
-				noir_svm_inject_event(target_vmcb,amd64_debug_exception,amd64_fault_trap_exception,false,true,0);
-			}
-			else
-			{
-				if(vcpu->nested_hvm.pending_nmi)	// Priority 3
-				{
-					vcpu->nested_hvm.pending_nmi=0;
-					noir_svm_inject_event(target_vmcb,amd64_nmi_interrupt,amd64_non_maskable_interrupt,false,true,0);
-				}
-			}
-		}
-	}
-}
-
-void nvc_svmn_clear_gif(noir_svm_vcpu_p vcpu)
-{
-	void* vmcb=vcpu->vmcb.virt;
-	// Intercept Non-Maskable Interrupts.
-	noir_svm_vmcb_bts32(vmcb,intercept_instruction1,nvc_svm_intercept_vector1_nmi);
-	// Intercept #MC and #DB Exceptions.
-	noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_debug_exception);
-	noir_svm_vmcb_bts32(vmcb,intercept_exceptions,amd64_machine_check);
-	// Set global physical interrupt masking in Local APIC Control.
+	// Disallow guest rflags.if to control interrupt masking.
 	noir_svm_vmcb_bts32(vmcb,avic_control,nvc_svm_avic_control_vintr_mask);
-	// Enable Masking of Physical Interrupts.
-	noir_cli();
-	// When V_INTR_MASKING is set and host EFLAGS.IF is cleared, physical
-	// interrupts will be permanently blocked by the processor.
-	// Mark the relevant fields in VMCB as dirty.
-	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_interception);
+	// Invalidate VMCB Cache.
 	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_tpr);
+	// Force masking physical interrupts.
+	noir_cli();
+	// FIXME: Mask physical NMIs by intercepting them.
+}
+
+void noir_hvcode nvc_svm_set_nested_gif(noir_svm_vcpu_p vcpu)
+{
+	void* vmcb=vcpu->vmcb.virt;
+	// Allow guest rflags.if to control interrupt masking.
+	noir_svm_vmcb_btr32(vmcb,avic_control,nvc_svm_avic_control_vintr_mask);
+	// Invalidate VMCB Cache.
+	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_tpr);
+	// FIXME: Unmask physical NMIs.
+}
+
+void noir_hvcode nvc_svm_switch_from_nested_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
+{
+	// Deliver VM-Exit into the nested hypervisor!
+	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
+	noir_svm_nested_vcpu_node_p nvcpu=loader_stack->nested_vcpu;
+	void* vmcb_t=nvcpu->vmcb_t.virt;
+	void* vmcb_c=nvcpu->vmcb_c.virt;
+	void* vmcb_l1=vcpu->vmcb.virt;
+	// Copy VM-Exit Information.
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,exit_code);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,exit_info1);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,exit_info2);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,exit_interrupt_info);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,next_rip);
+	noir_svm_vmcopy8(vmcb_c,vmcb_t,number_of_bytes_fetched);
+	for(u32 i=0;i<15;i++)noir_svm_vmcopy8(vmcb_c,vmcb_t,guest_instruction_bytes+i);
+	// Copy Nested vCPU State.
+	// Unfortunately, there's no cached-state mechanism we can utilize here.
+	// We have to be dumb and just synchronize everything.
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,avic_control);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_interrupt);
+	// Copy ES Segment.
+	noir_svm_vmcopy16(vmcb_c,vmcb_t,guest_es_selector);
+	noir_svm_vmcopy16(vmcb_c,vmcb_t,guest_es_attrib);
+	noir_svm_vmcopy32(vmcb_c,vmcb_t,guest_es_limit);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_es_base);
+	// Copy CS Segment.
+	noir_svm_vmcopy16(vmcb_c,vmcb_t,guest_cs_selector);
+	noir_svm_vmcopy16(vmcb_c,vmcb_t,guest_cs_attrib);
+	noir_svm_vmcopy32(vmcb_c,vmcb_t,guest_cs_limit);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_cs_base);
+	// Copy SS Segment.
+	noir_svm_vmcopy16(vmcb_c,vmcb_t,guest_ss_selector);
+	noir_svm_vmcopy16(vmcb_c,vmcb_t,guest_ss_attrib);
+	noir_svm_vmcopy32(vmcb_c,vmcb_t,guest_ss_limit);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_ss_base);
+	// Copy DS Segment.
+	noir_svm_vmcopy16(vmcb_c,vmcb_t,guest_ds_selector);
+	noir_svm_vmcopy16(vmcb_c,vmcb_t,guest_ds_attrib);
+	noir_svm_vmcopy32(vmcb_c,vmcb_t,guest_ds_limit);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_ds_base);
+	// Copy GDT Register.
+	noir_svm_vmcopy16(vmcb_c,vmcb_t,guest_gdtr_limit);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_gdtr_base);
+	// Copy IDT Register.
+	noir_svm_vmcopy16(vmcb_c,vmcb_t,guest_idtr_limit);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_gdtr_base);
+	// Copy whatever else.
+	noir_svm_vmcopy8(vmcb_c,vmcb_t,guest_cpl);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_efer);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_cr4);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_cr3);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_cr0);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_dr7);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_dr6);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_rflags);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_rip);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_rsp);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_s_cet);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_ssp);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_isst);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_rax);
+	noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_cr2);
+	// We may optionally copy some states due to the switches.
+	if(noir_svm_vmcb_bt32(vmcb_t,npt_control,nvc_svm_npt_control_npt))
+		noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_pat);
+	if(noir_svm_vmcb_bt32(vmcb_t,lbr_virtualization_control,nvc_svm_lbr_virt_control_lbr))
+	{
+		noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_debug_ctrl);
+		noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_last_branch_from);
+		noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_last_branch_to);
+		noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_last_exception_from);
+		noir_svm_vmcopy64(vmcb_c,vmcb_t,guest_last_exception_to);
+	}
+	// Note that states covered by vmload/vmsave must be copied to L1 VMCB.
+	// Copy FS Segment
+	noir_svm_vmcopy16(vmcb_l1,vmcb_t,guest_fs_selector);
+	noir_svm_vmcopy16(vmcb_l1,vmcb_t,guest_fs_attrib);
+	noir_svm_vmcopy32(vmcb_l1,vmcb_t,guest_fs_limit);
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_fs_base);
+	// Copy GS Segment
+	noir_svm_vmcopy16(vmcb_l1,vmcb_t,guest_gs_selector);
+	noir_svm_vmcopy16(vmcb_l1,vmcb_t,guest_gs_attrib);
+	noir_svm_vmcopy32(vmcb_l1,vmcb_t,guest_gs_limit);
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_gs_base);
+	// Copy Task Register
+	noir_svm_vmcopy16(vmcb_l1,vmcb_t,guest_tr_selector);
+	noir_svm_vmcopy16(vmcb_l1,vmcb_t,guest_tr_attrib);
+	noir_svm_vmcopy32(vmcb_l1,vmcb_t,guest_tr_limit);
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_tr_base);
+	// Copy Local Descriptor Table Register
+	noir_svm_vmcopy16(vmcb_l1,vmcb_t,guest_ldtr_selector);
+	noir_svm_vmcopy16(vmcb_l1,vmcb_t,guest_ldtr_attrib);
+	noir_svm_vmcopy32(vmcb_l1,vmcb_t,guest_ldtr_limit);
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_ldtr_base);
+	// Copy Model-Specific Registers
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_sysenter_cs);
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_sysenter_esp);
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_sysenter_eip);
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_star);
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_lstar);
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_cstar);
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_sfmask);
+	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_kernel_gs_base);
+	// Emulate cleared GIF for nested hypervisor.
+	// nvc_svm_clear_nested_gif(vcpu);
+	// Note: Clearing rflags.if is an unsafe implementation to emulate cleared GIF!
+	// This approach is only viable on bluepill-like hypervisors like SimpleSvm.
+	noir_svm_vmcb_btr32(vmcb_l1,guest_rflags,amd64_rflags_if);
+	// Switch to the nested hypervisor (L1).
+	loader_stack->guest_vmcb_pa=vcpu->vmcb.phys;
+}
+
+void noir_hvcode nvc_svm_switch_to_nested_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu_node)
+{
+	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
+	void* vmcb_t=nvcpu_node->vmcb_t.virt;
+	void* vmcb_c=nvcpu_node->vmcb_c.virt;
+	// Copy uncached states.
+	for(u32 i=0;i<noir_svm_maximum_clean_state_bits;i++)
+		if(!nvcpu_node->flags.clean || noir_svm_vmcb_bt32(vmcb_c,vmcb_clean_bits,i)==false)
+			svm_clean_vmcb[i](vmcb_c,vmcb_t);
+	// Special Treatments.
+	if(noir_svm_vmcb_bt64(vmcb_t,avic_control,nvc_svm_avic_control_vintr_mask))
+	{
+		// If V_INTR_MASKING is enabled, Guest rflags.if must be copied to the host.
+		if(noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_rflags,amd64_rflags_if))
+			noir_sti();
+		else
+			noir_cli();
+	}
+	// Always-Uncached States.
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,tlb_control);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_interrupt);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,event_injection);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_rflags);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_rip);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_rsp);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_rax);
+	// Mark cache of this nested vCPU is clean.
+	nvcpu_node->flags.clean=true;
+	// No need to emulate set GIF because this is a new VMCB.
+	// Finally, switch to the nested vCPU (L2).
+	loader_stack->nested_vcpu=nvcpu_node;
+	loader_stack->guest_vmcb_pa=nvcpu_node->vmcb_t.phys;
+	// The context will go to the nested vCPU when vmrun is executed.
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_interceptions(void* vmcb_c,void* vmcb_t)
+{
+	// FIXME: Implement interception vectors used by NoirVisor in L1.
+	// Cached States for Interceptions Vectors are invalidated.
+	noir_svm_vmcopy32(vmcb_t,vmcb_c,intercept_access_cr);
+	noir_svm_vmcopy32(vmcb_t,vmcb_c,intercept_access_dr);
+	noir_svm_vmcopy32(vmcb_t,vmcb_c,intercept_exceptions);
+	noir_svm_vmcopy32(vmcb_t,vmcb_c,intercept_instruction1);
+	noir_svm_vmcopy32(vmcb_t,vmcb_c,intercept_instruction2);
+	noir_svm_vmcopy32(vmcb_t,vmcb_c,intercept_instruction3);
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,pause_filter_threshold);
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,pause_filter_count);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,tsc_offset);
+	// Always-intercept options.
+	noir_svm_vmcb_bts32(vmcb_t,intercept_instruction1,nvc_svm_intercept_vector1_shutdown);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_interception);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_iomsrpm(void* vmcb_c,void* vmcb_t)
+{
+	// FIXME: Emulate I/O and MSR Permission Map.
+	// Cached States for I/O and MSR Permission Map are invalidated.
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,iopm_physical_address);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,msrpm_physical_address);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_iomsrpm);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_asid(void* vmcb_c,void* vmcb_t)
+{
+	// Cached States for ASID are invalidated.
+	i32 asid=noir_svm_vmread32(vmcb_c,guest_asid);
+	// Nested Hypervisor may trick us with negative ASID.
+	noir_svm_vmwrite32(vmcb_t,guest_asid,asid<=0?0:asid+1);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_asid);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_tpr(void* vmcb_c,void* vmcb_t)
+{
+	// Cached States for Virtualized Local APIC are invalidated.
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,avic_control);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_tpr);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_np(void* vmcb_c,void* vmcb_t)
+{
+	// FIXME: Virtualize Nested Paging.
+	// Cached States for Nested Paging are invalidated.
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,npt_control);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,npt_cr3);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_pat);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_npt);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_crx(void* vmcb_c,void* vmcb_t)
+{
+	// Cached States for Control Registers are invalidated.
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_cr0);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_cr3);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_cr4);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_efer);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_control_reg);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_drx(void* vmcb_c,void* vmcb_t)
+{
+	// Cached States for Debug Registers are invalidated.
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_dr6);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_dr7);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_debug_reg);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_dt(void* vmcb_c,void* vmcb_t)
+{
+	// Cached States for Descriptor Table Registers are invalidated.
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,guest_gdtr_limit);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_gdtr_base);
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,guest_idtr_limit);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_idtr_base);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_idt_gdt);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_seg(void* vmcb_c,void* vmcb_t)
+{
+	// Cached States for Segment Registers are invalidated.
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,guest_cs_selector);
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,guest_cs_attrib);
+	noir_svm_vmcopy32(vmcb_t,vmcb_c,guest_cs_limit);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_cs_base);
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,guest_ds_selector);
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,guest_ds_attrib);
+	noir_svm_vmcopy32(vmcb_t,vmcb_c,guest_ds_limit);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_ds_base);
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,guest_es_selector);
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,guest_es_attrib);
+	noir_svm_vmcopy32(vmcb_t,vmcb_c,guest_es_limit);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_es_base);
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,guest_ss_selector);
+	noir_svm_vmcopy16(vmcb_t,vmcb_c,guest_ss_attrib);
+	noir_svm_vmcopy32(vmcb_t,vmcb_c,guest_ss_limit);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_ss_base);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_segment_reg);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_cr2(void* vmcb_c,void* vmcb_t)
+{
+	// Cached State for CR2 Register is invalidated.
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_cr2);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_cr2);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_lbr(void* vmcb_c,void* vmcb_t)
+{
+	// Cached States for LBR MSRs are invalidated.
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_debug_ctrl);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_last_branch_from);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_last_branch_to);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_last_exception_from);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_last_exception_to);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_lbr);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_avic(void* vmcb_c,void* vmcb_t)
+{
+	// Cached States for AVIC are invalidated.
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,avic_apic_bar);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,avic_backing_page_pointer);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,avic_logical_table_pointer);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,avic_physical_table_pointer);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_lbr);
+}
+
+void static noir_hvcode fastcall nvc_svm_clean_vmcb_cet(void* vmcb_c,void* vmcb_t)
+{
+	// Cached States for CET are invalidated.
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_s_cet);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_ssp);
+	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_isst);
+	// Clean the cache.
+	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_cet);
+}
+
+noir_svm_nested_vcpu_node_p noir_hvcode nvc_svm_get_nested_vcpu_node(noir_svm_nested_vcpu_p nvcpu,u64 vmcb)
+{
+	// Hash the VMCB GPA into 4 bits.
+	u8 hash=0xC;
+	for(u32 i=12;i<64;i+=4)
+	{
+		u8 cur_value=(u8)((vmcb>>i)&0xF);
+		hash^=cur_value;
+	}
+	// Use the hash as index to locate the node.
+	return &nvcpu->node_pool[hash];
+	// It is caller's responsibility to check hash collision!
 }
 
 /*
   Handling VM-Exits from Nested Guest...
 */
+
+// FIXME: Implement handlers for interceptions not used by nested hypervisor!
 
 // Default handler of VM-Exit.
 void static fastcall nvc_svm_nvexit_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu)
@@ -424,5 +378,6 @@ void static fastcall nvc_svm_nvexit_default_handler(noir_gpr_state_p gpr_state,n
 // Expected Intercept Code: 0x7F
 void static fastcall nvc_svm_nvexit_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu)
 {
+	nvd_printf("Shutdown is intercepted in nested guest!\n");
 	noir_int3();
 }

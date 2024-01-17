@@ -19,6 +19,13 @@ endif
 
 ifdef _amd64
 
+noir_hbreak proc
+
+	; Manually set hardware breakpoints here.
+	ret
+
+noir_hbreak endp
+
 noir_xsave proc
 
 	mov eax,edx

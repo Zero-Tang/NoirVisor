@@ -178,10 +178,12 @@ However, it should be useful with nested virtualization within the scope for CVM
 
 ### GIF Virtualization without Hardware Support
 In that the hardware support of GIF virtualization is irrelevant to nested virtualization for NoirVisor, there must be something done to ensure correct behavior of GIF Virtualization. \
-If the `vGIF` is cleared, all interrupts affected by GIF must be intercepted. In addition to interceptions, the host IDT should be replaced by NoirVisor in order to remove pending interrupts and record corresponding information of the interrupt. \
+If the `vGIF` is cleared, all interrupts affected by GIF must be intercepted. In addition to interceptions, the host IDT should be replaced by NoirVisor in order to remove pending interrupts and record corresponding information of the interrupt.
 
 #### Masking Physical Interrupts
 As a matter of fact, there is no need to intercept physical interrupts. The Local APIC support provided by the AMD-V is sufficient to keep interrupts pending. Setting the `V_INTR_MASKING` bit in VMCB and clearing the `RFLAGS.IF` bit in host should hold any physical interrupts pending regardless of the value of `RFLAGS.IF` in guest.
+
+Due to suspected bug in Linux KVM, current approach is to clear `RFLAGS.IF` bit in guest. (Linux KVM seems unable to properly emulate virtual local APIC (i.e.: offset `0x60` to `0x67`) field.) This is of course an incorrect approach to emulate GIF, but it is still viable to run simple bluepill-like hypervisors like SimpleSvm.
 
 #### Masking NMIs
 There is no easy way to mask `NMI`s like we did for masking physical interrupts. The `NMI` handler must be hijacked. When `NMI`s are intercepted, execute the `stgi` instruction to let the processor discard the pending `NMI`. \

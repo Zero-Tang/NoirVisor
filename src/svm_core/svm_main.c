@@ -277,7 +277,6 @@ void static nvc_svm_set_idt_entry(noir_gate_descriptor_p idt_base,u8 vector,u16 
 	idt_base[vector].offset_hi=(u32)((u64)handler>>32);
 	idt_base[vector].reserved=0;
 #endif
-	nvd_printf("IDT Entry #%02u: CS=0x%04X, rip=0x%p Attributes: 0x%X\n",vector,selector,handler,idt_base[vector].attrib.value);
 }
 
 void static nvc_svm_setup_host_idt(ulong_ptr idtr_base,u16 selector)
@@ -322,11 +321,6 @@ void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu,noir_processor_state
 	// Load them into processor.
 	noir_lidt(&idtr);
 	noir_lgdt(&gdtr);
-	// Load GS Segment.
-	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_gs_selector,state->gs.selector);
-	noir_svm_vmwrite16(vcpu->hvmcb.virt,guest_gs_attrib,svm_attrib(state->gs.attrib));
-	noir_svm_vmwrite32(vcpu->hvmcb.virt,guest_gs_limit,sizeof(noir_svm_vcpu));
-	noir_svm_vmwrite(vcpu->hvmcb.virt,guest_gs_base,(ulong_ptr)vcpu);
 #if defined(_hv_type1)
 	noir_tss64_p tss_base=(noir_tss64_p)vcpu->tss_buffer;
 	// Selector
@@ -360,7 +354,6 @@ void nvc_svm_load_host_processor_state(noir_svm_vcpu_p vcpu,noir_processor_state
 	// Load Host Control Registers.
 	noir_writecr3(hvm_p->host_memmap.hcr3.phys);
 	noir_writecr4(state->cr4|amd64_cr4_osfxsr_bit|amd64_cr4_osxsave_bit);
-	nvd_printf("Host State is loaded!\n");
 }
 
 void nvc_svm_setup_apic_id(noir_svm_vcpu_p vcpu)
@@ -570,8 +563,8 @@ void nvc_svm_cleanup(noir_hypervisor_p hvm_p)
 			if(vcpu->cvm_state.xsave_area)
 				noir_free_contd_memory(vcpu->cvm_state.xsave_area,page_size);
 			for(u32 j=0;j<noir_svm_cached_nested_vmcb;j++)
-				if(vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt)
-					noir_free_contd_memory(vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt,page_size);
+				if(vcpu->nested_hvm.node_pool[j].vmcb_t.virt)
+					noir_free_contd_memory(vcpu->nested_hvm.node_pool[j].vmcb_t.virt,page_size);
 		}
 		noir_free_nonpg_memory(hvm_p->virtual_cpu);
 	}
@@ -657,13 +650,12 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 			{
 				for(u32 j=0;j<noir_svm_cached_nested_vmcb;j++)
 				{
-					vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt=noir_alloc_contd_memory(page_size);
-					if(vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt)
-						vcpu->nested_hvm.nodes.pool[j].vmcb_t.phys=noir_get_physical_address(vcpu->nested_hvm.nodes.pool[j].vmcb_t.virt);
+					vcpu->nested_hvm.node_pool[j].vmcb_t.virt=noir_alloc_contd_memory(page_size);
+					if(vcpu->nested_hvm.node_pool[j].vmcb_t.virt)
+						vcpu->nested_hvm.node_pool[j].vmcb_t.phys=noir_get_physical_address(vcpu->nested_hvm.node_pool[j].vmcb_t.virt);
 					else
 						goto alloc_failure;
 				}
-				nvc_svm_initialize_nested_vcpu_node_pool(&vcpu->nested_hvm);
 			}
 #if !defined(_hv_type1)
 			if(hvm_p->options.stealth_msr_hook)vcpu->enabled_feature|=noir_svm_syscall_hook;
@@ -674,6 +666,8 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 				nv_dprintf("Warning: KVA-Shadow is present! Stealthy MSR-Hook on AMD Processors is untested in regards of KVA-Shadow!\n");
 			}
 #endif
+			// Finally, enable self-reference.
+			vcpu->self=vcpu;
 		}
 	}
 	hvm_p->relative_hvm->primary_nptm=nvc_npt_build_identity_map();

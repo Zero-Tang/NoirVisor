@@ -1375,6 +1375,7 @@ noir_status nvc_build_hypervisor()
 	hvm_p->cpu_manuf=nvc_confirm_cpu_manufacturer(hvm_p->vendor_string);
 	hvm_p->options.value=noir_query_enabled_features_in_system();
 	nvc_store_image_info(&hvm_p->hv_image.base,&hvm_p->hv_image.size);
+	nv_dprintf("Note: If you are using GDB over QEMU/KVM, you may set a hardware breakpoint at 0x%p! (e.g.: hb *0x%p)\n",noir_hbreak,noir_hbreak);
 	switch(hvm_p->cpu_manuf)
 	{
 		case intel_processor:

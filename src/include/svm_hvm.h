@@ -41,7 +41,7 @@
 #define noir_svm_sipi_sent					0
 
 // Number of nested VMCBs to be cached.
-#define noir_svm_cached_nested_vmcb			31
+#define noir_svm_cached_nested_vmcb			16
 
 // When synchronizing nested VMCB for nested VM-Exits,
 // most fields in VMCB requires synchronization.
@@ -113,32 +113,24 @@ typedef struct _noir_svm_virtual_msr
 
 typedef struct _noir_svm_nested_vcpu_node
 {
-	struct
-	{
-		struct _noir_svm_nested_vcpu_node *prev;
-		struct _noir_svm_nested_vcpu_node *next;
-	}cache_list;
-	struct
-	{
-		struct _noir_svm_nested_vcpu_node *left;
-		struct _noir_svm_nested_vcpu_node *right;
-		i32 height;
-	}avl;
 	memory_descriptor vmcb_t;
-	u64 l2_vmcb;
+	memory_descriptor vmcb_c;
+	union
+	{
+		struct
+		{
+			u64 clean:1;
+			u64 reserved:63;
+		};
+		u64 value;
+	}flags;
 }noir_svm_nested_vcpu_node,*noir_svm_nested_vcpu_node_p;
 
 typedef struct _noir_svm_nested_vcpu
 {
 	u64 hsave_gpa;
 	void* hsave_hva;
-	struct
-	{
-		noir_svm_nested_vcpu_node pool[noir_svm_cached_nested_vmcb];
-		noir_svm_nested_vcpu_node_p head;
-		noir_svm_nested_vcpu_node_p tail;
-		noir_svm_nested_vcpu_node_p root;
-	}nodes;
+	noir_svm_nested_vcpu_node node_pool[noir_svm_cached_nested_vmcb];
 	struct
 	{
 		u64 svme:1;
@@ -208,9 +200,12 @@ typedef struct _noir_svm_vcpu
 	u8 sipi_vector;
 	u8 status;
 	u8 vcpu_property;
+	// Align GDT, IDT and TSS at 16-byte boundary!
 	align_at(16) noir_gate_descriptor idt_buffer[0x100];
 	align_at(16) noir_segment_descriptor gdt_buffer[0x100];
 	align_at(16) u8 tss_buffer[0x100];
+	// Force the vCPU to have the size of multiple pages!
+	align_at(page_size) u8 alignment_holder[0];
 }noir_svm_vcpu,*noir_svm_vcpu_p;
 
 struct _noir_svm_custom_vm;
@@ -273,7 +268,8 @@ typedef struct _noir_svm_custom_vcpu
 			u64 prev_virq:1;	// Required for interrupt-window interception.
 			u64 prev_nmi:1;
 			u64 mtf_active:1;
-			u64 reserved:58;
+			u64 gif:1;
+			u64 reserved:57;
 			u64 switch_success:1;
 			u64 hv_mtf:1;		// Trap-Flag by NoirVisor.
 			u64 rescission:1;
@@ -364,13 +360,11 @@ bool nvc_svm_nsv_load_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu
 void nvc_svm_load_basic_exit_context(noir_svm_custom_vcpu_p vcpu);
 void nvc_svm_operate_guest_memory(noir_cvm_gmem_op_context_p context);
 void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid_fms);
-void nvc_svm_initialize_nested_vcpu_node_pool(noir_svm_nested_vcpu_p nvcpu);
-void nvc_svmn_virtualize_exit_vmcb(noir_svm_vcpu_p vcpu,void* l1_vmcb,void* l2_vmcb);
-void nvc_svmn_virtualize_entry_vmcb(noir_svm_vcpu_p vcpu,void* l2_vmcb,void* l1_vmcb);
-noir_svm_nested_vcpu_node_p nvc_svm_search_nested_vcpu_node(noir_svm_nested_vcpu_p nvcpu,u64 vmcb);
-noir_svm_nested_vcpu_node_p nvc_svm_insert_nested_vcpu_node(noir_svm_nested_vcpu_p nvcpu,u64 vmcb);
-void nvc_svmn_set_gif(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,void* target_vmcb);
-void nvc_svmn_clear_gif(noir_svm_vcpu_p vcpu);
+noir_svm_nested_vcpu_node_p nvc_svm_get_nested_vcpu_node(noir_svm_nested_vcpu_p nvcpu,u64 vmcb);
+void noir_hvcode nvc_svm_switch_to_nested_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu_node);
+void noir_hvcode nvc_svm_switch_from_nested_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu);
+void noir_hvcode nvc_svm_clear_nested_gif(noir_svm_vcpu_p vcpu);
+void noir_hvcode nvc_svm_set_nested_gif(noir_svm_vcpu_p vcpu);
 bool nvc_svmc_get_physical_mapping(noir_svm_custom_npt_manager_p npt_manager,u64 gpa,u64p hpa,bool r,bool w,bool x);
 void nvc_npt_reassign_page_ownership_hvrt(noir_svm_vcpu_p vcpu,noir_rmt_remap_context_p context);
 bool nvc_npt_reassign_page_ownership(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership);

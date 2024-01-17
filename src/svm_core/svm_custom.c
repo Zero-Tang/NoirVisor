@@ -1030,7 +1030,7 @@ complete:
 void nvc_svmc_free_asid(u32 asid)
 {
 	noir_acquire_reslock_exclusive(hvm_p->tlb_tagging.asid_pool_lock);
-	noir_reset_bitmap(hvm_p->tlb_tagging.asid_pool,asid);
+	noir_reset_bitmap(hvm_p->tlb_tagging.asid_pool,asid-hvm_p->tlb_tagging.start);
 	noir_release_reslock(hvm_p->tlb_tagging.asid_pool_lock);
 }
 

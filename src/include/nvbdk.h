@@ -623,6 +623,8 @@ void cdecl nv_dprintf2(bool datetime,bool proc_id,const char* func_name,const ch
 void cdecl nvd_printf(const char* format,...);
 void cdecl nvd_panicf(const char* format,...);
 
+void noir_hbreak(void);
+
 // Threading Facility
 typedef u32 (stdcall *noir_thread_procedure)(void* context);
 typedef void* noir_thread;

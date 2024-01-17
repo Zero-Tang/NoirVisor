@@ -34,12 +34,12 @@ Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hyg
 Note that early Zhaoxin and VIA use Centaur as vendor.
 
 # Nested Virtualization
-NoirVisor is developed in highest focus on nested virtualization. It is not currently supported, but will be developed in future. \
-Algorithm regarding the Nested Virtualization was stated down in the readme files in both VT-Core and SVM-Core directories. \
+Algorithm regarding the Nested Virtualization was written in the readme files in both VT-Core and SVM-Core directories. \
 For Nested Intel VT-x Algorithm, visit [here](src/vt_core/readme.md#vmx-nesting-algorithm-incomplete-version). \
 For Nested AMD-V Algorithm, visit [here](src/svm_core/readme.md#svm-nesting-algorithm-incomplete-version).
 
-Nested AMD-V is now in debugging stage.
+Nested AMD-V is now in debugging stage. NoirVisor currently can run a modified version of [SimpleSvm](https://github.com/tandasat/SimpleSvm) as nested hypervisor where NPT is turned off. \
+Nested Intel VT-x is not supported yet.
 
 # Announcement to all contributors
 NoirVisor is coded in the C programming language and the assembly since it is procedure-oriented designed. \

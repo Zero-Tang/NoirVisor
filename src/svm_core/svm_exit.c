@@ -82,22 +82,22 @@ void static noir_hvcode fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gp
 		u32 list1,list2;
 		u32 asid;
 		noir_svm_stgi();
-		nv_dprintf("[Processor %d] Guest State is Invalid! VMCB: 0x%p\n",vcpu->proc_id,vmcb);
+		nvd_printf("[Processor %d] Guest State is Invalid! VMCB: 0x%p\n",vcpu->proc_id,vmcb);
 		// Dump State in VMCB and Print them to Debugger.
 		efer=noir_svm_vmread64(vmcb,guest_efer);
 		nv_dprintf("Guest EFER MSR: 0x%llx\n",efer);
 		dr6=noir_svm_vmread(vmcb,guest_dr6);
 		dr7=noir_svm_vmread(vmcb,guest_dr7);
-		nv_dprintf("Guest DR6: 0x%p\t DR7: 0x%p\n",dr6,dr7);
+		nvd_printf("Guest DR6: 0x%p\t DR7: 0x%p\n",dr6,dr7);
 		cr0=noir_svm_vmread(vmcb,guest_cr0);
 		cr3=noir_svm_vmread(vmcb,guest_cr3);
 		cr4=noir_svm_vmread(vmcb,guest_cr4);
-		nv_dprintf("Guest CR0: 0x%p\t CR3: 0x%p\t CR4: 0x%p\n",cr0,cr3,cr4);
+		nvd_printf("Guest CR0: 0x%p\t CR3: 0x%p\t CR4: 0x%p\n",cr0,cr3,cr4);
 		asid=noir_svm_vmread32(vmcb,guest_asid);
-		nv_dprintf("Guest ASID: %d\n",asid);
+		nvd_printf("Guest ASID: %d\n",asid);
 		list1=noir_svm_vmread32(vmcb,intercept_instruction1);
 		list2=noir_svm_vmread32(vmcb,intercept_instruction2);
-		nv_dprintf("Control 1: 0x%X\t Control 2: 0x%X\n",list1,list2);
+		nvd_printf("Control 1: 0x%X\t Control 2: 0x%X\n",list1,list2);
 		// Generate a debug-break.
 		noir_int3();
 	}
@@ -1003,46 +1003,6 @@ void static noir_hvcode fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_stat
 					// We have updated EFER. Therefore, CRx fields should be invalidated.
 					noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_control_reg);
 					vcpu->nested_hvm.svme=svme;
-					if(vcpu->nested_hvm.svme)
-					{
-						// Enable Acceleration of Virtualization if available.
-						// Note that virtual GIF has no use here.
-						nvc_svm_instruction_intercept2 list2;
-						list2.value=noir_svm_vmread16(vcpu->vmcb.virt,intercept_instruction2);
-						if(vcpu->enabled_feature & noir_svm_virtualized_vmls)
-						{
-							nvc_svm_lbr_virtualization_control lbr_virt_ctrl;
-							// Enable Virtualization of vmload/vmsave instructions.
-							lbr_virt_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,lbr_virtualization_control);
-							lbr_virt_ctrl.virtualize_vmsave_vmload=true;
-							noir_svm_vmwrite64(vcpu->vmcb.virt,lbr_virtualization_control,lbr_virt_ctrl.value);
-							// We don't have to intercept vmload/vmsave anymore.
-							list2.intercept_vmload=0;
-							list2.intercept_vmsave=0;
-						}
-						noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
-						// Clear the cached state of Interceptions in VMCB.
-						noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
-					}
-					else
-					{
-						nvc_svm_instruction_intercept2 list2;
-						list2.value=noir_svm_vmread16(vcpu->vmcb.virt,intercept_instruction2);
-						if(vcpu->enabled_feature & noir_svm_virtualized_vmls)
-						{
-							nvc_svm_lbr_virtualization_control lbr_virt_ctrl;
-							// Disable Virtualization of vmload/vmsave instructions.
-							lbr_virt_ctrl.value=noir_svm_vmread64(vcpu->vmcb.virt,lbr_virtualization_control);
-							lbr_virt_ctrl.virtualize_vmsave_vmload=false;
-							noir_svm_vmwrite64(vcpu->vmcb.virt,lbr_virtualization_control,lbr_virt_ctrl.value);
-							// We don't have to intercept vmload/vmsave anymore.
-							list2.intercept_vmload=1;
-							list2.intercept_vmsave=1;
-						}
-						noir_svm_vmwrite16(vcpu->vmcb.virt,intercept_instruction2,list2.value);
-						// Clear the cached state of Interceptions in VMCB.
-						noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_interception);
-					}
 				}
 				break;
 			}
@@ -1103,7 +1063,6 @@ void static noir_hvcode fastcall nvc_svm_msr_handler(noir_gpr_state_p gpr_state,
 // If this VM-Exit occurs, it may indicate a triple fault.
 void static noir_hvcode fastcall nvc_svm_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
-	noir_svm_stgi();	// Enable GIF for Debug-Printing
 	nvd_printf("Shutdown (Triple-Fault) is Intercepted! System is unusable!\n");
 	noir_int3();
 }
@@ -1124,37 +1083,20 @@ void static noir_hvcode fastcall nvc_svm_vmrun_handler(noir_gpr_state_p gpr_stat
 		else
 		{
 			void* nested_vmcb_va=(void*)nested_vmcb_pa;
-			// Search for cached copy of L1 VMCB.
-			noir_svm_nested_vcpu_node_p nvcpu=nvc_svm_search_nested_vcpu_node(&vcpu->nested_hvm,nested_vmcb_pa);
-			// If cached copy is not found, build the new cache.
-			if(nvcpu==null)
+			// Get a node.
+			noir_svm_nested_vcpu_node_p nvcpu=nvc_svm_get_nested_vcpu_node(&vcpu->nested_hvm,nested_vmcb_pa);
+			nvd_printf("Intercepted Nested VM-Entry! Guest VMCB: 0x%p, Shadowed VMCB: 0x%p\n",nested_vmcb_pa,nvcpu->vmcb_t.phys);
+			if(nvcpu->vmcb_c.phys!=nested_vmcb_pa)
 			{
-				nvcpu=nvc_svm_insert_nested_vcpu_node(&vcpu->nested_hvm,nested_vmcb_pa);
-				// Flush any processor cache associated with this VMCB.
-				noir_svm_vmwrite32(nvcpu->vmcb_t.virt,vmcb_clean_bits,0);
+				nvd_printf("New/Collided VMCB! Assigning shadowed VMCB: 0x%p for 0x%p!\n",nvcpu->vmcb_t.phys,nested_vmcb_pa);
+				// Collision occured!
+				nvcpu->vmcb_c.phys=nested_vmcb_pa;
+				nvcpu->vmcb_c.virt=nested_vmcb_va;
+				// Invalidate the cached state of VMCB.
+				nvcpu->flags.clean=false;
 			}
-			// Some essential information for hypervisor-specific consistency check.
-			const u32 nested_asid=noir_svm_vmread32(nested_vmcb_va,guest_asid);
-			// ASID must not equal to zero or exceed the limit.
-			if(nested_asid==0 || nested_asid>hvm_p->tlb_tagging.start-2)goto invalid_nested_vmcb;
-			// Currently there are no other fields required to be checked by NoirVisor.
-			// Consistency check complete. Switching to L2 Guest.
-			nvc_svmn_virtualize_entry_vmcb(vcpu,nested_vmcb_va,nvcpu->vmcb_t.virt);
-			loader_stack->guest_vmcb_pa=nvcpu->vmcb_t.phys;
-			loader_stack->nested_vcpu=nvcpu;
-			// GIF is set on vmrun instruction.
-			nvc_svmn_set_gif(gpr_state,vcpu,nvcpu->vmcb_t.virt);
-			loader_stack->guest_vmcb_pa=nvcpu->vmcb_t.phys;
-			loader_stack->nested_vcpu=nvcpu;
+			nvc_svm_switch_to_nested_vcpu(gpr_state,vcpu,nvcpu);
 			noir_svm_advance_rip(vmcb);
-			return;
-invalid_nested_vmcb:
-			{
-				// Inconsistency found by Hypervisor. Issue VM-Exit immediately.
-				nvc_svmn_clear_gif(vcpu);
-				noir_svm_vmwrite64(nested_vmcb_va,exit_code,invalid_guest_state);
-				noir_svm_advance_rip(vmcb);
-			}
 		}
 	}
 	else
@@ -1378,6 +1320,39 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_st
 	if(advance)noir_svm_advance_rip(vcpu->vmcb.virt);
 }
 
+void static noir_hvcode fastcall nvc_svm_vmsl_helper(void* dest_vmcb,void* src_vmcb)
+{
+	// Copy to VMCB - FS
+	noir_svm_vmcopy16(dest_vmcb,src_vmcb,guest_fs_selector);
+	noir_svm_vmcopy16(dest_vmcb,src_vmcb,guest_fs_attrib);
+	noir_svm_vmcopy32(dest_vmcb,src_vmcb,guest_fs_limit);
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_fs_base);
+	// Copy to VMCB - GS
+	noir_svm_vmcopy16(dest_vmcb,src_vmcb,guest_gs_selector);
+	noir_svm_vmcopy16(dest_vmcb,src_vmcb,guest_gs_attrib);
+	noir_svm_vmcopy32(dest_vmcb,src_vmcb,guest_gs_limit);
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_gs_base);
+	// Copy to VMCB - TR
+	noir_svm_vmcopy16(dest_vmcb,src_vmcb,guest_tr_selector);
+	noir_svm_vmcopy16(dest_vmcb,src_vmcb,guest_tr_attrib);
+	noir_svm_vmcopy32(dest_vmcb,src_vmcb,guest_tr_limit);
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_tr_base);
+	// Copy to VMCB - LDTR
+	noir_svm_vmcopy16(dest_vmcb,src_vmcb,guest_ldtr_selector);
+	noir_svm_vmcopy16(dest_vmcb,src_vmcb,guest_ldtr_attrib);
+	noir_svm_vmcopy32(dest_vmcb,src_vmcb,guest_ldtr_limit);
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_ldtr_base);
+	// Copy to VMCB - MSR
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_sysenter_cs);
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_sysenter_esp);
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_sysenter_eip);
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_star);
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_lstar);
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_cstar);
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_sfmask);
+	noir_svm_vmcopy64(dest_vmcb,src_vmcb,guest_kernel_gs_base);
+}
+
 // Expected Intercept Code: 0x82
 void static noir_hvcode fastcall nvc_svm_vmload_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu)
 {
@@ -1390,36 +1365,13 @@ void static noir_hvcode fastcall nvc_svm_vmload_handler(noir_gpr_state_p gpr_sta
 			noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
 		else
 		{
-			void* nested_vmcb=noir_find_virt_by_phys(nested_vmcb_pa);
-			// Load to Current VMCB - FS.
-			noir_svm_vmwrite16(vmcb,guest_fs_selector,noir_svm_vmread16(nested_vmcb,guest_fs_selector));
-			noir_svm_vmwrite16(vmcb,guest_fs_attrib,noir_svm_vmread16(nested_vmcb,guest_fs_attrib));
-			noir_svm_vmwrite32(vmcb,guest_fs_limit,noir_svm_vmread32(nested_vmcb,guest_fs_limit));
-			noir_svm_vmwrite64(vmcb,guest_fs_base,noir_svm_vmread64(nested_vmcb,guest_fs_base));
-			// Load to Current VMCB - GS.
-			noir_svm_vmwrite16(vmcb,guest_gs_selector,noir_svm_vmread16(nested_vmcb,guest_gs_selector));
-			noir_svm_vmwrite16(vmcb,guest_gs_attrib,noir_svm_vmread16(nested_vmcb,guest_gs_attrib));
-			noir_svm_vmwrite32(vmcb,guest_gs_limit,noir_svm_vmread32(nested_vmcb,guest_gs_limit));
-			noir_svm_vmwrite64(vmcb,guest_gs_base,noir_svm_vmread64(nested_vmcb,guest_gs_base));
-			// Load to Current VMCB - TR.
-			noir_svm_vmwrite16(vmcb,guest_tr_selector,noir_svm_vmread16(nested_vmcb,guest_tr_selector));
-			noir_svm_vmwrite16(vmcb,guest_tr_attrib,noir_svm_vmread16(nested_vmcb,guest_tr_attrib));
-			noir_svm_vmwrite32(vmcb,guest_tr_limit,noir_svm_vmread32(nested_vmcb,guest_tr_limit));
-			noir_svm_vmwrite64(vmcb,guest_tr_base,noir_svm_vmread64(nested_vmcb,guest_tr_base));
-			// Load to Current VMCB - LDTR.
-			noir_svm_vmwrite16(vmcb,guest_ldtr_selector,noir_svm_vmread16(nested_vmcb,guest_ldtr_selector));
-			noir_svm_vmwrite16(vmcb,guest_ldtr_attrib,noir_svm_vmread16(nested_vmcb,guest_ldtr_attrib));
-			noir_svm_vmwrite32(vmcb,guest_ldtr_limit,noir_svm_vmread32(nested_vmcb,guest_ldtr_limit));
-			noir_svm_vmwrite64(vmcb,guest_ldtr_base,noir_svm_vmread64(nested_vmcb,guest_ldtr_base));
-			// Load to Current VMCB - MSR.
-			noir_svm_vmwrite64(vmcb,guest_sysenter_cs,noir_svm_vmread64(nested_vmcb,guest_sysenter_cs));
-			noir_svm_vmwrite64(vmcb,guest_sysenter_esp,noir_svm_vmread64(nested_vmcb,guest_sysenter_esp));
-			noir_svm_vmwrite64(vmcb,guest_sysenter_eip,noir_svm_vmread64(nested_vmcb,guest_sysenter_eip));
-			noir_svm_vmwrite64(vmcb,guest_star,noir_svm_vmread64(nested_vmcb,guest_star));
-			noir_svm_vmwrite64(vmcb,guest_lstar,noir_svm_vmread64(nested_vmcb,guest_lstar));
-			noir_svm_vmwrite64(vmcb,guest_cstar,noir_svm_vmread64(nested_vmcb,guest_cstar));
-			noir_svm_vmwrite64(vmcb,guest_sfmask,noir_svm_vmread64(nested_vmcb,guest_sfmask));
-			noir_svm_vmwrite64(vmcb,guest_kernel_gs_base,noir_svm_vmread64(nested_vmcb,guest_kernel_gs_base));
+			void* nested_vmcb=(void*)nested_vmcb_pa;
+			nvd_printf("Intercepted vmload! Source VMCB: 0x%p\n",nested_vmcb_pa);
+			// Load to Current VMCB.
+			nvc_svm_vmsl_helper(vmcb,nested_vmcb);
+			// Broadcast to all nodes in nested VMCB.
+			for(u32 i=0;i<noir_svm_cached_nested_vmcb;i++)
+				nvc_svm_vmsl_helper(vcpu->nested_hvm.node_pool[i].vmcb_t.virt,nested_vmcb);
 			// Everything are loaded to Current VMCB. Return to guest.
 			noir_svm_advance_rip(vmcb);
 		}
@@ -1443,36 +1395,10 @@ void static noir_hvcode fastcall nvc_svm_vmsave_handler(noir_gpr_state_p gpr_sta
 			noir_svm_inject_event(vmcb,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
 		else
 		{
-			void* nested_vmcb=noir_find_virt_by_phys(nested_vmcb_pa);
-			// Save to Nested VMCB - FS.
-			noir_svm_vmwrite16(nested_vmcb,guest_fs_selector,noir_svm_vmread16(vmcb,guest_fs_selector));
-			noir_svm_vmwrite16(nested_vmcb,guest_fs_attrib,noir_svm_vmread16(vmcb,guest_fs_attrib));
-			noir_svm_vmwrite32(nested_vmcb,guest_fs_limit,noir_svm_vmread32(vmcb,guest_fs_limit));
-			noir_svm_vmwrite64(nested_vmcb,guest_fs_base,noir_svm_vmread64(vmcb,guest_fs_base));
-			// Save to Nested VMCB - GS.
-			noir_svm_vmwrite16(nested_vmcb,guest_gs_selector,noir_svm_vmread16(vmcb,guest_gs_selector));
-			noir_svm_vmwrite16(nested_vmcb,guest_gs_attrib,noir_svm_vmread16(vmcb,guest_gs_attrib));
-			noir_svm_vmwrite32(nested_vmcb,guest_gs_limit,noir_svm_vmread32(vmcb,guest_gs_limit));
-			noir_svm_vmwrite64(nested_vmcb,guest_gs_base,noir_svm_vmread64(vmcb,guest_gs_base));
-			// Save to Nested VMCB - TR.
-			noir_svm_vmwrite16(nested_vmcb,guest_tr_selector,noir_svm_vmread16(vmcb,guest_tr_selector));
-			noir_svm_vmwrite16(nested_vmcb,guest_tr_attrib,noir_svm_vmread16(vmcb,guest_tr_attrib));
-			noir_svm_vmwrite32(nested_vmcb,guest_tr_limit,noir_svm_vmread32(vmcb,guest_tr_limit));
-			noir_svm_vmwrite64(nested_vmcb,guest_tr_base,noir_svm_vmread64(vmcb,guest_tr_base));
-			// Save to Nested VMCB - LDTR.
-			noir_svm_vmwrite16(nested_vmcb,guest_ldtr_selector,noir_svm_vmread16(vmcb,guest_ldtr_selector));
-			noir_svm_vmwrite16(nested_vmcb,guest_ldtr_attrib,noir_svm_vmread16(vmcb,guest_ldtr_attrib));
-			noir_svm_vmwrite32(nested_vmcb,guest_ldtr_limit,noir_svm_vmread32(vmcb,guest_ldtr_limit));
-			noir_svm_vmwrite64(nested_vmcb,guest_ldtr_base,noir_svm_vmread64(vmcb,guest_ldtr_base));
-			// Save to Nested VMCB - MSR.
-			noir_svm_vmwrite64(nested_vmcb,guest_sysenter_cs,noir_svm_vmread64(vmcb,guest_sysenter_cs));
-			noir_svm_vmwrite64(nested_vmcb,guest_sysenter_esp,noir_svm_vmread64(vmcb,guest_sysenter_esp));
-			noir_svm_vmwrite64(nested_vmcb,guest_sysenter_eip,noir_svm_vmread64(vmcb,guest_sysenter_eip));
-			noir_svm_vmwrite64(nested_vmcb,guest_star,noir_svm_vmread64(vmcb,guest_star));
-			noir_svm_vmwrite64(nested_vmcb,guest_lstar,noir_svm_vmread64(vmcb,guest_lstar));
-			noir_svm_vmwrite64(nested_vmcb,guest_cstar,noir_svm_vmread64(vmcb,guest_cstar));
-			noir_svm_vmwrite64(nested_vmcb,guest_sfmask,noir_svm_vmread64(vmcb,guest_sfmask));
-			noir_svm_vmwrite64(nested_vmcb,guest_kernel_gs_base,noir_svm_vmread64(vmcb,guest_kernel_gs_base));
+			void* nested_vmcb=(void*)nested_vmcb_pa;
+			// Save to nested VMCB.
+			nvd_printf("Intercepted vmsave! Target VMCB: 0x%p\n",nested_vmcb_pa);
+			nvc_svm_vmsl_helper(nested_vmcb,vmcb);
 			// Everything are saved to Nested VMCB. Return to guest.
 			noir_svm_advance_rip(vmcb);
 		}
@@ -1490,10 +1416,9 @@ void static noir_hvcode fastcall nvc_svm_stgi_handler(noir_gpr_state_p gpr_state
 	void* vmcb=vcpu->vmcb.virt;
 	if(vcpu->nested_hvm.svme)
 	{
-		// If the code reaches here, there is no hardware support for vGIF.
-		vcpu->nested_hvm.gif=1;		// Marks that GIF is set in Guest.
-		// FIXME: Inject pending interrupts held due to cleared GIF, and clear interceptions on certain interrupts.
-		nvc_svmn_set_gif(gpr_state,vcpu,vmcb);
+		// FIXME: Emulate GIF.
+		vcpu->nested_hvm.gif=true;
+		// nvc_svm_set_nested_gif(vcpu);
 		noir_svm_advance_rip(vmcb);
 	}
 	else
@@ -1509,10 +1434,9 @@ void static noir_hvcode fastcall nvc_svm_clgi_handler(noir_gpr_state_p gpr_state
 	void* vmcb=vcpu->vmcb.virt;
 	if(vcpu->nested_hvm.svme)
 	{
-		// If the code reaches here, there is no hardware support for vGIF.
-		vcpu->nested_hvm.gif=0;		// Marks that GIF is reset in Guest.
-		// FIXME: Setup interceptions on certain interrupts.
-		nvc_svmn_clear_gif(vcpu);
+		// FIXME: Emulate GIF.
+		vcpu->nested_hvm.gif=false;
+		// nvc_svm_clear_nested_gif(vcpu);
 		noir_svm_advance_rip(vmcb);
 	}
 	else
@@ -1795,7 +1719,8 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 		// Subverted Host is exiting...
 		const void* vmcb_va=vcpu->vmcb.virt;
 		// Read the Intercept Code.
-		i64 intercept_code=noir_svm_vmread64(vmcb_va,exit_code);
+		// KVM has a bug that intercept-codes are treated as 32-bit integers.
+		i32 intercept_code=noir_svm_vmread32(vmcb_va,exit_code);
 		// Determine the group and number of interception.
 		u8 code_group=(u8)((intercept_code&0xC00)>>10);
 		u16 code_num=(u16)(intercept_code&0x3FF);
@@ -1829,7 +1754,8 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 		noir_svm_custom_vcpu_p cvcpu=loader_stack->custom_vcpu;
 		const void* vmcb_va=cvcpu->vmcb.virt;
 		// Read the Intercept Code.
-		i64 intercept_code=noir_svm_vmread64(vmcb_va,exit_code);
+		// KVM has a bug that intercept-codes are treated as 32-bit integers.
+		i32 intercept_code=noir_svm_vmread32(vmcb_va,exit_code);
 		// Determine the group and number of interception.
 		u8 code_group=(u8)((intercept_code&0xC00)>>10);
 		u16 code_num=(u16)(intercept_code&0x3FF);
@@ -1882,32 +1808,24 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 	else if(gpr_state->rax==loader_stack->nested_vcpu->vmcb_t.phys)
 	{
 		// Read the intercept code.
-		i64 intercept_code=noir_svm_vmread64(loader_stack->nested_vcpu->vmcb_t.virt,exit_code);
+		// KVM has a bug that intercept-codes are treated as 32-bit integers.
+		i32 intercept_code=noir_svm_vmread32(loader_stack->nested_vcpu->vmcb_t.virt,exit_code);
 		// Determine the group and number of interception.
 		u8 code_group=(u8)((intercept_code&0xC00)>>10);
 		u16 code_num=(u16)(intercept_code&0x3FF);
+		u64 ngrip=noir_svm_vmread32(loader_stack->nested_vcpu->vmcb_t.virt,guest_rip);
+		nvd_printf("Intercepted Nested VM-Exit! VMCB: 0x%p, Code: 0x%X, rip=0x%p\n",loader_stack->guest_vmcb_pa,intercept_code,ngrip);
 		// FIXME: Add additional filtering by NoirVisor.
-		void* l2_vmcb=(void*)loader_stack->nested_vcpu->l2_vmcb;
+		void* l2_vmcb=(void*)loader_stack->nested_vcpu->vmcb_t.virt;
 		// Cache L1 VMCB for nested guest.
 		noir_svm_vmwrite32(loader_stack->nested_vcpu->vmcb_t.virt,vmcb_clean_bits,0xffffffff);
 		// Nested VM is exiting, switch to L1 Guest.
-		nvc_svmn_clear_gif(vcpu);
-		nvc_svmn_virtualize_exit_vmcb(vcpu,loader_stack->nested_vcpu->vmcb_t.virt,(void*)noir_svm_vmread64(vcpu->vmcb.virt,guest_rax));
-		// Forces CR0.PE=1 and RFLAGS.VM=0
-		noir_svm_vmcb_bts64(vcpu->vmcb.virt,guest_cr0,amd64_cr0_pe);
-		noir_svm_vmcb_btr64(vcpu->vmcb.virt,guest_rflags,amd64_rflags_vm);
-		// Disable all breakpoints in DR7.
-		noir_svm_vmcb_and64(vcpu->vmcb.virt,guest_dr7,0xffffffffffffff00);
-		// Invalid cached states in VMCB.
-		noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_control_reg);
-		noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_debug_reg);
+		nvc_svm_switch_from_nested_vcpu(gpr_state,vcpu);
 		// Do additional filtering. Note that the rax register is not processed.
 		if(unlikely(intercept_code<0))
 			svm_nvexit_handler_negative[~intercept_code](gpr_state,vcpu,loader_stack->nested_vcpu);
 		else
 			svm_nvexit_handlers[code_group][code_num](gpr_state,vcpu,loader_stack->nested_vcpu);
-		// Switch to Nested Hypervisor.
-		loader_stack->guest_vmcb_pa=vcpu->vmcb.phys;
 	}
 	else
 	{
