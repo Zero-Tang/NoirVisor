@@ -63,9 +63,14 @@ void NoirTeardownHypervisor()
 
 UINT64 noir_query_enabled_features_in_system()
 {
-	// Future implementation will support user-defined configuration.
-	// Current implementation will force the CPUID-presence.
-	return NOIR_HVM_FEATURE_CPUID_PRESENCE;
+	UINT32 Type;
+	UINT32 CpuidPresence=1,NestedVirtualization=0;
+	UINT64 Features=0;
+	NoirGetConfigurationRecord("CpuidPresence",&Type,&CpuidPresence,sizeof(UINT32),NULL);
+	NoirGetConfigurationRecord("NestedVirtualization",&Type,&NestedVirtualization,sizeof(UINT32),NULL);
+	Features|=(CpuidPresence!=0)<<NOIR_HVM_FEATURE_CPUID_PRESENCE_BIT;
+	Features|=(NestedVirtualization!=0)<<NOIR_HVM_FEATURE_NESTED_VIRTUALIZATION_BIT;
+	return Features;
 }
 
 void nvc_store_image_info(OUT VOID** Base,OUT UINT32* Size)
@@ -109,9 +114,37 @@ BOOLEAN NoirIsVirtualizationEnabled()
 
 EFI_STATUS NoirConfigureInternalDebugger()
 {
-	noir_configure_serial_port_debugger(1,0x2F8,115200);
-	// noir_configure_qemu_debug_console(0x403);
-	return EFI_SUCCESS;
+	UINT32 Type;
+	CHAR8 DebugPortType[32];
+	EFI_STATUS st=NoirGetConfigurationRecord("DebugPort",&Type,DebugPortType,sizeof(DebugPortType),NULL);
+	if(st==EFI_SUCCESS)
+	{
+		if(AsciiStrnCmp(DebugPortType,"qemu_debugcon",sizeof(DebugPortType))==0)
+		{
+			UINT32 Port=0x402;
+			NoirGetConfigurationRecord("QemuDebugConPortNumber",&Type,&Port,sizeof(UINT32),NULL);
+			Print(L"NoirVisor will use QEMU ISA Debug Console at Port 0x%04X\n",Port);
+			noir_configure_qemu_debug_console(Port);
+			Print(L"Make sure you see a message on your debug console!\n");
+			st=EFI_SUCCESS;
+		}
+		else if(AsciiStrnCmp(DebugPortType,"serial",sizeof(DebugPortType))==0)
+		{
+			UINT32 BaudRate=115200,PortNumber=2,PortBase=0x2F8;
+			NoirGetConfigurationRecord("SerialBaudRate",&Type,&BaudRate,sizeof(UINT32),NULL);
+			NoirGetConfigurationRecord("SerialPortNumber",&Type,&PortNumber,sizeof(UINT32),NULL);
+			NoirGetConfigurationRecord("SerialPortBase",&Type,&PortBase,sizeof(UINT32),NULL);
+			Print(L"NoirVisor will use Serial connection (COM%u) at Port 0x%04X with BaudRate %u Hz!\n",PortNumber,PortBase,BaudRate);
+			noir_configure_serial_port_debugger(PortNumber-1,PortBase,BaudRate);
+			st=EFI_SUCCESS;
+		}
+		else
+		{
+			Print(L"Warning: Internal Debugger is disabled because of unknown DebugPort medium (%a)!\n",DebugPortType);
+			st=EFI_NO_MEDIA;
+		}
+	}
+	return st;
 }
 
 VOID* noir_locate_acpi_rsdt(OUT UINTN *Length)

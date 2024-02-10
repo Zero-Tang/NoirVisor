@@ -43,10 +43,12 @@
 #define EFI_IMAGE_NT_HEADERS	EFI_IMAGE_NT_HEADERS32
 #endif
 
+EFI_HANDLE NvImageDeviceHandle;
 VOID* NvImageBase=NULL;
 UINT32 NvImageSize=0;
 
 void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
+EFI_STATUS NoirGetConfigurationRecord(IN CHAR8* RecordName,OUT UINT32* RecordType,OUT VOID* RecordData,IN UINT32 RecordLength,OUT UINT32* OutputLength);
 
 BOOLEAN noir_initialize_ci(BOOLEAN soft_ci,BOOLEAN hard_ci);
 BOOLEAN noir_add_section_to_ci(VOID* base,UINT32 size,BOOLEAN enable_scan);

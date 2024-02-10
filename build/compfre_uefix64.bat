@@ -64,15 +64,18 @@ link "%objpath%\driver\*.obj"  /NODEFAULTLIB /LIBPATH:"%libpath%\compfre_uefix64
 
 echo ============Start Imaging============
 echo Creating Disk Image...
-set /A imagesize_kb=2880
+set /A imagesize_kb=1440
 set /A imagesize_b=%imagesize_kb*1024
 if exist %binpath%\NoirVisor-Uefi.img (fsutil file setzerodata offset=0 length=%imagesize_b% %binpath%\NoirVisor-Uefi.img) else (fsutil file createnew %binpath%\NoirVisor-Uefi.img %imagesize_b%)
 echo Formatting Disk Image...
 mformat -i %binpath%\NoirVisor-Uefi.img -f %imagesize_kb% ::
 mmd -i %binpath%\NoirVisor-Uefi.img ::/EFI
 mmd -i %binpath%\NoirVisor-Uefi.img ::/EFI/BOOT
+echo Making Config...
+python makeueficonfig.py DefaultUefiConfig.json %binpath%\NoirVisorConfig.bin
 echo Copying into Disk Image...
 mcopy -i %binpath%\NoirVisor-Uefi.img %binpath%\NoirVisor.efi ::/
+mcopy -i %binpath%\NoirVisor-Uefi.img %binpath%\NoirVisorConfig.bin ::/
 mcopy -i %binpath%\NoirVisor-Uefi.img %binpath%\bootx64.efi ::/EFI/BOOT
 
 if "%~1"=="/s" (echo Completed!) else (pause)

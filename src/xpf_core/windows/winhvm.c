@@ -243,6 +243,7 @@ NTSTATUS NoirConfigureInternalDebugger()
 						st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 						if(NT_SUCCESS(st))PortBase=*(PUSHORT)KvPartInf->Data;
 						noir_configure_serial_port_debugger(PortNumber-1,PortBase,BaudRate);
+						NoirDebugPrint("NoirVisor will use Serial connection (COM%u) at Port 0x%04X with BaudRate %u Hz!\n",PortNumber,PortBase,BaudRate);
 						st=STATUS_SUCCESS;
 					}
 					else if(_wcsnicmp(DebugPortName,L"qemu_debugcon",DebugPortCch)==0)

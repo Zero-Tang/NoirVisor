@@ -72,6 +72,8 @@ BOOLEAN NoirIsVirtualizationEnabled();
 BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase);
 void NoirFinalizeCodeIntegrity();
 void NoirSuppressImageRelocation(IN VOID* ImageBase);
+EFI_STATUS NoirInitializeConfigurationManager();
+void NoirFinalizeConfigurationManager();
 EFI_STATUS NoirConfigureInternalDebugger();
 
 EFI_GUID gEfiMpServicesProtocolGuid=EFI_MP_SERVICES_PROTOCOL_GUID;
@@ -83,6 +85,7 @@ HYPERVISOR_SYSTEM_IDENTITY HvSysId={0};
 HYPERVISOR_LAYERING_PASSCODE Passcode={0};
 CHAR8 LayeringPasscode[]="NoirVisor#ZT#14y3r3d####Nv#1";
 
+EFI_HANDLE RootDeviceHandle;
 EFI_SIMPLE_TEXT_INPUT_PROTOCOL *StdIn=NULL;
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *StdOut=NULL;
 EFI_EVENT NoirEfiExitBootServicesNotification;

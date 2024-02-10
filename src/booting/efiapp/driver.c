@@ -21,6 +21,7 @@
 EFI_STATUS EFIAPI NoirDriverUnload(IN EFI_HANDLE ImageHandle)
 {
 	NoirFinalizeCodeIntegrity();
+	NoirFinalizeConfigurationManager();
 	NoirDebugPrint("NoirVisor is unloaded!\r\n");
 	return EFI_SUCCESS;
 }
@@ -111,8 +112,13 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	}
 	gBS->CreateEvent(EVT_SIGNAL_EXIT_BOOT_SERVICES,TPL_NOTIFY,NoirNotifyExitBootServices,NULL,&NoirEfiExitBootServicesNotification);
 	st=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocolGuid,&ImageInfo);
-	if(st==EFI_SUCCESS)ImageInfo->Unload=NoirDriverUnload;
+	if(st==EFI_SUCCESS)
+	{
+		ImageInfo->Unload=NoirDriverUnload;
+		RootDeviceHandle=ImageInfo->DeviceHandle;
+	}
 	NoirDebugPrint("NoirVisor is loaded to base 0x%p, Size=0x%X\n",ImageInfo->ImageBase,ImageInfo->ImageSize);
+	NoirInitializeConfigurationManager();
 	st=NoirRegisterHypervisorVariables();
 	NoirDebugPrint("NoirVisor Variables Registration Status=0x%X\n",st);
 	StdOut->OutputString(StdOut,L"Press Enter key to continue subversion!\r\n");
