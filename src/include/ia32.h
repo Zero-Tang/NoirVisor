@@ -412,3 +412,124 @@ typedef union _ia32_page_fault_error_code
 	};
 	u32 value;
 }ia32_page_fault_error_code,*ia32_page_fault_error_code_p;
+
+typedef union _ia32_pml4e
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 reserved1:6;	// Bits 6-11
+		u64 pdpte_base:40;	// Bits	12-51
+		u64 reserved2:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}ia32_pml4e,*ia32_pml4e_p;
+
+typedef union _ia32_huge_pdpte
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 dirty:1;		// Bit	6
+		u64 huge_pdpte:1;	// Bit	7
+		u64 global:1;		// Bit	8
+		u64 reserved1:3;	// Bits 9-11
+		u64 pat:1;			// Bit	12
+		u64 reserved2:17;	// Bits 13-29
+		u64 page_base:22;	// Bits	30-51
+		u64 reserved3:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}ia32_huge_pdpte,*ia32_huge_pdpte_p;
+
+typedef union _ia32_pdpte
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 reserved1:6;	// Bits 6-11
+		u64 pde_base:40;	// Bits	12-51
+		u64 reserved2:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}ia32_pdpte,*ia32_pdpte_p;
+
+typedef union _ia32_large_pde
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 dirty:1;		// Bit	6
+		u64 large_pde:1;	// Bit	7
+		u64 global:1;		// Bit	8
+		u64 reserved1:3;	// Bits	9-11
+		u64 pat:1;			// Bit	12
+		u64 reserved2:8;	// Bits 13-20
+		u64 page_base:31;	// Bits	21-51
+		u64 reserved3:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}ia32_large_pde,*ia32_large_pde_p;
+
+typedef union _ia32_pde
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 reserved1:6;	// Bits 6-11
+		u64 pte_base:40;	// Bits	12-51
+		u64 reserved2:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}ia32_pde,*ia32_pde_p;
+
+typedef union _ia32_pte
+{
+	struct
+	{
+		u64 present:1;		// Bit	0
+		u64 write:1;		// Bit	1
+		u64 user:1;			// Bit	2
+		u64 pwt:1;			// Bit	3
+		u64 pcd:1;			// Bit	4
+		u64 accessed:1;		// Bit	5
+		u64 dirty:1;		// Bit	6
+		u64 pat:1;			// Bit	7
+		u64 global:1;		// Bit	8
+		u64 reserved1:3;	// Bits 9-11
+		u64 page_base:40;	// Bits	12-51
+		u64 reserved2:11;	// Bits 52-62
+		u64 no_execute:1;	// Bit	63
+	};
+	u64 value;
+}ia32_pte,*ia32_pte_p;

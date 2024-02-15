@@ -28,89 +28,89 @@
 void noir_hvcode nvc_vt_dump_vmcs_guest_state()
 {
 	ulong_ptr v1,v2,v3,v4;
-	nv_dprintf("Dumping VMCS Guest State Area...\n");
+	nvd_printf("Dumping VMCS Guest State Area...\n");
 	noir_vt_vmread(guest_cs_selector,&v1);
 	noir_vt_vmread(guest_cs_access_rights,&v2);
 	noir_vt_vmread(guest_cs_limit,&v3);
 	noir_vt_vmread(guest_cs_base,&v4);
-	nv_dprintf("Guest CS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	nvd_printf("Guest CS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
 	noir_vt_vmread(guest_ds_selector,&v1);
 	noir_vt_vmread(guest_ds_access_rights,&v2);
 	noir_vt_vmread(guest_ds_limit,&v3);
 	noir_vt_vmread(guest_ds_base,&v4);
-	nv_dprintf("Guest DS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	nvd_printf("Guest DS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
 	noir_vt_vmread(guest_es_selector,&v1);
 	noir_vt_vmread(guest_es_access_rights,&v2);
 	noir_vt_vmread(guest_es_limit,&v3);
 	noir_vt_vmread(guest_es_base,&v4);
-	nv_dprintf("Guest ES Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	nvd_printf("Guest ES Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
 	noir_vt_vmread(guest_fs_selector,&v1);
 	noir_vt_vmread(guest_fs_access_rights,&v2);
 	noir_vt_vmread(guest_fs_limit,&v3);
 	noir_vt_vmread(guest_fs_base,&v4);
-	nv_dprintf("Guest FS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	nvd_printf("Guest FS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
 	noir_vt_vmread(guest_gs_selector,&v1);
 	noir_vt_vmread(guest_gs_access_rights,&v2);
 	noir_vt_vmread(guest_gs_limit,&v3);
 	noir_vt_vmread(guest_gs_base,&v4);
-	nv_dprintf("Guest GS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	nvd_printf("Guest GS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
 	noir_vt_vmread(guest_ss_selector,&v1);
 	noir_vt_vmread(guest_ss_access_rights,&v2);
 	noir_vt_vmread(guest_ss_limit,&v3);
 	noir_vt_vmread(guest_ss_base,&v4);
-	nv_dprintf("Guest SS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	nvd_printf("Guest SS Segment - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
 	noir_vt_vmread(guest_tr_selector,&v1);
 	noir_vt_vmread(guest_tr_access_rights,&v2);
 	noir_vt_vmread(guest_tr_limit,&v3);
 	noir_vt_vmread(guest_tr_base,&v4);
-	nv_dprintf("Guest Task Register - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	nvd_printf("Guest Task Register - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
 	noir_vt_vmread(guest_ldtr_selector,&v1);
 	noir_vt_vmread(guest_ldtr_access_rights,&v2);
 	noir_vt_vmread(guest_ldtr_limit,&v3);
 	noir_vt_vmread(guest_ldtr_base,&v4);
-	nv_dprintf("Guest LDT Register - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	nvd_printf("Guest LDT Register - Selector: 0x%X\t Access-Rights: 0x%X\t Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
 	noir_vt_vmread(guest_gdtr_limit,&v1);
 	noir_vt_vmread(guest_gdtr_base,&v2);
 	noir_vt_vmread(guest_idtr_limit,&v3);
 	noir_vt_vmread(guest_idtr_base,&v4);
-	nv_dprintf("Guest GDTR Limit: 0x%X\t Base: 0x%p\t Guest IDTR Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
+	nvd_printf("Guest GDTR Limit: 0x%X\t Base: 0x%p\t Guest IDTR Limit: 0x%X\t Base: 0x%p\n",v1,v2,v3,v4);
 	noir_vt_vmread(guest_cr0,&v1);
 	noir_vt_vmread(guest_cr3,&v2);
 	noir_vt_vmread(guest_cr4,&v3);
 	noir_vt_vmread(guest_dr7,&v4);
-	nv_dprintf("Guest Control & Debug Registers - CR0: 0x%X\t CR3: 0x%p\t CR4: 0x%X\t DR7: 0x%X\n",v1,v2,v3,v4);
+	nvd_printf("Guest Control & Debug Registers - CR0: 0x%X\t CR3: 0x%p\t CR4: 0x%X\t DR7: 0x%X\n",v1,v2,v3,v4);
 	noir_vt_vmread(guest_rsp,&v1);
 	noir_vt_vmread(guest_rip,&v2);
 	noir_vt_vmread(guest_rflags,&v3);
 	noir_vt_vmread(guest_ssp,&v4);
-	nv_dprintf("Guest Special GPRs: Rsp: 0x%p\t Rip: 0x%p\t RFlags:0x%X\t Ssp: 0x%p\n",v1,v2,v3,v4);
+	nvd_printf("Guest Special GPRs: Rsp: 0x%p\t Rip: 0x%p\t RFlags:0x%X\t Ssp: 0x%p\n",v1,v2,v3,v4);
 	noir_vt_vmread(guest_activity_state,&v1);
 	noir_vt_vmread(guest_interruptibility_state,&v2);
 	noir_vt_vmread(guest_pending_debug_exceptions,&v3);
-	nv_dprintf("Guest Activity State: %u\t Interruptibility State: 0x%X\t Pending Debug Exceptions: 0x%X\n",v1,v2,v3);
+	nvd_printf("Guest Activity State: %u\t Interruptibility State: 0x%X\t Pending Debug Exceptions: 0x%X\n",v1,v2,v3);
 	noir_vt_vmread(guest_msr_ia32_efer,&v1);
 	noir_vt_vmread(guest_msr_ia32_pat,&v2);
 	noir_vt_vmread(guest_msr_ia32_debug_ctrl,&v3);
-	nv_dprintf("Guest EFER: 0x%llX\t PAT: 0x%llX\t Debug Control: 0x%llX\n",v1,v2,v3);
+	nvd_printf("Guest EFER: 0x%llX\t PAT: 0x%llX\t Debug Control: 0x%llX\n",v1,v2,v3);
 	noir_vt_vmread(vmcs_link_pointer,&v4);
-	nv_dprintf("Guest VMCS Link Pointer: 0x%p\n",v4);
+	nvd_printf("Guest VMCS Link Pointer: 0x%p\n",v4);
 	noir_vt_vmread(guest_pdpte0,&v1);
 	noir_vt_vmread(guest_pdpte1,&v2);
 	noir_vt_vmread(guest_pdpte2,&v3);
 	noir_vt_vmread(guest_pdpte3,&v4);
-	nv_dprintf("Guest PDPTE0: 0x%llX\t PDPTE1: 0x%llX\t PDPTE2: 0x%llX\t PDPTE3: 0x%llX\n",v1,v2,v3,v4);
+	nvd_printf("Guest PDPTE0: 0x%llX\t PDPTE1: 0x%llX\t PDPTE2: 0x%llX\t PDPTE3: 0x%llX\n",v1,v2,v3,v4);
 	noir_vt_vmread(pin_based_vm_execution_controls,&v1);
 	noir_vt_vmread(primary_processor_based_vm_execution_controls,&v2);
 	noir_vt_vmread(secondary_processor_based_vm_execution_controls,&v3);
 	noir_vt_vmread(exception_bitmap,&v4);
-	nv_dprintf("Pin-Based Controls: 0x%X\t Primary Controls: 0x%X\t Secondary Controls: 0x%X\t Exception Bitmap: 0x%X\n",v1,v2,v3,v4);
+	nvd_printf("Pin-Based Controls: 0x%X\t Primary Controls: 0x%X\t Secondary Controls: 0x%X\t Exception Bitmap: 0x%X\n",v1,v2,v3,v4);
 	noir_vt_vmread(vmexit_controls,&v1);
 	noir_vt_vmread(vmentry_controls,&v2);
-	nv_dprintf("VM-Exit Controls: 0x%X\t VM-Entry Controls: 0x%X\n",v1,v2);
+	nvd_printf("VM-Exit Controls: 0x%X\t VM-Entry Controls: 0x%X\n",v1,v2);
 	noir_vt_vmread(ept_pointer,&v3);
-	nv_dprintf("EPT Pointer: 0x%llX\n",v3);
+	nvd_printf("EPT Pointer: 0x%llX\n",v3);
 	noir_vt_vmread(vmentry_interruption_information_field,&v4);
-	nv_dprintf("Event Injection: 0x%X\n",v4);
+	nvd_printf("Event Injection: 0x%X\n",v4);
 }
 
 // This is the default exit-handler for unexpected VM-Exit.
@@ -119,7 +119,7 @@ void static noir_hvcode fastcall nvc_vt_default_handler(noir_gpr_state_p gpr_sta
 {
 	u32 exit_reason;
 	noir_vt_vmread(vmexit_reason,&exit_reason);
-	nv_dprintf("Unhandled VM-Exit!, Exit Reason: %s\n",vmx_exit_msg[exit_reason&0xFFFF]);
+	nvd_printf("Unhandled VM-Exit!, Exit Reason: %s\n",vmx_exit_msg[exit_reason&0xFFFF]);
 }
 
 // Expected Exit Reason: 0
@@ -358,6 +358,7 @@ void static noir_hvcode fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state
 	noir_cpuid_general_info info;
 	// Invoke handlers.
 	nvcp_vt_cpuid_handler(ia,ic,&info);
+	nvd_printf("CPUID is intercepted! EAX=0x%08X, ECX=0x%08X\n",ia,ic);
 	*(u32*)&gpr_state->rax=info.eax;
 	*(u32*)&gpr_state->rbx=info.ebx;
 	*(u32*)&gpr_state->rcx=info.ecx;

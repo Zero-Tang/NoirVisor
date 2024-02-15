@@ -400,7 +400,11 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	// Guest State Area - Task Register
 	noir_vt_vmwrite(guest_tr_selector,state_p->tr.selector);
 	noir_vt_vmwrite(guest_tr_limit,state_p->tr.limit);
+#if defined(_hv_type1)
+	noir_vt_vmwrite(guest_tr_access_rights,0x808B);	// Hardcode the access rights for TSS.
+#else
 	noir_vt_vmwrite(guest_tr_access_rights,vt_attrib(state_p->tr.selector,state_p->tr.attrib));
+#endif
 	noir_vt_vmwrite(guest_tr_base,(ulong_ptr)state_p->tr.base);
 	// Guest State Area - Local Descriptor Table Register
 	noir_vt_vmwrite(guest_ldtr_selector,state_p->ldtr.selector);
@@ -433,12 +437,49 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	noir_vt_vmwrite(guest_rflags,2);		// That the essential bit is set is fine.
 }
 
+void static nvc_vt_setup_host_descriptor_tables(noir_vt_vcpu_p vcpu,noir_processor_state_p state)
+{
+	// Copy IDT and GDT.
+	noir_copy_memory(vcpu->idt_buffer,(void*)state->idtr.base,state->idtr.limit+1);
+	noir_copy_memory(vcpu->gdt_buffer,(void*)state->gdtr.base,state->gdtr.limit+1);
+#if defined(_hv_type1)
+	// In Type-I, create the TSS.
+	noir_tss64_p tss_base=(noir_tss64_p)vcpu->tss_buffer;
+	u16 tr_sel=(u16)(state->gdtr.limit+1);
+	// GDT Entry for TSS.
+	noir_segment_descriptor_p tr_seg=(noir_segment_descriptor_p)((ulong_ptr)vcpu->gdt_buffer+tr_sel);
+	tr_seg->limit_lo=0xffff;
+	tr_seg->base_lo=(u16)vcpu->tss_buffer;
+	tr_seg->base_mid1=(u8)((ulong_ptr)vcpu->tss_buffer>>16);
+	tr_seg->base_mid2=(u8)((ulong_ptr)vcpu->tss_buffer>>24);
+#if defined(_amd64)
+	tr_seg->base_hi=(u32)((u64)vcpu->tss_buffer>>32);
+	tr_seg->reserved=0;
+#endif
+	tr_seg->attributes.value=0;
+	tr_seg->attributes.type=0x9;
+	tr_seg->attributes.present=true;
+	tss_base->iomap_base=sizeof(noir_tss64);
+#else
+	// In Type-II, copy the TSS.
+	u16 tr_sel=state->tr.selector&selector_rplti_mask;
+	noir_copy_memory(vcpu->tss_buffer,state->tr.base,state->tr.limit+1);
+#endif
+	// Load into VMCS.
+	noir_vt_vmwrite(host_tr_selector,tr_sel);
+	noir_vt_vmwrite(host_tr_base,tss_base);
+	noir_vt_vmwrite(host_gdtr_base,(ulong_ptr)vcpu->gdt_buffer);
+	noir_vt_vmwrite(host_idtr_base,(ulong_ptr)vcpu->idt_buffer);
+}
+
 void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_state_p state)
 {
 	// Setup stack for Exit Handler.
 	noir_vt_initial_stack_p stack=(noir_vt_initial_stack_p)((ulong_ptr)vcpu->hv_stack+nvc_stack_size-sizeof(noir_vt_initial_stack));
 	stack->vcpu=vcpu;
 	stack->proc_id=noir_get_current_processor();
+	// Host State Area - Descriptor Tables
+	nvc_vt_setup_host_descriptor_tables(vcpu,state);
 	// Host State Area - Segment Selectors
 	noir_vt_vmwrite(host_cs_selector,state->cs.selector & selector_rplti_mask);
 	noir_vt_vmwrite(host_ds_selector,state->ds.selector & selector_rplti_mask);
@@ -446,14 +487,9 @@ void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_stat
 	noir_vt_vmwrite(host_fs_selector,state->fs.selector & selector_rplti_mask);
 	noir_vt_vmwrite(host_gs_selector,state->gs.selector & selector_rplti_mask);
 	noir_vt_vmwrite(host_ss_selector,state->ss.selector & selector_rplti_mask);
-	noir_vt_vmwrite(host_tr_selector,state->tr.selector & selector_rplti_mask);
 	// Host State Area - Segment Bases
 	noir_vt_vmwrite(host_fs_base,(ulong_ptr)state->fs.base);
 	noir_vt_vmwrite(host_gs_base,(ulong_ptr)state->gs.base);
-	noir_vt_vmwrite(host_tr_base,(ulong_ptr)state->tr.base);
-	// Host State Area - Descriptor Tables
-	noir_vt_vmwrite(host_gdtr_base,(ulong_ptr)state->gdtr.base);
-	noir_vt_vmwrite(host_idtr_base,(ulong_ptr)state->idtr.base);
 	// Host State Area - Control Registers
 	state->cr0|=noir_rdmsr(ia32_vmx_cr0_fixed0);
 	state->cr0&=noir_rdmsr(ia32_vmx_cr0_fixed1);
@@ -462,6 +498,7 @@ void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_stat
 	noir_btr(&state->cr4,ia32_cr4_cet);			// Turn off CET in host mode.
 	noir_vt_vmwrite(host_cr0,state->cr0);
 	noir_vt_vmwrite(host_cr3,system_cr3);
+	// noir_vt_vmwrite(host_cr3,hvm_p->host_memmap.hcr3.phys);
 	noir_vt_vmwrite(host_cr4,state->cr4);
 	noir_vt_vmwrite(host_msr_ia32_efer,state->efer);
 	// Host State Area - Stack Pointer, Instruction Pointer
@@ -760,8 +797,50 @@ void static nvc_vt_subvert_processor_thunk(void* context,u32 processor_id)
 	*(u32*)vcpu[processor_id].vmxon.virt=(u32)vt_basic.revision_id;
 	*(u32*)vcpu[processor_id].vmcs.virt=(u32)vt_basic.revision_id;
 	*(u32*)vcpu[processor_id].nested_vcpu.vmcs_t.virt=(u32)vt_basic.revision_id;
-	nv_dprintf("Processor %d entered subversion routine!\n",processor_id);
+	nvd_printf("Processor %d entered subversion routine!\n",processor_id);
 	nvc_vt_subvert_processor(&vcpu[processor_id]);
+}
+
+// This function builds an identity map for NoirVisor, as Type-II hypervisor, to access physical addresses.
+bool nvc_vt_build_host_page_table(noir_hypervisor_p hvm_p)
+{
+	void* scr3_virt=noir_find_virt_by_phys(page_base(system_cr3));
+	nvd_printf("System CR3 Virtual Address: 0x%p\tPhysical Address: 0x%p\n",scr3_virt,system_cr3);
+	if(scr3_virt)
+	{
+		hvm_p->host_memmap.hcr3.virt=noir_alloc_contd_memory(page_size);
+		if(hvm_p->host_memmap.hcr3.virt)
+		{
+			hvm_p->host_memmap.hcr3.phys=noir_get_physical_address(hvm_p->host_memmap.hcr3.virt);
+			// Copy the PML4Es from system CR3.
+			noir_copy_memory(hvm_p->host_memmap.hcr3.virt,scr3_virt,page_size);
+			// Allocate the PDPTE page for the first PML4E.
+			hvm_p->host_memmap.pdpt.virt=noir_alloc_contd_memory(page_size);
+			if(hvm_p->host_memmap.pdpt.virt)
+			{
+				ia32_pml4e_p pml4e_p=(ia32_pml4e_p)hvm_p->host_memmap.hcr3.virt;
+				ia32_huge_pdpte_p pdpte_p=(ia32_huge_pdpte_p)hvm_p->host_memmap.pdpt.virt;
+				for(u32 i=0;i<512;i++)
+				{
+					// Set up identity mappings.
+					pdpte_p[i].value=0;
+					pdpte_p[i].present=1;
+					pdpte_p[i].write=1;
+					pdpte_p[i].huge_pdpte=1;		// Use 1GiB Huge Page.
+					pdpte_p[i].page_base=i;
+				}
+				// The first PML4E points to PDPTEs.
+				hvm_p->host_memmap.pdpt.phys=noir_get_physical_address(hvm_p->host_memmap.pdpt.virt);
+				// Load to first PML4E.
+				pml4e_p->value=page_base(hvm_p->host_memmap.pdpt.phys);
+				pml4e_p->present=1;
+				pml4e_p->write=1;
+				nvd_printf("Host CR3: 0x%llX\n",hvm_p->host_memmap.hcr3.phys);
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 /*
@@ -853,6 +932,11 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 	hvm->relative_hvm->hvm_cpuid_leaf_max=nvc_mshv_build_cpuid_handlers();
 	if(hvm->relative_hvm->hvm_cpuid_leaf_max==0)goto alloc_failure;
 	if(hvm->virtual_cpu==null)goto alloc_failure;
+	// Build Host CR3 in order to operate physical addresses directly.
+	if(nvc_vt_build_host_page_table(hvm_p))
+		nv_dprintf("Hypervisor's paging structure is initialized successfully!\n");
+	else
+		nv_dprintf("Failed to build hypervisor's paging structure...\n");
 	nvc_vt_setup_msr_hook(hvm);
 	nvc_vt_setup_io_hook(hvm);
 	for(u32 i=0;i<hvm->cpu_count;i++)

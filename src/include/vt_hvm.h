@@ -147,6 +147,11 @@ typedef struct _noir_vt_vcpu
 	u8 status;
 	u8 enabled_feature;
 	u8 mtrr_dirty;
+	align_at(16) noir_gate_descriptor idt_buffer[0x100];
+	align_at(16) noir_segment_descriptor gdt_buffer[0x100];
+	align_at(16) u8 tss_buffer[0x100];
+	// Force the vCPU to have the size of multiple pages!
+	align_at(page_size) u8 alignment_holder[0];
 }noir_vt_vcpu,*noir_vt_vcpu_p;
 
 struct _noir_vt_custom_vm;
