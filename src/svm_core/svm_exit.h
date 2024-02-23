@@ -449,6 +449,7 @@ bool nvc_svm_wrmsr_nsvexit_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vc
 void nvc_svm_nsv_load_nae_synthetic_msr_state(noir_svm_custom_vcpu_p cvcpu);
 #elif defined(_svm_nvcpu)
 void static fastcall nvc_svm_nvexit_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu);
+void static fastcall nvc_svm_nvexit_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu);
 void static fastcall nvc_svm_nvexit_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu);
 
 noir_hvdata noir_svm_nvexit_handler_routine svm_nvexit_handler_group1[noir_svm_maximum_code1]=
@@ -499,7 +500,7 @@ noir_hvdata noir_svm_nvexit_handler_routine svm_nvexit_handler_group1[noir_svm_m
 	nvc_svm_nvexit_default_handler,			// rdpmc Instruction
 	nvc_svm_nvexit_default_handler,			// pushf Instruction
 	nvc_svm_nvexit_default_handler,			// popf Instruction
-	nvc_svm_nvexit_default_handler,			// cpuid Instruction
+	nvc_svm_nvexit_cpuid_handler,			// cpuid Instruction
 	nvc_svm_nvexit_default_handler,			// rsm Instruction
 	nvc_svm_nvexit_default_handler,			// iret Instruction
 	nvc_svm_nvexit_default_handler,			// int Instruction

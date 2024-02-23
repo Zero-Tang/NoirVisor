@@ -463,7 +463,8 @@ void static nvc_vt_setup_host_descriptor_tables(noir_vt_vcpu_p vcpu,noir_process
 #else
 	// In Type-II, copy the TSS.
 	u16 tr_sel=state->tr.selector&selector_rplti_mask;
-	noir_copy_memory(vcpu->tss_buffer,state->tr.base,state->tr.limit+1);
+	noir_tss64_p tss_base=(noir_tss64_p)state->tr.base;
+	noir_copy_memory(vcpu->tss_buffer,(void*)state->tr.base,state->tr.limit+1);
 #endif
 	// Load into VMCS.
 	noir_vt_vmwrite(host_tr_selector,tr_sel);

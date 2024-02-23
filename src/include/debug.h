@@ -58,7 +58,6 @@ noir_status nvc_io_qemu_debugcon_write(u8p buffer,size_t length);
 
 #if defined(_nvdbg)
 // String Facility
-i32 cdecl nv_snprintf(char* buffer,size_t limit,const char* format,...);
 i32 cdecl nv_vsnprintf(char* buffer,size_t limit,const char* format,va_list arg_list);
 
 noir_hvdata noir_debugger nvdbg={0};

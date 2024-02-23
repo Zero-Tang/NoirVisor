@@ -36,6 +36,8 @@ void static fastcall nvc_svm_clean_vmcb_lbr(void* vmcb_c,void* vmcb_t);
 void static fastcall nvc_svm_clean_vmcb_avic(void* vmcb_c,void* vmcb_t);
 void static fastcall nvc_svm_clean_vmcb_cet(void* vmcb_c,void* vmcb_t);
 
+extern noir_svm_cpuid_exit_handler nvcp_svm_cpuid_handler;
+
 noir_hvdata noir_svm_clean_vmcb_routine svm_clean_vmcb[noir_svm_maximum_clean_state_bits]=
 {
 	nvc_svm_clean_vmcb_interceptions,	// Bit 0

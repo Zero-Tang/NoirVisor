@@ -89,12 +89,12 @@ void noir_dbgport_release_lock()
 }
 
 // Printing facilities
-void cdecl nvd_vprintf(const char* src_file,const u32 ln,const char* format,va_list arg_list)
+void cdecl nvd_vprintf_fn(const char* src_file,const u32 src_ln,const char* format,va_list arg_list)
 {
 	char buffer[512];
 	i32 prefix_len,content_len;
 	if(src_file)
-		prefix_len=nv_snprintf(buffer,sizeof(buffer),"[NoirVisor | (%s@%u)] ",src_file,ln);
+		prefix_len=nv_snprintf(buffer,sizeof(buffer),"[NoirVisor | (%s@%u)] ",src_file,src_ln);
 	else
 		prefix_len=nv_snprintf(buffer,sizeof(buffer),"[NoirVisor] ");
 	content_len=nv_vsnprintf(&buffer[prefix_len],sizeof(buffer)-prefix_len,format,arg_list);
@@ -104,17 +104,30 @@ void cdecl nvd_vprintf(const char* src_file,const u32 ln,const char* format,va_l
 	noir_dbgport_release_lock();
 }
 
-void cdecl nvd_printf(const char* format,...)
+void cdecl nvd_printf_fn(const char* src_fn,const u32 src_ln,const char* format,...)
 {
 	va_list arg_list;
-	char buffer[512];
-	size_t len;
 	va_start(arg_list,format);
-	len=nv_vsnprintf(buffer,sizeof(buffer),format,arg_list);
+	nvd_vprintf_fn(src_fn,src_ln,format,arg_list);
 	va_end(arg_list);
+}
+
+void cdecl nvd_vprintf_raw(const char* format,va_list arg_list)
+{
+	char buffer[512];
+	i32 len=nv_vsnprintf(buffer,sizeof(buffer),format,arg_list);
 	noir_dbgport_acquire_lock();
-	if(nvdbg.mode!=noir_debug_interactive)noir_dbgport_write(buffer,len);
+	if(nvdbg.mode!=noir_debug_interactive)
+		noir_dbgport_write(buffer,len);
 	noir_dbgport_release_lock();
+}
+
+void cdecl nvd_printf_raw(const char* format,...)
+{
+	va_list arg_list;
+	va_start(arg_list,format);
+	nvd_vprintf_raw(format,arg_list);
+	va_end(arg_list);
 }
 
 void cdecl nvd_panicf(const char* format,...)

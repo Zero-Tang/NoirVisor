@@ -480,7 +480,7 @@ typedef union _noir_paging64_general_entry
 		u64 dirty:1;
 		u64 psize:1;
 		u64 global:1;
-		u64 available1:1;
+		u64 available1:3;
 		u64 base:40;
 		u64 available2:7;
 		u64 page_key:4;
@@ -610,6 +610,9 @@ bool noir_query_page_attributes(void* virtual_address,bool *valid,bool *locked,b
 void noir_copy_memory(void* dest,void* src,u32 cch);
 void noir_enum_physical_memory_ranges(noir_physical_range_callback callback_routine,void* context);
 
+// String Facility
+i32 cdecl nv_snprintf(char* buffer,size_t limit,const char* format,...);
+
 // Debugging Facility
 void cdecl nv_dprintf(const char* format,...);
 void cdecl nv_tracef(const char* format,...);
@@ -620,7 +623,11 @@ void cdecl nvci_panicf(const char* format,...);
 void cdecl nv_dprintf_unprefixed(const char* format,...);
 void cdecl nv_dprintf2(bool datetime,bool proc_id,const char* func_name,const char* format,...);
 
-void cdecl nvd_printf(const char* format,...);
+void cdecl nvd_printf_fn(const char* src_file,const u32 src_ln,const char* format,...);
+void cdecl nvd_printf_raw(const char* format,...);
+
+#define nvd_printf(fmt,...)		nvd_printf_fn(__FILE__,__LINE__,fmt,##__VA_ARGS__)
+
 void cdecl nvd_panicf(const char* format,...);
 
 void noir_hbreak(void);

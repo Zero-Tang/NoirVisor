@@ -43,10 +43,6 @@
 // Number of nested VMCBs to be cached.
 #define noir_svm_cached_nested_vmcb			16
 
-// When synchronizing nested VMCB for nested VM-Exits,
-// most fields in VMCB requires synchronization.
-#define noir_svm_nesting_vmcb_clean_bits	0xFFFFE817
-
 // Definitions of CVM CPUID maskings
 #define noir_svm_cpuid_cvmask0_ecx_fn0000_0001	0xE2D83209
 #define noir_svm_cpuid_cvmask1_ecx_fn0000_0001	0x80000000
@@ -134,6 +130,7 @@ typedef struct _noir_svm_nested_vcpu
 	struct
 	{
 		u64 svme:1;
+		u64 forward:1;
 		u64 gif:1;
 		u64 vgif_accel:1;
 		u64 r_init:1;
@@ -141,7 +138,7 @@ typedef struct _noir_svm_nested_vcpu
 		u64 pending_nmi:1;
 		u64 pending_mc:1;
 		u64 pending_init:1;
-		u64 reserved:56;
+		u64 reserved:55;
 	};
 }noir_svm_nested_vcpu,*noir_svm_nested_vcpu_p;
 

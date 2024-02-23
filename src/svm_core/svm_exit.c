@@ -1529,44 +1529,96 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 	amd64_npt_fault_code fault;
 	fault.value=noir_svm_vmread64(vcpu->vmcb.virt,exit_info1);
 	noir_rmt_entry_p rm_table=nvc_get_rmt_entry(gpa);
-	if(rm_table->low.asid==0)
+	// MMIO ranges are not reverse-mapped!
+	if(rm_table)
 	{
-		// If the assigned ASID is zero, then the logic for treating
-		// this #NPF should be considered as reserved area of NoirVisor.
-		// Ignore the instruction.
-		void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
-		// Determine the Long-Mode through CS.L bit.
-		bool long_mode=noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9);
-		u32 increment=noir_get_instruction_length(instruction,long_mode);
-		// Increment the rip so that the access is ignored.
-		ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
-		gip+=increment;
-		// If guest is not in long mode, cut the higher 32 bits in rip register.
-		if(!long_mode)gip&=maxu32;
-		// Complete the advancement of rip register.
-		noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
-	}
-	else if(rm_table->low.asid==1)
-	{
-		// If the assigned ASID is one, then the logic for treating this
-		// #NPF should be considered as special subverted host operations.
-#if !defined(_hv_type1)
-		if(fault.execute)
+		if(rm_table->low.asid==0)
 		{
-			// For #NPF due to execution, it is assumed to be due to stealthy hooks.
-			noir_npt_manager_p pri_nptm=vcpu->relative_hvm->primary_nptm;
-			noir_npt_manager_p sec_nptm=vcpu->relative_hvm->secondary_nptm;
-			u64 cur_ncr3=noir_svm_vmread64(vcpu->vmcb.virt,npt_cr3);
-			// Switch the page table.
-			noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,pri_nptm->ncr3.phys==cur_ncr3?sec_nptm->ncr3.phys:pri_nptm->ncr3.phys);
-			// We switched NPT. Thus we should clean VMCB cache state.
-			noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_npt);
-			// It is necessary to flush TLB.
-			noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
-			// Switching NPT does not advance rip.
-			advance=false;
+			// If the assigned ASID is zero, then the logic for treating
+			// this #NPF should be considered as reserved area of NoirVisor.
+			// Ignore the instruction.
+			void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
+			// Determine the Long-Mode through CS.L bit.
+			bool long_mode=noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9);
+			u32 increment=noir_get_instruction_length(instruction,long_mode);
+			// Increment the rip so that the access is ignored.
+			ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
+			gip+=increment;
+			// If guest is not in long mode, cut the higher 32 bits in rip register.
+			if(!long_mode)gip&=maxu32;
+			// Complete the advancement of rip register.
+			noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
 		}
-#else
+		else if(rm_table->low.asid==1)
+		{
+			// If the assigned ASID is one, then the logic for treating this
+			// #NPF should be considered as special subverted host operations.
+#if !defined(_hv_type1)
+			if(fault.execute)
+			{
+				// For #NPF due to execution, it is assumed to be due to stealthy hooks.
+				noir_npt_manager_p pri_nptm=vcpu->relative_hvm->primary_nptm;
+				noir_npt_manager_p sec_nptm=vcpu->relative_hvm->secondary_nptm;
+				u64 cur_ncr3=noir_svm_vmread64(vcpu->vmcb.virt,npt_cr3);
+				// Switch the page table.
+				noir_svm_vmwrite64(vcpu->vmcb.virt,npt_cr3,pri_nptm->ncr3.phys==cur_ncr3?sec_nptm->ncr3.phys:pri_nptm->ncr3.phys);
+				// We switched NPT. Thus we should clean VMCB cache state.
+				noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_npt);
+				// It is necessary to flush TLB.
+				noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+				// Switching NPT does not advance rip.
+				advance=false;
+			}
+#endif
+			if(advance)
+			{
+				// Note that SVM won't save the next rip in #NPF.
+				// Hence we should advance rip by software analysis.
+				// Usually, if #NPF handler goes here, it might be induced by Hardware-Enforced CI.
+				// In this regard, we assume this instruction is writing protected page.
+				nvd_printf("CI-event is intercepted! #NPF Code: 0x%x, GPA=0x%p\n",fault.value,noir_svm_vmread64(vcpu->vmcb.virt,exit_info2));
+				void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
+				// Determine the Long-Mode through CS.L bit.
+				bool long_mode=noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9);
+				u32 increment=noir_get_instruction_length(instruction,long_mode);
+				// Increment the rip so that the access is ignored.
+				ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
+				gip+=increment;
+				// If guest is not in long mode, cut the higher 32 bits in rip register.
+				if(!long_mode)gip&=maxu32;
+				// Complete the advancement of rip register.
+				noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
+			}
+		}
+		else
+		{
+			// For other ASIDs, this #NPF should be considered as NSV-violations.
+			/*
+			// Current implementation injects a #PF fault.
+			// The 31st bit of error-code, according to AMD, is indicating RMP violation for SEV-SNP.
+			// Let's say this is intended for NSV-violations for subverted host accessing guest data.
+			noir_svm_inject_event(vcpu->vmcb.virt,amd64_page_fault,amd64_fault_trap_exception,true,true,(u32)fault.value|0x80000000);
+			// Write to CR2 about the faulting physical address.
+			noir_svm_vmwrite64(vcpu->vmcb.virt,guest_cr2,gpa);
+			noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_cr2);
+			*/
+			// Current implementation ignores the instruction.
+			void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
+			// Determine the Long-Mode through CS.L bit.
+			bool long_mode=noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9);
+			u32 increment=noir_get_instruction_length(instruction,long_mode);
+			// Increment the rip so that the access is ignored.
+			ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
+			gip+=increment;
+			// If guest is not in long mode, cut the higher 32 bits in rip register.
+			if(!long_mode)gip&=maxu32;
+			// Complete the advancement of rip register.
+			noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
+		}
+	}
+	else
+	{
+		// MMIO ranges are not reverse-mapped.
 		// For Type-I Hypervisors, #NPF can be triggerred by virtue of interceptions on writes to APIC pages.
 		// We do not intercept reads from APIC page.
 		if(fault.write)
@@ -1575,7 +1627,6 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 			if(gpa>=apic_base && gpa<apic_base+page_size)
 			{
 				const u64 offset=gpa-apic_base;
-				nvd_printf("APIC-write is intercepted! Offset=0x%X\n",(u32)offset);
 				if(gpa & 3)		// In NoirVisor's implementation, accesses not aligned on 4-byte boundary causes #GP fault.
 					noir_svm_inject_event(vcpu->vmcb.virt,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
 				else
@@ -1601,6 +1652,7 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 							// then the write operation should be filtered.
 							amd64_apic_register_icr_lo icr_lo;
 							icr_lo.value=*(u32p)write_operand;
+							nvd_printf("Write to ICR_LO is intercepted!\n");
 							if(icr_lo.msg_type==amd64_apic_icr_msg_sipi)
 							{
 								// Start-up IPIs must be emulated.
@@ -1657,55 +1709,8 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 						noir_svm_vmwrite64(vcpu->vmcb.virt,guest_rip,gip);
 					}
 				}
-				// Because emulation was done here, there is no need for advancement later.
-				advance=false;
 			}
 		}
-#endif
-		if(advance)
-		{
-			// Note that SVM won't save the next rip in #NPF.
-			// Hence we should advance rip by software analysis.
-			// Usually, if #NPF handler goes here, it might be induced by Hardware-Enforced CI.
-			// In this regard, we assume this instruction is writing protected page.
-			nvd_printf("CI-event is intercepted! #NPF Code: 0x%x, GPA=0x%p\n",fault.value,noir_svm_vmread64(vcpu->vmcb.virt,exit_info2));
-			void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
-			// Determine the Long-Mode through CS.L bit.
-			bool long_mode=noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9);
-			u32 increment=noir_get_instruction_length(instruction,long_mode);
-			// Increment the rip so that the access is ignored.
-			ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
-			gip+=increment;
-			// If guest is not in long mode, cut the higher 32 bits in rip register.
-			if(!long_mode)gip&=maxu32;
-			// Complete the advancement of rip register.
-			noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
-		}
-	}
-	else
-	{
-		// For other ASIDs, this #NPF should be considered as NSV-violations.
-		/*
-		// Current implementation injects a #PF fault.
-		// The 31st bit of error-code, according to AMD, is indicating RMP violation for SEV-SNP.
-		// Let's say this is intended for NSV-violations for subverted host accessing guest data.
-		noir_svm_inject_event(vcpu->vmcb.virt,amd64_page_fault,amd64_fault_trap_exception,true,true,(u32)fault.value|0x80000000);
-		// Write to CR2 about the faulting physical address.
-		noir_svm_vmwrite64(vcpu->vmcb.virt,guest_cr2,gpa);
-		noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_cr2);
-		*/
-		// Current implementation ignores the instruction.
-		void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
-		// Determine the Long-Mode through CS.L bit.
-		bool long_mode=noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9);
-		u32 increment=noir_get_instruction_length(instruction,long_mode);
-		// Increment the rip so that the access is ignored.
-		ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
-		gip+=increment;
-		// If guest is not in long mode, cut the higher 32 bits in rip register.
-		if(!long_mode)gip&=maxu32;
-		// Complete the advancement of rip register.
-		noir_svm_vmwrite(vcpu->vmcb.virt,guest_rip,gip);
 	}
 }
 
@@ -1814,18 +1819,19 @@ void noir_hvcode fastcall nvc_svm_exit_handler(noir_gpr_state_p gpr_state,noir_s
 		u8 code_group=(u8)((intercept_code&0xC00)>>10);
 		u16 code_num=(u16)(intercept_code&0x3FF);
 		u64 ngrip=noir_svm_vmread32(loader_stack->nested_vcpu->vmcb_t.virt,guest_rip);
+		vcpu->nested_hvm.forward=true;
 		nvd_printf("Intercepted Nested VM-Exit! VMCB: 0x%p, Code: 0x%X, rip=0x%p\n",loader_stack->guest_vmcb_pa,intercept_code,ngrip);
 		// FIXME: Add additional filtering by NoirVisor.
 		void* l2_vmcb=(void*)loader_stack->nested_vcpu->vmcb_t.virt;
 		// Cache L1 VMCB for nested guest.
 		noir_svm_vmwrite32(loader_stack->nested_vcpu->vmcb_t.virt,vmcb_clean_bits,0xffffffff);
-		// Nested VM is exiting, switch to L1 Guest.
-		nvc_svm_switch_from_nested_vcpu(gpr_state,vcpu);
 		// Do additional filtering. Note that the rax register is not processed.
 		if(unlikely(intercept_code<0))
 			svm_nvexit_handler_negative[~intercept_code](gpr_state,vcpu,loader_stack->nested_vcpu);
 		else
 			svm_nvexit_handlers[code_group][code_num](gpr_state,vcpu,loader_stack->nested_vcpu);
+		// Nested VM is exiting, switch to L1 Guest.
+		if(vcpu->nested_hvm.forward)nvc_svm_switch_from_nested_vcpu(gpr_state,vcpu);
 	}
 	else
 	{

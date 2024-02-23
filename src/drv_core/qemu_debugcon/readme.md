@@ -31,3 +31,14 @@ In registry `HKLM\SOFTWARE\Zero-Tang\NoirVisor`, write the following key values 
 |---|---|---|
 | DebugPort | REG_SZ | qemu_debugcon |
 | QemuDebugConPortNumber | REG_DWORD | 0x402 |
+
+### UEFI
+In JSON configuration file, write the following entries:
+
+```json
+"DebugPort":"qemu_debugcon",
+"QemuDebugConPortNumber":1026
+```
+
+Then use the python script provided in this repository to make the binary configuration file. \
+Note that JSON does not support hexadecimal integers. You will have to use decimal integers.

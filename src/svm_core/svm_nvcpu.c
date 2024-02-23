@@ -31,6 +31,8 @@ void noir_hvcode nvc_svm_clear_nested_gif(noir_svm_vcpu_p vcpu)
 	void* vmcb=vcpu->vmcb.virt;
 	// Disallow guest rflags.if to control interrupt masking.
 	noir_svm_vmcb_bts32(vmcb,avic_control,nvc_svm_avic_control_vintr_mask);
+	// Enabling V_INTR_MASKING will cause the guest to read cr8 from VMCB.
+	noir_svm_vmwrite8(vmcb,avic_control,noir_readcr8());
 	// Invalidate VMCB Cache.
 	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_tpr);
 	// Force masking physical interrupts.
@@ -43,6 +45,8 @@ void noir_hvcode nvc_svm_set_nested_gif(noir_svm_vcpu_p vcpu)
 	void* vmcb=vcpu->vmcb.virt;
 	// Allow guest rflags.if to control interrupt masking.
 	noir_svm_vmcb_btr32(vmcb,avic_control,nvc_svm_avic_control_vintr_mask);
+	// Disabling V_INTR_MASKING will cause the guest to use cr8 directly.
+	noir_writecr8(noir_svm_vmread8(vmcb,avic_control));
 	// Invalidate VMCB Cache.
 	noir_svm_vmcb_btr32(vmcb,vmcb_clean_bits,noir_svm_clean_tpr);
 	// FIXME: Unmask physical NMIs.
@@ -153,10 +157,10 @@ void noir_hvcode nvc_svm_switch_from_nested_vcpu(noir_gpr_state_p gpr_state,noir
 	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_sfmask);
 	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_kernel_gs_base);
 	// Emulate cleared GIF for nested hypervisor.
-	// nvc_svm_clear_nested_gif(vcpu);
+	nvc_svm_clear_nested_gif(vcpu);
 	// Note: Clearing rflags.if is an unsafe implementation to emulate cleared GIF!
 	// This approach is only viable on bluepill-like hypervisors like SimpleSvm.
-	noir_svm_vmcb_btr32(vmcb_l1,guest_rflags,amd64_rflags_if);
+	// noir_svm_vmcb_btr32(vmcb_l1,guest_rflags,amd64_rflags_if);
 	// Switch to the nested hypervisor (L1).
 	loader_stack->guest_vmcb_pa=vcpu->vmcb.phys;
 }
@@ -370,13 +374,36 @@ noir_svm_nested_vcpu_node_p noir_hvcode nvc_svm_get_nested_vcpu_node(noir_svm_ne
 // FIXME: Implement handlers for interceptions not used by nested hypervisor!
 
 // Default handler of VM-Exit.
-void static fastcall nvc_svm_nvexit_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu)
+void static noir_hvcode fastcall nvc_svm_nvexit_default_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu)
 {
 	;
 }
 
+// Expected Intercept Code: 0x72
+// CPUID is an optional interception in AMD-V!
+void static noir_hvcode fastcall nvc_svm_nvexit_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu)
+{
+	vcpu->nested_hvm.forward=noir_svm_vmcb_bt32(nvcpu->vmcb_t.virt,intercept_instruction1,nvc_svm_intercept_vector1_cpuid);
+	if(!vcpu->nested_hvm.forward)
+	{
+		// Nested hypervisor did not specify to intercept cpuid!
+		u32 ia=noir_svm_vmread32(nvcpu->vmcb_t.virt,guest_rax);
+		u32 ic=(u32)gpr_state->rcx;
+		noir_cpuid_general_info info;
+		// Forward to our handler.
+		nvcp_svm_cpuid_handler(ia,ic,&info);
+		// Return info.
+		noir_svm_vmwrite32(nvcpu->vmcb_t.virt,guest_rax,info.eax);
+		*(u32p)&gpr_state->rbx=info.ebx;
+		*(u32p)&gpr_state->rcx=info.ecx;
+		*(u32p)&gpr_state->rdx=info.edx;
+		// Advance instruction pointer.
+		noir_svm_advance_rip(nvcpu->vmcb_t.virt);
+	}
+}
+
 // Expected Intercept Code: 0x7F
-void static fastcall nvc_svm_nvexit_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu)
+void static noir_hvcode fastcall nvc_svm_nvexit_shutdown_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu)
 {
 	nvd_printf("Shutdown is intercepted in nested guest!\n");
 	noir_int3();

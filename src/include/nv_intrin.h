@@ -59,7 +59,7 @@ void noir_xsetbv(u32 xcr_id,u64 val);
 // Read/Write CR8 Register instructions(64-bit only)
 #if defined(_amd64)
 #define noir_readcr8	__readcr8
-#define noir_writecr8	__readcr8
+#define noir_writecr8	__writecr8
 #endif
 
 // Read Debug Register instructions

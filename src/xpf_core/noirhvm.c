@@ -1302,13 +1302,17 @@ bool nvc_translate_host_virtual_address_routine64(u64 pt,u64 va,u32 level,u64p p
 	noir_paging64_general_entry_p table=(noir_paging64_general_entry_p)pt;
 	noir_page_fault_error_code_p pf_err=(noir_page_fault_error_code_p)error_code;
 	// Check permission.
+	// nvd_printf("[Translate] VA: 0x%p, Level: %u, Shift-Diff: %u, Page-Table: 0x%p, Page-Index: 0x%X\n",va,level,shift_diff,pt,index);
 	pf_err->value=0;
-	pf_err->present=table[index].present>=r;
-	pf_err->write=table[index].write>=w;
-	pf_err->user=table[index].user>=u;
-	pf_err->execute=table[index].no_execute<=x;
+	pf_err->present=table[index].present<r;
+	pf_err->write=table[index].write<w;
+	pf_err->user=table[index].user<u;
+	pf_err->execute=table[index].no_execute>x;
 	if(pf_err->value)
+	{
+		nvd_printf("[Translate] Permission is not granted at level %u! #PF Error: 0x%X\n",level,pf_err->value);
 		return false;
+	}
 	else
 	{
 		// Permission is granted.
@@ -1320,13 +1324,13 @@ bool nvc_translate_host_virtual_address_routine64(u64 pt,u64 va,u32 level,u64p p
 				const u64 offset_mask=(1<<(shift_diff+page_4kb_shift))-1;
 				const u64 base=(table[index].base>>shift_diff)<<(shift_diff+page_4kb_shift);
 				*pa=base+(va&offset_mask);
-				nvd_printf("[Translate] VA 0x%p is translated into PA 0x%llX at level %u!\n",va,*pa,level);
+				// nvd_printf("[Translate] VA 0x%p is translated into PA 0x%llX at level %u!\n",va,*pa,level);
 				return true;
 			}
 			else
 			{
 				const u64 base=page_4kb_mult(table[index].base);
-				nvd_printf("[Translate] Base of Next Level (%u): 0x%p\n",level-1,base);
+				// nvd_printf("[Translate] Base of Next Level (%u): 0x%p\n",level-1,base);
 				return nvc_translate_host_virtual_address_routine64(base,va,level-1,pa,error_code,r,w,x,u);
 			}
 		}
@@ -1335,7 +1339,7 @@ bool nvc_translate_host_virtual_address_routine64(u64 pt,u64 va,u32 level,u64p p
 			// Final level.
 			const u64 base=page_4kb_mult(table[index].base);
 			*pa=base+page_offset(va);
-			nvd_printf("[Translate] VA 0x%p is translated into PA 0x%llX!\n",va,*pa);
+			// nvd_printf("[Translate] VA 0x%p is translated into PA 0x%llX!\n",va,*pa);
 			return true;
 		}
 	}
@@ -1360,9 +1364,9 @@ size_t nvc_copy_host_virtual_memory64(u64 pt,u64 va,void* buffer,size_t length,b
 		if(success)
 		{
 			if(write)
-				noir_movsb(buffer,(u8p)pa,length);
-			else
 				noir_movsb((u8p)pa,buffer,length);
+			else
+				noir_movsb(buffer,(u8p)pa,length);
 			return length;
 		}
 		return 0;
