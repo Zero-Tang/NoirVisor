@@ -72,6 +72,7 @@ BOOLEAN NoirIsVirtualizationEnabled();
 BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase);
 void NoirFinalizeCodeIntegrity();
 void NoirSuppressImageRelocation(IN VOID* ImageBase);
+void NoirInitializeDisassembler();
 EFI_STATUS NoirInitializeConfigurationManager();
 void NoirFinalizeConfigurationManager();
 EFI_STATUS NoirConfigureInternalDebugger();

@@ -95,8 +95,12 @@ void NoirSuppressImageRelocation(IN VOID* ImageBase)
 	if(DosHead->e_magic==EFI_IMAGE_DOS_SIGNATURE)
 	{
 		EFI_IMAGE_NT_HEADERS *NtHead=(EFI_IMAGE_NT_HEADERS*)((UINTN)ImageBase+DosHead->e_lfanew);
+		EFI_IMAGE_DATA_DIRECTORY* RelocTable=(EFI_IMAGE_DATA_DIRECTORY*)((UINTN)ImageBase+NtHead->OptionalHeader.DataDirectory[EFI_IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
+		// EFI_IMAGE_SECTION_HEADER* SectionTable=(EFI_IMAGE_SECTION_HEADER*)((UINTN)NtHead+sizeof(EFI_IMAGE_NT_HEADERS));
+		// Hide the relocation table in data directory.
+		RelocTable->VirtualAddress=RelocTable->Size=0;
 		// Make the NT Header Signature invalid so the firmware won't relocate pointers referenced by NoirVisor.
-		NtHead->Signature=0;
+		// NtHead->Signature=0;
 	}
 }
 

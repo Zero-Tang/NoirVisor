@@ -118,6 +118,7 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 		RootDeviceHandle=ImageInfo->DeviceHandle;
 	}
 	NoirDebugPrint("NoirVisor is loaded to base 0x%p, Size=0x%X\n",ImageInfo->ImageBase,ImageInfo->ImageSize);
+	NoirInitializeDisassembler();
 	NoirInitializeConfigurationManager();
 	st=NoirRegisterHypervisorVariables();
 	NoirDebugPrint("NoirVisor Variables Registration Status=0x%X\n",st);

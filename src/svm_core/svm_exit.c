@@ -76,16 +76,21 @@ void static noir_hvcode fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gp
 	else
 	{
 		// Fallback is unavailable because failure of vmrun is unexpected.
+		segment_register_p sr=(segment_register_p)((ulong_ptr)vmcb+guest_es_selector);
 		u64 efer;
 		ulong_ptr cr0,cr3,cr4;
 		ulong_ptr dr6,dr7;
 		u32 list1,list2;
 		u32 asid;
-		noir_svm_stgi();
+		u64 evt,rip;
 		nvd_printf("[Processor %d] Guest State is Invalid! VMCB: 0x%p\n",vcpu->proc_id,vmcb);
 		// Dump State in VMCB and Print them to Debugger.
+		nvd_printf("Guest ES: Selector=0x%04X, Attrib=0x%04X, Limit=0x%08X, Base=0x%016llX\n",sr[0].selector,sr[0].attrib,sr[0].limit,sr[0].base);
+		nvd_printf("Guest CS: Selector=0x%04X, Attrib=0x%04X, Limit=0x%08X, Base=0x%016llX\n",sr[1].selector,sr[1].attrib,sr[1].limit,sr[1].base);
+		nvd_printf("Guest SS: Selector=0x%04X, Attrib=0x%04X, Limit=0x%08X, Base=0x%016llX\n",sr[2].selector,sr[2].attrib,sr[2].limit,sr[2].base);
+		nvd_printf("Guest DS: Selector=0x%04X, Attrib=0x%04X, Limit=0x%08X, Base=0x%016llX\n",sr[3].selector,sr[3].attrib,sr[3].limit,sr[3].base);
 		efer=noir_svm_vmread64(vmcb,guest_efer);
-		nv_dprintf("Guest EFER MSR: 0x%llx\n",efer);
+		nvd_printf("Guest EFER MSR: 0x%llx\n",efer);
 		dr6=noir_svm_vmread(vmcb,guest_dr6);
 		dr7=noir_svm_vmread(vmcb,guest_dr7);
 		nvd_printf("Guest DR6: 0x%p\t DR7: 0x%p\n",dr6,dr7);
@@ -98,6 +103,10 @@ void static noir_hvcode fastcall nvc_svm_invalid_guest_state(noir_gpr_state_p gp
 		list1=noir_svm_vmread32(vmcb,intercept_instruction1);
 		list2=noir_svm_vmread32(vmcb,intercept_instruction2);
 		nvd_printf("Control 1: 0x%X\t Control 2: 0x%X\n",list1,list2);
+		evt=noir_svm_vmread64(vmcb,event_injection);
+		nvd_printf("Event Injection: 0x%llX\n",evt);
+		rip=noir_svm_vmread64(vmcb,guest_rip);
+		nvd_printf("Rip: 0x%llX\n",rip);
 		// Generate a debug-break.
 		noir_int3();
 	}
@@ -918,7 +927,8 @@ void static noir_hvcode fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_stat
 				// SynIC MSRs should be virtualized here, instead of passing to the MSHV handlers.
 				case hv_x64_msr_eoi:
 				{
-					// Writing to EOI...
+					// End of Interrupt Register. Use for signaling EOI...
+					nvd_printf("[TLFS] Write to EOI is intercepted! Value=0x%X\n",val.low);
 					if(vcpu->flags.x2apic)
 						noir_wrmsr(amd64_x2apic_eoi,val.value);
 					else
@@ -928,6 +938,7 @@ void static noir_hvcode fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_stat
 				case hv_x64_msr_icr:
 				{
 					// Interrupt Command Register. Used for virtualizing IPIs...
+					nvd_printf("[TLFS] Write to ICR is intercepted! Lo=0x%X, Hi=0x%X\n",val.low,val.high);
 					amd64_apic_register_icr_lo icr_lo;
 					amd64_apic_register_icr_hi icr_hi;
 					vcpu->mshvcpu.local_synic.icr=val.value;
@@ -939,7 +950,8 @@ void static noir_hvcode fastcall nvc_svm_wrmsr_handler(noir_gpr_state_p gpr_stat
 				case hv_x64_msr_tpr:
 				{
 					// TPR is actually CR8.
-					val.value=noir_readcr8();
+					nvd_printf("[TLFS] Write to TPR is intercepted! Value=0x%llX\n",val.value);
+					noir_writecr8(val.value);
 					break;
 				}
 #endif
@@ -1116,6 +1128,7 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_st
 	ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
 	ulong_ptr gcr3=noir_svm_vmread(vcpu->vmcb.virt,guest_cr3);
 	unref_var(context);
+	nvd_printf("Received Hypercall Code: 0x%X\n",vmmcall_func);
 	switch(vmmcall_func)
 	{
 		case noir_svm_callexit:
@@ -1167,9 +1180,19 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_st
 		{
 			// Validate the caller. Only Layered Hypervisor is authorized to flush TLBs.
 			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
-				noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+				// noir_svm_vmwrite8(vcpu->vmcb.virt,tlb_control,nvc_svm_tlb_control_flush_guest);
+				noir_svm_vmcb_btr32(vcpu->vmcb.virt,vmcb_clean_bits,noir_svm_clean_npt);
 			else
 				noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,false,0);
+			break;
+		}
+		case noir_svm_call_signal_runtime:
+		{
+#if defined(_hv_type1)
+			nvd_printf("UEFI is entering Runtime Stage!\n");
+#else
+			noir_svm_inject_event(vcpu->vmcb.virt,amd64_invalid_opcode,amd64_fault_trap_exception,false,false,0);
+#endif
 			break;
 		}
 		case noir_svm_init_custom_vmcb:
@@ -1623,6 +1646,7 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 		// We do not intercept reads from APIC page.
 		if(fault.write)
 		{
+#if defined(_hv_type1)
 			const u64 apic_base=hvm_p->relative_hvm->apic_base;
 			if(gpa>=apic_base && gpa<apic_base+page_size)
 			{
@@ -1635,9 +1659,11 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 					u8 write_operand[64];
 					size_t write_size;
 					// In order to make emulator work, we have to set up the CVM state.
-					noir_movsp(&vcpu->cvm_state.gpr,gpr_state,sizeof(void*)*2);
 					gpr_state->rsp=noir_svm_vmread64(vcpu->vmcb.virt,guest_rsp);
 					gpr_state->rax=noir_svm_vmread64(vcpu->vmcb.virt,guest_rax);
+					noir_movsp(&vcpu->cvm_state.gpr,gpr_state,sizeof(void*)*2);
+					vcpu->cvm_state.rip=noir_svm_vmread64(vcpu->vmcb.virt,guest_rip);
+					// Use emulator to get the source operand.
 					ins_len=nvc_emu_try_vmexit_write_memory(gpr_state,(noir_seg_state_p)((ulong_ptr)vcpu->vmcb.virt+guest_es_selector),(u8p)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes),write_operand,&write_size);
 					if(ins_len==0 || write_size!=4)
 						noir_svm_inject_event(vcpu->vmcb.virt,amd64_general_protection,amd64_fault_trap_exception,true,true,0);
@@ -1645,6 +1671,8 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 					{
 						bool write=true;
 						u64 gip=noir_svm_vmread64(vcpu->vmcb.virt,guest_rip);
+						if(offset!=amd64_apic_eoi)		// Writes to EOI are too frequent, so filter it out.
+							nvd_printf("APIC write is intercepted at rip=0x%p! Offset=0x%03X\n",gip,offset);
 						// Emulate the write.
 						if(offset==amd64_apic_icr_lo)
 						{
@@ -1702,7 +1730,12 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 								write=false;
 							}
 						}
-						if(write)*(u32p)gpa=*(u32p)write_operand;
+						if(write)
+						{
+							if(offset!=amd64_apic_eoi)
+								nvd_printf("Writing 0x%X into the APIC Offset 0x%03X...\n",*(u32p)write_operand,offset);
+							*(u32p)gpa=*(u32p)write_operand;
+						}
 						// Advance the rip.
 						gip+=ins_len;
 						if(noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9)==false)gip&=maxu32;
@@ -1710,6 +1743,7 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 					}
 				}
 			}
+#endif
 		}
 	}
 }

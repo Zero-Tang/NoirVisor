@@ -264,9 +264,9 @@ u8 noir_hvcode nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_s
 	ZydisDecoder *SelectedDecoder;
 	ZydisDecodedInstruction ZyIns;
 	ZydisDecodedOperand ZyOps[ZYDIS_MAX_OPERAND_COUNT];
-	if(noir_bt(&seg_state->cs.attrib,13))		// Long Mode?
+	if(noir_bt(&seg_state->cs.attrib,9))		// Long Mode?
 		SelectedDecoder=&ZyDec64;
-	else if(noir_bt(&seg_state->cs.attrib,14))	// Default-Big?
+	else if(noir_bt(&seg_state->cs.attrib,10))	// Default-Big?
 		SelectedDecoder=&ZyDec32;
 	else
 		SelectedDecoder=&ZyDec16;
@@ -288,12 +288,23 @@ u8 noir_hvcode nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_s
 							*(u32p)operand=(u32)gpr[ZyOp->reg.value-ZYDIS_REGISTER_EAX];
 							return ZyIns.length;
 						}
+						else
+						{
+							nvd_printf("[Emulator] Only 32-bit source operand is supported!\n");
+							return ZyIns.length;
+						}
 						break;
 					}
 					case ZYDIS_OPERAND_TYPE_IMMEDIATE:
 					{
+						nvd_printf("[Emulator] Source operand register is immediate number! Value=0x%llX\n",ZyOp->imm.value);
 						noir_movsb(operand,&ZyOp->imm.value,*size);
 						return ZyIns.length;
+						break;
+					}
+					default:
+					{
+						nvd_printf("[Emulator] Source operand register is unknown!\n");
 						break;
 					}
 				}
@@ -301,6 +312,18 @@ u8 noir_hvcode nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_s
 			}
 			case ZYDIS_MNEMONIC_PUSH:
 			{
+				nvd_printf("[Emulator] push instruction is unsupported!\n");
+				break;
+			}
+			default:
+			{
+				char raw_ins_str[48];
+				char fmt_ins_str[64];
+				ZydisDecodedOperand *ZyOp=nvc_emu_get_read_operand(&ZyIns,ZyOps);
+				for(u8 i=0;i<ZyIns.length;i++)
+					nv_snprintf(&raw_ins_str[i*3],sizeof(raw_ins_str)-(i*3),"%02X ",instruction[i]);
+				ZydisFormatterFormatInstruction(&ZyFmt,&ZyIns,ZyOps,ZYDIS_MAX_OPERAND_COUNT,fmt_ins_str,sizeof(fmt_ins_str),ZYDIS_RUNTIME_ADDRESS_NONE,ZYAN_NULL);
+				nvd_printf("[Emulator] Unknown Instruction: %s\t%s\n",raw_ins_str,fmt_ins_str);
 				break;
 			}
 		}

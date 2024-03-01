@@ -17,6 +17,7 @@
 // Definition of vmmcall Codes
 #define noir_svm_callexit					0x1		// Restore from subversion.
 #define noir_svm_call_flush_tlb				0x2		// Flush TLBs.
+#define noir_svm_call_signal_runtime		0x3		// Signal the hypervisor that UEFI is entering runtime stage.
 
 #define noir_svm_init_custom_vmcb			0x10000
 #define noir_svm_run_custom_vcpu			0x10001

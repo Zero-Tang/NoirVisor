@@ -60,8 +60,8 @@
 
 // Define Generic Hypercall Codes for NoirVisor management.
 #define noir_hypercall_callexit					0x1
-#define noir_hypercall_readphys					0x2
-#define noir_hypercall_writephys				0x3
+#define noir_hypercall_flushtlb					0x2
+#define noir_hypercall_signal_runtime			0x3
 
 // Define Generic Hypercall Codes for Customizable VM.
 #define noir_cvm_run_vcpu					0x10001

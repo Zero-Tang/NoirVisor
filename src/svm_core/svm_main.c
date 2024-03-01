@@ -679,8 +679,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	if(hvm_p->options.stealth_inline_hook)		// This feature does not have a good performance.
 		nvc_npt_build_hook_mapping(hvm_p->relative_hvm->primary_nptm,hvm_p->relative_hvm->secondary_nptm);
 #else
-	if(nvc_npt_build_apic_interceptions()==false)
-		goto alloc_failure;
+	// if(nvc_npt_build_apic_interceptions()==false)goto alloc_failure;
 #endif
 	if(nvc_npt_initialize_ci(hvm_p->relative_hvm->primary_nptm)==false)goto alloc_failure;
 	hvm_p->host_pat.value=noir_rdmsr(amd64_pat);
