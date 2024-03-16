@@ -83,6 +83,25 @@ svm_check:
 	return false;
 }
 
+bool noir_hvcode fastcall noir_ci_is_ci_phys_page(u64 phys,void** virt)
+{
+	u32 lo=0,hi=noir_ci->pages;
+	while(lo<=hi)
+	{
+		u32 mid=(lo+hi)>>1;
+		if(phys<noir_ci->page_ci[mid].phys)
+			hi=mid-1;
+		else if(phys>=noir_ci->page_ci[mid].phys+page_size)
+			lo=mid+1;
+		else
+		{
+			if(virt)*virt=(void*)((ulong_ptr)noir_ci->page_ci[mid].virt+page_offset(phys));
+			return true;
+		}
+	}
+	return false;
+}
+
 #if !defined(_hv_type1)
 u32 static noir_hvcode stdcall noir_ci_enforcement_worker(void* context)
 {

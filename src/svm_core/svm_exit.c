@@ -1128,7 +1128,6 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_st
 	ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
 	ulong_ptr gcr3=noir_svm_vmread(vcpu->vmcb.virt,guest_cr3);
 	unref_var(context);
-	nvd_printf("Received Hypercall Code: 0x%X\n",vmmcall_func);
 	switch(vmmcall_func)
 	{
 		case noir_svm_callexit:
@@ -1576,6 +1575,8 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 		{
 			// If the assigned ASID is one, then the logic for treating this
 			// #NPF should be considered as special subverted host operations.
+			ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
+			u64 gpa=noir_svm_vmread64(vcpu->vmcb.virt,exit_info2);
 #if !defined(_hv_type1)
 			if(fault.execute)
 			{
@@ -1599,13 +1600,21 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_handler(noir_gpr_state_p gpr_
 				// Hence we should advance rip by software analysis.
 				// Usually, if #NPF handler goes here, it might be induced by Hardware-Enforced CI.
 				// In this regard, we assume this instruction is writing protected page.
-				nvd_printf("CI-event is intercepted! #NPF Code: 0x%x, GPA=0x%p\n",fault.value,noir_svm_vmread64(vcpu->vmcb.virt,exit_info2));
+				void* gva;
+				if(noir_ci_is_ci_phys_page(gpa,&gva))
+					nvd_printf("CI-event is intercepted! #NPF Code: 0x%x, GPA=0x%p, GVA=0x%p, rip=0x%p\n",fault.value,gpa,gva,gip);
+				else
+				{
+					// Might be Linux KVM's bug. Not confirmed.
+					gpr_state->rsp=noir_svm_vmread(vcpu->vmcb.virt,guest_rsp);
+					nvd_printf("Unknown #NPF is intercepted! #NPF Code: 0x%x, GPA=0x%p, GPR=0x%p, rip=0x%p\n",fault.value,gpa,gpr_state,gip);
+					noir_int3();
+				}
 				void* instruction=(void*)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
 				// Determine the Long-Mode through CS.L bit.
 				bool long_mode=noir_svm_vmcb_bt32(vcpu->vmcb.virt,guest_cs_attrib,9);
 				u32 increment=noir_get_instruction_length(instruction,long_mode);
 				// Increment the rip so that the access is ignored.
-				ulong_ptr gip=noir_svm_vmread(vcpu->vmcb.virt,guest_rip);
 				gip+=increment;
 				// If guest is not in long mode, cut the higher 32 bits in rip register.
 				if(!long_mode)gip&=maxu32;

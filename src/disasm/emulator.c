@@ -123,7 +123,14 @@ noir_status nvc_emu_decode_memory_access(noir_cvm_virtual_cpu_p vcpu)
 						}
 					}
 					else
+					{
+						char ins_byte_str[48],mnemonic[64];
+						for(u8 j=0;j<ZyIns.length;j++)
+							nv_snprintf(&ins_byte_str[j*3],sizeof(ins_byte_str)-(j*3),"%02X ",vcpu->exit_context.memory_access.instruction_bytes[j]);
+						ZydisFormatterFormatInstruction(&ZyFmt,&ZyIns,ZyOps,ZYDIS_MAX_OPERAND_COUNT,mnemonic,sizeof(mnemonic),vcpu->exit_context.rip,ZYAN_NULL);
+						nvd_printf("[CVM MMIO] Operand %u is not memory! (0x%016llX %s\t %s)\n",i,vcpu->exit_context.rip,ins_byte_str,mnemonic);
 						noir_int3();
+					}
 				}
 				else if(ZyOps[i].actions & mmio_an_action)
 				{
@@ -237,6 +244,16 @@ noir_status nvc_emu_decode_memory_access(noir_cvm_virtual_cpu_p vcpu)
 			if(noir_bt(&vcpu->exit_context.cs.selector,13)==false)vcpu->exit_context.next_rip&=maxu32;
 			// Mark the decoder has completed operation.
 			mem_ctxt->flags.decoded=true;
+		}
+		else
+		{
+			u8 mode=(noir_bt(&vcpu->exit_context.cs.attrib,13)<<2)+(noir_bt(&vcpu->exit_context.cs.attrib,14)<<1);
+			char ins_byte_str[48];
+			for(u8 j=0;j<15;j++)
+				nv_snprintf(&ins_byte_str[j*3],sizeof(ins_byte_str)-(j*3),"%02X ",vcpu->exit_context.memory_access.instruction_bytes[j]);
+			if(mode==0)mode=1;
+			nvd_printf("[CVM MMIO] Failed to decode %u-bit instruction! Instruction Bytes: %s\n",mode<<4,ins_byte_str);
+			noir_int3();
 		}
 	}
 	return st;

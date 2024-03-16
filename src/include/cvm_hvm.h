@@ -89,6 +89,7 @@ typedef enum _noir_cvm_register_type
 	noir_cvm_time_stamp_counter,
 	noir_cvm_ghcb_register,
 	noir_cvm_apic_bar_register,
+	// All new register types must not go beyond this line.
 	noir_cvm_maximum_register_type
 }noir_cvm_register_type,*noir_cvm_register_type_p;
 
@@ -532,6 +533,16 @@ typedef struct _noir_cvm_vcpu_statistics
 	}interceptions;
 	u64 runtime;
 }noir_cvm_vcpu_statistics,*noir_cvm_vcpu_statistics_p;
+
+// Virtual-Processor Control Block (VPCB) is a shared page between the NoirVisor and User Hypervisors
+// so that system calls are omitted for reading and writing various vcpu state to improve overall performance.
+typedef struct _noir_cvm_vcpu_control_block
+{
+	noir_gpr_state gpr;
+	noir_seg_state seg;
+	noir_cr_state crs;
+	noir_dr_state drs;
+}noir_cvm_vcpu_control_block,*noir_cvm_vcpu_control_block_p;
 
 typedef struct _noir_cvm_virtual_cpu
 {

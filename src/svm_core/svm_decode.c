@@ -32,7 +32,27 @@ void static nvc_svm_fetch_instruction(noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_
 {
 	if(cvcpu)
 	{
+		// Guest information
+		const void* vmcb=cvcpu->vmcb.virt;
+		const u64 ncr3=noir_svm_vmread64(vmcb,npt_cr3);
+		const u64 gcr3=noir_svm_vmread64(vmcb,guest_cr3);
+		const u64 grip=noir_svm_vmread64(vmcb,guest_rip);
+		const u64 gcsb=noir_svm_vmread64(vmcb,guest_cs_base);
+		const u64 gip=gcsb+grip;
 		// Fetch instruction bytes from CVM
+		u8p ins_bytes=(u8p)((ulong_ptr)vmcb+guest_instruction_bytes);
+		u32 error_code=0;
+		if(noir_svm_vmcb_bt32(vmcb,guest_cr0,amd64_cr0_pg))
+		{
+			nvd_printf("Instruction fetching for CVM while Guest Paging is on is unsupported yet!\n");
+			noir_int3();
+		}
+		else
+		{
+			// Paging is disabled. This is the easiest part.
+			size_t len=nvc_copy_host_virtual_memory64(ncr3,gip,ins_bytes,15,false,noir_svm_vmcb_bt32(vmcb,guest_cr4,amd64_cr4_la57),&error_code);
+			noir_svm_vmwrite8(vmcb,number_of_bytes_fetched,(u8)len);
+		}
 	}
 	else
 	{
@@ -43,7 +63,7 @@ void static nvc_svm_fetch_instruction(noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_
 		const u64 gcsb=noir_svm_vmread64(vmcb,guest_cs_base);
 		const u64 gip=gcsb+grip;
 		// Fetch instruction bytes from Host
-		u8p ins_bytes=(u8p)((ulong_ptr)vcpu->vmcb.virt+guest_instruction_bytes);
+		u8p ins_bytes=(u8p)((ulong_ptr)vmcb+guest_instruction_bytes);
 		u32 error_code=0;
 		// For the sake of universal safety, do not load cr3 into the processor.
 		size_t len=nvc_copy_host_virtual_memory64(gcr3,gip,ins_bytes,15,false,noir_svm_vmcb_bt32(vmcb,guest_cr4,amd64_cr4_la57),&error_code);
@@ -80,12 +100,12 @@ void static nvc_svm_decoder_event_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 
 void static nvc_svm_decoder_cr_access_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	;
+	nvd_printf("Control-Register Access decoder is not supported yet!\n");
 }
 
 void static nvc_svm_decoder_dr_access_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	;
+	nvd_printf("Debug-Register Access decoder is not supported yet!\n");
 }
 
 void static nvc_svm_decoder_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
@@ -97,12 +117,12 @@ void static nvc_svm_decoder_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_
 
 void static nvc_svm_decoder_int_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	;
+	nvd_printf("Software-Interrupt decoder is not supported yet!\n");
 }
 
 void static nvc_svm_decoder_invlpg_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	;
+	nvd_printf("The invlpg instruction decoder is not supported yet!\n");
 }
 
 void static nvc_svm_decoder_io_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
@@ -118,6 +138,10 @@ void static nvc_svm_decoder_io_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_
 
 void static nvc_svm_decoder_npf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
+	const void* vmcb=cvcpu?cvcpu->vmcb.virt:vcpu->vmcb.virt;
+	u64 gip=noir_svm_vmread64(vmcb,guest_rip);
+	u64 gpa=noir_svm_vmread64(vmcb,exit_info2);
+	nvd_printf("[Fetch - %s] rip=0x%p triggered #NPF! GPA=0x%llX\n",cvcpu?"CVM Guest":"Subv Host",gip,gpa);
 	// For #NPF interceptions, fetching the instructions is just what we need to do.
 	if(!noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_decoder))
 		nvc_svm_fetch_instruction(vcpu,cvcpu);

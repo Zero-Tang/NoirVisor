@@ -552,6 +552,7 @@ bool static fastcall nvc_svm_rdmsr_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	u32 index=(u32)gpr_state->rcx;
 	large_integer val;
 	bool advance=true;
+	nvd_printf("Intercepted MSR-read for Index=0x%X!\n",index);
 	switch(index)
 	{
 		case amd64_tsc:
@@ -658,6 +659,7 @@ bool static fastcall nvc_svm_wrmsr_cvexit_handler(noir_gpr_state_p gpr_state,noi
 	bool advance=true;
 	val.low=(u32)gpr_state->rax;
 	val.high=(u32)gpr_state->rdx;
+	nvd_printf("Intercepted MSR-write to Index=0x%X! Incoming Value: 0x%016llX\n",index,val.value);
 	switch(index)
 	{
 		case amd64_tsc:
@@ -886,7 +888,10 @@ void static noir_hvcode fastcall nvc_svm_msr_cvexit_handler(noir_gpr_state_p gpr
 		if(advance)
 			noir_svm_advance_rip(cvcpu);
 		else
+		{
+			nvd_printf("Intercepted unknown MSR access! (Index=%u, Op=%s)\n",index,op_write?"Write":"Read");
 			nvc_svm_inject_cvm_exception(gpr_state,vcpu,cvcpu,amd64_invalid_opcode,false,0,0,0,null);
+		}
 	}
 }
 

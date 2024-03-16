@@ -24,12 +24,6 @@
 #include "svm_def.h"
 #include "svm_npt.h"
 
-// FIXME: Not Implemented.
-u64 nvc_gva_to_gpa(noir_npt_manager_p nptm,void* gva)
-{
-	return 0;
-}
-
 void nvc_npt_cleanup(noir_npt_manager_p nptm)
 {
 	if(nptm)

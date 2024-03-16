@@ -27,7 +27,6 @@ void noir_hvcode nvc_svm_switch_to_host_vcpu(noir_gpr_state_p gpr_state,noir_svm
 {
 	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
 	noir_svm_custom_vcpu_p cvcpu=loader_stack->custom_vcpu;
-	nvd_printf("Switching from CVM Guest to User Hypervisor...\n");
 	// Step 1: Save State of the Customizable VM.
 	if(cvcpu->vm->header.properties.nsv_guest)
 	{
@@ -97,7 +96,6 @@ void noir_hvcode nvc_svm_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_sv
 {
 	noir_svm_initial_stack_p loader_stack=noir_svm_get_loader_stack(vcpu->hv_stack);
 	bool asid_updated=false;
-	nvd_printf("Switching from User Hypervisor to CVM Guest...\n");
 	// IMPORTANT: If vCPU is scheduled to a different processor, resetting the VMCB cache state is required.
 	if(cvcpu->proc_id!=loader_stack->proc_id)
 	{

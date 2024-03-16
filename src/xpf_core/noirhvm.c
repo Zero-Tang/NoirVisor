@@ -1308,7 +1308,7 @@ bool nvc_translate_host_virtual_address_routine64(u64 pt,u64 va,u32 level,u64p p
 	pf_err->write=table[index].write<w;
 	pf_err->user=table[index].user<u;
 	pf_err->execute=table[index].no_execute>x;
-	if(pf_err->value)
+	if(pf_err->value && level==1)
 	{
 		nvd_printf("[Translate] Permission is not granted at level %u! #PF Error: 0x%X\n",level,pf_err->value);
 		return false;
@@ -1316,7 +1316,7 @@ bool nvc_translate_host_virtual_address_routine64(u64 pt,u64 va,u32 level,u64p p
 	else
 	{
 		// Permission is granted.
-		if(level)
+		if(level>1)
 		{
 			// This either is large-page or has sub levels.
 			if(table[index].psize)
@@ -1349,16 +1349,29 @@ bool nvc_translate_host_virtual_address_routine64(u64 pt,u64 va,u32 level,u64p p
 // If copied length is less than requested length, a page-fault is estimated.
 size_t nvc_copy_host_virtual_memory64(u64 pt,u64 va,void* buffer,size_t length,bool write,bool la57,u32p error_code)
 {
-	const u32 levels=la57+4;
-	if(page_offset(va)+length>=page_size)
+	if(page_offset(va)+length>page_size)
 	{
-		// FIXME: This operation spans multiple pages.
-		nvd_printf("[Copy] This copy operation spans multiple pages!\n");
-		return 0;
+		// Has page-span.
+		const u64 end_va=va+length;
+		u64 copy_size=0,copied_size=0,real_size=0;
+		for(u64 cur_va=va;cur_va<end_va;cur_va+=copy_size)
+		{
+			const u64 end_len=page_size-page_offset(va);
+			const u64 rem_len=end_va-cur_va;
+			copy_size=end_len<rem_len?end_len:rem_len;
+			nvd_printf("[Fetch] Copying %u bytes from VA 0x%016llX\n",copy_size,cur_va);
+			real_size+=nvc_copy_host_virtual_memory64(pt,cur_va,(void*)((ulong_ptr)buffer+copied_size),copy_size,write,la57,error_code);
+			copied_size+=copy_size;
+			// Let hypervisor know if which address caused page fault!
+			// Formula of faulting va: `fault_va=va+returned_length`.
+			if(real_size<copied_size)break;
+		}
+		return real_size;
 	}
 	else
 	{
 		// No page-span.
+		const u32 levels=la57+4;
 		u64 pa;
 		bool success=nvc_translate_host_virtual_address_routine64(pt,va,levels,&pa,error_code,true,write,false,false);
 		if(success)

@@ -59,3 +59,5 @@ dkms.conf
 
 # Compiler Logs
 *.log
+
+bin/

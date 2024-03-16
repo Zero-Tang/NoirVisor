@@ -134,5 +134,6 @@ noir_hvdata const u32 crc32c_table[256]=
     0xbe2da0a5, 0x4c4623a6, 0x5f16d052, 0xad7d5351
 };
 #else
+bool fastcall noir_ci_is_ci_phys_page(u64 phys,void** virt);
 extern noir_ci_context_p noir_ci;
 #endif

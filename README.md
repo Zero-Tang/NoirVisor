@@ -79,15 +79,18 @@ In that Zydis is included as a submodule, and because Zydis itself has a submodu
 
 ## Python script
 Since January 2024, NoirVisor can be built using Python script. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, Windows 7 is not supported. There is no `pip` package requirements for compilation. \
-In the root directory of this repository, execute the following command:
+First of all, in the root directory of this repository, execute the following command to compile the third-party libraries:
 ```
-make /target disasm /j
+make /target disassembler /j
 make /target snprintf /j
-make /j
 ```
 The first command will build the `zydis` disassembler engine. \
-The second command will build the `snprintf` library. \
-The third command will build the NoirVisor itself.
+The second command will build the `snprintf` library.
+
+Then you can compile NoirVisor itself:
+```
+make /j
+```
 
 Python-based compilation is parallel. It will achieve a great performance in building NoirVisor.
 
@@ -140,23 +143,9 @@ NoirVisor has defined its own vendor GUID `{2B1F2A1E-DBDF-44AC-DABCC7A130E2E71E}
 
 ### Running on a virtual machine
 The point of this method is to build a virtual disk image. \
-You may use `mtools` in order to make a virtual disk image. The pre-built `mtools` executables are provided [here](https://github.com/Zero-Tang/NoirVisor/files/12706542/mtools-4.0.43-bin.zip). Put them into directories listed in `PATH` environment variable. \
-First, create a 2.88M disk image with `fsutil`.
-```
-fsutil file createNew disk.img 2949120
-```
-Next, format the disk image and create directories.
-```
-mformat -i disk.img -f 2880 ::
-mmd -i disk.img ::/EFI
-mmd -i disk.img ::/EFI/BOOT
-```
-Finally, copy the NoirVisor EFI executables into the disk image.
-```
-mcopy -i disk.img bootx64.efi ::/EFI/BOOT
-mcopy -i disk.img NoirVisor.efi ::
-```
-In VMware, you will have to add the disk image as an optical disk. Floppy disk may work if and only if the size is 1.44M. When NoirVisor grows over this size, it won't work.
+You may use `mtools` in order to make a virtual disk image. The pre-built `mtools` executables are provided [here](https://github.com/Zero-Tang/NoirVisor/files/12706542/mtools-4.0.43-bin.zip). Put them into directories listed in `PATH` environment variable.
+
+Build script for NoirVisor on UEFI includes above commands. Add `NoirVisor-Uefi.img` as a floppy image in your virtual machine.
 
 # Documents
 This repository provides [additional documents](/doc/readme.md) which help new developers to join development.
@@ -166,7 +155,7 @@ As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]`
 
 You may disable the detection for NoirVisor in Windows via setting up the registry. \
 Locate the registry key: `HKLM\Software\Zero-Tang\NoirVisor`. If this key does not exist then create it. \
-Edit the `CpuidPresence` Key Value to 0. Feel free to execute the following command if you find it less taxing to do: \
+Edit the `CpuidPresence` Key Value to 0. Feel free to execute the following command if you find it less taxing to do:
 ```bat
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 0 /f
 ```
@@ -208,7 +197,8 @@ Porting to Unified Extensible Firmware Interface (UEFI) is in progress. \
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has six future development plans: \
+Project NoirVisor has six future development plans:
+
 - Develop Customizable VM engine for complex purposes.
 - Develop Nested Virtualization.
 - Develop IOMMU Core on Intel VT-d and AMD-Vi.
@@ -238,7 +228,7 @@ Here lists some informal publications (blogs) regarding hypervisor development:
 - Hardware-Level Code Integrity Enforcement, both Intel EPT and AMD NPT.
 
 # License
-This repository is under MIT license. \
+This repository is under MIT license.
 
 # Code of Conduct
 The Code of Conduct is added to NoirVisor Project since May.5th, 2019. Please follow the rules when contributing.
