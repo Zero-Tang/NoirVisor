@@ -182,6 +182,16 @@ VOID* noir_locate_acpi_rsdt(OUT UINTN *Length)
 	}
 }
 
+BOOLEAN NoirAcpiInitialize()
+{
+	return nvc_acpi_initialize()==0;
+}
+
+BOOLEAN NoirHpetInitialize()
+{
+	return nvc_hpet_initialize()==0;
+}
+
 BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)
 {
 	// Locate Section List

@@ -128,6 +128,8 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	NoirInitializeCodeIntegrity(ImageInfo->ImageBase);
 	NoirSuppressImageRelocation(ImageInfo->ImageBase);
 	NoirConfigureInternalDebugger();
+	NoirAcpiInitialize();
+	NoirHpetInitialize();
 	NoirBuildHypervisor();
 	return EFI_SUCCESS;
 }

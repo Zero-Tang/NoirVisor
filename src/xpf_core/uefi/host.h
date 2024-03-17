@@ -109,7 +109,7 @@ void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 void NoirBlockUntilKeyStroke(IN CHAR16 Unicode);
 void NoirUnexpectedInterruptHandler(void);
 void NoirSetupDebugSupportPerProcessor(IN VOID *ProcedureArgument);
-UINT64 NoirReadHpetCounter();
+UINT64 nvc_hpet_read_counter();
 
 UINT8 NoirGetInstructionLength16(IN UINT8 *Code,IN UINTN CodeLength);
 UINT8 NoirGetInstructionLength32(IN UINT8 *Code,IN UINTN CodeLength);
@@ -123,7 +123,7 @@ extern EFI_BOOT_SERVICES *gBS;
 extern EFI_SYSTEM_TABLE *gST;
 
 extern BOOLEAN NoirEfiInRuntimeStage;
-extern UINT32 NoirHpetIncrementingPeriod;
+extern UINT32 hpet_period;
 
 CHAR8* EfiMemoryTypeNames[]=
 {

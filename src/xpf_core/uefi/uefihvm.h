@@ -58,5 +58,7 @@ UINT32 noir_get_virtualization_supportability();
 BOOLEAN noir_is_virtualization_enabled();
 UINT32 nvc_build_hypervisor();
 void nvc_teardown_hypervisor();
+UINT32 nvc_acpi_initialize();
+UINT32 nvc_hpet_initialize();
 UINT32 noir_configure_serial_port_debugger(UINT8 PortNumber,UINT16 PortBase,UINT32 BaudRate);
 UINT32 noir_configure_qemu_debug_console(UINT16 port);

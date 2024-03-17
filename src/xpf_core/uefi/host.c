@@ -385,12 +385,12 @@ UINT64 noir_get_system_time()
 	// Use HPET to get the time.
 	// The return value has unit of 100ns.
 	// Do not use Runtime Service by virtue of complex calendar calculation.
-	if(NoirHpetIncrementingPeriod!=0xFFFFFFFF)
+	if(hpet_period!=0xFFFFFFFF)
 	{
 		// Number of Ticks as indicated by HPET.
-		UINT64 HpetTicks=NoirReadHpetCounter();
+		UINT64 HpetTicks=nvc_hpet_read_counter();
 		// Number of Femptoseconds as indicated by HPET.
-		UINT64 HpetFs=MultU64x32(HpetTicks,NoirHpetIncrementingPeriod);
+		UINT64 HpetFs=MultU64x32(HpetTicks,hpet_period);
 		// Divide by 100,000,000.
 		return HpetFs/100000000;
 	}

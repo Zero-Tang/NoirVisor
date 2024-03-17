@@ -511,7 +511,7 @@ typedef struct _acpi_dma_remapping_reporting_structure
 		u8 value;
 	}flags;
 	u8 reserved[10];
-	u8 remapping_structures[1];
+	u8 remapping_structures[0];
 }acpi_dma_remapping_reporting_structure,*acpi_dma_remapping_reporting_structure_p;
 
 typedef struct _acpi_io_virtualization_reporting_structure
@@ -533,7 +533,7 @@ typedef struct _acpi_io_virtualization_reporting_structure
 		u32 value;
 	}iv_info;
 	u8 reserved;
-	u8 ivdb[1];
+	u8 ivdb[0];
 }acpi_io_virtualization_reporting_structure,*acpi_io_virtualization_reporting_structure_p;
 
 typedef struct _acpi_high_precision_event_timer_table
@@ -558,3 +558,5 @@ typedef struct _acpi_high_precision_event_timer_table
 	u8 page_protection;
 }acpi_high_precision_event_timer_table,*acpi_high_precision_event_timer_table_p;
 #pragma pack()
+
+noir_status nvc_acpi_search_table(u32 signature,acpi_common_description_header_p prev,acpi_common_description_header_p *table);

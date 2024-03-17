@@ -243,6 +243,16 @@ typedef u32 noir_status;
 #define noir_nsv_violation				0xC000000E
 
 /*
+  Status Indicator: noir_acpi_no_such_table
+  If the specific ACPI table is not defined in current system,
+  then this value is supposed to be returned.
+
+  Value: 0xC000000F
+*/
+
+#define noir_acpi_no_such_table			0xC000000F
+
+/*
   Status Indicator: noir_not_intel
   If a procedure is specific for Intel Processor,
   and the processor is not manufactured by Intel,
