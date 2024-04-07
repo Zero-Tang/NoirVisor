@@ -1,0 +1,20 @@
+{
+	"hypervisor":
+	{
+		"c_sources":
+		[
+			"hpet.c"
+		],
+		"c_includes":
+		[
+			"src/include"
+		],
+		"extra_preproc_defflag":
+		[
+			"_{target_name}",
+			"_drv_hpet",
+			"_{arch}",
+			"_{compiler_family}"
+		]
+	}
+}

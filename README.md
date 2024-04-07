@@ -69,7 +69,6 @@ Presets for Free/Release build are available. Please note that the compiled bina
 Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. \
 To build a EFI Runtime Driver and Application, you should NASM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. Also, you should mount [EWDK11 with VS Build Tools 17.1.5](https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022) to V: drive. \
 You may download NASM from its official website: https://www.nasm.us/pub/nasm/stable/win64/. Make sure you have added the directory to the `PATH` environment variable. \
-You may download LLVM from GitHub: https://github.com/llvm/llvm-project/releases. Download the Win64 option. \
 You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases. Download the source code. \
 NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) on GitHub in order to build them.
 
@@ -105,7 +104,7 @@ There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://
 If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher. \
 If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine. \
 You may enable Stealth SSDT Hook by setting up registry. Please note that since hooking is a very dangerous behavior, NoirVisor disables them on default. \
-**Caveat: The stealth hook functionalities are *deprecated* by virtue of Windows kernel-mode patch dections. They are disabled by default. Future updates of NoirVisor will rarely address issues from them. If you encountered issues from stealth hook features, expect no fixes will be applied. This project has no interest in fixing them.** 
+**Caveat: The stealth hook functionalities are *deprecated* in that I'm tired of doing this. They are disabled by default. Future updates of NoirVisor will rarely address issues from them. If you encountered issues from stealth hook features, expect no fixes will be applied. This project has no interest in fixing them.** 
 ```bat
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "StealthMsrHook" /t REG_DWORD /d 1 /f
 ```
@@ -202,7 +201,7 @@ Project NoirVisor has six future development plans:
 - Develop Customizable VM engine for complex purposes.
 - Develop Nested Virtualization.
 - Develop IOMMU Core on Intel VT-d and AMD-Vi.
-- Develop NPIEP (Non-Privileged Instruction Execution Prevention) Emulation on Intel VT-x.
+- Port NoirVisor to the Rust Programming Language.
 - Port NoirVisor to Linux.
 - Port NoirVisor to UEFI and corresponding layered hypervisor.
 

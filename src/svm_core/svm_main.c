@@ -679,6 +679,7 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	if(hvm_p->options.stealth_inline_hook)		// This feature does not have a good performance.
 		nvc_npt_build_hook_mapping(hvm_p->relative_hvm->primary_nptm,hvm_p->relative_hvm->secondary_nptm);
 #else
+	// Currently, disable APIC interceptions. Windows can just work with Microsoft Synthetic MSRs.
 	// if(nvc_npt_build_apic_interceptions()==false)goto alloc_failure;
 #endif
 	if(nvc_npt_initialize_ci(hvm_p->relative_hvm->primary_nptm)==false)goto alloc_failure;
@@ -731,10 +732,13 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 	nvc_svm_setup_msr_hook(hvm_p);
 	nvc_svm_setup_io_hook(hvm_p);
 	// Build Reverse Mapping Table
-	if(!nvc_build_reverse_mapping_table())goto alloc_failure;
 	if(nvc_npt_protect_critical_hypervisor(hvm_p)==false)goto alloc_failure;
 	if(hvm_p->virtual_cpu==null)goto alloc_failure;
-	nvc_npt_build_reverse_map();
+	if(hvm_p->options.enable_nsv)
+	{
+		if(!nvc_build_reverse_mapping_table())goto alloc_failure;
+		nvc_npt_build_reverse_map();
+	}
 	hvm_p->options.tlfs_passthrough=noir_is_under_hvm();
 	if(hvm_p->options.tlfs_passthrough && hvm_p->options.cpuid_hv_presence)
 		nv_dprintf("Note: Hypervisor is detected! The cpuid presence will be in pass-through mode!\n");

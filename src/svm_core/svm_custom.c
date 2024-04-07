@@ -702,49 +702,65 @@ noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu)
 				// Some NoirVisor-specific interceptions cannot be handled in atomic state (GIF=0).
 				case cv_scheduler_nsv_activate:
 				{
-					// (De)Activation of NSV must be done under exclusion.
-					nvc_svmc_gain_exclusion(vcpu);
-					vcpu->vm->header.properties.nsv_guest=(u32)vcpu->header.exit_context.nsv_activation.activation;
-					nv_dprintf("VM 0x%p is %s NSV!\n",vcpu->vm,vcpu->vm->header.properties.nsv_guest?"activating":"deactivating");
-					u64p pa_list=noir_alloc_nonpg_memory(vcpu->vm->vcpu_count<<3);
-					if(pa_list)
+					if(hvm_p->options.enable_nsv)
 					{
-						u32 j=0;
-						for(u32 i=0;i<256;i++)
-							if(vcpu->vm->vcpu[i])
-								pa_list[j++]=vcpu->vm->vcpu[i]->vmcb.phys;
-						if(!vcpu->vm->header.properties.nsv_guest)	// If NSV is being deactivated, all pages must be reassigned as insecure memory.
-							nvc_npt_reassign_cvm_all_pages_ownership(vcpu->vm,vcpu->vm->asid,true,noir_nsv_rmt_insecure_guest);
-						// VMCB pages must be reassigned in order to (un)protect their state.
-						nvc_npt_reassign_page_ownership(pa_list,pa_list,vcpu->vm->vcpu_count,0,false,vcpu->vm->header.properties.nsv_guest?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest);
-						noir_free_nonpg_memory(pa_list);
+						// (De)Activation of NSV must be done under exclusion.
+						nvc_svmc_gain_exclusion(vcpu);
+						vcpu->vm->header.properties.nsv_guest=(u32)vcpu->header.exit_context.nsv_activation.activation;
+						nv_dprintf("VM 0x%p is %s NSV!\n",vcpu->vm,vcpu->vm->header.properties.nsv_guest?"activating":"deactivating");
+						u64p pa_list=noir_alloc_nonpg_memory(vcpu->vm->vcpu_count<<3);
+						if(pa_list)
+						{
+							u32 j=0;
+							for(u32 i=0;i<256;i++)
+								if(vcpu->vm->vcpu[i])
+									pa_list[j++]=vcpu->vm->vcpu[i]->vmcb.phys;
+							if(!vcpu->vm->header.properties.nsv_guest)	// If NSV is being deactivated, all pages must be reassigned as insecure memory.
+								nvc_npt_reassign_cvm_all_pages_ownership(vcpu->vm,vcpu->vm->asid,true,noir_nsv_rmt_insecure_guest);
+							// VMCB pages must be reassigned in order to (un)protect their state.
+							nvc_npt_reassign_page_ownership(pa_list,pa_list,vcpu->vm->vcpu_count,0,false,vcpu->vm->header.properties.nsv_guest?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest);
+							noir_free_nonpg_memory(pa_list);
+						}
+						nvc_svmc_free_exclusion(vcpu);
 					}
-					nvc_svmc_free_exclusion(vcpu);
+					else
+					{
+						nv_dprintf("VM 0x%p tries to use NSV while NSV is disabled!\n",vcpu->vm);
+						noir_int3();
+					}
 					break;
 				}
 				case cv_scheduler_nsv_claim_security:
 				{
-					// Claiming security of guest pages must be done under exclusion.
-					u32 pages=(u32)page_count(vcpu->header.nsvs.claim_gpa_end-vcpu->header.nsvs.claim_gpa_start);
-					u64p hpa_list=noir_alloc_nonpg_memory(pages<<3);
-					u64p gpa_list=noir_alloc_nonpg_memory(pages<<3);
-					if(hpa_list && gpa_list)
+					if(hvm_p->options.enable_nsv)
 					{
-						u8 ownership=vcpu->header.exit_context.claim_pages.claim?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest;
-						nvc_svmc_gain_exclusion(vcpu);
-						// Fill the list for reassignment.
-						for(u32 i=0;i<pages;i++)
+						u32 pages=(u32)page_count(vcpu->header.nsvs.claim_gpa_end-vcpu->header.nsvs.claim_gpa_start);
+						u64p hpa_list=noir_alloc_nonpg_memory(pages<<3);
+						u64p gpa_list=noir_alloc_nonpg_memory(pages<<3);
+						if(hpa_list && gpa_list)
 						{
-							gpa_list[i]=vcpu->header.nsvs.claim_gpa_start+page_mult(i);
-							nvc_svmc_get_physical_mapping(&vcpu->vm->nptm,gpa_list[i],&hpa_list[i],true,false,false);
+							u8 ownership=vcpu->header.exit_context.claim_pages.claim?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest;
+							// Claiming security of guest pages must be done under exclusion.
+							nvc_svmc_gain_exclusion(vcpu);
+							// Fill the list for reassignment.
+							for(u32 i=0;i<pages;i++)
+							{
+								gpa_list[i]=vcpu->header.nsvs.claim_gpa_start+page_mult(i);
+								nvc_svmc_get_physical_mapping(&vcpu->vm->nptm,gpa_list[i],&hpa_list[i],true,false,false);
+							}
+							// Perform reassignment.
+							nvc_npt_reassign_page_ownership(hpa_list,gpa_list,pages,vcpu->vm->asid,vcpu->header.exit_context.claim_pages.claim==false,ownership);
+							nvc_svmc_free_exclusion(vcpu);
+							nv_dprintf("NSV-VM 0x%p has claimed security of GPA range 0x%llX-0x%llX!\n",vcpu->vm,vcpu->header.nsvs.claim_gpa_start,vcpu->header.nsvs.claim_gpa_end);
 						}
-						// Perform reassignment.
-						nvc_npt_reassign_page_ownership(hpa_list,gpa_list,pages,vcpu->vm->asid,vcpu->header.exit_context.claim_pages.claim==false,ownership);
-						nvc_svmc_free_exclusion(vcpu);
-						nv_dprintf("NSV-VM 0x%p has claimed security of GPA range 0x%llX-0x%llX!\n",vcpu->vm,vcpu->header.nsvs.claim_gpa_start,vcpu->header.nsvs.claim_gpa_end);
+						if(hpa_list)noir_free_nonpg_memory(hpa_list);
+						if(gpa_list)noir_free_nonpg_memory(gpa_list);
 					}
-					if(hpa_list)noir_free_nonpg_memory(hpa_list);
-					if(gpa_list)noir_free_nonpg_memory(gpa_list);
+					else
+					{
+						nv_dprintf("VM 0x%p tries to claim security of memories while NSV is disabled!\n",vcpu->vm);
+						noir_int3();
+					}
 					break;
 				}
 			}
@@ -917,17 +933,21 @@ void nvc_svmc_release_vcpu(noir_svm_custom_vcpu_p vcpu)
 		if(vcpu->vmcb.virt)
 		{
 			// Reassign the VMCB page to the subverted host before releasing it.
-			nvc_npt_reassign_page_ownership(&vcpu->vmcb.phys,&vcpu->vmcb.phys,1,1,true,noir_nsv_rmt_subverted_host);
+			if(hvm_p->options.enable_nsv)
+				nvc_npt_reassign_page_ownership(&vcpu->vmcb.phys,&vcpu->vmcb.phys,1,1,true,noir_nsv_rmt_subverted_host);
 			noir_free_contd_memory(vcpu->vmcb.virt,page_size);
 		}
 		// Release XSAVE State Area,
 		if(vcpu->header.xsave_area)noir_free_contd_memory(vcpu->header.xsave_area,hvm_p->xfeat.supported_size_max);
-		// Release VMSA.
-		if(vcpu->header.vmsa.virt)
+		if(hvm_p->options.enable_nsv)
 		{
-			// Reassign the VMSA page to the subverted host before releasing it.
-			nvc_npt_reassign_page_ownership(&vcpu->header.vmsa.phys,&vcpu->header.vmsa.phys,1,1,true,noir_nsv_rmt_subverted_host);
-			noir_free_contd_memory(vcpu->header.vmsa.virt,page_size);
+			// Release VMSA.
+			if(vcpu->header.vmsa.virt)
+			{
+				// Reassign the VMSA page to the subverted host before releasing it.
+				nvc_npt_reassign_page_ownership(&vcpu->header.vmsa.phys,&vcpu->header.vmsa.phys,1,1,true,noir_nsv_rmt_subverted_host);
+				noir_free_contd_memory(vcpu->header.vmsa.virt,page_size);
+			}
 		}
 		// Remove vCPU from VM.
 		if(vcpu->vm)vcpu->vm->vcpu[vcpu->vcpu_id]=null;
@@ -968,8 +988,9 @@ noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_cu
 				goto alloc_failure;
 			// VMCB is assigned NoirVisor but ownership is insecure guest.
 			// Once the guest activates NSV, reassign the VMCB page ownership as secure guest.
-			if(!nvc_npt_reassign_page_ownership(&vcpu->vmcb.phys,&vcpu->vmcb.phys,1,0,false,noir_nsv_rmt_insecure_guest))
-				goto alloc_failure;
+			if(hvm_p->options.enable_nsv)
+				if(!nvc_npt_reassign_page_ownership(&vcpu->vmcb.phys,&vcpu->vmcb.phys,1,0,false,noir_nsv_rmt_insecure_guest))
+					goto alloc_failure;
 			if(noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_avic))
 			{
 				nvc_svm_avic_physical_apic_id_entry_p avic_physical=(nvc_svm_avic_physical_apic_id_entry_p)virtual_machine->avic_physical.virt;
@@ -989,15 +1010,18 @@ noir_status nvc_svmc_create_vcpu(noir_svm_custom_vcpu_p* virtual_cpu,noir_svm_cu
 			// Allocate XSAVE State Area
 			vcpu->header.xsave_area=noir_alloc_contd_memory(hvm_p->xfeat.supported_size_max);
 			if(vcpu->header.xsave_area==null)goto alloc_failure;
-			// Allocate NSV Area.
-			vcpu->header.vmsa.virt=noir_alloc_contd_memory(page_size);
-			if(vcpu->header.vmsa.virt)
-				vcpu->header.vmsa.phys=noir_get_physical_address(vcpu->header.vmsa.virt);
-			else
-				goto alloc_failure;
-			// VMSA is assigned to NoirVisor but ownership is always secure guest.
-			if(!nvc_npt_reassign_page_ownership(&vcpu->header.vmsa.phys,&vcpu->header.vmsa.phys,1,0,false,noir_nsv_rmt_secure_guest))
-				goto alloc_failure;
+			if(hvm_p->options.enable_nsv)
+			{
+				// Allocate NSV Area.
+				vcpu->header.vmsa.virt=noir_alloc_contd_memory(page_size);
+				if(vcpu->header.vmsa.virt)
+					vcpu->header.vmsa.phys=noir_get_physical_address(vcpu->header.vmsa.virt);
+				else
+					goto alloc_failure;
+				// VMSA is assigned to NoirVisor but ownership is always secure guest.
+				if(!nvc_npt_reassign_page_ownership(&vcpu->header.vmsa.phys,&vcpu->header.vmsa.phys,1,0,false,noir_nsv_rmt_secure_guest))
+					goto alloc_failure;
+			}
 			// Insert the vCPU into the VM.
 			virtual_machine->vcpu[vcpu_id]=vcpu;
 			vcpu->vcpu_id=vcpu_id;
@@ -1368,11 +1392,16 @@ noir_status nvc_svmc_set_unmapping(noir_svm_custom_vm_p virtual_machine,u64 gpa,
 	u64p hpa_list=noir_alloc_nonpg_memory(pages<<3);
 	if(hpa_list)
 	{
+		bool nsv_ret=true;
 		for(u32 i=0;i<pages;i++)
 			nvc_svmc_get_physical_mapping(&virtual_machine->nptm,gpa+page_4kb_mult(i),&hpa_list[i],true,false,false);
-		st=noir_nsv_violation;
+		if(hvm_p->options.enable_nsv)
+		{
+			st=noir_nsv_violation;
+			nsv_ret=nvc_npt_reassign_page_ownership(hpa_list,hpa_list,pages,1,false,noir_nsv_rmt_subverted_host);
+		}
 		// FIXME: Encrypt the pages if these pages are secure.
-		if(nvc_npt_reassign_page_ownership(hpa_list,hpa_list,pages,1,false,noir_nsv_rmt_subverted_host))
+		if(nsv_ret)
 		{
 			noir_cvm_mapping_attributes map_attrib={0};
 			for(u32 i=0;i<pages;i++)
@@ -1393,11 +1422,14 @@ noir_status nvc_svmc_set_mapping(noir_svm_custom_vm_p virtual_machine,noir_cvm_a
 	if(gpa_list)
 	{
 		u8 ownership=mapping_info->attributes.nsv_secure?noir_nsv_rmt_secure_guest:noir_nsv_rmt_insecure_guest;
+		bool nsv_ret=true;
+		if(hvm_p->options.enable_nsv)
+			nsv_ret=nvc_npt_reassign_page_ownership(phys_array,gpa_list,mapping_info->pages,virtual_machine->asid,false,ownership);
 		// First, reassign the reverse mapping.
 		for(u32 i=0;i<mapping_info->pages;i++)
 			gpa_list[i]=mapping_info->gpa+page_4kb_mult(i);
 		// FIXME: If the page is mapped as secure guest, decrypt the pages.
-		if(nvc_npt_reassign_page_ownership(phys_array,gpa_list,mapping_info->pages,virtual_machine->asid,false,ownership))
+		if(nsv_ret)
 		{
 			if(mapping_info->attributes.nsv_secure)
 			{
@@ -1728,15 +1760,18 @@ void nvc_svmc_release_vm(noir_svm_custom_vm_p vm)
 				cur=next;
 			}
 		}
-		// Encrypt all secure pages in the VM.
-		nvc_svmc_release_all_guest_pages(vm);
-		// Reassign all pages to the subverted host.
-		nvc_npt_reassign_cvm_all_pages_ownership(vm,1,true,noir_nsv_rmt_subverted_host);
-		// Release VMSA...
-		if(vm->header.vmsa.virt)
+		if(hvm_p->options.enable_nsv)
 		{
-			nvc_npt_reassign_page_ownership(&vm->header.vmsa.phys,&vm->header.vmsa.phys,1,1,true,noir_nsv_rmt_subverted_host);
-			noir_free_contd_memory(vm->header.vmsa.virt,page_size);
+			// Encrypt all secure pages in the VM.
+			nvc_svmc_release_all_guest_pages(vm);
+			// Reassign all pages to the subverted host.
+			nvc_npt_reassign_cvm_all_pages_ownership(vm,1,true,noir_nsv_rmt_subverted_host);
+			// Release VMSA...
+			if(vm->header.vmsa.virt)
+			{
+				nvc_npt_reassign_page_ownership(&vm->header.vmsa.phys,&vm->header.vmsa.phys,1,1,true,noir_nsv_rmt_subverted_host);
+				noir_free_contd_memory(vm->header.vmsa.virt,page_size);
+			}
 		}
 		// Release ASID
 		if(vm->asid!=0xffffffff)nvc_svmc_free_asid(vm->asid);
@@ -1789,27 +1824,30 @@ noir_status nvc_svmc_create_vm(noir_svm_custom_vm_p* virtual_machine)
 				vm->msrpm_full.phys=noir_get_physical_address(vm->msrpm_full.virt);
 			else
 				goto alloc_failure;
-			// Allocate VMSA.
-			vm->header.vmsa.virt=noir_alloc_contd_memory(page_size);
-			if(vm->header.vmsa.virt)
+			if(hvm_p->options.enable_nsv)
 			{
-				noir_nsv_virtual_machine_p nsvm=(noir_nsv_virtual_machine_p)vm->header.vmsa.virt;
-				nsvm->parent.vm=&vm->header;
-				// Generate an AES-128 key for the VM.
-				// Please note that this key-generator is insecure!
-				// It is just for demonstration purpose.
-				noir_movsb(nsvm->aes_key,"NoirVisor SE",12);
-				*(u32p)&nsvm->aes_key[12]=vm->asid;
-				// Expand the key.
-				noir_aes128_expand_key(nsvm->aes_key,true,nsvm->expanded_encryption_keys);
-				noir_aes128_expand_key(nsvm->aes_key,false,nsvm->expanded_decryption_keys);
-				vm->header.vmsa.phys=noir_get_physical_address(vm->header.vmsa.virt);
+				// Allocate VMSA.
+				vm->header.vmsa.virt=noir_alloc_contd_memory(page_size);
+				if(vm->header.vmsa.virt)
+				{
+					noir_nsv_virtual_machine_p nsvm=(noir_nsv_virtual_machine_p)vm->header.vmsa.virt;
+					nsvm->parent.vm=&vm->header;
+					// Generate an AES-128 key for the VM.
+					// Please note that this key-generator is insecure!
+					// It is just for demonstration purpose.
+					noir_movsb(nsvm->aes_key,"NoirVisor SE",12);
+					*(u32p)&nsvm->aes_key[12]=vm->asid;
+					// Expand the key.
+					noir_aes128_expand_key(nsvm->aes_key,true,nsvm->expanded_encryption_keys);
+					noir_aes128_expand_key(nsvm->aes_key,false,nsvm->expanded_decryption_keys);
+					vm->header.vmsa.phys=noir_get_physical_address(vm->header.vmsa.virt);
+				}
+				else
+					goto alloc_failure;
+				// VMSA must be placed in Secure Memory.
+				if(!nvc_npt_reassign_page_ownership(&vm->header.vmsa.phys,&vm->header.vmsa.phys,1,0,false,noir_nsv_rmt_secure_guest))
+					goto alloc_failure;
 			}
-			else
-				goto alloc_failure;
-			// VMSA must be placed in Secure Memory.
-			if(!nvc_npt_reassign_page_ownership(&vm->header.vmsa.phys,&vm->header.vmsa.phys,1,0,false,noir_nsv_rmt_secure_guest))
-				goto alloc_failure;
 			// Allocate vCPU pointer list.
 			// According to AVIC, 255 physical cores are permitted.
 			vm->vcpu=noir_alloc_nonpg_memory(sizeof(void*)*256);

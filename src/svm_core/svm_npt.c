@@ -651,15 +651,23 @@ alloc_failure:
 // Schedule out all vCPUs from execution before reassignment!
 bool nvc_npt_reassign_page_ownership(u64p hpa,u64p gpa,u32 pages,u32 asid,bool shared,u8 ownership)
 {
-	bool result;
-	// Lock everything we need here in order to circumvent race condition and reentrance of locks.
-	noir_acquire_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
-	noir_acquire_pushlock_exclusive(&hvm_p->rmd.lock);
-	// Now, perform reassignment.
-	result=nvc_npt_reassign_page_ownership_unsafe(hpa,gpa,pages,asid,shared,ownership);
-	// Unlock everything we locked.
-	noir_release_pushlock_exclusive(&hvm_p->rmd.lock);
-	noir_release_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
+	bool result=false;
+	if(hvm_p->options.enable_nsv)
+	{
+		// Lock everything we need here in order to circumvent race condition and reentrance of locks.
+		noir_acquire_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
+		noir_acquire_pushlock_exclusive(&hvm_p->rmd.lock);
+		// Now, perform reassignment.
+		result=nvc_npt_reassign_page_ownership_unsafe(hpa,gpa,pages,asid,shared,ownership);
+		// Unlock everything we locked.
+		noir_release_pushlock_exclusive(&hvm_p->rmd.lock);
+		noir_release_pushlock_exclusive(&hvm_p->relative_hvm->primary_nptm->nptm_lock);
+	}
+	else
+	{
+		nv_dprintf("[NoirVisor RMT] NoirVisor NSV is disabled!\n");
+		noir_int3();
+	}
 	// Return
 	return result;
 }

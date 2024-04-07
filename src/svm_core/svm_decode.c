@@ -100,12 +100,14 @@ void static nvc_svm_decoder_event_handler(noir_gpr_state_p gpr_state,noir_svm_vc
 
 void static nvc_svm_decoder_cr_access_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	nvd_printf("Control-Register Access decoder is not supported yet!\n");
+	if(!noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_decoder))
+		nvd_printf("Control-Register Access decoder is not supported yet!\n");
 }
 
 void static nvc_svm_decoder_dr_access_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	nvd_printf("Debug-Register Access decoder is not supported yet!\n");
+	if(!noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_decoder))
+		nvd_printf("Debug-Register Access decoder is not supported yet!\n");
 }
 
 void static nvc_svm_decoder_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
@@ -117,12 +119,14 @@ void static nvc_svm_decoder_pf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_
 
 void static nvc_svm_decoder_int_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	nvd_printf("Software-Interrupt decoder is not supported yet!\n");
+	if(!noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_decoder))
+		nvd_printf("Software-Interrupt decoder is not supported yet!\n");
 }
 
 void static nvc_svm_decoder_invlpg_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	nvd_printf("The invlpg instruction decoder is not supported yet!\n");
+	if(!noir_bt(&hvm_p->relative_hvm->virt_cap.capabilities,amd64_cpuid_decoder))
+		nvd_printf("The invlpg instruction decoder is not supported yet!\n");
 }
 
 void static nvc_svm_decoder_io_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
@@ -138,7 +142,7 @@ void static nvc_svm_decoder_io_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_
 
 void static nvc_svm_decoder_npf_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
-	const void* vmcb=cvcpu?cvcpu->vmcb.virt:vcpu->vmcb.virt;
+	const void* vmcb=(cvcpu?cvcpu->vmcb:vcpu->vmcb).virt;
 	u64 gip=noir_svm_vmread64(vmcb,guest_rip);
 	u64 gpa=noir_svm_vmread64(vmcb,exit_info2);
 	nvd_printf("[Fetch - %s] rip=0x%p triggered #NPF! GPA=0x%llX\n",cvcpu?"CVM Guest":"Subv Host",gip,gpa);

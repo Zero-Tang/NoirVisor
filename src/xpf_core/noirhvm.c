@@ -1295,6 +1295,7 @@ bool nvc_build_reverse_mapping_table()
 
 // Caveat: this routine currently does not consider shadow-stack and protection-key.
 // Use this routine only when Identity-Mapping is enabled.
+// Use recursive logic to reduce code size.
 bool nvc_translate_host_virtual_address_routine64(u64 pt,u64 va,u32 level,u64p pa,u32p error_code,bool r,bool w,bool x,bool u)
 {
 	const u64 shift_diff=(level-1)*page_shift_diff64;

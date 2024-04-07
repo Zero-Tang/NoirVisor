@@ -294,6 +294,7 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 	ULONG32 StealthInlineHook=0;			// Disable Stealth Inline Hook at default.
 	ULONG32 NestedVirtualization=0;			// Disable Nested Virtualization at default.
 	ULONG32 HideFromProcessorTrace=0;		// Do not hide from Intel Processor Trace at default.
+	ULONG32 SecureVirtualization=0;			// Disable Secure Virtualization at default.
 	BOOLEAN KvaShadowPresence=NoirDetectKvaShadow();
 	// Initialize.
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
@@ -334,6 +335,11 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 			if(NT_SUCCESS(st))HideFromProcessorTrace=*(PULONG32)KvPartInf->Data;
 			NoirDebugPrint("Hiding from Intel Processor Trace is %s!\n",HideFromProcessorTrace?"enabled":"disabled");
+			// Detect if NoirVisor Secure Virtualization is enabled.
+			RtlInitUnicodeString(&uniKvName,L"SecureVirtualization");
+			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+			if(NT_SUCCESS(st))SecureVirtualization=*(PULONG32)KvPartInf->Data;
+			NoirDebugPrint("Secure Virtualization is %s!\n",SecureVirtualization?"enabled":"disabled");
 			// Close the registry key handle.
 			ZwClose(hKey);
 		}
@@ -346,6 +352,7 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 	*Features|=(NestedVirtualization!=0)<<NOIR_HVM_FEATURE_NESTED_VIRTUALIZATION_BIT;
 	*Features|=KvaShadowPresence<<NOIR_HVM_FEATURE_KVA_SHADOW_PRESENCE_BIT;
 	*Features|=(HideFromProcessorTrace!=0)<<NOIR_HVM_FEATURE_HIDE_FROM_IPT_BIT;
+	*Features|=(SecureVirtualization!=0)<<NOIR_HVM_FEATURE_SECURE_VIRTUALIZATION_BIT;
 	return st;
 }
 

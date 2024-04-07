@@ -218,6 +218,7 @@ typedef struct _noir_cvm_task_switch_context
 #define noir_cvm_operand_class_segsel		5		// cs, gs, etc...
 #define noir_cvm_operand_class_fpr			6		// mm0, st(4), etc.
 #define noir_cvm_operand_class_simd			7		// xmm0, ymm9, zmm22, etc.
+#define noir_cvm_operand_class_amx			8		// tmm0 to tmm7.
 #define noir_cvm_operand_class_unknown		31
 
 #define noir_cvm_instruction_code_mov			0
@@ -534,14 +535,49 @@ typedef struct _noir_cvm_vcpu_statistics
 	u64 runtime;
 }noir_cvm_vcpu_statistics,*noir_cvm_vcpu_statistics_p;
 
-// Virtual-Processor Control Block (VPCB) is a shared page between the NoirVisor and User Hypervisors
-// so that system calls are omitted for reading and writing various vcpu state to improve overall performance.
+// Virtual-Processor Control Block (VPCB) is one or more shared page(s) between the NoirVisor
+// and the User Hypervisors to accelerate VM-Exit handlings, especially I/O emulations.
+// When VPCB is active, Exit-Context is not used.
 typedef struct _noir_cvm_vcpu_control_block
 {
-	noir_gpr_state gpr;
-	noir_seg_state seg;
-	noir_cr_state crs;
-	noir_dr_state drs;
+	u64 size;
+	// This code is used for User Hypervisors to know what to do.
+	// NoirVisor will reuse this field to emulate inputs.
+	noir_cvm_intercept_code intercept_code;
+	union
+	{
+		struct
+		{
+			u64 req_intr_window:1;
+			u64 rescind_vcpu:1;
+			// Reserved for future purposes.
+			u64 reserved:62;
+		};
+		u64 value;
+	}flags;
+	union
+	{
+		struct
+		{
+			u16 port;
+			u8 size;
+			u8 direction;
+			u64 count;
+		}pio;
+		struct
+		{
+			u64 gpa;
+			u16 size;
+			u8 direction;
+			u64 count;
+		}mmio;
+	}io;
+	u64 rflags;
+	u64 rip;
+	u64 next_rip;
+	// Align the I/O buffer at 1024 bytes.
+	// Note that the biggest registers in x86 have 1024 bytes (AMX registers).
+	align_at(1024) u8 io_buff[1024];
 }noir_cvm_vcpu_control_block,*noir_cvm_vcpu_control_block_p;
 
 typedef struct _noir_cvm_virtual_cpu
@@ -558,6 +594,7 @@ typedef struct _noir_cvm_virtual_cpu
 	u64 rflags;
 	u64 rip;
 	u64 tsc_offset;
+	u32 tunnel_format;
 	void* tunnel;
 	void* iobuff;
 	u64 swapped_pte;
@@ -578,31 +615,6 @@ typedef struct _noir_cvm_virtual_cpu
 	u32 scheduling_priority;
 	noir_cvm_cpuid_quickpath_info cpuid_quickpath[8];
 }noir_cvm_virtual_cpu,*noir_cvm_virtual_cpu_p;
-
-typedef struct _noir_emulated_instruction
-{
-	u32 struct_size;
-	u32 emulation_type;
-}noir_emulated_instruction,*noir_emulated_instruction_p;
-
-typedef struct _noir_emulated_mmio_instruction
-{
-	noir_emulated_instruction header;
-	union
-	{
-		struct
-		{
-			u64 direction:1;
-			u64 advancement_length:4;
-			u64 reserved:27;
-			u64 access_size:32;
-		};
-		u64 value;
-	}emulation_property;
-	u64 address;
-	u64 data_size;
-	u8 data[64];
-}noir_emulated_mmio_instruction,*noir_emulated_mmio_instruction_p;
 
 #define noir_cvm_memory_uc	0
 #define noir_cvm_memory_wb	6
