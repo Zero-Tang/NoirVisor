@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2023, Zero Tang. All rights reserved.
+  Copyright 2018-2024, Zero Tang. All rights reserved.
 
   This file is the central HyperVisor of NoirVisor.
 
@@ -20,6 +20,8 @@
 #include <nv_intrin.h>
 #include <vt_intrin.h>
 #include <svm_intrin.h>
+#include <amd64.h>
+#include <ia32.h>
 
 u32 noir_visor_version()
 {
@@ -121,76 +123,6 @@ bool noir_is_under_hvm()
 	// If it is read as one. There must be a hypervisor.
 	// Otherwise, it is inconclusive to determine the presence.
 	return noir_bt(&c,31);
-}
-
-u64 nvc_translate_address_64_routine(noir_paging64_general_entry_p pt,u64 gva,bool write,bool* fault,size_t level)
-{
-	const size_t psize_level=level*page_shift_diff64+page_shift;
-	const size_t psize_exp=1ui64<<psize_level;
-	const u64 index=(gva>>psize_level)&0x1ff;
-	if(write>pt[index].write || pt[index].present==false)
-	{
-		// Page Fault!
-		*fault=true;
-		return 0;
-	}
-	if(pt[index].psize || level==0)
-	{
-		// Reaching final level.
-		u64 base_mask=0xFFFFFFFFFFFFFFFF;
-		u64 offset_mask=0xFFFFFFFFFFFFFFFF;
-		u64 base=pt[index].value;
-		u64 offset=gva;
-		// Erase lower property bits for base.
-		base_mask<<=psize_level;
-		// Erase higher bits for offset.
-		offset_mask&=~base_mask;
-		// Erase higher property bits for base.
-		base_mask&=0xFFFFFFFFFF000;
-		// Calculate the base and mask.
-		base&=base_mask;
-		offset&=offset_mask;
-		return base+offset;
-	}
-	// There are remaining levels to walk over.
-	return nvc_translate_address_64_routine((noir_paging64_general_entry_p)page_mult(pt[index].base),gva,write,fault,level-1);
-}
-
-u64 nvc_translate_address_l4(u64 cr3,u64 gva,bool write,bool *fault)
-{
-	noir_paging64_general_entry_p root=(noir_paging64_general_entry_p)cr3;
-	return nvc_translate_address_64_routine((noir_paging64_general_entry_p)cr3,gva,write,fault,3);
-}
-
-u64 nvc_translate_address_l3(u64 cr3,u32 gva,bool write,bool *fault)
-{
-	noir_paging64_general_entry_p root=(noir_paging64_general_entry_p)cr3;
-	return nvc_translate_address_64_routine((noir_paging64_general_entry_p)cr3,(u64)gva,write,fault,2);
-}
-
-u64 nvc_translate_address_l2(u64 cr3,u32 gva,bool write,bool *fault)
-{
-	// For Non-PAE paging, there is no need to walk page table recursively.
-	noir_paging32_general_entry_p pde=(noir_paging32_general_entry_p)cr3;
-	noir_addr32_translator trans;
-	u64 phys;
-	trans.pointer=gva;
-	phys=trans.offset;
-	if(write>(bool)pde[trans.pde].pde.write || pde[trans.pde].pde.present==false)
-		*fault=true;		// Page Fault!
-	else if(pde[trans.pde].pde.psize)
-	{
-		// Large Page.
-		phys|=trans.pte<<page_shift;
-		phys|=pde[trans.pde].large_pde.base_lo<<(page_shift+page_shift_diff32);
-		phys|=((u64)pde[trans.pde].large_pde.base_hi)<<(page_shift+page_shift_diff32+page_shift_diff32);
-	}
-	else
-	{
-		noir_paging32_general_entry_p pte=(noir_paging32_general_entry_p)((u64)pde[trans.pde].pde.pte_base<<page_shift);
-		phys|=pte[trans.pte].pte.base<<page_shift;
-	}
-	return phys;
 }
 
 #if !defined(_hv_type1)
@@ -694,6 +626,13 @@ noir_status nvc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu)
 	return st;
 }
 
+noir_status nvc_set_tunnel(noir_cvm_virtual_cpu_p vcpu,void* tunnel)
+{
+	vcpu->tunnel_format=noir_cvm_tunnel_format_nvc;
+	vcpu->tunnel=tunnel;
+	return noir_success;
+}
+
 noir_cvm_virtual_cpu_p nvc_reference_vcpu(noir_cvm_virtual_machine_p vm,u32 vcpu_id)
 {
 	noir_cvm_virtual_cpu_p vcpu=null;
@@ -791,29 +730,6 @@ noir_status nvc_translate_gva_to_gpa(noir_cvm_virtual_cpu_p vcpu,u64 gva,u64p gp
 noir_status nvc_translate_gva_to_hva(noir_cvm_virtual_cpu_p vcpu,u64 gva,void* *hva)
 {
 	return noir_not_implemented;
-}
-
-noir_status nvc_operate_guest_memory(noir_cvm_virtual_cpu_p vcpu,u64 guest_address,void* buffer,u32 size,bool write,bool virtual_address)
-{
-	noir_status st=noir_hypervision_absent;
-	if(hvm_p)
-	{
-		noir_cvm_gmem_op_context context;
-		context.vcpu=vcpu;
-		context.guest_address=guest_address;
-		context.hva=buffer;
-		context.size=(u64)size;
-		context.write_op=write;
-		context.use_va=virtual_address;
-		context.reserved=0;
-		context.status=noir_unknown_processor;
-		if(hvm_p->selected_core==use_vt_core)
-			noir_vt_vmcall(noir_cvm_guest_memory_operation,(ulong_ptr)&context);
-		else if(hvm_p->selected_core==use_svm_core)
-			noir_svm_vmmcall(noir_cvm_guest_memory_operation,(ulong_ptr)&context);
-		st=context.status;
-	}
-	return st;
 }
 
 void nvc_release_lockers(noir_cvm_virtual_machine_p virtual_machine)
@@ -1293,6 +1209,221 @@ bool nvc_build_reverse_mapping_table()
 	return false;
 }
 
+bool static nvc_translate_guest_virtual_address_routine32(u64 np_base,u64 pt,u64 gva,u32 access,u64p gpa,u32p error_code)
+{
+	// It's not viable to translate legacy paging with recursive algorithm because the large-page mechanism in legacy paging is special.
+	noir_page_fault_error_code_p pf_err=(noir_page_fault_error_code_p)error_code;
+	// We need to translate GPA to HPA for the page table.
+	noir_paging32_general_entry_p table=null;
+	noir_page_fault_error_code np_err;
+	bool np_ret=noir_translate_custom_gpa(np_base,4,pt,noir_cvm_map_gpa_read_bit,(u64p)table,&np_err);
+	if(!np_ret)
+	{
+		nvd_printf("[GVA Translate] Failed to translate GVA 0x%016llX during page-walking on page-directory 0x%llX! Error Code: 0x%X\n",gva,pt,np_err.value);
+		noir_int3();
+		return false;
+	}
+	else
+	{
+		noir_addr32_translator trans;
+		trans.pointer=(u32)gva;
+		// Check Permission at PDE level. Note that Legacy Paging does not have execute restriction!
+		pf_err->value=0;
+		pf_err->present=table[trans.pde].pde.present<noir_bt(&access,noir_cvm_map_va_read);
+		pf_err->write=table[trans.pde].pde.write<noir_bt(&access,noir_cvm_map_va_write);
+		pf_err->user=table[trans.pde].pde.user<noir_bt(&access,noir_cvm_map_va_user);
+		if(pf_err->value)
+		{
+			nvd_printf("[GVA Translate] Permission is not granted at page directory! #PF Error: 0x%X\n",pf_err->value);
+			return false;
+		}
+		else
+		{
+			// Permission is granted at PDE level.
+			if(table[trans.pde].pde.psize)
+			{
+				const u64 base=page_4mb_mult(table[trans.pde].large_pde.base_lo)+page_4gb_mult(table[trans.pde].large_pde.base_hi);
+				*gpa=base+page_4mb_offset(gva);
+				return true;
+			}
+			else
+			{
+				const u64 pt_base=page_4kb_mult(table[trans.pde].pde.pte_base);
+				np_ret=noir_translate_custom_gpa(np_base,4,pt_base,noir_cvm_map_gpa_read_bit,(u64p)table,&np_err);
+				if(!np_ret)
+				{
+					nvd_printf("[GVA Translate] Failed to translate GVA 0x%016llX during page-walking on page-table 0x%llX! Error Code: 0x%X\n",gva,pt_base,np_err.value);
+					noir_int3();
+					return false;
+				}
+				else
+				{
+					// Check Permission at PTE level.
+					pf_err->present=table[trans.pte].pte.present<noir_bt(&access,noir_cvm_map_va_read);
+					pf_err->write=table[trans.pte].pte.write<noir_bt(&access,noir_cvm_map_va_write);
+					pf_err->user=table[trans.pte].pte.write<noir_bt(&access,noir_cvm_map_va_user);
+					if(pf_err->value)
+					{
+						nvd_printf("[GVA Translate] Permission is not granted at page table! #PF Error: 0x%X\n",pf_err->value);
+						return false;
+					}
+					else
+					{
+						// Permission is granted.
+						const u64 base=page_4kb_mult(table[trans.pte].pte.base);
+						*gpa=base+page_4kb_offset(gva);
+						return true;
+					}
+				}
+			}
+		}
+	}
+}
+
+bool static nvc_translate_guest_virtual_address_routine64(u64 np_base,u64 pt,u32 level,u64 gva,u32 access,u64p gpa,u32p error_code)
+{
+	// It is viable to use recursive algorithm to translate Long-Mode Paging.
+	const u64 shift_diff=(level-1)*page_shift_diff64;
+	const u64 index=page_entry_index64(gva>>(shift_diff+page_4kb_shift));
+	noir_page_fault_error_code_p pf_err=(noir_page_fault_error_code_p)error_code;
+	// We need to translate GPA to HPA for the page table.
+	noir_paging64_general_entry_p table=null;
+	noir_page_fault_error_code np_err;
+	bool np_ret=noir_translate_custom_gpa(np_base,4,pt,noir_cvm_map_gpa_read_bit,(u64p)table,&np_err);
+	if(!np_ret)
+	{
+		nvd_printf("[GVA Translate] Failed to translate GVA 0x%016llX during page-walking! Error Code: 0x%X\n",gva,np_err.value);
+		noir_int3();
+		return false;
+	}
+	else
+	{
+		// Check Permission.
+		pf_err->value=0;
+		pf_err->present=table[index].present<noir_bt(&access,noir_cvm_map_va_read);
+		pf_err->write=table[index].write<noir_bt(&access,noir_cvm_map_va_write);
+		pf_err->execute=table[index].no_execute>noir_bt(&access,noir_cvm_map_va_execute);
+		pf_err->user=table[index].user<noir_bt(&access,noir_cvm_map_va_user);
+		if(pf_err->value)
+		{
+			nvd_printf("[GVA Translate] Permission is not granted at level %u! #PF Error: 0x%X\n",level,pf_err->value);
+			return false;
+		}
+		else
+		{
+			// Permission is granted.
+			if(level>1)
+			{
+				// This either is large page or has sub levels.
+				if(table[index].psize)
+				{
+					const u64 offset_mask=(1<<(shift_diff+page_4kb_shift))-1;
+					const u64 base=(table[index].base>>shift_diff)<<(shift_diff+page_4kb_shift);
+					*gpa=base+(gva&offset_mask);
+					nvd_printf("[GVA Translate] GVA 0x%016llX is translated into GPA 0x%016llX at level %u in Long-Mode!\n",gva,*gpa,level);
+					return true;
+				}
+				else
+				{
+					const u64 base=page_4kb_mult(table[index].base);
+					return nvc_translate_guest_virtual_address_routine64(np_base,base,level-1,gva,access,gpa,error_code);
+				}
+			}
+			else
+			{
+				// Final Level
+				const u64 base=page_4kb_mult(table[index].base);
+				*gpa=base+page_offset(gva);
+				nvd_printf("[GVA Translate] GVA 0x%016llX is translated into GPA 0x%016llX in Long-Mode!\n",gva,*gpa);
+				return true;
+			}
+		}
+	}
+}
+
+bool nvc_translate_guest_virtual_address(noir_cvm_virtual_cpu_p vcpu,u64 gva,u32 access,u64p gpa,u32p error_code)
+{
+	// Check if paging is enabled
+	if(vcpu->crs.cr0&amd64_cr0_pg_bit)
+	{
+		// Paging is enabled.
+		const u64 np_base=noir_get_custom_vcpu_np_base(vcpu);
+		const u64 cr3=vcpu->crs.cr3;
+		// Check if Long-Mode Paging is active.
+		if(vcpu->msrs.efer&amd64_efer_lma_bit)
+		{
+			// Long-Mode Paging is active.
+			// Check number of levels.
+			const u32 levels=noir_bt64(vcpu->crs.cr4,amd64_cr4_la57)+4;
+			return nvc_translate_guest_virtual_address_routine64(np_base,page_base(cr3),levels,gva,access,gpa,error_code);
+		}
+		else
+		{
+			// Long-Mode Paging is inactive.
+			// Check if PAE.
+			if(vcpu->crs.cr4&amd64_cr4_pae_bit)
+				return nvc_translate_guest_virtual_address_routine64(np_base,page_pae_base(cr3),3,gva,access,gpa,error_code);
+			else
+				return nvc_translate_guest_virtual_address_routine32(np_base,page_base(cr3),gva,access,gpa,error_code);
+		}
+	}
+	else
+	{
+		// Paging is disabled. Simply return GPA.
+		*gpa=gva;
+		*error_code=0;
+		return true;
+	}
+}
+
+size_t static nvc_copy_guest_virtual_memory_in_page(noir_cvm_virtual_cpu_p vcpu,u64 gva,void* buffer,size_t length,bool write,u32p error_code)
+{
+	u64 gpa,hpa;
+	u32 flags=noir_cvm_map_va_read_bit;
+	if(write)flags|=noir_cvm_map_va_write_bit;
+	// Translate GVA to GPA.
+	bool success=nvc_translate_guest_virtual_address(vcpu,gva,flags,&gpa,error_code);
+	if(success)
+	{
+		// Translate GPA to HPA.
+		const u64 np_base=noir_get_custom_vcpu_np_base(vcpu);
+		noir_page_fault_error_code np_err;
+		success=noir_translate_custom_gpa(np_base,4,gpa,flags,&hpa,&np_err);
+		if(!success)
+		{
+			nvd_printf("Failed to translate GPA 0x%016llX! Error Code: 0x%X\n",gpa,np_err.value);
+			noir_int3();
+		}
+		else
+		{
+			if(write)
+				noir_movsb((u8p)hpa,buffer,length);
+			else
+				noir_movsb(buffer,(u8p)hpa,length);
+			return length;
+		}
+	}
+	return 0;
+}
+
+size_t nvc_copy_guest_virtual_memory(noir_cvm_virtual_cpu_p vcpu,u64 gva,void* buffer,size_t length,bool write,u32p error_code)
+{
+	const u64 end_va=gva+length;
+	u64 copy_size=0,copied_size=0,real_size=0;
+	for(u64 cur_va=gva;cur_va<end_va;cur_va+=copy_size)
+	{
+		const u64 end_len=page_size-page_offset(gva);
+		const u64 rem_len=end_va-cur_va;
+		copy_size=end_len<rem_len?end_len:rem_len;
+		nvd_printf("[Copy] Copying %u bytes at VA 0x%016llX!\n",copy_size,cur_va);
+		real_size+=nvc_copy_guest_virtual_memory_in_page(vcpu,cur_va,(void*)((ulong_ptr)buffer+copied_size),copy_size,write,error_code);
+		copied_size+=copy_size;
+		// Let hypervisor know which address caused page fault!
+		if(real_size<copied_size)break;
+	}
+	return real_size;
+}
+
 // Caveat: this routine currently does not consider shadow-stack and protection-key.
 // Use this routine only when Identity-Mapping is enabled.
 // Use recursive logic to reduce code size.
@@ -1363,7 +1494,7 @@ size_t nvc_copy_host_virtual_memory64(u64 pt,u64 va,void* buffer,size_t length,b
 			nvd_printf("[Fetch] Copying %u bytes from VA 0x%016llX\n",copy_size,cur_va);
 			real_size+=nvc_copy_host_virtual_memory64(pt,cur_va,(void*)((ulong_ptr)buffer+copied_size),copy_size,write,la57,error_code);
 			copied_size+=copy_size;
-			// Let hypervisor know if which address caused page fault!
+			// Let hypervisor know which address caused page fault!
 			// Formula of faulting va: `fault_va=va+returned_length`.
 			if(real_size<copied_size)break;
 		}

@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2023, Zero Tang. All rights reserved.
+  Copyright 2018-2024, Zero Tang. All rights reserved.
 
   This file is the basic Exit Handler of SVM Driver.
 
@@ -637,19 +637,21 @@ void static noir_hvcode fastcall nvc_svm_cpuid_nested_virtualization_handler(noi
 		noir_stosd((u32*)info,0,4);
 	else
 	{
+		const u32 old_edx=info->edx;
 		info->eax=0;		// Let Revision ID=0
 		// The ASIDs reserved for nested virtualization are between
 		// 2 to the start of ASIDs for Customizable VMs.
 		info->ebx=hvm_p->tlb_tagging.start-2;
 		// ECX is reserved by AMD. Leave it be.
 		info->edx=0;		// Make sure that only bits corresponding to supported features are set.
-		// Set the bits that NoirVisor supports.
+		// Set the bits that NoirVisor supports what hardware supports.
 		noir_bts(&info->edx,amd64_cpuid_npt);
-		noir_bts(&info->edx,amd64_cpuid_svm_lock);
 		noir_bts(&info->edx,amd64_cpuid_nrips);
 		noir_bts(&info->edx,amd64_cpuid_vmcb_clean);
 		noir_bts(&info->edx,amd64_cpuid_flush_asid);
 		noir_bts(&info->edx,amd64_cpuid_decoder);
+		info->edx&=old_edx;
+		// Set the bits that NoirVisor supports even without hardware support.
 	}
 }
 
@@ -1259,21 +1261,6 @@ void static noir_hvcode fastcall nvc_svm_vmmcall_handler(noir_gpr_state_p gpr_st
 				noir_svm_custom_vcpu_p cvcpu=(noir_svm_custom_vcpu_p)context;
 #endif
 				nvc_svm_set_guest_vcpu_options(cvcpu);
-			}
-			break;
-		}
-		case noir_svm_guest_memory_operation:
-		{
-			// Validate the caller. Only Layered Hypervisor is authorized to invoke CVM hypercalls.
-			if(gip>=hvm_p->layered_hv_image.base && gip<hvm_p->layered_hv_image.base+hvm_p->layered_hv_image.size)
-			{
-#if defined(_hv_type1)
-				// FIXME: Translate GVAs in the structure.
-				noir_cvm_gmem_op_context_p op_context=null;
-#else
-				noir_cvm_gmem_op_context_p op_context=(noir_cvm_gmem_op_context_p)context;
-#endif
-				nvc_svm_operate_guest_memory(op_context);
 			}
 			break;
 		}

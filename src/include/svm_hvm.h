@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2023, Zero Tang. All rights reserved.
+  Copyright 2018-2024, Zero Tang. All rights reserved.
 
   This file defines structures and constants for SVM Driver of NoirVisor.
 
@@ -23,7 +23,6 @@
 #define noir_svm_run_custom_vcpu			0x10001
 #define noir_svm_dump_vcpu_vmcb				0x10002
 #define noir_svm_set_vcpu_options			0x10003
-#define noir_svm_guest_memory_operation		0x10004
 #define noir_svm_nsv_reassign_rmt			0x10005
 #define noir_svm_nsv_remap_by_rmt			0x10006
 #define noir_svm_nsv_crypto_for_rmt			0x10007
@@ -356,7 +355,6 @@ void nvc_svm_inject_cvm_exception(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcp
 bool nvc_svm_nsv_save_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 bool nvc_svm_nsv_load_guest_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu);
 void nvc_svm_load_basic_exit_context(noir_svm_custom_vcpu_p vcpu);
-void nvc_svm_operate_guest_memory(noir_cvm_gmem_op_context_p context);
 void nvc_svm_emulate_init_signal(noir_gpr_state_p gpr_state,void* vmcb,u32 cpuid_fms);
 noir_svm_nested_vcpu_node_p nvc_svm_get_nested_vcpu_node(noir_svm_nested_vcpu_p nvcpu,u64 vmcb);
 void noir_hvcode nvc_svm_switch_to_nested_vcpu(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu_node);

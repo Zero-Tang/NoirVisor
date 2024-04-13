@@ -1,6 +1,6 @@
 ; NoirVisor - Hardware-Accelerated Hypervisor solution
 ; 
-; Copyright 2018-2023, Zero Tang. All rights reserved.
+; Copyright 2018-2024, Zero Tang. All rights reserved.
 ;
 ; This file is SSE4.2-Accelerated CRC32C Computation.
 ;

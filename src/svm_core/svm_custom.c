@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2023, Zero Tang. All rights reserved.
+  Copyright 2018-2024, Zero Tang. All rights reserved.
 
   This file is the customizable VM engine for AMD-V
 
@@ -550,67 +550,6 @@ void noir_hvcode nvc_svm_initialize_cvm_vmcb(noir_svm_custom_vcpu_p vcpu)
 	nsvcpu->parent.vmcb=vcpu->vmcb;
 }
 
-u64 noir_hvcode nvc_svm_translate_gva_to_gpa(noir_svm_custom_vcpu_p vcpu,u64 gva,bool write,bool *fault)
-{
-	if(vcpu->header.crs.cr0 & amd64_cr0_pg_bit)
-	{
-		u64 cr3=vcpu->header.crs.cr3;
-		if(vcpu->header.msrs.efer & amd64_efer_lma)
-		{
-			// 64-bit paging
-			return nvc_translate_address_l4(cr3,gva,write,fault);
-		}
-		else
-		{
-			// 32-bit paging
-			if(vcpu->header.crs.cr4 & amd64_cr4_pae)
-				return nvc_translate_address_l3(cr3,(u32)gva,write,fault);	// 3-Level Paging
-			else
-				return nvc_translate_address_l2(cr3,(u32)gva,write,fault);	// 2-Level Paging
-		}
-	}
-	else
-	{
-		// If paging is disabled, then GVA is GPA.
-		*fault=false;
-		return gva;
-	}
-}
-
-u64 noir_hvcode nvc_svm_translate_gpa_to_hpa(noir_svm_custom_vcpu_p vcpu,u64 gpa,bool write,bool *fault)
-{
-	u64 ncr3=vcpu->vm->nptm.ncr3.phys;
-	return nvc_translate_address_l4(ncr3,gpa,write,fault);
-}
-
-void noir_hvcode nvc_svm_operate_guest_memory(noir_cvm_gmem_op_context_p context)
-{
-	noir_svm_custom_vcpu_p vcpu=(noir_svm_custom_vcpu_p)context->vcpu;
-	u64 gpa,guest_hpa;
-	u32 size_remainder=(u32)context->size;
-	while(size_remainder)
-	{
-		bool fault;
-		u32 copy_size=size_remainder;
-		if(context->use_va)
-			gpa=nvc_svm_translate_gva_to_gpa(vcpu,context->guest_address,context->write_op,&fault);
-		else
-			gpa=context->guest_address;
-		guest_hpa=nvc_svm_translate_gpa_to_hpa(vcpu,gpa,context->write_op,&fault);
-		// Check if the copy range spans multiple pages.
-		// If spanning on multiple pages, contract the size.
-		if(gpa+size_remainder>page_base(gpa)+page_size)
-			copy_size=(u32)(page_base(gpa)+page_size-gpa);
-		// HPA is directly accessible.
-		if(context->write_op)
-			noir_movsb((u8p)guest_hpa,context->hva,copy_size);
-		else
-			noir_movsb(context->hva,(u8p)guest_hpa,copy_size);
-		// Reduce the remainder.
-		size_remainder-=copy_size;
-	}
-}
-
 void noir_hvcode nvc_svm_set_guest_vcpu_options(noir_svm_custom_vcpu_p vcpu)
 {
 	void* vmcb=vcpu->vmcb.virt;
@@ -778,6 +717,12 @@ noir_status nvc_svmc_rescind_vcpu(noir_svm_custom_vcpu_p vcpu)
 u32 nvc_svmc_get_vm_asid(noir_svm_custom_vm_p vm)
 {
 	return vm->asid;
+}
+
+u64 nvc_svmc_get_vcpu_npt_base(noir_cvm_virtual_cpu_p vcpu)
+{
+	noir_svm_custom_vcpu_p cvcpu=(noir_svm_custom_vcpu_p)vcpu;
+	return cvcpu->vm->nptm.ncr3.phys;
 }
 
 void nvc_svm_init_vcpu_cpuid_quickpath(noir_svm_custom_vcpu_p vcpu)
@@ -1904,6 +1849,9 @@ noir_status nvc_svmc_initialize_cvm_module()
 		hvm_p->idle_vm=&noir_idle_vm;
 		noir_initialize_list_entry(&noir_idle_vm.active_vm_list);
 	}
+	// Miscellaneous: Custom GPA Translation Callback
+	noir_translate_custom_gpa=nvc_svm_translate_custom_gpa;
+	noir_get_custom_vcpu_np_base=nvc_svmc_get_vcpu_npt_base;
 	return st;
 }
 #endif

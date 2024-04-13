@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2023, Zero Tang. All rights reserved.
+  Copyright 2018-2024, Zero Tang. All rights reserved.
 
   This file decodes interceptions if Decode-Assist and/or Next-RIP are unsupported.
 
@@ -27,6 +27,54 @@
 
 // This module is built because Linux KVM does not support Decode-Assist.
 
+// This is a callback function to translate GPA to HPA.
+bool nvc_svm_translate_custom_gpa(u64 pt,u32 level,u64 gpa,u32 access,u64p hpa,noir_page_fault_error_code_p err_code)
+{
+	const u64 shift_diff=(level-1)*page_shift_diff64;
+	const u64 index=page_entry_index64(gpa>>(shift_diff+page_4kb_shift));
+	amd64_npt_general_entry_p table=(amd64_npt_general_entry_p)pt;
+	// Check permission.
+	err_code->value=0;
+	err_code->present=table[index].present<noir_bt(&access,noir_cvm_map_gpa_read);
+	err_code->write=table[index].write<noir_bt(&access,noir_cvm_map_gpa_write);
+	err_code->execute=table[index].no_execute>noir_bt(&access,noir_cvm_map_gpa_execute);
+	if(err_code->value)
+	{
+		nvd_printf("[SVM-GPA Translation] Permission is not granted at level %u! #PF Error: 0x%X\n",level,err_code->value);
+		return false;
+	}
+	else
+	{
+		// Permission is granted.
+		if(level>1)
+		{
+			// This is either large-parge or has sub-levels.
+			if(table[index].psize)
+			{
+				const u64 offset_mask=(1<<(shift_diff+page_4kb_shift))-1;
+				const u64 base=(table[index].base>>shift_diff)<<(shift_diff+page_4kb_shift);
+				nvd_printf("[SVM-GPA Translate] GPA 0x%016llX is translated into HPA 0x%016llX at level %u!\n",gpa,*hpa,level);
+				*hpa=base+(gpa&offset_mask);
+				return true;
+			}
+			else
+			{
+				const u64 base=page_4kb_mult(table[index].base);
+				nvd_printf("[SVM-GPA Translate] Base of Next Level (%u): 0x%016llX\n",level-1,base);
+				return nvc_svm_translate_custom_gpa(base,level-1,gpa,access,hpa,err_code);
+			}
+		}
+		else
+		{
+			// Final Level
+			const u64 base=page_4kb_mult(table[index].base);
+			*hpa=base+page_offset(gpa);
+			nvd_printf("[SVM-GPA Translate] GPA 0x%016llX is translated into HPA 0x%016llX!\n",gpa,*hpa);
+			return true;
+		}
+	}
+}
+
 // Fetched instruction bytes will be placed in VMCB.
 void static nvc_svm_fetch_instruction(noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_p cvcpu)
 {
@@ -37,22 +85,24 @@ void static nvc_svm_fetch_instruction(noir_svm_vcpu_p vcpu,noir_svm_custom_vcpu_
 		const u64 ncr3=noir_svm_vmread64(vmcb,npt_cr3);
 		const u64 gcr3=noir_svm_vmread64(vmcb,guest_cr3);
 		const u64 grip=noir_svm_vmread64(vmcb,guest_rip);
+		const u16 gcss=noir_svm_vmread16(vmcb,guest_cs_selector);
 		const u64 gcsb=noir_svm_vmread64(vmcb,guest_cs_base);
 		const u64 gip=gcsb+grip;
-		// Fetch instruction bytes from CVM
+		// CR0, CR3, CR4 and EFER will be consulted in order to fetch guest memory.
+		cvcpu->header.crs.cr0=noir_svm_vmread64(vmcb,guest_cr0);
+		cvcpu->header.crs.cr3=noir_svm_vmread64(vmcb,guest_cr3);
+		cvcpu->header.crs.cr4=noir_svm_vmread64(vmcb,guest_cr4);
+		cvcpu->header.msrs.efer=noir_svm_vmread64(vmcb,guest_efer);
+		// Fetch instruction bytes from CVM.
 		u8p ins_bytes=(u8p)((ulong_ptr)vmcb+guest_instruction_bytes);
 		u32 error_code=0;
-		if(noir_svm_vmcb_bt32(vmcb,guest_cr0,amd64_cr0_pg))
-		{
-			nvd_printf("Instruction fetching for CVM while Guest Paging is on is unsupported yet!\n");
-			noir_int3();
-		}
-		else
-		{
-			// Paging is disabled. This is the easiest part.
-			size_t len=nvc_copy_host_virtual_memory64(ncr3,gip,ins_bytes,15,false,noir_svm_vmcb_bt32(vmcb,guest_cr4,amd64_cr4_la57),&error_code);
-			noir_svm_vmwrite8(vmcb,number_of_bytes_fetched,(u8)len);
-		}
+		size_t copied_length=nvc_copy_guest_virtual_memory(&cvcpu->header,grip,(void*)ins_bytes,15,false,&error_code);
+		if(copied_length<15)
+			nvd_printf("[Software Fetcher] Note: Instruction is near page boundary! rip=0x%016llX\n",grip);
+		char ins_byte_str[48];
+		for(size_t i=0;i<copied_length;i++)
+			nv_snprintf(&ins_byte_str[i*3],sizeof(ins_byte_str)-(i*3),"%02X ",ins_bytes[i]);
+		nvd_printf("[Software Fetcher] Fetched instruction bytes from CVM Guest at %04X:%016llX:\n%s\n",gcss,grip,ins_byte_str);
 	}
 	else
 	{

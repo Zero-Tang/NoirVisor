@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2023, Zero Tang. All rights reserved.
+  Copyright 2018-2024, Zero Tang. All rights reserved.
 
   This file is the basic development kit of NoirVisor.
   Do not include definitions related to virtualization in this header.
@@ -42,13 +42,16 @@
 #define page_shift				12
 #define page_4kb_shift			12
 #define page_2mb_shift			21
+#define page_4mb_shift			22
 #define page_1gb_shift			30
+#define page_4gb_shift			32
 #define page_512gb_shift		39
 #define page_256tb_shift		48
 
 #define page_offset(x)			((x)&0xfff)
 #define page_4kb_offset(x)		((x)&0xfff)
 #define page_2mb_offset(x)		((x)&0x1fffff)
+#define page_4mb_offset(x)		((x)&0x3fffff)
 #define page_1gb_offset(x)		((x)&0x3fffffff)
 #define page_512gb_offset(x)	((x)&0x7fffffffff)
 #define page_256tb_offset(x)	((x)&0xffffffffffff)
@@ -63,8 +66,10 @@
 #define page_mult(x)			((x)<<page_shift)
 #define page_4kb_mult(x)		((x)<<page_4kb_shift)
 #define page_2mb_mult(x)		((x)<<page_2mb_shift)
+#define page_4mb_mult(x)		((x)<<page_4mb_shift)
 #define page_1gb_mult(x)		((x)<<page_1gb_shift)
-#define page_512gb_mult(x)		((x)<<page_512gb_shift)
+#define page_4gb_mult(x)		((u64)(x)<<page_4gb_shift)
+#define page_512gb_mult(x)		((u64)(x)<<page_512gb_shift)
 
 #define bytes_to_pages(x)		(page_count(x)+(page_offset(x)!=0))
 #define bytes_to_4kb_pages(x)	(page_4kb_count(x)+(page_4kb_offset(x)!=0))
@@ -79,6 +84,7 @@
 #define bytes_span_512gb_pages(x)	(page_512gb_mult(bytes_to_512gb_pages(x)))
 
 #if defined(_amd64)
+#define page_pae_base(x)		(x&0xffffffffffffffe0)
 #define page_base(x)			(x&0xfffffffffffff000)
 #define page_4kb_base(x)		(x&0xfffffffffffff000)
 #define page_2mb_base(x)		(x&0xffffffffffe00000)
@@ -86,7 +92,9 @@
 #define page_512gb_base(x)		(x&0xffffff8000000000)
 #define page_256tb_base(x)		(x&0xffff000000000000)
 #else
+#define page_pae_base(x)		(x&0xffffffe0)
 #define page_base(x)			(x&0xfffff000)
+#define page_4mb_base(x)		(x&0xffc00000)
 #endif
 
 #define selector_rplti_mask		0xfff8

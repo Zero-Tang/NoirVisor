@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2023, Zero Tang. All rights reserved.
+  Copyright 2018-2024, Zero Tang. All rights reserved.
 
   This file is the basic driver of Intel EPT.
 
@@ -134,6 +134,27 @@ typedef union _amd64_npt_pte
 	};
 	u64 value;
 }amd64_npt_pte,*amd64_npt_pte_p;
+
+typedef union _amd64_npt_general_entry
+{
+	struct
+	{
+		u64 present:1;
+		u64 write:1;
+		u64 user:1;
+		u64 pwt:1;
+		u64 pcd:1;
+		u64 accessed:1;
+		u64 dirty:1;
+		u64 psize:1;
+		u64 global:1;
+		u64 reserved1:3;
+		u64 base:40;
+		u64 reserved2:11;
+		u64 no_execute:1;
+	};
+	u64 value;
+}amd64_npt_general_entry,*amd64_npt_general_entry_p;
 
 // Notice that NPT PDPTE Descriptor is describing
 // 512 1GiB-Pages in a 512GiB Page.

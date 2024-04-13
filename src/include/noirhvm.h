@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2023, Zero Tang. All rights reserved.
+  Copyright 2018-2024, Zero Tang. All rights reserved.
 
   This file is the central HyperVisor of NoirVisor.
 
@@ -58,6 +58,22 @@
 #define nvc_stack_size			0x4000
 #define nvc_stack_pages			4
 
+// Define Virt-Mem access rights.
+#define noir_cvm_map_gpa_read			0
+#define noir_cvm_map_gpa_write			1
+#define noir_cvm_map_gpa_execute		2
+#define noir_cvm_map_gpa_read_bit		0x0
+#define noir_cvm_map_gpa_write_bit		0x1
+#define noir_cvm_map_gpa_execute_bit	0x2
+#define noir_cvm_map_va_read			0
+#define noir_cvm_map_va_write			1
+#define noir_cvm_map_va_execute			2
+#define noir_cvm_map_va_user			3
+#define noir_cvm_map_va_read_bit		0x1
+#define noir_cvm_map_va_write_bit		0x2
+#define noir_cvm_map_va_execute_bit		0x4
+#define noir_cvm_map_va_user_bit		0x8
+
 // Define Generic Hypercall Codes for NoirVisor management.
 #define noir_hypercall_callexit					0x1
 #define noir_hypercall_flushtlb					0x2
@@ -67,7 +83,6 @@
 #define noir_cvm_run_vcpu					0x10001
 #define noir_cvm_dump_vcpu_vmcb				0x10002
 #define noir_cvm_set_vcpu_options			0x10003
-#define noir_cvm_guest_memory_operation		0x10004
 
 // Define the ownership purposes on Reverse Mapping Table.
 #define noir_nsv_rmt_subverted_host			0x00
@@ -122,6 +137,21 @@ typedef struct _noir_rmt_entry
 	}v4;
 }noir_rmt_entry,*noir_rmt_entry_p;
 */
+
+typedef bool (*noir_custom_gpa_translation_callback)
+(
+ u64 pt,
+ u32 level,
+ u64 gpa,
+ u32 access,
+ u64p hpa,
+ noir_page_fault_error_code_p err_code
+);
+
+typedef u64 (*noir_custom_vcpu_get_nested_paging_base)
+(
+ noir_cvm_virtual_cpu_p vcpu
+);
 
 // Reverse Mapping Table Entry (Candidate 2 Design)
 typedef struct _noir_rmt_entry
@@ -339,6 +369,8 @@ ulong_ptr system_cr3=0;
 ulong_ptr orig_system_call=0;
 char virtual_vstr[13]="AuthenticAMD\0";
 char virtual_nstr[49]="AMD Ryzen 7 1700 Eight-Core Processor\0";
+noir_custom_gpa_translation_callback noir_translate_custom_gpa=null;
+noir_custom_vcpu_get_nested_paging_base noir_get_custom_vcpu_np_base=null;
 #else
 bool nvc_build_reverse_mapping_table();
 void nvc_configure_reverse_mapping(u64 hpa,u64 gpa,u32 asid,bool shared,u8 ownership);
@@ -347,12 +379,16 @@ noir_rmt_entry_p nvc_get_rmt_entry(u64 hpa);
 extern noir_hypervisor_p hvm_p;
 extern ulong_ptr system_cr3;
 extern ulong_ptr orig_system_call;
+extern noir_custom_gpa_translation_callback noir_translate_custom_gpa;
+extern noir_custom_vcpu_get_nested_paging_base noir_get_custom_vcpu_np_base;
 #endif
 #if defined(_mshv_core)
 void nvc_svm_reconfigure_npiep_interceptions(void* vcpu);
 #elif defined(_vt_core)
 #elif defined(_svm_core)
+bool nvc_svm_translate_custom_gpa(u64 pt,u32 level,u64 gpa,u32 access,u64p hpa,noir_page_fault_error_code_p err_code);
 void nvc_svm_reconfigure_npiep_interceptions(noir_svm_vcpu_p vcpu);
+u64 nvc_svmc_get_vcpu_npt_base(noir_cvm_virtual_cpu_p vcpu);
 #endif
 // Functions from MSHV Core.
 u32 fastcall nvc_mshv_build_cpuid_handlers();
@@ -371,6 +407,7 @@ u8 nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_seg_state_p s
 // Functions from NoirVisor Memory Operator.
 bool nvc_translate_host_virtual_address_routine64(u64 pt,u64 va,u32 level,u64p pa,u32p error_code,bool r,bool w,bool x,bool u);
 size_t nvc_copy_host_virtual_memory64(u64 pt,u64 va,void* buffer,size_t length,bool write,bool la57,u32p error_code);
+size_t nvc_copy_guest_virtual_memory(noir_cvm_virtual_cpu_p vcpu,u64 gva,void* buffer,size_t length,bool write,u32p error_code);
 
 // Exception Handlers in Assembly
 void noir_divide_error_fault_handler_a(void);

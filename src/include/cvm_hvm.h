@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2023, Zero Tang. All rights reserved.
+  Copyright 2018-2024, Zero Tang. All rights reserved.
 
   This file is header file for Customizable VM of NoirVisor.
 
@@ -414,8 +414,9 @@ typedef struct _noir_xcr_state
 
 #define noir_cvm_vcpu_cancellation	31
 
-#define noir_cvm_tunnel_format_nvc		0
-#define noir_cvm_tunnel_format_haxm		1
+#define noir_cvm_tunnel_format_none		0
+#define noir_cvm_tunnel_format_nvc		1
+#define noir_cvm_tunnel_format_haxm		2
 
 typedef union _noir_cvm_vcpu_options
 {
@@ -800,7 +801,6 @@ noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_registe
 noir_status nvc_view_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_register_type register_type,void* buffer,u32 buffer_size);
 noir_status nvc_set_guest_vcpu_options(noir_cvm_virtual_cpu_p vcpu,noir_cvm_vcpu_option_type option_type,u32 data);
 noir_status nvc_set_mapping(noir_cvm_virtual_machine_p virtual_machine,noir_cvm_address_mapping_p mapping_info);
-noir_status nvc_operate_guest_memory(noir_cvm_virtual_cpu_p vcpu,u64 guest_address,void* buffer,u32 size,bool write,bool virtual_address);
 void nvc_synchronize_vcpu_state(noir_cvm_virtual_cpu_p vcpu);
 noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context);
 #endif

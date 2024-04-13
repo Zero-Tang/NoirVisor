@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2023, Zero Tang. All rights reserved.
+  Copyright 2018-2024, Zero Tang. All rights reserved.
 
   This file is the infrastructure for nested virtualization of SVM Driver.
 
@@ -157,10 +157,10 @@ void noir_hvcode nvc_svm_switch_from_nested_vcpu(noir_gpr_state_p gpr_state,noir
 	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_sfmask);
 	noir_svm_vmcopy64(vmcb_l1,vmcb_t,guest_kernel_gs_base);
 	// Emulate cleared GIF for nested hypervisor.
-	nvc_svm_clear_nested_gif(vcpu);
+	// nvc_svm_clear_nested_gif(vcpu);
 	// Note: Clearing rflags.if is an unsafe implementation to emulate cleared GIF!
 	// This approach is only viable on bluepill-like hypervisors like SimpleSvm.
-	// noir_svm_vmcb_btr32(vmcb_l1,guest_rflags,amd64_rflags_if);
+	noir_svm_vmcb_btr32(vmcb_l1,guest_rflags,amd64_rflags_if);
 	// Switch to the nested hypervisor (L1).
 	loader_stack->guest_vmcb_pa=vcpu->vmcb.phys;
 }
@@ -249,10 +249,24 @@ void static noir_hvcode fastcall nvc_svm_clean_vmcb_tpr(void* vmcb_c,void* vmcb_
 
 void static noir_hvcode fastcall nvc_svm_clean_vmcb_np(void* vmcb_c,void* vmcb_t)
 {
-	// FIXME: Virtualize Nested Paging.
 	// Cached States for Nested Paging are invalidated.
-	noir_svm_vmcopy64(vmcb_t,vmcb_c,npt_control);
-	noir_svm_vmcopy64(vmcb_t,vmcb_c,npt_cr3);
+	if(noir_svm_vmcb_bt32(vmcb_c,npt_control,nvc_svm_npt_control_npt))
+	{
+		// FIXME: Shadow Nested Paging.
+		// Current implementation forwards the NPT, meaning that the nested hypervisor
+		// in the guest can disable NoirVisor's security featured implemented via NPT.
+		noir_svm_vmcopy64(vmcb_t,vmcb_c,npt_control);
+		noir_svm_vmcopy64(vmcb_t,vmcb_c,npt_cr3);
+	}
+	else
+	{
+		// The guest disabled NPT. Use NoirVisor's NPT paging structure.
+		nvc_svm_npt_control npt_ctrl;
+		npt_ctrl.value=0;
+		npt_ctrl.enable_npt=true;
+		noir_svm_vmwrite64(vmcb_t,npt_control,npt_ctrl.value);
+		noir_svm_vmwrite64(vmcb_t,npt_cr3,hvm_p->relative_hvm->primary_nptm->ncr3.phys);
+	}
 	noir_svm_vmcopy64(vmcb_t,vmcb_c,guest_pat);
 	// Clean the cache.
 	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_npt);
