@@ -93,6 +93,75 @@ typedef enum _noir_cvm_register_type
 	noir_cvm_maximum_register_type
 }noir_cvm_register_type,*noir_cvm_register_type_p;
 
+// The register-name mechanism can reduce amount of register-reads by user hypervisor.
+typedef enum _noir_cvm_register_name
+{
+	// General-Purpose Registers
+	noir_cvm_register_rax=0x0,
+	noir_cvm_register_rcx=0x1,
+	noir_cvm_register_rdx=0x2,
+	noir_cvm_register_rbx=0x3,
+	noir_cvm_register_rsp=0x4,
+	noir_cvm_register_rbp=0x5,
+	noir_cvm_register_rsi=0x6,
+	noir_cvm_register_rdi=0x7,
+	noir_cvm_register_r8=0x8,
+	noir_cvm_register_r9=0x9,
+	noir_cvm_register_r10=0xA,
+	noir_cvm_register_r11=0xB,
+	noir_cvm_register_r12=0xC,
+	noir_cvm_register_r13=0xD,
+	noir_cvm_register_r14=0xE,
+	noir_cvm_register_r15=0xF,
+	// Reserve 0x10-0x1F for APX (Advanced Performance Extension)
+	// This extension will implement 16 more GPRs (r16 to r31) in x86.
+	noir_cvm_register_rflags=0x20,
+	noir_cvm_register_rip=0x21,
+	// Segment Registers
+	noir_cvm_register_es=0x22,
+	noir_cvm_register_cs=0x23,
+	noir_cvm_register_ss=0x24,
+	noir_cvm_register_ds=0x25,
+	noir_cvm_register_fs=0x26,
+	noir_cvm_register_gs=0x27,
+	noir_cvm_register_tr=0x28,
+	noir_cvm_register_gdtr=0x29,
+	noir_cvm_register_idtr=0x2A,
+	noir_cvm_register_ldtr=0x2B,
+	// Control Registers
+	noir_cvm_register_cr0=0x30,
+	noir_cvm_register_cr2=0x32,
+	noir_cvm_register_cr3=0x33,
+	noir_cvm_register_cr4=0x34,
+	noir_cvm_register_cr8=0x38,
+	// Debug Registers
+	noir_cvm_register_dr0=0x40,
+	noir_cvm_register_dr1=0x41,
+	noir_cvm_register_dr2=0x42,
+	noir_cvm_register_dr3=0x43,
+	noir_cvm_register_dr6=0x46,
+	noir_cvm_register_dr7=0x47,
+	// Extended Control Registers
+	noir_cvm_register_xcr0=0x50,
+	// Model-Specific Registers (MSRs)
+	noir_cvm_register_tsc=0x1000,
+	noir_cvm_register_efer=0x1001,
+	noir_cvm_register_kgs_base=0x1002,
+	noir_cvm_register_apic_base=0x1003,
+	noir_cvm_register_sysenter_cs=0x1004,
+	noir_cvm_register_sysenter_esp=0x1005,
+	noir_cvm_register_sysenter_eip=0x1006,
+	noir_cvm_register_pat=0x1007,
+	noir_cvm_register_star=0x1008,
+	noir_cvm_register_lstar=0x1009,
+	noir_cvm_register_cstar=0x100A,
+	noir_cvm_register_sfmask=0x100B,
+	noir_cvm_register_ststar=0x100C,
+	// No MSRs goes beyond this definitions.
+	noir_cvm_register_msr_max
+	// FIXME: Implement more register names.
+}noir_cvm_register_name,*noir_cvm_register_name_p;
+
 typedef enum _noir_cvm_vcpu_option_type
 {
 	noir_cvm_guest_vcpu_options,
@@ -243,9 +312,14 @@ typedef struct _noir_cvm_memory_access_context
 	{
 		struct
 		{
+			// The size of MMIO operand in bytes. (Consider instructions like movzx)
 			u64 operand_size:16;
+			// The instruction identifier defined by NoirVisor.
 			u64 instruction_code:16;
+			// The class of operand in interest defined by NoirVisor.
 			u64 operand_class:5;
+			// The index of operand.
+			// (e.g.: rax is 0 because it's the first register among GPR)
 			u64 operand_code:7;
 			u64 reserved:19;
 			u64 decoded:1;
@@ -595,7 +669,6 @@ typedef struct _noir_cvm_virtual_cpu
 	u64 rflags;
 	u64 rip;
 	u64 tsc_offset;
-	u32 tunnel_format;
 	void* tunnel;
 	void* iobuff;
 	u64 swapped_pte;

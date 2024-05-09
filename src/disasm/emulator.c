@@ -81,6 +81,102 @@ u64 static nvc_emu_calculate_absolute_address(noir_cvm_virtual_cpu_p vcpu,ZydisD
 	return abs_addr&addr_mask;
 }
 
+void static nvc_emu_decode_instruction_mov(noir_cvm_virtual_cpu_p vcpu,ZydisDecodedInstruction *instruction,ZydisDecodedOperand operands[])
+{
+	noir_cvm_memory_access_context_p mem_ctxt=&vcpu->exit_context.memory_access;
+	// For mov instruction, the first operand is destination and the second operand is source.
+	// Get the first operand for MMIO reads and second operand for MMIO writes.
+	ZydisDecodedOperand* target_op=&operands[mem_ctxt->access.write];
+	ZydisDecodedOperand* counter_op=&operands[1-mem_ctxt->access.write];
+	// Decode the operand for MMIO operation.
+	switch(target_op->type)
+	{
+		case ZYDIS_OPERAND_TYPE_REGISTER:
+		{
+			ZydisRegister reg=target_op->reg.value;
+			if(reg>=ZYDIS_REGISTER_AL && reg<=ZYDIS_REGISTER_R15)
+			{
+				// General-Purpose Registers...
+				mem_ctxt->flags.operand_class=noir_cvm_operand_class_gpr;
+				if(reg>=ZYDIS_REGISTER_AL && reg<=ZYDIS_REGISTER_BL)
+					mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_AL;
+				else if(reg>=ZYDIS_REGISTER_AH && reg<=ZYDIS_REGISTER_BH)
+				{
+					mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_AH;
+					mem_ctxt->flags.operand_class=noir_cvm_operand_class_gpr8hi;
+				}
+				else if(reg>=ZYDIS_REGISTER_SPL && reg<=ZYDIS_REGISTER_R15B)
+					mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_SPL+4;
+				else if(reg>=ZYDIS_REGISTER_AX && reg<=ZYDIS_REGISTER_R15W)
+					mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_AX;
+				else if(reg>=ZYDIS_REGISTER_EAX && reg<=ZYDIS_REGISTER_R15D)
+					mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_EAX;
+				else
+					mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_RAX;
+			}
+			else if(reg>=ZYDIS_REGISTER_ST0 && reg<=ZYDIS_REGISTER_ST7)
+			{
+				// Floating-Point Registers...
+				mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_ST0;
+				mem_ctxt->flags.operand_class=noir_cvm_operand_class_fpr;
+			}
+			else if(reg>=ZYDIS_REGISTER_MM0 && reg<=ZYDIS_REGISTER_MM7)
+			{
+				// Each Multimedia Register is the lower 64 bits of the 80-bit Floating-Point Register.
+				mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_MM0;
+				mem_ctxt->flags.operand_class=noir_cvm_operand_class_fpr;
+			}
+			else if(reg>=ZYDIS_REGISTER_XMM0 && reg<=ZYDIS_REGISTER_ZMM31)
+			{
+				// Single-Instruction, Multiple-Data Registers...
+				if(reg>=ZYDIS_REGISTER_XMM0 && reg<=ZYDIS_REGISTER_XMM31)
+					mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_XMM0;
+				else if(reg>=ZYDIS_REGISTER_YMM0 && reg<=ZYDIS_REGISTER_YMM31)
+					mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_YMM0;
+				else if(reg>=ZYDIS_REGISTER_ZMM0 && reg<=ZYDIS_REGISTER_ZMM31)
+					mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_ZMM0;
+				mem_ctxt->flags.operand_class=noir_cvm_operand_class_simd;
+			}
+			else if(reg>=ZYDIS_REGISTER_ES && reg<=ZYDIS_REGISTER_GS)
+			{
+				// Segment Selectors...
+				mem_ctxt->flags.operand_code=reg-ZYDIS_REGISTER_ES;
+				mem_ctxt->flags.operand_class=noir_cvm_operand_class_segsel;
+			}
+			else
+				mem_ctxt->flags.operand_class=noir_cvm_operand_class_unknown;
+			break;
+		}
+		case ZYDIS_OPERAND_TYPE_MEMORY:
+		{
+			mem_ctxt->flags.operand_class=noir_cvm_operand_class_memory;
+			mem_ctxt->operand.mem=nvc_emu_calculate_absolute_address(vcpu,instruction,target_op);
+			break;
+		}
+		case ZYDIS_OPERAND_TYPE_POINTER:
+		{
+			mem_ctxt->flags.operand_class=noir_cvm_operand_class_farptr;
+			mem_ctxt->operand.far.segment=target_op->ptr.segment;
+			mem_ctxt->operand.far.offset=target_op->ptr.offset;
+			mem_ctxt->operand.far.reserved0=0;
+			mem_ctxt->operand.far.reserved1=0;
+			break;
+		}
+		case ZYDIS_OPERAND_TYPE_IMMEDIATE:
+		{
+			mem_ctxt->flags.operand_class=noir_cvm_operand_class_immediate;
+			mem_ctxt->operand.imm.is_signed=target_op->imm.is_signed;
+			mem_ctxt->operand.imm.u=target_op->imm.value.u;
+			break;
+		}
+		default:
+		{
+			mem_ctxt->flags.operand_class=noir_cvm_operand_class_unknown;
+			break;
+		}
+	}
+}
+
 noir_status nvc_emu_decode_memory_access(noir_cvm_virtual_cpu_p vcpu)
 {
 	noir_status st=noir_invalid_parameter;
@@ -101,135 +197,13 @@ noir_status nvc_emu_decode_memory_access(noir_cvm_virtual_cpu_p vcpu)
 		zst=ZydisDecoderDecodeFull(SelectedDecoder,vcpu->exit_context.memory_access.instruction_bytes,15,&ZyIns,ZyOps);
 		if(ZYAN_SUCCESS(zst))
 		{
-			ZydisOperandAction mmio_op_action=mem_ctxt->access.write?ZYDIS_OPERAND_ACTION_WRITE:ZYDIS_OPERAND_ACTION_READ;
-			ZydisOperandAction mmio_an_action=mem_ctxt->access.write?ZYDIS_OPERAND_ACTION_READ:ZYDIS_OPERAND_ACTION_WRITE;
-			for(u8 i=0;i<ZyIns.operand_count;i++)
-			{
-				if(ZyOps[i].actions & mmio_op_action)
-				{
-					// Set the GVA.
-					if(ZyOps[i].type==ZYDIS_OPERAND_TYPE_MEMORY)
-					{
-						u64 address=nvc_emu_calculate_absolute_address(vcpu,&ZyIns,&ZyOps[i]);
-						// Does the GVA have the same offset to the GPA?
-						if(page_4kb_offset(address)==page_4kb_offset(mem_ctxt->gpa))
-						{
-							// Actually, I'm not sure if there are potential bugs.
-							// Let me know if there could be such an instruction.
-							mem_ctxt->gva=address;
-							mem_ctxt->flags.operand_size=ZyOps[i].size>>3;
-							st=noir_success;
-							continue;
-						}
-					}
-					else
-					{
-						char ins_byte_str[48],mnemonic[64];
-						for(u8 j=0;j<ZyIns.length;j++)
-							nv_snprintf(&ins_byte_str[j*3],sizeof(ins_byte_str)-(j*3),"%02X ",vcpu->exit_context.memory_access.instruction_bytes[j]);
-						ZydisFormatterFormatInstruction(&ZyFmt,&ZyIns,ZyOps,ZYDIS_MAX_OPERAND_COUNT,mnemonic,sizeof(mnemonic),vcpu->exit_context.rip,ZYAN_NULL);
-						nvd_printf("[CVM MMIO] Operand %u is not memory! (0x%016llX %s\t %s)\n",i,vcpu->exit_context.rip,ins_byte_str,mnemonic);
-						noir_int3();
-					}
-				}
-				else if(ZyOps[i].actions & mmio_an_action)
-				{
-					// Decode the operand intended for MMIO operation.
-					switch(ZyOps[i].type)
-					{
-						case ZYDIS_OPERAND_TYPE_REGISTER:
-						{
-							ZydisRegister an_reg=ZyOps[i].reg.value;
-							if(an_reg>=ZYDIS_REGISTER_AL && an_reg<=ZYDIS_REGISTER_R15)
-							{
-								// General-Purpose Registers...
-								mem_ctxt->flags.operand_class=noir_cvm_operand_class_gpr;
-								if(an_reg>=ZYDIS_REGISTER_AL && an_reg<=ZYDIS_REGISTER_BL)
-									mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_AL;
-								else if(an_reg>=ZYDIS_REGISTER_AH && an_reg<=ZYDIS_REGISTER_BH)
-								{
-									mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_AH;
-									mem_ctxt->flags.operand_class=noir_cvm_operand_class_gpr8hi;
-								}
-								else if(an_reg>=ZYDIS_REGISTER_SPL && an_reg<=ZYDIS_REGISTER_R15B)
-									mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_SPL+4;
-								else if(an_reg>=ZYDIS_REGISTER_AX && an_reg<=ZYDIS_REGISTER_R15W)
-									mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_AX;
-								else if(an_reg>=ZYDIS_REGISTER_EAX && an_reg<=ZYDIS_REGISTER_R15D)
-									mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_EAX;
-								else
-									mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_RAX;
-							}
-							else if(an_reg>=ZYDIS_REGISTER_ST0 && an_reg<=ZYDIS_REGISTER_ST7)
-							{
-								// Floating-Point Registers...
-								mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_ST0;
-								mem_ctxt->flags.operand_class=noir_cvm_operand_class_fpr;
-							}
-							else if(an_reg>=ZYDIS_REGISTER_MM0 && an_reg<=ZYDIS_REGISTER_MM7)
-							{
-								// Each Multimedia Register is the lower 64 bits of the 80-bit Floating-Point Register.
-								mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_MM0;
-								mem_ctxt->flags.operand_class=noir_cvm_operand_class_fpr;
-							}
-							else if(an_reg>=ZYDIS_REGISTER_XMM0 && an_reg<=ZYDIS_REGISTER_ZMM31)
-							{
-								// Single-Instruction, Multiple-Data Registers...
-								if(an_reg>=ZYDIS_REGISTER_XMM0 && an_reg<=ZYDIS_REGISTER_XMM31)
-									mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_XMM0;
-								else if(an_reg>=ZYDIS_REGISTER_YMM0 && an_reg<=ZYDIS_REGISTER_YMM31)
-									mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_YMM0;
-								else if(an_reg>=ZYDIS_REGISTER_ZMM0 && an_reg<=ZYDIS_REGISTER_ZMM31)
-									mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_ZMM0;
-								mem_ctxt->flags.operand_class=noir_cvm_operand_class_simd;
-							}
-							else if(an_reg>=ZYDIS_REGISTER_ES && an_reg<=ZYDIS_REGISTER_GS)
-							{
-								// Segment Selectors...
-								mem_ctxt->flags.operand_code=an_reg-ZYDIS_REGISTER_ES;
-								mem_ctxt->flags.operand_class=noir_cvm_operand_class_segsel;
-							}
-							else
-								mem_ctxt->flags.operand_class=noir_cvm_operand_class_unknown;
-							break;
-						}
-						case ZYDIS_OPERAND_TYPE_MEMORY:
-						{
-							mem_ctxt->flags.operand_class=noir_cvm_operand_class_memory;
-							mem_ctxt->operand.mem=nvc_emu_calculate_absolute_address(vcpu,&ZyIns,&ZyOps[i]);
-							break;
-						}
-						case ZYDIS_OPERAND_TYPE_POINTER:
-						{
-							mem_ctxt->flags.operand_class=noir_cvm_operand_class_farptr;
-							mem_ctxt->operand.far.segment=ZyOps[i].ptr.segment;
-							mem_ctxt->operand.far.offset=ZyOps[i].ptr.offset;
-							mem_ctxt->operand.far.reserved0=0;
-							mem_ctxt->operand.far.reserved1=0;
-							break;
-						}
-						case ZYDIS_OPERAND_TYPE_IMMEDIATE:
-						{
-							mem_ctxt->flags.operand_class=noir_cvm_operand_class_immediate;
-							mem_ctxt->operand.imm.is_signed=ZyOps[i].imm.is_signed;
-							mem_ctxt->operand.imm.u=ZyOps[i].imm.value.u;
-							break;
-						}
-						default:
-						{
-							mem_ctxt->flags.operand_class=noir_cvm_operand_class_unknown;
-							break;
-						}
-					}
-					continue;
-				}
-			}
 			// Decode the identity of the MMIO instruction
 			switch(ZyIns.mnemonic)
 			{
 				case ZYDIS_MNEMONIC_MOV:
 				{
 					mem_ctxt->flags.instruction_code=noir_cvm_instruction_code_mov;
+					nvc_emu_decode_instruction_mov(vcpu,&ZyIns,ZyOps);
 					break;
 				}
 				default:
@@ -238,6 +212,7 @@ noir_status nvc_emu_decode_memory_access(noir_cvm_virtual_cpu_p vcpu)
 					break;
 				}
 			}
+			// Decode Next-Rip.
 			vcpu->exit_context.vcpu_state.instruction_length=ZyIns.length;
 			vcpu->exit_context.next_rip=vcpu->exit_context.rip+ZyIns.length;
 			// Reset the higher 32 bits of the advanced rip if the guest is not in long mode.

@@ -328,6 +328,30 @@ NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN UL
 	return st;
 }
 
+NOIR_STATUS NoirViewVirtualProcessorRegisters2(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN PULONG32 RegisterNames,IN ULONG32 RegisterCount,IN ULONG32 RegisterSize,OUT PVOID Buffer)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_view_vcpu_registers2(VP,RegisterNames,RegisterCount,RegisterSize,Buffer);
+	}
+	return st;
+}
+
+NOIR_STATUS NoirEditVirtualProcessorRegisters2(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN PULONG32 RegisterNames,IN ULONG32 RegisterCount,IN ULONG32 RegisterSize,IN PVOID Buffer)
+{
+	NOIR_STATUS st=NOIR_UNSUCCESSFUL;
+	PVOID VM=NoirReferenceVirtualMachineByHandle(VirtualMachine);
+	if(VM)
+	{
+		PVOID VP=nvc_reference_vcpu(VM,VpIndex);
+		st=VP==NULL?NOIR_VCPU_NOT_EXIST:nvc_edit_vcpu_registers2(VP,RegisterNames,RegisterCount,RegisterSize,Buffer);
+	}
+	return st;
+}
+
 NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG64 InjectedEvent)
 {
 	NOIR_STATUS st=NOIR_UNSUCCESSFUL;

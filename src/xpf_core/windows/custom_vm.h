@@ -302,6 +302,8 @@ NOIR_STATUS nvc_rescind_vcpu(IN PVOID VirtualProcessor);
 NOIR_STATUS nvc_query_vcpu_statistics(IN PVOID VirtualProcessor,OUT PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS nvc_view_vcpu_registers(IN PVOID VirtualProcessor,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS nvc_edit_vcpu_registers(IN PVOID VirtualProcessor,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
+NOIR_STATUS nvc_view_vcpu_registers2(IN PVOID VirtualProcessor,IN PULONG32 RegisterNames,IN ULONG32 RegisterCount,IN ULONG32 RegisterSize,OUT PVOID Buffer);
+NOIR_STATUS nvc_edit_vcpu_registers2(IN PVOID VirtualProcessor,IN PULONG32 RegisterNames,IN ULONG32 RegisterCount,IN ULONG32 RegisterSize,IN PVOID Buffer);
 NOIR_STATUS nvc_set_event_injection(IN PVOID VirtualProcessor,IN ULONG64 InjectedEvent);
 NOIR_STATUS nvc_set_guest_vcpu_options(IN PVOID VirtualProcessor,IN ULONG32 OptionType,IN ULONG32 Options);
 PVOID nvc_reference_vcpu(IN PVOID VirtualMachine,IN ULONG32 VpIndex);

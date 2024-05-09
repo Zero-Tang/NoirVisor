@@ -992,12 +992,13 @@ void static noir_hvcode fastcall nvc_svm_nested_pf_cvexit_handler(noir_gpr_state
 		cvcpu->header.exit_context.intercept_code=cv_memory_access;
 		cvcpu->header.exit_context.memory_access.access.fetched_bytes=noir_svm_vmread8(cvcpu->vmcb.virt,number_of_bytes_fetched);
 		noir_movsb(cvcpu->header.exit_context.memory_access.instruction_bytes,(u8*)((ulong_ptr)cvcpu->vmcb.virt+guest_instruction_bytes),15);
-		if(cvcpu->header.exit_context.intercept_code==cv_memory_access && cvcpu->header.vcpu_options.decode_memory_access_instruction)
+		// Decoder may be done outside host mode in order to debug easier.
+		/* if(cvcpu->header.vcpu_options.decode_memory_access_instruction)
 		{
 			// To decode instruction, vCPU state is required.
 			nvc_svm_load_basic_exit_context(cvcpu);
 			nvc_emu_decode_memory_access(&cvcpu->header);
-		}
+		} */
 	}
 	else if(fault.npf_table)
 	{

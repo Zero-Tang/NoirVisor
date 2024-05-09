@@ -189,6 +189,297 @@ void nvc_synchronize_vcpu_state(noir_cvm_virtual_cpu_p vcpu)
 		noir_vt_vmcall(noir_cvm_dump_vcpu_vmcb,(ulong_ptr)vcpu);
 }
 
+noir_status nvc_edit_vcpu_registers2(noir_cvm_virtual_cpu_p vcpu,noir_cvm_register_name_p register_names,u32 register_count,u32 register_size,void* buffer)
+{
+	noir_status st=noir_invalid_parameter;
+	// Each element of register array must be at least 8 bytes.
+	if(register_size<8)return st;
+	for(u32 i=0;i<register_count;i++)
+	{
+		void* reg_buff=(void*)((ulong_ptr)buffer+i*register_size);
+		// General-Purpose Registers.
+		if(register_names[i]>=noir_cvm_register_rax && register_names[i]<=noir_cvm_register_r15)
+		{
+			u64p gpr_array=(u64p)&vcpu->gpr;
+			gpr_array[register_names[i]-noir_cvm_register_rax]=*(u64p)reg_buff;
+			// The rax register needs to be synchronized onto VMCB.
+			if(register_names[i]==noir_cvm_register_rax)vcpu->state_cache.gprvalid=0;
+		}
+		// Flags Register.
+		else if(register_names[i]==noir_cvm_register_rflags)
+		{
+			vcpu->rflags=*(u64p)reg_buff;
+			vcpu->state_cache.gprvalid=0;
+		}
+		// Instruction Pointer.
+		else if(register_names[i]==noir_cvm_register_rip)
+		{
+			vcpu->rip=*(u64p)reg_buff;
+			vcpu->state_cache.gprvalid=0;
+		}
+		// Segment Register.
+		else if(register_names[i]>=noir_cvm_register_es && register_names[i]<=noir_cvm_register_ldtr)
+		{
+			u32 copy_size=register_size<16?register_size:16;
+			segment_register_p seg_array=&vcpu->seg.es;
+			noir_copy_memory(&seg_array[register_names[i]-noir_cvm_register_es],reg_buff,copy_size);
+			// Clean Cache depending on scenario.
+			switch(register_names[i])
+			{
+				case noir_cvm_register_es:
+				case noir_cvm_register_cs:
+				case noir_cvm_register_ds:
+				case noir_cvm_register_ss:
+					vcpu->state_cache.sr_valid=0;
+					break;
+				case noir_cvm_register_fs:
+				case noir_cvm_register_gs:
+					vcpu->state_cache.fg_valid=0;
+					break;
+				case noir_cvm_register_gdtr:
+				case noir_cvm_register_idtr:
+					vcpu->state_cache.dt_valid=0;
+					break;
+				case noir_cvm_register_tr:
+				case noir_cvm_register_ldtr:
+					vcpu->state_cache.lt_valid=0;
+					break;
+			}
+		}
+		// Control Register.
+		else if(register_names[i]>=noir_cvm_register_cr0 && register_names[i]<=noir_cvm_register_cr8)
+		{
+			switch(register_names[i])
+			{
+				case noir_cvm_register_cr0:
+					vcpu->crs.cr0=*(u64p)reg_buff;
+					vcpu->state_cache.cr_valid=0;
+					break;
+				case noir_cvm_register_cr2:
+					vcpu->crs.cr2=*(u64p)reg_buff;
+					vcpu->state_cache.cr2valid=0;
+					break;
+				case noir_cvm_register_cr3:
+					vcpu->crs.cr3=*(u64p)reg_buff;
+					vcpu->state_cache.cr_valid=0;
+					break;
+				case noir_cvm_register_cr4:
+					vcpu->crs.cr4=*(u64p)reg_buff;
+					vcpu->state_cache.cr_valid=0;
+					break;
+				case noir_cvm_register_cr8:
+					vcpu->crs.cr8=*(u64p)reg_buff;
+					vcpu->state_cache.tp_valid=0;
+					break;
+				default:
+					nv_dprintf("Unimplemented control register (CR%u) is being edited!\n",register_names[i]-noir_cvm_register_cr0);
+					return st;
+			}
+		}
+		// Address-Breakpoint Registers. (DR0-DR3)
+		else if(register_names[i]>=noir_cvm_register_dr0 && register_names[i]<=noir_cvm_register_dr3)
+		{
+			// DR0 to DR3 does not use cache.
+			u64p dr_array=(u64p)&vcpu->drs;
+			dr_array[register_names[i]-noir_cvm_register_dr0]=*(u64p)reg_buff;
+		}
+		// Debug Status/Control Registers (DR6&DR7)
+		else if(register_names[i]==noir_cvm_register_dr6 || register_names[i]==noir_cvm_register_dr7)
+		{
+			u64p dr_array=&vcpu->drs.dr6;
+			dr_array[register_names[i]-noir_cvm_register_dr6]=*(u64p)reg_buff;
+			vcpu->state_cache.dr_valid=0;
+		}
+		// Extended Control Registers (XCR0)
+		else if(register_names[i]==noir_cvm_register_xcr0)
+		{
+			vcpu->xcrs.xcr0=*(u64p)reg_buff;
+		}
+		// Model-Specific Registers
+		else if(register_names[i]>=noir_cvm_register_tsc && register_names[i]<=noir_cvm_register_msr_max)
+		{
+			switch(register_names[i])
+			{
+				case noir_cvm_register_tsc:
+					vcpu->tsc_offset=*(u64p)reg_buff-noir_rdtsc();
+					vcpu->state_cache.ts_valid=0;
+					break;
+				case noir_cvm_register_efer:
+					vcpu->msrs.efer=*(u64p)reg_buff;
+					vcpu->state_cache.ef_valid=0;
+					break;
+				case noir_cvm_register_kgs_base:
+					vcpu->msrs.gsswap=*(u64p)reg_buff;
+					vcpu->state_cache.fg_valid=0;
+					break;
+				case noir_cvm_register_apic_base:
+					vcpu->msrs.apic.value=*(u64p)reg_buff;
+					vcpu->state_cache.ap_valid=0;
+					break;
+				case noir_cvm_register_sysenter_cs:
+				case noir_cvm_register_sysenter_esp:
+				case noir_cvm_register_sysenter_eip:
+				{
+					u64p msr_array=&vcpu->msrs.sysenter_cs;
+					msr_array[register_names[i]-noir_cvm_register_sysenter_cs]=*(u64p)reg_buff;
+					vcpu->state_cache.se_valid=0;
+					break;
+				}
+				case noir_cvm_register_pat:
+					vcpu->msrs.pat=*(u64p)reg_buff;
+					vcpu->state_cache.pa_valid=0;
+					break;
+				case noir_cvm_register_star:
+				case noir_cvm_register_lstar:
+				case noir_cvm_register_cstar:
+				case noir_cvm_register_sfmask:
+				case noir_cvm_register_ststar:
+				{
+					u64p msr_array=&vcpu->msrs.star;
+					msr_array[register_names[i]-noir_cvm_register_star]=*(u64p)reg_buff;
+					vcpu->state_cache.sc_valid=0;
+					break;
+				}
+				default:
+				{
+					nv_dprintf("Unknown Model-Specific Register (Name: 0x%X) is being edited!\n",register_names[i]);
+					break;
+				}
+			}
+		}
+		else
+		{
+			nv_dprintf("Unknown register (Name: 0x%X) is being edited!\n",register_names[i]);
+			return st;
+		}
+	}
+	return noir_success;
+}
+
+noir_status nvc_view_vcpu_registers2(noir_cvm_virtual_cpu_p vcpu,noir_cvm_register_name_p register_names,u32 register_count,u32 register_size,void* buffer)
+{
+	noir_status st=noir_invalid_parameter;
+	// Each element of register array must be at least 8 bytes.
+	if(register_size<8)return st;
+	for(u32 i=0;i<register_count;i++)
+	{
+		void* reg_buff=(void*)((ulong_ptr)buffer+i*register_size);
+		// General-Purpose Registers
+		if(register_names[i]>=noir_cvm_register_rax && register_names[i]<=noir_cvm_register_r15)
+		{
+			u64p gpr_array=(u64p)&vcpu->gpr;
+			*(u64p)reg_buff=gpr_array[register_names[i]-noir_cvm_register_rax];
+		}
+		// Flags Register.
+		else if(register_names[i]==noir_cvm_register_rflags)
+			*(u64p)reg_buff=vcpu->rflags;
+		// Instruction Pointer.
+		else if(register_names[i]==noir_cvm_register_rip)
+			*(u64p)reg_buff=vcpu->rip;
+		// Segment Register.
+		else if(register_names[i]>=noir_cvm_register_es && register_names[i]<=noir_cvm_register_ldtr)
+		{
+			u32 copy_size=register_size<16?register_size:16;
+			segment_register_p seg_array=&vcpu->seg.es;
+			noir_copy_memory(reg_buff,&seg_array[register_names[i]-noir_cvm_register_es],copy_size);
+		}
+		// Control Register.
+		else if(register_names[i]>=noir_cvm_register_cr0 && register_names[i]<=noir_cvm_register_cr8)
+		{
+			switch(register_names[i])
+			{
+				case noir_cvm_register_cr0:
+					*(u64p)reg_buff=vcpu->crs.cr0;
+					break;
+				case noir_cvm_register_cr2:
+					*(u64p)reg_buff=vcpu->crs.cr2;
+					break;
+				case noir_cvm_register_cr3:
+					*(u64p)reg_buff=vcpu->crs.cr3;
+					break;
+				case noir_cvm_register_cr4:
+					*(u64p)reg_buff=vcpu->crs.cr4;
+					break;
+				case noir_cvm_register_cr8:
+					*(u64p)reg_buff=vcpu->crs.cr8;
+					break;
+				default:
+					nv_dprintf("Unimplemented control register (CR%u) is being viewed!\n",register_names[i]-noir_cvm_register_cr0);
+					return st;
+			}
+		}
+		// Address-Breakpoint Registers. (DR0-DR3)
+		else if(register_names[i]>=noir_cvm_register_dr0 && register_names[i]<=noir_cvm_register_dr3)
+		{
+			// DR0 to DR3 does not use cache.
+			u64p dr_array=(u64p)&vcpu->drs;
+			*(u64p)reg_buff=dr_array[register_names[i]-noir_cvm_register_dr0];
+		}
+		// Debug Status/Control Registers (DR6&DR7)
+		else if(register_names[i]==noir_cvm_register_dr6 || register_names[i]==noir_cvm_register_dr7)
+		{
+			u64p dr_array=&vcpu->drs.dr6;
+			*(u64p)reg_buff=dr_array[register_names[i]-noir_cvm_register_dr6];
+		}
+		// Extended Control Registers (XCR0)
+		else if(register_names[i]==noir_cvm_register_xcr0)
+		{
+			*(u64p)reg_buff=vcpu->xcrs.xcr0;
+		}
+		// Model-Specific Registers
+		else if(register_names[i]>=noir_cvm_register_tsc && register_names[i]<=noir_cvm_register_msr_max)
+		{
+			switch(register_names[i])
+			{
+				case noir_cvm_register_tsc:
+					*(u64p)reg_buff=vcpu->tsc_offset+noir_rdtsc();
+					break;
+				case noir_cvm_register_efer:
+					*(u64p)reg_buff=vcpu->msrs.efer;
+					break;
+				case noir_cvm_register_kgs_base:
+					*(u64p)reg_buff=vcpu->msrs.gsswap;
+					break;
+				case noir_cvm_register_apic_base:
+					*(u64p)reg_buff=vcpu->msrs.apic.value;
+					break;
+				case noir_cvm_register_sysenter_cs:
+				case noir_cvm_register_sysenter_esp:
+				case noir_cvm_register_sysenter_eip:
+				{
+					u64p msr_array=&vcpu->msrs.sysenter_cs;
+					*(u64p)reg_buff=msr_array[register_names[i]-noir_cvm_register_sysenter_cs];
+					break;
+				}
+				case noir_cvm_register_pat:
+					*(u64p)reg_buff=vcpu->msrs.pat;
+					break;
+				case noir_cvm_register_star:
+				case noir_cvm_register_lstar:
+				case noir_cvm_register_cstar:
+				case noir_cvm_register_sfmask:
+				case noir_cvm_register_ststar:
+				{
+					u64p msr_array=&vcpu->msrs.star;
+					*(u64p)reg_buff=msr_array[register_names[i]-noir_cvm_register_star];
+					break;
+				}
+				default:
+				{
+					nv_dprintf("Unknown Model-Specific Register (Name: 0x%X) is being viewed!\n",register_names[i]);
+					break;
+				}
+			}
+		}
+		else
+		{
+			nv_dprintf("Unknown Register (Name: 0x%X) is being viewed!\n",register_names[i]);
+			return st;
+		}
+	}
+	return noir_success;
+}
+
 noir_status nvc_edit_vcpu_registers(noir_cvm_virtual_cpu_p vcpu,noir_cvm_register_type register_type,void* buffer,u32 buffer_size)
 {
 	noir_status st=noir_buffer_too_small;
@@ -565,23 +856,20 @@ bool nvc_validate_vcpu_state(noir_cvm_virtual_cpu_p vcpu)
 	// Check Extended CRs.
 	// Bit 0 of XCR0 (FPU Enabled) must be set.
 	if(!noir_bt(&vcpu->xcrs.xcr0,0))
-	{
-		vcpu->exit_context.intercept_code=cv_invalid_state;
-		return false;
-	}
+		goto invalid_state;
 	// Bit 1 of XCR0 (SSE Enabled) cannot be reset if Bit 2 of XCR0 (AVX Enabled) is set.
 	if(!noir_bt(&vcpu->xcrs.xcr0,1) && noir_bt(&vcpu->xcrs.xcr0,2))
-	{
-		vcpu->exit_context.intercept_code=cv_invalid_state;
-		return false;
-	}
+		goto invalid_state;
 	// Reserved bits of XCR0 must be reset.
 	if((vcpu->xcrs.xcr0&hvm_p->xfeat.support_mask.value)!=vcpu->xcrs.xcr0)
-	{
-		vcpu->exit_context.intercept_code=cv_invalid_state;
-		return false;
-	}
+		goto invalid_state;
+	// Check vCPU Tunnel Pointer.
+	if(vcpu->vcpu_options.use_tunnel && vcpu->tunnel==null)
+		goto invalid_state;
 	return true;
+invalid_state:
+	vcpu->exit_context.intercept_code=cv_invalid_state;
+	return false;
 }
 
 noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
@@ -604,7 +892,22 @@ noir_status nvc_run_vcpu(noir_cvm_virtual_cpu_p vcpu,void* exit_context)
 		}
 		if(st==noir_success)
 		{
-			if(!vcpu->vcpu_options.use_tunnel)noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
+			if(!vcpu->vcpu_options.use_tunnel)
+				noir_copy_memory(exit_context,&vcpu->exit_context,sizeof(noir_cvm_exit_context));
+			else
+			{
+				// User hypervisor is using a tunnel.
+				switch(vcpu->vcpu_options.tunnel_format)
+				{
+					case noir_cvm_tunnel_format_nvc:
+					{
+						// The NoirVisor's Virtual-Processor Control Block format.
+						noir_cvm_vcpu_control_block_p vpcb=vcpu->tunnel;
+						vpcb->intercept_code=vcpu->exit_context.intercept_code;
+						break;
+					}
+				}
+			}
 		}
 	}
 	return st;
@@ -628,7 +931,8 @@ noir_status nvc_rescind_vcpu(noir_cvm_virtual_cpu_p vcpu)
 
 noir_status nvc_set_tunnel(noir_cvm_virtual_cpu_p vcpu,void* tunnel)
 {
-	vcpu->tunnel_format=noir_cvm_tunnel_format_nvc;
+	vcpu->vcpu_options.use_tunnel=true;
+	vcpu->vcpu_options.tunnel_format=noir_cvm_tunnel_format_nvc;
 	vcpu->tunnel=tunnel;
 	return noir_success;
 }

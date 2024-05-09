@@ -638,6 +638,12 @@ noir_status nvc_svmc_run_vcpu(noir_svm_custom_vcpu_p vcpu)
 		{
 			switch(vcpu->header.exit_context.intercept_code)
 			{
+				// It may be easier to debug decoder outside host mode.
+				case cv_memory_access:
+				{
+					nvc_emu_decode_memory_access(&vcpu->header);
+					break;
+				}
 				// Some NoirVisor-specific interceptions cannot be handled in atomic state (GIF=0).
 				case cv_scheduler_nsv_activate:
 				{

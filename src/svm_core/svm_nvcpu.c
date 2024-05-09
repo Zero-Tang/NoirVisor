@@ -214,7 +214,9 @@ void static noir_hvcode fastcall nvc_svm_clean_vmcb_interceptions(void* vmcb_c,v
 	noir_svm_vmcopy16(vmcb_t,vmcb_c,pause_filter_count);
 	noir_svm_vmcopy64(vmcb_t,vmcb_c,tsc_offset);
 	// Always-intercept options.
+	noir_svm_vmcb_bts32(vmcb_t,intercept_instruction1,nvc_svm_intercept_vector1_cpuid);
 	noir_svm_vmcb_bts32(vmcb_t,intercept_instruction1,nvc_svm_intercept_vector1_shutdown);
+	// noir_svm_vmcb_bts32(vmcb_t,intercept_instruction2,nvc_svm_intercept_vector2_vmmcall);
 	// Clean the cache.
 	noir_svm_vmcb_btr32(vmcb_t,vmcb_clean_bits,noir_svm_clean_interception);
 }
@@ -397,7 +399,7 @@ void static noir_hvcode fastcall nvc_svm_nvexit_default_handler(noir_gpr_state_p
 // CPUID is an optional interception in AMD-V!
 void static noir_hvcode fastcall nvc_svm_nvexit_cpuid_handler(noir_gpr_state_p gpr_state,noir_svm_vcpu_p vcpu,noir_svm_nested_vcpu_node_p nvcpu)
 {
-	vcpu->nested_hvm.forward=noir_svm_vmcb_bt32(nvcpu->vmcb_t.virt,intercept_instruction1,nvc_svm_intercept_vector1_cpuid);
+	vcpu->nested_hvm.forward=noir_svm_vmcb_bt32(nvcpu->vmcb_c.virt,intercept_instruction1,nvc_svm_intercept_vector1_cpuid);
 	if(!vcpu->nested_hvm.forward)
 	{
 		// Nested hypervisor did not specify to intercept cpuid!

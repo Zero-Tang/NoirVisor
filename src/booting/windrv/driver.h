@@ -71,7 +71,8 @@ typedef ULONG32 NOIR_STATUS;
 #define IOCTL_CvmInjectEvent	CTL_CODE_GEN(0x896)
 #define IOCTL_CvmSetVcpuOptions	CTL_CODE_GEN(0x897)
 #define IOCTL_CvmQueryVcpuStats	CTL_CODE_GEN(0x898)
-#define IOCTL_CvmTryEmuExit		CTL_CODE_GEN(0x899)
+#define IOCTL_CvmViewVcpuReg2	CTL_CODE_GEN(0x899)
+#define IOCTL_CvmEditVcpuReg2	CTL_CODE_GEN(0x89A)
 
 // Layered Hypervisor Functions
 typedef ULONG64 CVM_HANDLE;
@@ -136,6 +137,17 @@ typedef struct _NOIR_VIEW_EDIT_REGISTER_CONTEXT
 	PVOID DummyBuffer;
 }NOIR_VIEW_EDIT_REGISTER_CONTEXT,*PNOIR_VIEW_EDIT_REGISTER_CONTEXT;
 
+typedef struct _NOIR_VIEW_EDIT_REGISTER_CONTEXT2
+{
+	CVM_HANDLE VirtualMachine;
+	ULONG32 VpIndex;
+	ULONG32 RegCount;
+	ULONG32 RegSize;
+	PULONG32 RegNames;
+	PULONG32 Buffer;
+	NOIR_STATUS *Status;
+}NOIR_VIEW_EDIT_REGISTER_CONTEXT2,*PNOIR_VIEW_EDIT_REGISTER_CONTEXT2;
+
 NOIR_STATUS NoirQueryHypervisorStatus(IN ULONG64 StatusType,OUT PULONG64 Status);
 NOIR_STATUS NoirCreateVirtualMachine(OUT PCVM_HANDLE VirtualMachine);
 NOIR_STATUS NoirCreateVirtualMachineEx(OUT PCVM_HANDLE VirtualMachine,IN ULONG32 Properties);
@@ -147,6 +159,8 @@ NOIR_STATUS NoirQueryGpaAccessingBitmap(IN CVM_HANDLE VirtualMachine,IN ULONG64 
 NOIR_STATUS NoirClearGpaAccessingBits(IN CVM_HANDLE VirtualMachine,IN ULONG64 GpaStart,IN ULONG32 NumberOfPages);
 NOIR_STATUS NoirViewVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,OUT PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS NoirEditVirtualProcessorRegisters(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN NOIR_CVM_REGISTER_TYPE RegisterType,IN PVOID Buffer,IN ULONG32 BufferSize);
+NOIR_STATUS NoirViewVirtualProcessorRegisters2(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN PULONG32 RegisterNames,IN ULONG32 RegisterCount,IN ULONG32 RegisterSize,OUT PVOID Buffer);
+NOIR_STATUS NoirEditVirtualProcessorRegisters2(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN PULONG32 RegisterNames,IN ULONG32 RegisterCount,IN ULONG32 RegisterSize,IN PVOID Buffer);
 NOIR_STATUS NoirQueryVirtualProcessorStatistics(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,OUT PVOID Buffer,IN ULONG32 BufferSize);
 NOIR_STATUS NoirSetEventInjection(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG64 InjectedEvent);
 NOIR_STATUS NoirSetVirtualProcessorOptions(IN CVM_HANDLE VirtualMachine,IN ULONG32 VpIndex,IN ULONG32 OptionType,IN ULONG32 Options);

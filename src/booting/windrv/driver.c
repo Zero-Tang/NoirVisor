@@ -312,6 +312,20 @@ NTSTATUS NoirVisorDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 			st=STATUS_SUCCESS;
 			break;
 		}
+		case IOCTL_CvmViewVcpuReg2:
+		{
+			PNOIR_VIEW_EDIT_REGISTER_CONTEXT2 Context=(PNOIR_VIEW_EDIT_REGISTER_CONTEXT2)InputBuffer;
+			*Context->Status=NoirViewVirtualProcessorRegisters2(Context->VirtualMachine,Context->VpIndex,Context->RegNames,Context->RegCount,Context->RegSize,Context->Buffer);
+			st=STATUS_SUCCESS;
+			break;
+		}
+		case IOCTL_CvmEditVcpuReg2:
+		{
+			PNOIR_VIEW_EDIT_REGISTER_CONTEXT2 Context=(PNOIR_VIEW_EDIT_REGISTER_CONTEXT2)InputBuffer;
+			*Context->Status=NoirEditVirtualProcessorRegisters2(Context->VirtualMachine,Context->VpIndex,Context->RegNames,Context->RegCount,Context->RegSize,Context->Buffer);
+			st=STATUS_SUCCESS;
+			break;
+		}
 		default:
 		{
 			break;

@@ -178,6 +178,23 @@ typedef union _nvc_svm_instruction_intercept1
 	u32 value;
 }nvc_svm_instruction_intercept1,*nvc_svm_instruction_intercept1_p;
 
+#define nvc_svm_intercept_vector2_vmrun		0
+#define nvc_svm_intercept_vector2_vmmcall	1
+#define nvc_svm_intercept_vector2_vmload	2
+#define nvc_svm_intercept_vector2_vmsave	3
+#define nvc_svm_intercept_vector2_stgi		4
+#define nvc_svm_intercept_vector2_clgi		5
+#define nvc_svm_intercept_vector2_skinit	6
+#define nvc_svm_intercept_vector2_rdtscp	7
+#define nvc_svm_intercept_vector2_icebp		8
+#define nvc_svm_intercept_vector2_wbinvd	9
+#define nvc_svm_intercept_vector2_monitor	10
+#define nvc_svm_intercept_vector2_mwait		11
+#define nvc_svm_intercept_vector2_mwait_c	12
+#define nvc_svm_intercept_vector2_xsetbv	13
+#define nvc_svm_intercept_vector2_rdpru		14
+#define nvc_svm_intercept_vector2_efer_pw	15
+
 typedef union _nvc_svm_instruction_intercept2
 {
 	struct
