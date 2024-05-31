@@ -37,7 +37,47 @@ u8 nvc_mshv_hypercall_code32[8]=
 
 u64 static fastcall nvc_mshv_msr_r40000000_handler(noir_mshv_vcpu_p vcpu,bool write,u64 val)
 {
-	if(write)noir_locked_xchg64(&noir_mshv_guest_os_id,val);
+	if(write)
+	{
+		noir_locked_xchg64(&noir_mshv_guest_os_id,val);
+		if(noir_bt64(&val,63))
+		{
+			noir_mshv_msr_open_source_guest_os_id os_id;
+			nvd_printf("Guest OS is Open-Source!\n");
+			os_id.value=val;
+			if(os_id.os_type<mshv_os_type_maximum)
+				nvd_printf("Guest OS is %s!\n",mshv_known_os_types[os_id.os_type]);
+			else
+				nvd_printf("Guest OS is Unknown (ID: %u)\n",os_id.os_type);
+			nvd_printf("Distribution ID: %u, Upstream Kernel Version: 0x%X, Build Number: %u\n",os_id.os_id,os_id.version,os_id.build_number);
+		}
+		else
+		{
+			noir_mshv_msr_proprietary_guest_os_id os_id;
+			nvd_printf("Guest OS is Proprietary!\n");
+			os_id.value=val;
+			switch(os_id.vendor_id)
+			{
+				case mshv_vendor_microsoft:
+					nvd_printf("Guest OS Vendor is Microsoft!\n");
+					if(os_id.os_id<mshv_microsoft_os_maximum)
+						nvd_printf("Guest OS ID is %s\n",mshv_known_microsoft_os_ids[os_id.os_id]);
+					else
+						nvd_printf("Guest OS ID is Undefined (ID: %u)\n",os_id.os_id);
+					break;
+				case mshv_vendor_hpe:
+					nvd_printf("Guest OS Vendor is HPE!\n");
+					break;
+				case mshv_vendor_lancom:
+					nvd_printf("Guest OS Vendor is LANCOM!\n");
+					break;
+				default:
+					nvd_printf("Guest OS Vendor is Unknown (ID: 0x%X)!\n",os_id.vendor_id);
+					break;
+			}
+			nvd_printf("Guest OS Version: %u.%u.%u (Service Pack %u)\n",os_id.major_version,os_id.minor_version,os_id.build_number,os_id.service_version);
+		}
+	}
 	return noir_mshv_guest_os_id;
 }
 
@@ -66,7 +106,7 @@ u64 static fastcall nvc_mshv_msr_r40000001_handler(noir_mshv_vcpu_p vcpu,bool wr
 
 u64 static fastcall nvc_mshv_msr_r40000002_handler(noir_mshv_vcpu_p vcpu,bool write,u64 val)
 {
-	return noir_get_current_processor();
+	return vcpu->vp_index;
 }
 
 u64 static fastcall nvc_mshv_msr_r40000040_handler(noir_mshv_vcpu_p vcpu,bool write,u64 val)
@@ -82,6 +122,7 @@ u64 static fastcall nvc_mshv_msr_r40000040_handler(noir_mshv_vcpu_p vcpu,bool wr
 
 u64 fastcall nvc_mshv_rdmsr_handler(noir_mshv_vcpu_p vcpu,u32 index)
 {
+	nvd_printf("Intercepted Microsoft Synthetic MSR-Read! Index=0x%X\n",index);
 	switch(index)
 	{
 		case hv_x64_msr_guest_os_id:
@@ -98,6 +139,7 @@ u64 fastcall nvc_mshv_rdmsr_handler(noir_mshv_vcpu_p vcpu,u32 index)
 
 void fastcall nvc_mshv_wrmsr_handler(noir_mshv_vcpu_p vcpu,u32 index,u64 val)
 {
+	nvd_printf("Intercepted Microsoft Synthetic MSR-Write! Index=0x%X, Value=0x%016llX\n",index,val);
 	switch(index)
 	{
 		case hv_x64_msr_guest_os_id:

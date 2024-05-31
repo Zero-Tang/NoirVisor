@@ -53,8 +53,8 @@ void noir_writecr2(ulong_ptr value);
 #define noir_writecr3	__writecr3
 #define noir_writecr4	__writecr4
 
-u64 noir_xgetbv(u32 xcr_id);
-void noir_xsetbv(u32 xcr_id,u64 val);
+#define noir_xsetbv		_xsetbv
+#define noir_xgetbv		_xgetbv
 
 // Read/Write CR8 Register instructions(64-bit only)
 #if defined(_amd64)
@@ -160,7 +160,10 @@ void noir_outsd(u16 port,u32p buffer,size_t count,bool direction);
 
 // Debug-Break & Assertion
 #define noir_int3		__debugbreak
-#define noir_assert(s)	if(!s)__int2c();
+#define noir_assert(s)	if(!s)__int2c()
+
+// Generate #UD exception
+#define noir_ud2		__ud2
 
 // Invalidate Processor Cache
 #define noir_wbinvd		__wbinvd

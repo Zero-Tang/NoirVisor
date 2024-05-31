@@ -31,10 +31,20 @@ typedef union _noir_mshv_msr_proprietary_guest_os_id
 
 typedef enum _noir_mshv_known_proprietary_vendors
 {
-	vendor_microsoft=0x0001,
-	vendor_hpe=0x0002,
-	vendor_lancom=0x0200
+	mshv_vendor_microsoft=0x0001,
+	mshv_vendor_hpe=0x0002,
+	mshv_vendor_lancom=0x0200
 }noir_mshv_known_proprietary_vendors,*noir_mshv_known_proprietary_vendors_p;
+
+typedef enum _noir_mshv_known_microsoft_os_ids
+{
+	mshv_microsoft_os_ms_dos=1,
+	mshv_microsoft_os_windows_3x=2,
+	mshv_microsoft_os_windows_9x=3,
+	mshv_microsoft_os_windows_nt=4,
+	mshv_microsoft_os_windows_ce=5,
+	mshv_microsoft_os_maximum
+}noir_mshv_known_microsoft_os_ids,*noir_mshv_known_microsoft_os_ids_p;
 
 typedef union _noir_mshv_msr_open_source_guest_os_id
 {
@@ -51,10 +61,11 @@ typedef union _noir_mshv_msr_open_source_guest_os_id
 
 typedef enum _noir_mshv_known_open_source_os_types
 {
-	linux=0x1,
-	freebsd=0x2,
-	xen=0x3,
-	illumos=0x4
+	mshv_os_type_linux=0x1,
+	mshv_os_type_freebsd=0x2,
+	mshv_os_type_xen=0x3,
+	mshv_os_type_illumos=0x4,
+	mshv_os_type_maximum
 }noir_mshv_known_open_source_os_types,*noir_mshv_known_open_source_os_types_p;
 
 typedef union _noir_mshv_msr_hypercall
@@ -76,3 +87,24 @@ typedef u32 hv_vp_index;
 // For minimal Hv#1 interface, only Synthetic MSRs 0x40000000-0x40000002 are required.
 // Definitions for the rest of Synthetic MSRs are omitted at this moment,
 // but will be detailedly defined in the future development.
+
+#if defined(_mshv_msr)
+noir_hvdata const char* mshv_known_os_types[mshv_os_type_maximum]=
+{
+	"Unknown (ID: 0)",
+	"Linux",
+	"FreeBSD",
+	"Xen",
+	"Illumos"
+};
+
+noir_hvdata const char* mshv_known_microsoft_os_ids[mshv_microsoft_os_maximum]=
+{
+	"Undefined (ID: 0)",
+	"MS-DOS",
+	"Windows 3.x",
+	"Windows 9x",
+	"Windows NT",
+	"Windows CE"
+};
+#endif

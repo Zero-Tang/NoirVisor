@@ -70,13 +70,18 @@ bool static noir_check_slat_paging()
 vmx_check:
 	{
 		// Check through VT-Core.
-		large_integer proc_ctrl2;
-		proc_ctrl2.value=noir_rdmsr(ia32_vmx_2ndproc_ctrl);
-		return noir_bt(&proc_ctrl2.high,2);
+		// Check basic Intel VT-x before we check EPT because #GP(0) can be triggered when we read MSR.
+		if(nvc_is_vt_supported())
+		{
+			large_integer proc_ctrl2;
+			proc_ctrl2.value=noir_rdmsr(ia32_vmx_2ndproc_ctrl);
+			return noir_bt(&proc_ctrl2.high,2);
+		}
 	}
 svm_check:
 	{
 		// Check through SVM-Core.
+		// No exceptions will be triggered on cpuid instruction.
 		noir_cpuid(amd64_cpuid_ext_svm_features,0,&a,&b,&c,&d);
 		return noir_bt(&d,amd64_cpuid_npt);
 	}

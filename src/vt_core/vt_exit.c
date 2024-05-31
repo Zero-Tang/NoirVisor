@@ -132,9 +132,9 @@ void static noir_hvcode fastcall nvc_vt_exception_nmi_handler(noir_gpr_state_p g
 	{
 		switch(exit_int_info.vector)
 		{
+#if !defined(_hv_type1)
 			case ia32_page_fault:
 			{
-#if !defined(_hv_type1)
 				ulong_ptr gcr2;
 				ia32_page_fault_error_code err_code;
 				noir_vt_vmread(vmexit_interruption_error_code,&err_code.value);
@@ -163,12 +163,14 @@ void static noir_hvcode fastcall nvc_vt_exception_nmi_handler(noir_gpr_state_p g
 					// Update the CR2 for the Guest.
 					noir_writecr2(gcr2);
 				}
-#endif
 				break;
 			}
+#endif
 			default:
 			{
-				nv_panicf("Unexpected exception is intercepted!\n");
+				u32 err_code;
+				noir_vt_vmread(vmexit_interruption_error_code,&err_code);
+				nvd_printf("Unexpected Exception is intercepted! Vector=%u, Error-Code: 0x%X\n",exit_int_info.vector,err_code);
 				noir_int3();
 			}
 		}
@@ -189,7 +191,8 @@ void static noir_hvcode fastcall nvc_vt_init_handler(noir_gpr_state_p gpr_state,
 {
 	vmx_segment_access_right code_ar,data_ar,ldtr_ar,task_ar;
 	ia32_vmx_entry_controls entry_ctrl;
-	ulong_ptr cr0;
+	u64 cr0,cr4;
+	// nvd_printf("[CPU %u] INIT Signal is intercepted!\n",vcpu->mshvcpu.vp_index);
 	// General-Purpose Registers
 	noir_vt_vmwrite(guest_rip,0xFFF0);
 	noir_vt_vmwrite(guest_rsp,0);
@@ -199,12 +202,20 @@ void static noir_hvcode fastcall nvc_vt_init_handler(noir_gpr_state_p gpr_state,
 	// Control Registers
 	noir_vt_vmread(guest_cr0,&cr0);
 	cr0&=0x60000000;		// Bits CD & NW of CR0 are unchanged during INIT.
-	cr0|=0x00000010;		// Bit ET of CR0 is always set.
+	cr0|=0x00000030;		// Bit ET of CR0 is always set.
+	cr0|=noir_rdmsr(ia32_vmx_cr0_fixed0);
+	cr0&=noir_rdmsr(ia32_vmx_cr0_fixed1);
+	// To emulate INIT Signal, make sure PE and PG bits are cleared.
+	noir_btr64(&cr0,ia32_cr0_pe);
+	noir_btr64(&cr0,ia32_cr0_pg);
 	noir_vt_vmwrite(guest_cr0,cr0);
-	noir_vt_vmwrite(cr0_read_shadow,0x60000010);
+	noir_vt_vmwrite(cr0_read_shadow,cr0);
 	noir_vt_vmwrite(guest_cr3,0);
-	noir_vt_vmwrite(guest_cr4,ia32_cr4_vmxe_bit);
-	noir_vt_vmwrite(cr4_read_shadow,0);
+	cr4=0;
+	cr4|=noir_rdmsr(ia32_vmx_cr4_fixed0);
+	cr4&=noir_rdmsr(ia32_vmx_cr4_fixed1);
+	noir_vt_vmwrite(guest_cr4,cr4);
+	noir_vt_vmwrite(cr4_read_shadow,cr4 & ~ia32_cr4_vmxe_bit);
 	noir_writecr2(0);
 	noir_vt_vmwrite(guest_msr_ia32_efer,0);
 	// Debug Registers
@@ -221,7 +232,7 @@ void static noir_hvcode fastcall nvc_vt_init_handler(noir_gpr_state_p gpr_state,
 	code_ar.segment_type=ia32_segment_code_rx_accessed;
 	data_ar.segment_type=ia32_segment_data_rw_accessed;
 	ldtr_ar.segment_type=ia32_segment_system_ldt;
-	task_ar.segment_type=ia32_segment_system_16bit_tss_busy;
+	task_ar.segment_type=ia32_segment_system_32bit_tss_busy;
 	// Segment Registers - CS
 	noir_vt_vmwrite(guest_cs_selector,0xF000);
 	noir_vt_vmwrite(guest_cs_access_rights,code_ar.value);
@@ -238,10 +249,10 @@ void static noir_hvcode fastcall nvc_vt_init_handler(noir_gpr_state_p gpr_state,
 	noir_vt_vmwrite(guest_es_limit,0xFFFF);
 	noir_vt_vmwrite(guest_es_base,0);
 	// Segment Registers - FS
-	noir_vt_vmwrite(guest_gs_selector,0);
-	noir_vt_vmwrite(guest_gs_access_rights,data_ar.value);
-	noir_vt_vmwrite(guest_gs_limit,0xFFFF);
-	noir_vt_vmwrite(guest_gs_base,0);
+	noir_vt_vmwrite(guest_fs_selector,0);
+	noir_vt_vmwrite(guest_fs_access_rights,data_ar.value);
+	noir_vt_vmwrite(guest_fs_limit,0xFFFF);
+	noir_vt_vmwrite(guest_fs_base,0);
 	// Segment Registers - GS
 	noir_vt_vmwrite(guest_gs_selector,0);
 	noir_vt_vmwrite(guest_gs_access_rights,data_ar.value);
@@ -289,6 +300,7 @@ void static noir_hvcode fastcall nvc_vt_init_handler(noir_gpr_state_p gpr_state,
 // This is VM-Exit of obligation.
 void static noir_hvcode fastcall nvc_vt_sipi_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
+	// nvd_printf("[CPU %u] Startup IPI is intercepted!\n",vcpu->mshvcpu.vp_index);
 	// The SIPI Vector is stored in Exit-Qualification.
 	ulong_ptr vector;
 	noir_vt_vmread(vmexit_qualification,&vector);
@@ -358,7 +370,6 @@ void static noir_hvcode fastcall nvc_vt_cpuid_handler(noir_gpr_state_p gpr_state
 	noir_cpuid_general_info info;
 	// Invoke handlers.
 	nvcp_vt_cpuid_handler(ia,ic,&info);
-	nvd_printf("CPUID is intercepted! EAX=0x%08X, ECX=0x%08X\n",ia,ic);
 	*(u32*)&gpr_state->rax=info.eax;
 	*(u32*)&gpr_state->rbx=info.ebx;
 	*(u32*)&gpr_state->rcx=info.ecx;
@@ -723,7 +734,7 @@ void static noir_hvcode fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_s
 	// On default NoirVisor's setting of VMCS, this handler only traps writes to CR0 and CR4.
 	ia32_cr_access_qualification info;
 	bool advance_ip=true;
-	noir_vt_vmread(guest_rsp,&gpr_state->rsp);
+	noir_vt_vmread(guest_rsp,&gpr_state->rsp);		// Note that rsp can be used as operand to access control registers.
 	noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&info);
 	switch(info.access_type)
 	{
@@ -743,7 +754,7 @@ void static noir_hvcode fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_s
 					if(noir_bt((u32*)&cr0x,ia32_cr0_cd))
 					{
 						// The CR0.CD bit is being changed.
-						if(noir_bt((u32*)&gcr0,ia32_cr0_cd)==0)
+						if(noir_bt((u32*)&data,ia32_cr0_cd)==0 && vcpu->mtrr_dirty)
 						{
 							invept_descriptor ied;
 							// Reset EPT entries.
@@ -752,6 +763,32 @@ void static noir_hvcode fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_s
 							ied.eptp=vcpu->ept_manager->eptp.phys.value;
 							ied.reserved=0;
 							noir_vt_invept(ept_single_invd,&ied);
+							// Mark this vCPU's MTRR is clean
+							vcpu->mtrr_dirty=0;
+						}
+					}
+					// If the guest tries to change the paging mode, we have to emulate this behavior in Guest EFER and VM-Entry Controls.
+					if(noir_bt((u32p)&cr0x,ia32_cr0_pg))
+					{
+						u64 gefer;
+						ia32_vmx_entry_controls entry_ctrl;
+						noir_vt_vmread64(guest_msr_ia32_efer,&gefer);
+						// Emulate EFER.LMA Bit.
+						if(noir_bt64(&gefer,ia32_efer_lme) && noir_bt64(&data,ia32_cr0_pg))
+							noir_bts64(&gefer,ia32_efer_lma);
+						else
+							noir_btr64(&gefer,ia32_efer_lma);
+						noir_vt_vmwrite64(guest_msr_ia32_efer,gefer);
+						// Modify VM-Entry Controls
+						noir_vt_vmread(vmentry_controls,&entry_ctrl.value);
+						entry_ctrl.ia32e_mode_guest=noir_bt64(&gefer,ia32_efer_lma);
+						noir_vt_vmwrite(vmentry_controls,entry_ctrl.value);
+						// Changing Paging Mode will invalidate TLBs.
+						if(vcpu->enabled_feature & noir_vt_vpid_tagged_tlb)
+						{
+							invvpid_descriptor ivd={0};
+							ivd.vpid=1;
+							noir_vt_invvpid(vpid_single_invd,&ivd);
 						}
 					}
 					// Finally, write to Guest CR0 field and CR0 Read-Shadow field.
@@ -772,6 +809,7 @@ void static noir_hvcode fastcall nvc_vt_cr_access_handler(noir_gpr_state_p gpr_s
 					ulong_ptr data=((ulong_ptr*)gpr_state)[info.gpr_num];
 					ulong_ptr gcr4;
 					noir_vt_vmread(guest_cr4,&gcr4);
+					nvd_printf("Writing to CR4 is intercepted! Value=0x%016llX\n",data);
 					// If Guest attempts to write CR4.VMXE, mark vCPU as Nested-VMX-Enabled(Disabled).
 					if(noir_bt((u32*)&data,ia32_cr4_vmxe))		// Enable VMX.
 						noir_bts(&vcpu->nested_vcpu.status,noir_nvt_vmxe);
@@ -983,25 +1021,30 @@ void static noir_hvcode fastcall nvc_vt_wrmsr_handler(noir_gpr_state_p gpr_state
 			case ia32_mtrr_fix4k_f8000:
 			case ia32_mtrr_def_type:
 			{
-				ulong_ptr gcr0;
-				// Writes to MTRRs are intercepted.
-				// Pass the value to the real MTRR.
-				noir_wrmsr(index,val.value);
-				// If CR0.CD is cleared, we should re-emulate MTRRs.
-				// Otherwise, simply mark the MTRR is dirty.
-				// Re-emulation would be done when CR0.CD is reset.
-				noir_vt_vmread(guest_cr0,&gcr0);
-				if(noir_bt((u32*)&gcr0,ia32_cr0_cd))
-					vcpu->mtrr_dirty=1;
-				else
+				u64 old_mtrr=noir_rdmsr(index);
+				if(old_mtrr!=val.value)
 				{
-					invept_descriptor ied;
-					// Reset EPT entries.
-					nvc_ept_update_by_mtrr(vcpu->ept_manager);
-					// Flush EPT TLB due to the update.
-					ied.eptp=vcpu->ept_manager->eptp.phys.value;
-					ied.reserved=0;
-					noir_vt_invept(ept_single_invd,&ied);
+					// Writes to MTRRs are intercepted.
+					// Pass the value to the real MTRR.
+					ulong_ptr gcr0;
+					nvd_printf("Write to MTRR is intercepted! Index=0x%X, Value=0x%016llX\n",index,val.value);
+					noir_wrmsr(index,val.value);
+					// If CR0.CD is cleared, we should re-emulate MTRRs.
+					// Otherwise, simply mark the MTRR is dirty.
+					// Re-emulation would be done when CR0.CD is reset.
+					noir_vt_vmread(guest_cr0,&gcr0);
+					if(noir_bt((u32*)&gcr0,ia32_cr0_cd))
+						vcpu->mtrr_dirty=1;
+					else
+					{
+						invept_descriptor ied;
+						// Reset EPT entries.
+						nvc_ept_update_by_mtrr(vcpu->ept_manager);
+						// Flush EPT TLB due to the update.
+						ied.eptp=vcpu->ept_manager->eptp.phys.value;
+						ied.reserved=0;
+						noir_vt_invept(ept_single_invd,&ied);
+					}
 				}
 				break;
 			}
@@ -1045,7 +1088,7 @@ void static noir_hvcode fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr
 	if(vcpu->fallback.valid)
 	{
 		// It is possible to fallback.
-		nv_dprintf("VM-Entry failed. Fallback is available. Restoring...\n");
+		nvd_printf("VM-Entry failed. Fallback is available. Restoring...\n");
 		noir_vt_vmwrite64(vcpu->fallback.encoding,vcpu->fallback.value);
 		noir_vt_vmwrite(guest_rip,vcpu->fallback.rip);
 		// Fallback comes with event injection...
@@ -1057,8 +1100,9 @@ void static noir_hvcode fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr
 	else
 	{
 		// There is no falling back, so check the guest state..
-		nv_dprintf("VM-Entry failed with no available fallbacks! Check the Guest-State in VMCS!\n");
+		nvd_printf("VM-Entry failed with no available fallbacks! Check the Guest-State in VMCS!\n");
 		nvc_vt_dump_vmcs_guest_state();
+		noir_int3();
 	}
 }
 
@@ -1067,7 +1111,7 @@ void static noir_hvcode fastcall nvc_vt_invalid_guest_state(noir_gpr_state_p gpr
 // You may want to debug your code if this handler is invoked.
 void static noir_hvcode fastcall nvc_vt_invalid_msr_loading(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	nv_dprintf("VM-Entry failed! Check the MSR-Auto list in VMCS!\n");
+	nvd_printf("VM-Entry failed! Check the MSR-Auto list in VMCS!\n");
 }
 
 // Expected Exit Reason: 37
@@ -1237,7 +1281,13 @@ void static noir_hvcode fastcall nvc_vt_access_ldtr_tr_handler(noir_gpr_state_p 
 void static noir_hvcode fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	bool advance=true;
-#if !defined(_hv_type1)
+#if defined(_hv_type1)
+	// NoirVisor currently isn't supposed to intercept EPT Violations.
+	u64 gpa,gip;
+	noir_vt_vmread64(guest_physical_address,&gpa);
+	noir_vt_vmread(guest_rip,&gip);
+	nvd_printf("EPT Violation is intercepted at rip=0x%016llX! GPA=0x%016llX\n",gip,gpa);
+#else
 	noir_ept_manager_p eptm=vcpu->ept_manager;
 	i32 lo=0,hi=noir_hook_pages_count;
 	u64 gpa;
@@ -1315,9 +1365,31 @@ void static noir_hvcode fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p g
 // You may want to debug your code if this handler is invoked.
 void static noir_hvcode fastcall nvc_vt_ept_misconfig_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
-	u64 gpa;
+	ia32_addr_translator gpa;
+	noir_ept_pde_descriptor_p pde_p=vcpu->ept_manager->pde.head;
+	noir_ept_pte_descriptor_p pte_p=vcpu->ept_manager->pte.head;
 	noir_vt_vmread64(guest_physical_address,&gpa);
-	nv_panicf("EPT Misconfiguration Occured! GPA=0x%llX\n",gpa);
+	nvd_printf("EPT Misconfiguration is intercepted! GPA=0x%llX\n",gpa.value);
+	// Print the PDPTE, PDE and PTE for this page in order to debug.
+	nvd_printf("EPT PDPTE Entry: 0x%016llX\n",vcpu->ept_manager->pdpt.virt[(gpa.pml4e_offset<<page_shift_diff)|gpa.pdpte_offset].value);
+	for(;pde_p;pde_p=pde_p->next)
+	{
+		if(gpa.value>=pde_p->gpa_start && gpa.value<pde_p->gpa_start+page_1gb_size)
+		{
+			nvd_printf("EPT PDE Entry: 0x%016llX\n",pde_p->large[gpa.pde_offset].value);
+			break;
+		}
+	}
+	if(!pde_p)nvd_printf("EPT PDE Entry not found!\n");
+	for(;pte_p;pte_p=pte_p->next)
+	{
+		if(gpa.value>=pte_p->gpa_start && gpa.value<pte_p->gpa_start+page_2mb_size)
+		{
+			nvd_printf("EPT PTE Entry: 0x%016llX\n",pte_p->virt[gpa.pte_offset].value);
+			break;
+		}
+	}
+	if(!pte_p)nvd_printf("EPT PTE Entry not found!\n");
 	noir_int3();
 }
 
@@ -1333,16 +1405,8 @@ void static noir_hvcode fastcall nvc_vt_xsetbv_handler(noir_gpr_state_p gpr_stat
 		case 0:
 		{
 			ia32_xcr0 xcr0;
-			u32 a=hvm_p->xfeat.support_mask.low;
-			u32 d=hvm_p->xfeat.support_mask.high;
 			xcr0.lo=(u32)gpr_state->rax;
 			xcr0.hi=(u32)gpr_state->rdx;
-			// IA-32 architecture bans x87 being disabled.
-			if(xcr0.x87==0)gp_exception=true;
-			// SSE is necessary condition of AVX.
-			if(xcr0.sse==0 && xcr0.avx!=0)gp_exception=true;
-			if((xcr0.lo&a)!=a)gp_exception=true;
-			if((xcr0.hi&d)!=d)gp_exception=true;
 			value=xcr0.value;
 			break;
 		}
@@ -1393,6 +1457,14 @@ void noir_hvcode fastcall nvc_vt_exit_handler(noir_gpr_state_p gpr_state,noir_vt
 	{
 		nv_dprintf("VM-Exit occured from an unexpected source! VMCS Physical Address=0x%llX, Exit Reason=%u\n",vmcs_phys,exit_reason);
 		noir_int3();
+	}
+	ia32_vmentry_interruption_information_field injection;
+	noir_vt_vmread(vmentry_interruption_information_field,&injection);
+	if(injection.valid)
+	{
+		u32 err_code;
+		noir_vt_vmread(vmentry_exception_error_code,&err_code);
+		nvd_printf("Injecting Interrupt with Vector %u and Error-Code: 0x%X from VM-Exit Reason %u!\n",injection.vector,err_code,exit_reason);
 	}
 	// Guest RIP is supposed to be advanced in specific handlers, not here.
 	// Do not execute vmresume here. It will be done as this function returns.

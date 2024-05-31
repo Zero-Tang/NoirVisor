@@ -268,7 +268,7 @@ bool nvc_npt_update_pde(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bo
 
 bool nvc_npt_update_pte(noir_npt_manager_p nptm,u64 hpa,u64 gpa,bool r,bool w,bool x,bool alloc)
 {
-	// Split the PTE
+	// Split the PDE
 	noir_npt_pte_descriptor_p pte_p=nvc_npt_split_pde(nptm,gpa,true,alloc);
 	if(pte_p)
 	{
@@ -434,8 +434,7 @@ bool nvc_npt_build_apic_interceptions()
   Memory Consumption in Paging of each vCPU:
   4KiB for 1 PML4E page - all 512 entries are used for to fully cover the address space.
   2MiB for 512 PDPTE page - the lowest entry uses 2MiB mapping and the higher 511 entries use 1GiB mapping.
-  2MiB for 512 PDE pages - all 262144 entries are used for mapping 512*512*2MB=512GB physical memory.
-  We will allocate the PDEs on a single 2MB-aligned page.
+  We will allocate the PDPTEs on a single 2MB-aligned page.
 */
 
 noir_npt_manager_p nvc_npt_build_identity_map()

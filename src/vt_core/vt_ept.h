@@ -112,8 +112,7 @@ typedef union _ia32_ept_pdpte
 		u64 read:1;
 		u64 write:1;
 		u64 execute:1;
-		u64 reserved0:4;
-		u64 huge_pdpte:1;		// This bit must be reset.
+		u64 reserved0:5;
 		u64 accessed:1;
 		u64 ignored0:1;
 		u64 umx:1;
@@ -155,8 +154,7 @@ typedef union _ia32_ept_pde
 		u64 read:1;
 		u64 write:1;
 		u64 execute:1;
-		u64 reserved0:4;
-		u64 large_pde:1;		// This bit must be reset.
+		u64 reserved0:5;
 		u64 accessed:1;
 		u64 ignored0:1;
 		u64 umx:1;
@@ -196,7 +194,11 @@ typedef union _ia32_ept_pte
 typedef struct _noir_ept_pdpte_descriptor
 {
 	struct _noir_ept_pdpte_descriptor* next;
-	ia32_ept_pdpte_p virt;
+	union
+	{
+		ia32_ept_pdpte_p virt;
+		ia32_ept_huge_pdpte_p huge;
+	};
 	u64 phys;
 	u64 gpa_start;
 }noir_ept_pdpte_descriptor,*noir_ept_pdpte_descriptor_p;
@@ -206,7 +208,11 @@ typedef struct _noir_ept_pdpte_descriptor
 typedef struct _noir_ept_pde_descriptor
 {
 	struct _noir_ept_pde_descriptor* next;
-	ia32_ept_pde_p virt;
+	union
+	{
+		ia32_ept_pde_p virt;
+		ia32_ept_large_pde_p large;
+	};
 	u64 phys;
 	u64 gpa_start;
 }noir_ept_pde_descriptor,*noir_ept_pde_descriptor_p;
@@ -227,16 +233,16 @@ typedef struct _noir_ept_manager
 	{
 		ia32_ept_pml4e_p virt;
 		ia32_ept_pointer phys;
-	}eptp;			//512 PML4E Entries
+	}eptp;			// 512 PML4E Entries
 	struct
 	{
-		ia32_ept_pdpte_p virt;
+		ia32_ept_huge_pdpte_p virt;
 		u64 phys;
 	}pdpt;
 	struct
 	{
-		ia32_ept_large_pde_p virt;
-		u64 phys;
+		noir_ept_pde_descriptor_p head;
+		noir_ept_pde_descriptor_p tail;
 	}pde;
 	struct
 	{

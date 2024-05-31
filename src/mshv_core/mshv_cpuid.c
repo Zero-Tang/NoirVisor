@@ -53,7 +53,7 @@ void static fastcall nvc_mshv_cpuid_fn40000003_handler(noir_cpuid_general_info_p
 	info->feat1.access_hypercall_msrs=true;
 	info->feat1.access_vp_index=true;
 	// Support of Non-Privileged Instruction Execution Prevention (NPIEP)
-	info->feat3.npiep=true;
+	// info->feat3.npiep=true;
 }
 
 // Enlightenment Implementation Recommendations

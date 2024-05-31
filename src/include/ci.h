@@ -57,6 +57,7 @@ typedef struct _noir_ci_context
 }noir_ci_context,*noir_ci_context_p;
 
 u8 nvc_confirm_cpu_manufacturer(char* vendor_string);
+bool nvc_is_vt_supported();
 u32 stdcall noir_crc32_page_sse(void* page);
 bool fastcall noir_check_sse42();
 

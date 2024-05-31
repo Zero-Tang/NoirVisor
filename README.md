@@ -53,16 +53,17 @@ Once NoirVisor is updated, it is recommended to execute `cleanup.bat` script bef
 
 If you use terminal, you may add `/s` option in order to bypass the `pause` command. For example:
 ```
-.\build\compchk_win7x64.bat /s
+cd build
+.\compchk_win7x64.bat /s
 ```
 
 ## Windows Driver
 To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 11 (Visual Studio Build Tools 16.9.2 and 17.1.5) ISO file to T: and V: drives. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. \
 Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. If you use WinCDEmu, however, you may order the system to mount EWDK10 and specify its drive letter during startup. \
-You may download the EWDK11 (with VS Build Tools 16.9.2) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019-New \
+You may download the EWDK11 (with VS Build Tools 16.11.10) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019-New \
 You may download the EWDK11 (with VS Build Tools 17.1.5) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022 \
 Make sure you have downloaded the correct version. NoirVisor would continue updating. If not using correct version, you might fail to compile the latest version of NoirVisor. \
-Note that EWDK11 with VS Build Tools **newer than 16.9.2 has removed import library for Windows 7**. \
+Note that EWDK11 with VS Build Tools **newer than 16 has removed import library for Windows 7**. \
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
 ## EFI Application and Runtime Driver
@@ -77,7 +78,7 @@ Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should p
 In that Zydis is included as a submodule, and because Zydis itself has a submodule, you must clone this repository recursively.
 
 ## Python script
-Since January 2024, NoirVisor can be built using Python script. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, Windows 7 is not supported. There is no `pip` package requirements for compilation. \
+Since January 2024, NoirVisor can be built using Python script. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, building NoirVisor through Python script in Windows 7 is not supported. There is no `pip` package requirements for compilation. \
 First of all, in the root directory of this repository, execute the following command to compile the third-party libraries:
 ```
 make /target disassembler /j

@@ -147,6 +147,7 @@ typedef struct _noir_mshv_vcpu
 {
 	void* root_vcpu;
 	u64 npiep_config;
+	u64 vp_index;
 	// Typically, only Type-I NoirVisor on AMD-V will be using SynIC.
 	struct
 	{

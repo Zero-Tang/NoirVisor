@@ -666,6 +666,9 @@ noir_status nvc_svm_subvert_system(noir_hypervisor_p hvm_p)
 				nv_dprintf("Warning: KVA-Shadow is present! Stealthy MSR-Hook on AMD Processors is untested in regards of KVA-Shadow!\n");
 			}
 #endif
+			// Microsoft TLFS.
+			vcpu->mshvcpu.root_vcpu=(void*)vcpu;
+			vcpu->mshvcpu.vp_index=i;
 			// Finally, enable self-reference.
 			vcpu->self=vcpu;
 		}

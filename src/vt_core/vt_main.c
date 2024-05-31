@@ -82,6 +82,7 @@ bool nvc_is_ept_supported()
 		bool ept_support_req=true;
 		ept_support_req&=ev_cap.support_exec_only_translation;
 		ept_support_req&=ev_cap.support_2mb_paging;
+		ept_support_req&=ev_cap.support_1gb_paging;
 		ept_support_req&=ev_cap.support_invept;
 		ept_support_req&=ev_cap.support_single_context_invept;
 		ept_support_req&=ev_cap.support_all_context_invept;
@@ -348,6 +349,9 @@ u8 static nvc_vt_enable(u64* vmxon_phys)
 	u64 cr4=noir_readcr4();
 	cr0|=noir_rdmsr(ia32_vmx_cr0_fixed0);
 	cr0&=noir_rdmsr(ia32_vmx_cr0_fixed1);
+	// In addition to CR4.VMXE, we also add following bits.
+	// CR4.OSXSAVE bit is required to execute xsetbv instruction.
+	cr4|=ia32_cr4_osfxsr_bit|ia32_cr4_osxmmexcept_bit|ia32_cr4_osxsave_bit;
 	cr4|=noir_rdmsr(ia32_vmx_cr4_fixed0);
 	cr4&=noir_rdmsr(ia32_vmx_cr4_fixed1);
 	// Note that CR4.VMXE is included in MSR info.
@@ -437,6 +441,46 @@ void static nvc_vt_setup_guest_state_area(noir_processor_state_p state_p,ulong_p
 	noir_vt_vmwrite(guest_rflags,2);		// That the essential bit is set is fine.
 }
 
+void static nvc_vt_set_idt_entry(noir_gate_descriptor_p idt_base,u8 vector,u16 selector,void* handler)
+{
+	idt_base[vector].offset_lo=(u16)handler;
+	idt_base[vector].selector=selector;
+	idt_base[vector].attrib.value=0;
+	idt_base[vector].attrib.type=0xE;
+	idt_base[vector].attrib.present=true;
+	idt_base[vector].offset_mid=(u16)((ulong_ptr)handler>>16);
+#if defined(_amd64)
+	idt_base[vector].offset_hi=(u32)((u64)handler>>32);
+	idt_base[vector].reserved=0;
+#endif
+}
+
+void static nvc_vt_setup_host_idt(ulong_ptr idtr_base,u16 selector)
+{
+	noir_gate_descriptor_p idt_base=(noir_gate_descriptor_p)idtr_base;
+	// Setup Standard Exception Handlers.
+	nvc_vt_set_idt_entry(idt_base,ia32_divide_error,selector,noir_divide_error_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_debug_exception,selector,noir_debug_fault_trap_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_breakpoint,selector,noir_breakpoint_trap_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_overflow,selector,noir_overflow_trap_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_exceed_bound_range,selector,noir_bound_range_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_invalid_opcode,selector,noir_invalid_opcode_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_no_math_coprocessor,selector,noir_device_not_available_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_double_fault,selector,noir_double_fault_abort_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_invalid_tss,selector,noir_invalid_tss_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_segment_not_present,selector,noir_segment_not_present_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_stack_segment_fault,selector,noir_stack_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_general_protection,selector,noir_general_protection_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_page_fault,selector,noir_page_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_x87_fp_error,selector,noir_x87_floating_point_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_alignment_check,selector,noir_alignment_check_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_machine_check,selector,noir_machine_check_abort_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_simd_exception,selector,noir_simd_floating_point_fault_handler_a);
+	nvc_vt_set_idt_entry(idt_base,ia32_control_protection,selector,noir_control_protection_fault_handler_a);
+	// In Intel VT-x, NMI can happen in VMX Root Operation.
+	nvc_vt_set_idt_entry(idt_base,ia32_nmi_interrupt,selector,nvc_vt_host_nmi_handler);
+}
+
 void static nvc_vt_setup_host_descriptor_tables(noir_vt_vcpu_p vcpu,noir_processor_state_p state)
 {
 	// Copy IDT and GDT.
@@ -460,6 +504,8 @@ void static nvc_vt_setup_host_descriptor_tables(noir_vt_vcpu_p vcpu,noir_process
 	tr_seg->attributes.type=0x9;
 	tr_seg->attributes.present=true;
 	tss_base->iomap_base=sizeof(noir_tss64);
+	// Initialize IDT.
+	nvc_vt_setup_host_idt((ulong_ptr)vcpu->idt_buffer,state->cs.selector);
 #else
 	// In Type-II, copy the TSS.
 	u16 tr_sel=state->tr.selector&selector_rplti_mask;
@@ -471,6 +517,19 @@ void static nvc_vt_setup_host_descriptor_tables(noir_vt_vcpu_p vcpu,noir_process
 	noir_vt_vmwrite(host_tr_base,tss_base);
 	noir_vt_vmwrite(host_gdtr_base,(ulong_ptr)vcpu->gdt_buffer);
 	noir_vt_vmwrite(host_idtr_base,(ulong_ptr)vcpu->idt_buffer);
+#if defined(_hv_type1)
+	// Load into host now.
+	descriptor_register idtr,gdtr;
+	idtr.limit=0xFFF;
+	gdtr.limit=0xFFF;
+	idtr.base=(ulong_ptr)vcpu->idt_buffer;
+	gdtr.base=(ulong_ptr)vcpu->gdt_buffer;
+	noir_lidt(&idtr);
+	noir_lgdt(&gdtr);
+	noir_ltr(tr_sel);
+	// For test purpose, generate #UD exception and see if we can catch it.
+	// noir_ud2();
+#endif
 }
 
 void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_state_p state)
@@ -498,8 +557,7 @@ void static nvc_vt_setup_host_state_area(noir_vt_vcpu_p vcpu,noir_processor_stat
 	state->cr4&=noir_rdmsr(ia32_vmx_cr4_fixed1);
 	noir_btr(&state->cr4,ia32_cr4_cet);			// Turn off CET in host mode.
 	noir_vt_vmwrite(host_cr0,state->cr0);
-	noir_vt_vmwrite(host_cr3,system_cr3);
-	// noir_vt_vmwrite(host_cr3,hvm_p->host_memmap.hcr3.phys);
+	noir_vt_vmwrite(host_cr3,hvm_p->host_memmap.hcr3.phys);
 	noir_vt_vmwrite(host_cr4,state->cr4);
 	noir_vt_vmwrite(host_msr_ia32_efer,state->efer);
 	// Host State Area - Stack Pointer, Instruction Pointer
@@ -642,8 +700,6 @@ void static nvc_vt_setup_memory_virtualization(noir_vt_vcpu_p vcpu)
 		noir_vt_vmwrite(virtual_processor_identifier,1);
 	if(vcpu->enabled_feature & noir_vt_extended_paging)
 		noir_vt_vmwrite64(ept_pointer,vcpu->ept_manager->eptp.phys.value);
-	// It is required to setup memory types on a per-processor basis.
-	nvc_ept_update_by_mtrr(vcpu->ept_manager);
 }
 
 void static nvc_vt_setup_available_features(noir_vt_vcpu_p vcpu)
@@ -698,8 +754,8 @@ void static nvc_vt_setup_control_area(bool true_msr)
 	nvc_vt_setup_procbased_controls(true_msr);
 	nvc_vt_setup_vmexit_controls(true_msr);
 	nvc_vt_setup_vmentry_controls(true_msr);
-	noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_cd_bit);			// Monitor CD flags
-	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_vmxe_bit);			// Monitor VMXE flags
+	noir_vt_vmwrite(cr0_guest_host_mask,ia32_cr0_cd_bit|ia32_cr0_pg_bit);			// Monitor CD & PG flags
+	noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_vmxe_bit);							// Monitor VMXE flags
 }
 
 u8 nvc_vt_subvert_processor_i(noir_vt_vcpu_p vcpu,void* reserved,ulong_ptr gsp)
@@ -904,6 +960,7 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 			}
 			vcpu->relative_hvm=(noir_vt_hvm_p)hvm->reserved;
 			vcpu->mshvcpu.root_vcpu=(void*)vcpu;
+			vcpu->mshvcpu.vp_index=i;
 		}
 	}
 	hvm->relative_hvm->msr_bitmap.virt=noir_alloc_contd_memory(page_size);
