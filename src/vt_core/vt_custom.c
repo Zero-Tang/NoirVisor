@@ -127,9 +127,14 @@ void noir_hvcode nvc_vt_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_vt_
 	noir_writecr2(cvcpu->header.crs.cr2);
 	if(!cvcpu->header.state_cache.cr_valid)
 	{
+		u64 cr0=cvcpu->header.crs.cr0;
 		u64 cr4=cvcpu->header.crs.cr4;
-		// Do not use CR0_FIXED_BITS_MSR because Unrestricted Guest is enabled.
-		noir_vt_vmwrite(guest_cr0,cvcpu->header.crs.cr0);
+		// Unrestricted guest only allows PE and PG be cleared. There are still other required bits.
+		cr0|=noir_rdmsr(ia32_vmx_cr0_fixed0);
+		cr0&=noir_rdmsr(ia32_vmx_cr0_fixed1);
+		if(!noir_bt64(&cvcpu->header.crs.cr0,ia32_cr0_pe))noir_btr64(&cr0,ia32_cr0_pe);
+		if(!noir_bt64(&cvcpu->header.crs.cr0,ia32_cr0_pg))noir_btr64(&cr0,ia32_cr0_pg);
+		noir_vt_vmwrite(guest_cr0,cr0);
 		noir_vt_vmwrite(guest_cr3,cvcpu->header.crs.cr3);
 		// Intel VT-x requires VMXE to be set.
 		cr4|=noir_rdmsr(ia32_vmx_cr4_fixed0);
@@ -298,6 +303,7 @@ void noir_hvcode nvc_vt_switch_to_guest_vcpu(noir_gpr_state_p gpr_state,noir_vt_
 			}
 		}
 	}
+	// All states are loaded into VMCS.
 }
 
 void noir_hvcode nvc_vt_dump_vcpu_state(noir_vt_custom_vcpu_p vcpu)
@@ -578,6 +584,8 @@ void noir_hvcode nvc_vt_initialize_cvm_vmcs(noir_vt_vcpu_p vcpu,noir_vt_custom_v
 			noir_vt_vmwrite(cr4_guest_host_mask,ia32_cr4_vmxe_bit);
 			noir_vt_vmwrite(guest_interruptibility_state,0);
 			noir_vt_vmwrite(guest_activity_state,guest_is_active);
+			// Flush to VMCS.
+			noir_vt_vmclear(&cvcpu->vmcs.phys);
 			// Switch back to Host vCPU.
 			noir_vt_vmptrld(&vcpu->vmcs.phys);
 		}
@@ -1036,8 +1044,6 @@ void nvc_vtc_release_vm(noir_vt_custom_vm_p virtual_machine)
 		noir_acquire_reslock_exclusive(hvm_p->tlb_tagging.vpid_pool_lock);
 		noir_reset_bitmap(hvm_p->tlb_tagging.vpid_pool,virtual_machine->vpid-hvm_p->tlb_tagging.start);
 		noir_release_reslock(hvm_p->tlb_tagging.vpid_pool_lock);
-		// Free VM Structure.
-		noir_free_nonpg_memory(virtual_machine);
 	}
 }
 

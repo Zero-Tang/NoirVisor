@@ -1,7 +1,7 @@
 @echo off
-set ddkpath=V:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.31.31103
-set path=%ddkpath%\bin\Hostx64\x64;V:\Program Files\Windows Kits\10\bin\10.0.22621.0\x64;%path%
-set incpath=V:\Program Files\Windows Kits\10\Include\10.0.22621.0
+set ddkpath=V:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.38.33130
+set path=%ddkpath%\bin\Hostx64\x64;V:\Program Files\Windows Kits\10\bin\10.0.26100.0\x64;%path%
+set incpath=V:\Program Files\Windows Kits\10\Include\10.0.26100.0
 set libpath=V:\Program Files\Windows Kits\10\Lib
 set binpath=..\bin\compchk_win11x64
 set objpath=..\bin\compchk_win11x64\Intermediate
@@ -61,7 +61,7 @@ cl ..\src\drv_core\hpet\hpet.c /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D
 for %%1 in (..\src\drv_core\acpi\*.c) do (cl %%1 /I"..\src\include" /Zi /nologo /W3 /WX /Oi /Od /D"_msvc" /D"_amd64" /D"_%%~n1" /Zc:wchar_t /std:c17 /FAcs /Fa"%objpath%\%%~n1.cod" /Fo"%objpath%\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /TC /c /errorReport:queue)
 
 echo ============Start Linking============
-link "%objpath%\*.obj" "%objpath%\version.res" /LIBPATH:"%libpath%\10.0.22621.0\km\x64" /NODEFAULTLIB "ntoskrnl.lib" "hal.lib" "..\src\disasm\bin\compchk_win11x64\zydis.lib" /NOLOGO /DEBUG /PDB:"%binpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
+link "%objpath%\*.obj" "%objpath%\version.res" /LIBPATH:"%libpath%\10.0.26100.0\km\x64" /NODEFAULTLIB "ntoskrnl.lib" "hal.lib" "..\src\disasm\bin\compchk_win11x64\zydis.lib" /NOLOGO /DEBUG /PDB:"%binpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
 
 echo ============Start Signing============
 signtool sign /v /fd SHA1 /f .\ztnxtest.pfx  %binpath%\NoirVisor.sys

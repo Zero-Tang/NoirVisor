@@ -314,38 +314,39 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 			RtlInitUnicodeString(&uniKvName,L"CpuidPresence");
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 			if(NT_SUCCESS(st))CpuidPresence=*(PULONG32)KvPartInf->Data;
-			NoirDebugPrint("CPUID-Presence is %s!\n",CpuidPresence?"enabled":"disabled");
 			// Detect if Stealth MSR Hook is enabled.
 			RtlInitUnicodeString(&uniKvName,L"StealthMsrHook");
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 			if(NT_SUCCESS(st))StealthMsrHook=*(PULONG32)KvPartInf->Data;
-			NoirDebugPrint("Stealth MSR Hook is %s!\n",StealthMsrHook?"enabled":"disabled");
 			// Detect if Stealth Inline Hook is enabled.
 			RtlInitUnicodeString(&uniKvName,L"StealthInlineHook");
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 			if(NT_SUCCESS(st))StealthInlineHook=*(PULONG32)KvPartInf->Data;
-			NoirDebugPrint("Stealth Inline Hook is %s!\n",StealthInlineHook?"enabled":"disabled");
 			// Detect if Nested Virtualization is enabled.
 			RtlInitUnicodeString(&uniKvName,L"NestedVirtualization");
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 			if(NT_SUCCESS(st))NestedVirtualization=*(PULONG32)KvPartInf->Data;
-			NoirDebugPrint("Nested Virtualization is %s!\n",NestedVirtualization?"enabled":"disabled");
 			// Detect if Hide-From-PT is enabled.
 			RtlInitUnicodeString(&uniKvName,L"HideFromIntelPT");
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 			if(NT_SUCCESS(st))HideFromProcessorTrace=*(PULONG32)KvPartInf->Data;
-			NoirDebugPrint("Hiding from Intel Processor Trace is %s!\n",HideFromProcessorTrace?"enabled":"disabled");
 			// Detect if NoirVisor Secure Virtualization is enabled.
 			RtlInitUnicodeString(&uniKvName,L"SecureVirtualization");
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 			if(NT_SUCCESS(st))SecureVirtualization=*(PULONG32)KvPartInf->Data;
-			NoirDebugPrint("Secure Virtualization is %s!\n",SecureVirtualization?"enabled":"disabled");
 			// Close the registry key handle.
 			ZwClose(hKey);
 		}
 		NoirFreePagedMemory(KvPartInf);
 	}
-	// Summarize
+	// Print Results.
+	NoirDebugPrint("CPUID-Presence is %s!\n",CpuidPresence?"enabled":"disabled");
+	NoirDebugPrint("Stealth MSR Hook is %s!\n",StealthMsrHook?"enabled":"disabled");
+	NoirDebugPrint("Stealth Inline Hook is %s!\n",StealthInlineHook?"enabled":"disabled");
+	NoirDebugPrint("Nested Virtualization is %s!\n",NestedVirtualization?"enabled":"disabled");
+	NoirDebugPrint("Hiding from Intel Processor Trace is %s!\n",HideFromProcessorTrace?"enabled":"disabled");
+	NoirDebugPrint("Secure Virtualization is %s!\n",SecureVirtualization?"enabled":"disabled");
+	// Summarize.
 	*Features|=(CpuidPresence!=0)<<NOIR_HVM_FEATURE_CPUID_PRESENCE_BIT;
 	*Features|=(StealthMsrHook!=0)<<NOIR_HVM_FEATURE_STEALTH_MSR_HOOK_BIT;
 	*Features|=(StealthInlineHook!=0)<<NOIR_HVM_FEATURE_STEALTH_INLINE_HOOK_BIT;

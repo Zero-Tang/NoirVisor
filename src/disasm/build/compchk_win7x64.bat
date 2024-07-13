@@ -1,5 +1,5 @@
 @echo off
-set path=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.28.29910\bin\Hostx64\x64;T:\Program Files\Windows Kits\10\bin\10.0.20348.0\x64;%path%
+set path=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\bin\Hostx64\x64;T:\Program Files\Windows Kits\10\bin\10.0.22000.0\x64;%path%
 set binpath=..\bin\compchk_win7x64
 set objpath=..\bin\compchk_win7x64\Intermediate
 

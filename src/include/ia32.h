@@ -166,7 +166,7 @@
 #define ia32_efer						0xC0000080
 #define ia32_star						0xC0000081
 #define ia32_lstar						0xC0000082
-#define ia32_cstar						0xC0000082
+#define ia32_cstar						0xC0000083
 #define ia32_fmask						0xC0000084
 #define ia32_fs_base					0xC0000100
 #define ia32_gs_base					0xC0000101

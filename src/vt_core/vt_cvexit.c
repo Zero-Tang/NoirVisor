@@ -45,9 +45,17 @@ void static noir_hvcode nvc_vt_save_generic_cvexit_context(noir_vt_custom_vcpu_p
 	cvcpu->header.exit_context.vcpu_state.lm=noir_bt(&efer,ia32_efer_lma);
 	cvcpu->header.exit_context.vcpu_state.cpl=ss_ar.dpl;
 	// Saving some registers...
+	// At this point, no states was dumped from VMCS.
+	noir_vt_vmread(guest_cs_selector,&cvcpu->header.seg.cs.selector);
+	noir_vt_vmread(guest_cs_access_rights,&cvcpu->header.seg.cs.attrib);
+	noir_vt_vmread(guest_cs_limit,&cvcpu->header.seg.cs.limit);
+	noir_vt_vmread(guest_cs_base,&cvcpu->header.seg.cs.base);
+	noir_vt_vmread(guest_rflags,&cvcpu->header.rflags);
+	noir_vt_vmread(guest_rip,&cvcpu->header.rip);
 	cvcpu->header.exit_context.cs=cvcpu->header.seg.cs;
 	cvcpu->header.exit_context.rflags=cvcpu->header.rflags;
 	cvcpu->header.exit_context.rip=cvcpu->header.rip;
+	cvcpu->header.exit_context.next_rip=cvcpu->header.rip+len;
 }
 
 void noir_hvcode fastcall nvc_vt_default_cvexit_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu,noir_vt_custom_vcpu_p cvcpu)
@@ -88,6 +96,7 @@ void static noir_hvcode fastcall nvc_vt_exception_nmi_cvexit_handler(noir_gpr_st
 		{
 			noir_vt_vmread(vmexit_qualification,&cvcpu->header.exit_context.exception.pf_addr);
 			cvcpu->header.exit_context.exception.fetched_bytes=0;
+			// Note that this case block does not have a break statement.
 		}
 		default:
 		{
@@ -98,6 +107,7 @@ void static noir_hvcode fastcall nvc_vt_exception_nmi_cvexit_handler(noir_gpr_st
 			nvc_vt_save_generic_cvexit_context(cvcpu);
 			nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
 			cvcpu->header.exit_context.intercept_code=cv_exception;
+			noir_int3();
 			break;
 		}
 	}
@@ -691,6 +701,7 @@ void static noir_hvcode fastcall nvc_vt_invalid_guest_state_cvexit_handler(noir_
 	u64 cs_base,ds_base,es_base,fs_base,gs_base,ss_base,tr_base,ldtr_base,idtr_base,gdtr_base;
 	ulong_ptr rflags,rip;
 	// Invalid State in VMCS is detected by processor.
+	nv_dprintf("CVM Guest State is invalid!\n");
 	nvc_vt_dump_vmcs_guest_state();
 	// Dump the VMCS and parse the reason of failure.
 	// Read Control & Debug Registers.
@@ -757,7 +768,6 @@ void static noir_hvcode fastcall nvc_vt_invalid_guest_state_cvexit_handler(noir_
 
 	// Deliver to subverted host.
 	nvc_vt_switch_to_host_vcpu(gpr_state,vcpu);
-	nvc_vt_dump_vmcs_guest_state();
 	cvcpu->header.exit_context.intercept_code=cv_invalid_state;
 }
 

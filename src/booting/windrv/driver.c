@@ -56,7 +56,6 @@ void NoirDriverUnload(IN PDRIVER_OBJECT DriverObject)
 	NoirFinalizePowerStateCallback();
 	NoirAcpiFinalize();
 	NoirReportMemoryIntrospectionCounter();
-	NoirFinalizeAsyncDebugPrinter();
 	IoDeleteSymbolicLink(&uniLinkName);
 	IoDeleteDevice(NoirDeviceObject);
 	NoirHaxFinalizeDeviceExtension();
@@ -344,7 +343,6 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 
 void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Context OPTIONAL,IN ULONG Count)
 {
-	NTSTATUS st=NoirInitializeAsyncDebugPrinter();
 	NoirPrintCompilerVersion();
 	NoirInitializeDisassembler();
 	NoirInitializeCodeIntegrity(DriverObject->DriverStart);

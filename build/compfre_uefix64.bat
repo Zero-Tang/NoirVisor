@@ -1,7 +1,7 @@
 @echo off
-set ddkpath=V:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.31.31103
+set ddkpath=V:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.38.33130
 set path=%ddkpath%\bin\Hostx64\x64;%path%
-set incpath=T:\Program Files\Windows Kits\10\Include\10.0.22000.0
+set incpath=V:\Program Files\Windows Kits\10\Include\10.0.26100.0
 set mdepath=%EDK2_PATH%\edk2\MdePkg
 set libpath=%EDK2_PATH%\bin\MdePkg
 set binpath=..\bin\compfre_uefix64

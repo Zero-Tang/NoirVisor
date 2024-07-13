@@ -3,7 +3,7 @@
 	{
 		"family":"msvc",
 		"os":"windows",
-		"ddk_path":"T:\\Program Files\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Tools\\MSVC\\14.28.29910",
+		"ddk_path":"T:\\Program Files\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Tools\\MSVC\\14.29.30133",
 		"sdk_path":"T:\\Program Files\\Windows Kits\\10",
 		"tool_paths.amd64":
 		[
@@ -50,32 +50,32 @@
 		"binary_output":"/OUT:{output_base}\\{target_name}.{extension}",
 		"entry_point":"/ENTRY:{}"
 	},
-	"ewdk11_22621":
+	"ewdk11_26100":
 	{
 		"family":"msvc",
 		"os":"windows",
-		"ddk_path":"V:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.31.31103",
+		"ddk_path":"V:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\MSVC\\14.38.33130",
 		"sdk_path":"V:\\Program Files\\Windows Kits\\10",
 		"tool_paths.amd64":
 		[
 			"{ddk_path}\\bin\\Hostx64\\x64",
-			"{sdk_path}\\bin\\10.0.22621.0\\x64"
+			"{sdk_path}\\bin\\10.0.26100.0\\x64"
 		],
 		"wdk_incpath":
 		[
-			"{sdk_path}\\Include\\10.0.22621.0\\km",
-			"{sdk_path}\\Include\\10.0.22621.0\\km\\crt",
-			"{sdk_path}\\Include\\10.0.22621.0\\shared"
+			"{sdk_path}\\Include\\10.0.26100.0\\km",
+			"{sdk_path}\\Include\\10.0.26100.0\\km\\crt",
+			"{sdk_path}\\Include\\10.0.26100.0\\shared"
 		],
 		"sdk_incpath":
 		[
-			"{sdk_path}\\Include\\10.0.22621.0\\um",
-			"{sdk_path}\\Include\\10.0.22621.0\\ucrt",
-			"{sdk_path}\\Include\\10.0.22621.0\\shared"
+			"{sdk_path}\\Include\\10.0.26100.0\\um",
+			"{sdk_path}\\Include\\10.0.26100.0\\ucrt",
+			"{sdk_path}\\Include\\10.0.26100.0\\shared"
 		],
 		"wdk_libpath.amd64":
 		[
-			"{sdk_path}\\Lib\\10.0.22621.0\\km\\x64"
+			"{sdk_path}\\Lib\\10.0.26100.0\\km\\x64"
 		],
 		"libc_incpath":"{ddk_path}\\include",
 		"cl_flags":["/Zi","/nologo","/W3","/WX","/wd4311","/Oi","/Zc:wchar_t","/std:c17","/FAcs","/FS","/Fd{output_base}\\vc143.pdb","/GS-","/Qspectre","/TC","/c","/errorReport:queue"],

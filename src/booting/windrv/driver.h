@@ -176,8 +176,6 @@ void NoirPrintCompilerVersion();
 NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength);
 NTSTATUS NoirGetUefiHypervisionStatus();
 void NoirReportMemoryIntrospectionCounter();
-NTSTATUS NoirInitializeAsyncDebugPrinter();
-void NoirFinalizeAsyncDebugPrinter();
 ULONG NoirBuildHypervisor();
 void NoirTeardownHypervisor();
 NTSTATUS NoirConfigureInternalDebugger();

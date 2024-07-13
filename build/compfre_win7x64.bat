@@ -1,5 +1,5 @@
 @echo off
-set ddkpath=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.28.29910
+set ddkpath=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133
 set path=%ddkpath%\bin\Hostx64\x64;T:\Program Files\Windows Kits\10\bin\10.0.22000.0\x64;%path%
 set incpath=T:\Program Files\Windows Kits\10\Include\10.0.22000.0
 set libpath=T:\Program Files\Windows Kits\10\Lib

@@ -40,7 +40,7 @@
 	},
 	"win11x64":
 	{
-		"compiler":"ewdk11_22621",
+		"compiler":"ewdk11_26100",
 		"platform":"amd64",
 		"outputs":
 		{
@@ -79,7 +79,7 @@
 	},
 	"uefix64":
 	{
-		"compiler":"ewdk11_22621",
+		"compiler":"ewdk11_26100",
 		"platform":"amd64",
 		"outputs":
 		{
