@@ -22,6 +22,7 @@
 #include "vt_vmcs.h"
 #include "vt_def.h"
 #include "vt_ept.h"
+#include "vt_iommu.h"
 
 bool nvc_is_vt_supported()
 {
@@ -141,6 +142,14 @@ void static nvc_vt_cleanup(noir_hypervisor_p hvm)
 			if(rhvm->io_bitmap_a.virt)noir_free_contd_memory(rhvm->io_bitmap_a.virt,page_size);
 			if(rhvm->io_bitmap_b.virt)noir_free_contd_memory(rhvm->io_bitmap_b.virt,page_size);
 		}
+		if(hvm->host_memmap.hcr3.virt)
+			noir_free_contd_memory(hvm->host_memmap.hcr3.virt,page_size);
+		if(hvm->host_memmap.pdpt.virt)
+			noir_free_contd_memory(hvm->host_memmap.pdpt.virt,page_size);
+		if(hvm->pio_hooks.root)
+			nvc_cleanup_io_hooks(hvm->pio_hooks.root);
+		if(hvm->mmio_hooks.root)
+			nvc_cleanup_io_hooks(hvm->mmio_hooks.root);
 #if !defined(_hv_type1)
 		if(hvm->tlb_tagging.vpid_pool_lock)
 			noir_finalize_reslock(hvm->tlb_tagging.vpid_pool_lock);
@@ -995,11 +1004,16 @@ noir_status nvc_vt_subvert_system(noir_hypervisor_p hvm)
 		nv_dprintf("Hypervisor's paging structure is initialized successfully!\n");
 	else
 		nv_dprintf("Failed to build hypervisor's paging structure...\n");
+	if(hvm->options.enable_iommu)
+		nvc_vt_iommu_initialize();
 	nvc_vt_setup_msr_hook(hvm);
 	nvc_vt_setup_io_hook(hvm);
 	for(u32 i=0;i<hvm->cpu_count;i++)
-		if(nvc_ept_protect_hypervisor(hvm,(noir_ept_manager_p)hvm->virtual_cpu[i].ept_manager)==false)
+	{
+		if(nvc_ept_protect_hypervisor(hvm,hvm->virtual_cpu[i].ept_manager)==false)
 			goto alloc_failure;
+		if(nvc_ept_setup_mmio_hooks(hvm->virtual_cpu[i].ept_manager)==false)goto alloc_failure;
+	}
 #if !defined(_hv_type1)
 	if(nvc_vtc_initialize_cvm_module()!=noir_success)goto alloc_failure;
 	// Initialize VPID Pool for Customizable VMs.
@@ -1053,6 +1067,8 @@ void nvc_vt_restore_system(noir_hypervisor_p hvm)
 	if(hvm->virtual_cpu)
 	{
 		noir_generic_call(nvc_vt_restore_processor_thunk,hvm->virtual_cpu);
+		if(hvm->options.enable_iommu)
+			nvc_vt_iommu_finalize();
 		nvc_vt_cleanup(hvm);
 		nvc_mshv_teardown_cpuid_handlers();
 	}

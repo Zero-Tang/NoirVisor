@@ -788,35 +788,7 @@ void static noir_hvcode fastcall nvc_svm_io_handler(noir_gpr_state_p gpr_state,n
 	nvc_svm_io_exit_info info;
 	info.value=noir_svm_vmread32(vmcb,exit_info1);
 	// We need to hook into some I/O operations.
-	if(info.port>=hvm_p->protected_ports.serial && info.port<(u16)(hvm_p->protected_ports.serial+8))
-	{
-		// NoirVisor needs access to a serial port.
-		// Current implementation does not grant shared access. JUST DO NOTHING.
-		nvd_printf("Access to protected serial port is intercepted!\n");
-		noir_svm_advance_rip(vmcb);
-	}
-#if defined(_hv_type1)
-	// In Type-I hypervisor, PM1 register access must be virtualized.
-	else if(info.port==hvm_p->protected_ports.pm1a)
-	{
-		nvd_printf("PM1a register is intercepted!\n");
-		if(info.type)	// Input Operation is none of our business.
-			;
-		else
-		{
-			;
-		}
-	}
-	else if(info.port==hvm_p->protected_ports.pm1b)
-	{
-		nvd_printf("PM1b register is intercepted!\n");
-	}
-	else
-	{
-		// Unexpected I/O operation, forward.
-		nvd_printf("Unexpected I/O operation is intercepted!\n");
-	}
-#endif
+	// FIXME: Implement Generalized Port I/O Hooks.
 }
 
 // This is a branch of MSR-Exit. DO NOT ADVANCE RIP HERE!

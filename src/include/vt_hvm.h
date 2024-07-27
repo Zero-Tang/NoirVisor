@@ -87,12 +87,15 @@ typedef enum _noir_vt_consistency_check_failure_id
 	noir_vt_failure_invalid_rflags
 }noir_vt_consistency_check_failure_id,*noir_vt_consistency_check_failure_id_p;
 
+struct _noir_dmar_manager;
+
 typedef struct _noir_vt_hvm
 {
 	memory_descriptor msr_bitmap;
 	memory_descriptor io_bitmap_a;
 	memory_descriptor io_bitmap_b;
 	u32 hvm_cpuid_leaf_max;
+	struct _noir_dmar_manager *dmar_manager;
 }noir_vt_hvm,*noir_vt_hvm_p;
 
 typedef struct _noir_vt_msr_entry

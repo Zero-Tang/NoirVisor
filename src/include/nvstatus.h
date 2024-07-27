@@ -287,6 +287,17 @@ typedef u32 noir_status;
 #define noir_ept_not_supported			0xC1000002
 
 /*
+  Status Indicator: noir_dmar_not_supported
+  If there is an Intel VT-d hardware does not support
+  remapping DMA, this value is supposed to be returned.
+  This indicator is from Intel VT-x Specific Facility.
+
+  Value: 0xC1000003
+*/
+
+#define noir_dmar_not_supported			0xC1000003
+
+/*
   Status Indicator: noir_not_amd
   If a procedure is specific for AMD Processor,
   and the processor is not manufactured by AMD,

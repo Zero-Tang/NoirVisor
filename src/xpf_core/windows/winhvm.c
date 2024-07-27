@@ -295,6 +295,7 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 	ULONG32 NestedVirtualization=0;			// Disable Nested Virtualization at default.
 	ULONG32 HideFromProcessorTrace=0;		// Do not hide from Intel Processor Trace at default.
 	ULONG32 SecureVirtualization=0;			// Disable Secure Virtualization at default.
+	ULONG32 EnableIommu=0;					// Disable IOMMU at default.
 	BOOLEAN KvaShadowPresence=NoirDetectKvaShadow();
 	// Initialize.
 	NTSTATUS st=STATUS_INSUFFICIENT_RESOURCES;
@@ -334,6 +335,10 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 			RtlInitUnicodeString(&uniKvName,L"SecureVirtualization");
 			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
 			if(NT_SUCCESS(st))SecureVirtualization=*(PULONG32)KvPartInf->Data;
+			// Detect if IOMMU is enabled.
+			RtlInitUnicodeString(&uniKvName,L"EnableIommu");
+			st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,KvPartInf,PAGE_SIZE,&RetLen);
+			if(NT_SUCCESS(st))EnableIommu=*(PULONG32)KvPartInf->Data;
 			// Close the registry key handle.
 			ZwClose(hKey);
 		}
@@ -346,6 +351,7 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 	NoirDebugPrint("Nested Virtualization is %s!\n",NestedVirtualization?"enabled":"disabled");
 	NoirDebugPrint("Hiding from Intel Processor Trace is %s!\n",HideFromProcessorTrace?"enabled":"disabled");
 	NoirDebugPrint("Secure Virtualization is %s!\n",SecureVirtualization?"enabled":"disabled");
+	NoirDebugPrint("IOMMU is %s!\n",EnableIommu?"enabled":"disabled");
 	// Summarize.
 	*Features|=(CpuidPresence!=0)<<NOIR_HVM_FEATURE_CPUID_PRESENCE_BIT;
 	*Features|=(StealthMsrHook!=0)<<NOIR_HVM_FEATURE_STEALTH_MSR_HOOK_BIT;
@@ -354,6 +360,7 @@ NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 	*Features|=KvaShadowPresence<<NOIR_HVM_FEATURE_KVA_SHADOW_PRESENCE_BIT;
 	*Features|=(HideFromProcessorTrace!=0)<<NOIR_HVM_FEATURE_HIDE_FROM_IPT_BIT;
 	*Features|=(SecureVirtualization!=0)<<NOIR_HVM_FEATURE_SECURE_VIRTUALIZATION_BIT;
+	*Features|=(EnableIommu!=0)<<NOIR_HVM_FEATURE_ENABLE_IOMMU_BIT;
 	return st;
 }
 

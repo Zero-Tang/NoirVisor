@@ -22,20 +22,6 @@
 // Specify the top address of mapped GPA.
 #define noir_ept_top_address				0x7FFFFFFFFF
 
-typedef union _ia32_addr_translator
-{
-	struct
-	{
-		u64 page_offset:12;
-		u64 pte_offset:9;
-		u64 pde_offset:9;
-		u64 pdpte_offset:9;
-		u64 pml4e_offset:9;
-		u64 canonical:16;
-	};
-	u64 value;
-}ia32_addr_translator,*ia32_addr_translator_p;
-
 typedef union _ia32_ept_pointer
 {
 	struct
@@ -94,7 +80,7 @@ typedef union _ia32_ept_huge_pdpte
 		u64 accessed:1;
 		u64 dirty:1;
 		u64 umx:1;
-		u64 ignored0:1;
+		u64 var_mtrr_covered:1;	// Indicate if covered by variable MTRR.
 		u64 reserved:18;
 		u64 page_offset:22;
 		u64 ignored1:8;
@@ -136,7 +122,7 @@ typedef union _ia32_ept_large_pde
 		u64 accessed:1;
 		u64 dirty:1;
 		u64 umx:1;
-		u64 ignored0:1;			// Indicate if set for variable MTRR.
+		u64 var_mtrr_covered:1;	// Indicate if covered by variable MTRR.
 		u64 reserved:9;
 		u64 page_offset:31;
 		u64 ignored1:8;
@@ -169,16 +155,16 @@ typedef union _ia32_ept_pte
 {
 	struct
 	{
-		u64 read:1;			// Bit	0
-		u64 write:1;		// Bit	1
-		u64 execute:1;		// Bit	2
-		u64 memory_type:3;	// Bits	3-5
-		u64 ignore_pat:1;	// Bit	6
-		u64 ignored0:1;		// Bit	7
-		u64 accessed:1;		// Bit	8
-		u64 dirty:1;		// Bit	9
-		u64 umx:1;			// Bit	10
-		u64 ignored1:1;		// Bit	11
+		u64 read:1;					// Bit	0
+		u64 write:1;				// Bit	1
+		u64 execute:1;				// Bit	2
+		u64 memory_type:3;			// Bits	3-5
+		u64 ignore_pat:1;			// Bit	6
+		u64 ignored0:1;				// Bit	7
+		u64 accessed:1;				// Bit	8
+		u64 dirty:1;				// Bit	9
+		u64 umx:1;					// Bit	10
+		u64 var_mtrr_covered:1;		// Bit	11
 		u64 page_offset:40;
 		u64 ignored2:8;
 		u64 s_shadow_stack:1;
@@ -290,6 +276,7 @@ typedef union _ia32_ept_violation_qualification
 }ia32_ept_violation_qualification,*ia32_ept_violation_qualification_p;
 
 bool nvc_ept_protect_hypervisor(noir_hypervisor_p hvm,noir_ept_manager_p eptm);
+bool nvc_ept_setup_mmio_hooks(noir_ept_manager_p eptm);
 noir_ept_manager_p nvc_ept_build_identity_map();
 void nvc_ept_cleanup(noir_ept_manager_p eptm);
 void nvc_ept_update_by_mtrr(noir_ept_manager_p eptm);

@@ -22,6 +22,7 @@
 #define page_2mb_size			0x200000
 #define page_1gb_size			0x40000000
 #define page_512gb_size			0x8000000000
+#define page_256tb_size			0x1000000000000
 
 #if defined(_amd64)
 #define page_shift_diff			9
@@ -134,6 +135,13 @@ typedef struct _list_entry
 	struct _list_entry *next;
 	struct _list_entry *prev;
 }list_entry,*list_entry_p;
+
+typedef struct _avl_node
+{
+	struct _avl_node *left;
+	struct _avl_node *right;
+	i64 height;
+}avl_node,*avl_node_p;
 
 // Processor Facility
 typedef struct _segment_register
@@ -547,6 +555,40 @@ typedef union _noir_paging32_general_entry
 	u32 value;
 }noir_paging32_general_entry,*noir_paging32_general_entry_p;
 
+typedef void (*noir_mmio_handler)
+(
+ bool direction,
+ u64 address,
+ u64 size,
+ u64p value,
+ void* context
+);
+
+typedef struct _noir_mmio_region
+{
+	noir_mmio_handler handler;
+	void* context;
+	u64 phys;
+	u64 size;
+}noir_mmio_region,*noir_mmio_region_p;
+
+typedef void (*noir_pio_handler)
+(
+ bool direction,
+ u16 port,
+ u16 size,
+ u32p value,
+ void* context
+);
+
+typedef struct _noir_pio_region
+{
+	noir_pio_handler handler;
+	void* context;
+	u16 port;
+	u16 size;
+}noir_pio_region,*noir_pio_region_p;
+
 typedef void (*noir_broadcast_worker)(void* context,u32 processor_id);
 
 void noir_save_processor_state(noir_processor_state_p state);
@@ -564,15 +606,36 @@ void* noir_get_host_idt_base(u32 processor_number);
 
 bool noir_is_under_hvm();
 
+// Integer Facility
+u64 u64_max(const u64 n,...);
+i64 i64_max(const u64 n,...);
+
 // Doubly-Linked List Facility
 void noir_initialize_list_entry(list_entry_p entry);
 void noir_insert_to_prev(list_entry_p inserter,list_entry_p insertee);
 void noir_insert_to_next(list_entry_p inserter,list_entry_p insertee);
 void noir_remove_list_entry(list_entry_p entry);
 
+// AVL-Tree Facility
+typedef i32(cdecl *noir_sorting_comparator)(const void* a,const void*b);
+typedef i32(cdecl *noir_bst_search_comparator)(avl_node_p node,const void* item);
+
+avl_node_p noir_insert_avl_node(avl_node_p parent,avl_node_p node,noir_sorting_comparator compare_fn);
+avl_node_p noir_search_avl_node(avl_node_p root,const void* item,noir_bst_search_comparator compare_fn);
+
 // Bitmap Facility
 u32 noir_find_clear_bit(void* bitmap,u32 limit);
 u32 noir_find_set_bit(void* bitmap,u32 limit);
+
+// Memory-Mapped I/O Facility
+u8 noir_mmio_read8(u64 ptr);
+u16 noir_mmio_read16(u64 ptr);
+u32 noir_mmio_read32(u64 ptr);
+u64 noir_mmio_read64(u64 ptr);
+void noir_mmio_write8(u64 ptr,u8 val);
+void noir_mmio_write16(u64 ptr,u16 val);
+void noir_mmio_write32(u64 ptr,u32 val);
+void noir_mmio_write64(u64 ptr,u64 val);
 
 // Processor Extension Register Context Instructions
 // Use when switching from/to customizable VMs.
@@ -611,6 +674,9 @@ u64 noir_get_current_process_cr3();
 void* noir_lock_pages(void* virt,size_t bytes,u64p phys);
 void noir_unlock_pages(void* locker);
 void noir_get_locked_range(void* locker,void** virt,u32p bytes);
+void* noir_map_physical_memory(u64 physical_address,size_t length);
+void* noir_map_uncached_memory(u64 physical_address,size_t length);
+void noir_unmap_physical_memory(void* virtual_address,size_t length);
 void* noir_find_virt_by_phys(u64 physical_address);
 bool noir_query_page_attributes(void* virtual_address,bool *valid,bool *locked,bool *large_page);
 void noir_copy_memory(void* dest,void* src,u32 cch);
@@ -669,7 +735,5 @@ void noir_aes128_encrypt_pages(void* page_base,u8p expanded_keys,u64 pages,u8p k
 void noir_aes128_decrypt_pages(void* page_base,u8p expanded_keys,u64 pages,u8p key);
 
 // Miscellaneous
-typedef i32(cdecl *noir_sorting_comparator)(const void* a,const void*b);
-
 void noir_qsort(void* base,u32 num,u32 width,noir_sorting_comparator comparator);
 u64 noir_get_system_time();

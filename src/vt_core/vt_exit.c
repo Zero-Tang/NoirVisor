@@ -1281,16 +1281,15 @@ void static noir_hvcode fastcall nvc_vt_access_ldtr_tr_handler(noir_gpr_state_p 
 void static noir_hvcode fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p gpr_state,noir_vt_vcpu_p vcpu)
 {
 	bool advance=true;
-#if defined(_hv_type1)
-	// NoirVisor currently isn't supposed to intercept EPT Violations.
 	u64 gpa,gip;
+	ia32_ept_violation_qualification info;
+	noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&info);
 	noir_vt_vmread64(guest_physical_address,&gpa);
 	noir_vt_vmread(guest_rip,&gip);
-	nvd_printf("EPT Violation is intercepted at rip=0x%016llX! GPA=0x%016llX\n",gip,gpa);
-#else
+#if !defined(_hv_type1)
 	noir_ept_manager_p eptm=vcpu->ept_manager;
 	i32 lo=0,hi=noir_hook_pages_count;
-	u64 gpa;
+	bool is_stealth_hook=false;
 	noir_vt_vmread64(guest_physical_address,&gpa);
 	// We previously sorted the list.
 	// Use binary search to reduce time complexity.
@@ -1304,10 +1303,8 @@ void static noir_hvcode fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p g
 			hi=mid-1;
 		else
 		{
-			ia32_ept_violation_qualification info;
 			// The violated page is found. Perform page-substitution
 			ia32_ept_pte_p pte_p=(ia32_ept_pte_p)nhp->pte_descriptor;
-			noir_vt_vmread(vmexit_qualification,(ulong_ptr*)&info);
 			if(info.read || info.write)
 			{
 				// If the access is read or write, we should check if
@@ -1349,6 +1346,7 @@ void static noir_hvcode fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p g
 				pte_p->execute=1;
 				pte_p->page_offset=nhp->hook.phys>>page_shift;
 			}
+			is_stealth_hook=true;
 			advance=false;
 			// According to Intel SDM, an EPT Violation invalidates any guest-physical mappings (associated
 			// with the current EP4TA) that would be used to translate the GPA that caused EPT Violation.
@@ -1356,7 +1354,77 @@ void static noir_hvcode fastcall nvc_vt_ept_violation_handler(noir_gpr_state_p g
 			break;
 		}
 	}
+	if(!is_stealth_hook && !info.execute)
 #endif
+	{
+		// This could be MMIO Hook.
+		u32 err;
+		u8 val[8];
+		nvd_printf("EPT Violation for MMIO is intercepted at rip=0x%016llX! GPA=0x%016llX\n",gip,gpa);
+		noir_vt_vmread(guest_cr3,&vcpu->cvm_state.crs.cr3);
+		noir_vt_vmread(guest_cr4,&vcpu->cvm_state.crs.cr4);
+		// We will reuse the MMIO decoder from CVM in order to virtualize MMIO.
+		noir_vt_vmread(guest_rsp,&gpr_state->rsp);
+		noir_vt_vmread(guest_rflags,&vcpu->cvm_state.rflags);
+		noir_vt_vmread(guest_cs_selector,&vcpu->cvm_state.exit_context.cs.selector);
+		noir_vt_vmread(guest_cs_access_rights,&vcpu->cvm_state.exit_context.cs.attrib);
+		noir_vt_vmread(guest_cs_limit,&vcpu->cvm_state.exit_context.cs.limit);
+		noir_vt_vmread(guest_cs_base,&vcpu->cvm_state.exit_context.cs.base);
+		vcpu->cvm_state.gpr=*gpr_state;
+		vcpu->cvm_state.exit_context.rflags=vcpu->cvm_state.rflags;
+		vcpu->cvm_state.exit_context.rip=vcpu->cvm_state.rip=vcpu->cvm_state.rip=gip;
+		vcpu->cvm_state.exit_context.intercept_code=cv_memory_access;
+		vcpu->cvm_state.exit_context.memory_access.access.present=(u8)info.readable;
+		vcpu->cvm_state.exit_context.memory_access.access.write=(u8)info.write;
+		vcpu->cvm_state.exit_context.memory_access.access.execute=(u8)info.execute;
+		vcpu->cvm_state.exit_context.memory_access.gpa=gpa;
+		vcpu->cvm_state.exit_context.memory_access.access.fetched_bytes=(u8)nvc_copy_host_virtual_memory64(vcpu->cvm_state.crs.cr3,gip,vcpu->cvm_state.exit_context.memory_access.instruction_bytes,15,false,noir_bt(&vcpu->cvm_state.crs.cr4,ia32_cr4_la57),&err);
+		nvc_emu_decode_memory_access(&vcpu->cvm_state);
+		// After decoding the MMIO Instruction, determine the data.
+		switch(vcpu->cvm_state.exit_context.memory_access.flags.instruction_code)
+		{
+			case noir_cvm_instruction_code_mov:
+			{
+				switch(vcpu->cvm_state.exit_context.memory_access.flags.operand_class)
+				{
+					case noir_cvm_operand_class_gpr:
+					case noir_cvm_operand_class_gpr8hi:
+					{
+						u64p gpr_array=(u64p)gpr_state;
+						if(info.write)
+						{
+							*(u64p)val=gpr_array[vcpu->cvm_state.exit_context.memory_access.flags.operand_code];
+							if(vcpu->cvm_state.exit_context.memory_access.flags.operand_class==noir_cvm_operand_class_gpr8hi)val[0]=val[1];
+							nvd_printf("MMIO Write Value: 0x%llX\n",*(u64p)val);
+						}
+						// Call the MMIO handler.
+						nvc_call_rw_mmio_region(info.write,gpa,vcpu->cvm_state.exit_context.memory_access.flags.operand_size,(u64p)val);
+						if(info.read)
+						{
+							if(vcpu->cvm_state.exit_context.memory_access.flags.operand_class==noir_cvm_operand_class_gpr8hi)
+							{
+								u8 v=val[0];
+								*(u64p)val=gpr_array[vcpu->cvm_state.exit_context.memory_access.flags.operand_code];
+								val[1]=v;
+							}
+							// If the destination operand is 32-bit, clear high 32 bits.
+							if(vcpu->cvm_state.exit_context.memory_access.flags.operand_size==4)*(u32p)&val[4]=0;
+							nvd_printf("MMIO Read Value: 0x%llX\n",*(u64p)val);
+							gpr_array[vcpu->cvm_state.exit_context.memory_access.flags.operand_code]=*(u64p)val;
+						}
+						break;
+					}
+					default:
+					{
+						// FIXME: Not all operand classes are implemented.
+						nvd_printf("Unsupported Operand Class (%u)!\n",vcpu->cvm_state.exit_context.memory_access.flags.operand_class);
+						break;
+					}
+				}
+				break;
+			}
+		}
+	}
 	if(advance)noir_vt_advance_rip();
 }
 

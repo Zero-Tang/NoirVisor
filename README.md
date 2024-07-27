@@ -201,7 +201,7 @@ Project NoirVisor has six future development plans:
 
 - Develop Customizable VM engine for complex purposes.
 - Develop Nested Virtualization.
-- Develop IOMMU Core on Intel VT-d and AMD-Vi.
+- Develop IOMMU Core on AMD-Vi.
 - Port NoirVisor to the Rust Programming Language.
 - Port NoirVisor to Linux.
 - Port NoirVisor to UEFI and corresponding layered hypervisor.

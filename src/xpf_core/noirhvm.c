@@ -1822,6 +1822,141 @@ size_t nvc_copy_host_virtual_memory64(u64 pt,u64 va,void* buffer,size_t length,b
 	}
 }
 
+i32 static cdecl nvc_compare_mmio_region_avl_nodes(const void* a,const void* b)
+{
+	noir_io_avl_node_p ir_a=(noir_io_avl_node_p)a,ir_b=(noir_io_avl_node_p)b;
+	if(ir_a->mmio.phys<ir_b->mmio.phys)
+		return -1;
+	else if(ir_a->mmio.phys>ir_b->mmio.phys)
+		return 1;
+	return 0;
+}
+
+i32 static cdecl nvc_compare_pio_region_avl_nodes(const void* a,const void* b)
+{
+	const noir_io_avl_node_p ir_a=(noir_io_avl_node_p)a,ir_b=(noir_io_avl_node_p)b;
+	if(ir_a->pio.port<ir_b->pio.port)
+		return -1;
+	else if(ir_a->pio.port>ir_b->pio.port)
+		return 1;
+	return 0;
+}
+
+i32 static cdecl nvc_bst_search_pio_region(avl_node_p node,const void* item)
+{
+	noir_io_avl_node_p pr=(noir_io_avl_node_p)node;
+	u16 port=*(u16p)item;
+	if(port<pr->pio.port)
+		return -1;
+	else if(port>pr->pio.port+pr->pio.size)
+		return 1;
+	return 0;
+}
+
+i32 static cdecl nvc_bst_search_mmio_region(avl_node_p node,const void* item)
+{
+	noir_io_avl_node_p mr=(noir_io_avl_node_p)node;
+	u64 phys=*(u64p)item;
+	if(phys<mr->mmio.phys)
+		return -1;
+	else if(phys>mr->mmio.phys+mr->mmio.size)
+		return 1;
+	return 0;
+}
+
+void nvc_cleanup_io_hooks(noir_io_avl_node_p root)
+{
+	if(root->avl.left)
+		nvc_cleanup_io_hooks((noir_io_avl_node_p)root->avl.left);
+	if(root->avl.right)
+		nvc_cleanup_io_hooks((noir_io_avl_node_p)root->avl.right);
+	noir_free_nonpg_memory(root);
+}
+
+noir_status nvc_register_pio_region(noir_pio_region_p pr)
+{
+	noir_io_avl_node_p avl_node=noir_alloc_nonpg_memory(sizeof(noir_io_avl_node));
+	if(avl_node)
+	{
+		// Copy Region Contents.
+		avl_node->pio.handler=pr->handler;
+		avl_node->pio.context=pr->context;
+		avl_node->pio.port=pr->port;
+		avl_node->pio.size=pr->port;
+		// Insert to tree.
+		avl_node->avl.height=1;
+		hvm_p->pio_hooks.root=(noir_io_avl_node_p)noir_insert_avl_node((avl_node_p)hvm_p->pio_hooks.root,(avl_node_p)avl_node,nvc_compare_pio_region_avl_nodes);
+		return noir_success;
+	}
+	return noir_insufficient_resources;
+}
+
+noir_status nvc_register_mmio_region(noir_mmio_region_p mr)
+{
+	noir_io_avl_node_p avl_node=noir_alloc_nonpg_memory(sizeof(noir_io_avl_node));
+	if(avl_node)
+	{
+		// Copy Region Contents.
+		avl_node->mmio.handler=mr->handler;
+		avl_node->mmio.context=mr->context;
+		avl_node->mmio.phys=mr->phys;
+		avl_node->mmio.size=mr->size;
+		// Insert to tree.
+		avl_node->avl.height=1;
+		hvm_p->mmio_hooks.root=(noir_io_avl_node_p)noir_insert_avl_node((avl_node_p)hvm_p->mmio_hooks.root,(avl_node_p)avl_node,nvc_compare_mmio_region_avl_nodes);
+		return noir_success;
+	}
+	return noir_insufficient_resources;
+}
+
+void nvc_call_rw_pio_region(bool direction,u16 port,u16 size,u32p value)
+{
+	// BST-Search does not require recursive operation.
+	noir_io_avl_node_p avl_node=(noir_io_avl_node_p)noir_search_avl_node((avl_node_p)hvm_p->pio_hooks.root,&port,nvc_bst_search_pio_region);
+	if(avl_node==null)
+		nvd_printf("I/O Port 0x%04X is not found in the registered regions!\n",port);
+	else
+	{
+		noir_pio_region_p pr=&avl_node->pio;
+		pr->handler(direction,port,size,value,pr->context);
+	}
+}
+
+void static nvc_call_rw_mmio_region_aligned(bool direction,u64 address,u64 size,u64p value)
+{
+	// BST-Search does not require recursive operation.
+	noir_io_avl_node_p avl_node=(noir_io_avl_node_p)noir_search_avl_node((avl_node_p)hvm_p->mmio_hooks.root,&address,nvc_bst_search_mmio_region);
+	if(avl_node==null)
+		nvd_printf("MMIO Address 0x%llX is not found in the registered regions!\n",address);
+	else
+	{
+		noir_mmio_region_p mr=&avl_node->mmio;
+		mr->handler(direction,address,size,value,mr->context);
+	}
+}
+
+// Caveat: This function assumes the size is an integer-exponential of 2 (e.g.: 1,2,4,8,16...).
+void nvc_call_rw_mmio_region(bool direction,u64 address,u64 size,u64p value)
+{
+	u64 aligner=size-1;
+	u64 offset=address&aligner;
+	if(offset)
+	{
+		// This access is not aligned.
+		u8 buff[16];
+		noir_stosb(buff,0,16);
+		if(direction)*(u64p)&buff[offset]=*value;
+		nvc_call_rw_mmio_region_aligned(direction,address-offset,size,(u64p)&buff[0]);
+		nvc_call_rw_mmio_region_aligned(direction,address-offset+size,size,(u64p)&buff[size]);
+		if(!direction)*value=*(u64p)&buff[offset];
+	}
+	else
+	{
+		// This access is aligned.
+		nvc_call_rw_mmio_region_aligned(direction,address,size,value);
+	}
+}
+
 noir_status nvc_build_hypervisor()
 {
 	noir_get_vendor_string(hvm_p->vendor_string);

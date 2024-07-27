@@ -92,6 +92,7 @@ noir_ept_pde_descriptor_p nvc_ept_split_pdpte(noir_ept_manager_p eptm,u64 gpa,bo
 					pde_p->large[i].execute=true;
 					pde_p->large[i].memory_type=eptm->pdpt.virt[index].memory_type;
 					pde_p->large[i].large_pde=true;
+					pde_p->large[i].var_mtrr_covered=eptm->pdpt.virt[index].var_mtrr_covered;
 					pde_p->large[i].page_offset=pde_p->gpa_start+i;
 				}
 				pde_p->gpa_start<<=page_2mb_shift;
@@ -158,6 +159,7 @@ noir_ept_pte_descriptor_p nvc_ept_split_pde(noir_ept_manager_p eptm,u64 gpa,bool
 						pte_p->virt[i].write=true;
 						pte_p->virt[i].execute=true;
 						pte_p->virt[i].memory_type=pde_p->large[pde_index].memory_type;
+						pte_p->virt[i].var_mtrr_covered=pde_p->large[pde_index].var_mtrr_covered;
 						pte_p->virt[i].page_offset=pte_p->gpa_start+i;
 					}
 					pte_p->gpa_start<<=page_4kb_shift;
@@ -214,7 +216,9 @@ bool nvc_ept_update_pte_memory_type(noir_ept_manager_p eptm,u64 gpa,u8 memory_ty
 		ia32_addr_translator gat;
 		gat.value=gpa;
 		// Simply update this PTE entry.
-		pte_p->virt[gat.pte_offset].memory_type=nvc_ept_merge_memory_type((u8)pte_p->virt[gat.pte_offset].memory_type,memory_type,force);
+		pte_p->virt[gat.pte_offset].memory_type=pte_p->virt[gat.pte_offset].var_mtrr_covered?nvc_ept_merge_memory_type((u8)pte_p->virt[gat.pte_offset].memory_type,memory_type,force):memory_type;
+		// Mark this PTE is covered by variable MTRR.
+		pte_p->virt[gat.pte_offset].var_mtrr_covered=true;
 		return true;
 	}
 	return false;
@@ -230,7 +234,9 @@ bool nvc_ept_update_pde_memory_type(noir_ept_manager_p eptm,u64 gpa,u8 memory_ty
 		if(pde_p->large[gat.pde_offset].large_pde)
 		{
 			// If this is Large PDE, simply update the PDE.
-			pde_p->large[gat.pde_offset].memory_type=nvc_ept_merge_memory_type((u8)pde_p->large[gat.pde_offset].memory_type,memory_type,force);
+			pde_p->large[gat.pde_offset].memory_type=pde_p->large[gat.pde_offset].var_mtrr_covered?nvc_ept_merge_memory_type((u8)pde_p->large[gat.pde_offset].memory_type,memory_type,force):memory_type;
+			// Mark this PDE is covered by variable MTRR.
+			pde_p->large[gat.pde_offset].var_mtrr_covered=true;
 			return true;
 		}
 		else
@@ -252,7 +258,9 @@ bool nvc_ept_update_pdpte_memory_type(noir_ept_manager_p eptm,u64 gpa,u8 memory_
 	if(eptm->pdpt.virt[index].huge_pdpte)
 	{
 		// If this is Huge PDPTE, simply update the PDPTE.
-		eptm->pdpt.virt[index].memory_type=nvc_ept_merge_memory_type((u8)eptm->pdpt.virt[index].memory_type,memory_type,force);
+		eptm->pdpt.virt[index].memory_type=eptm->pdpt.virt[index].var_mtrr_covered?nvc_ept_merge_memory_type((u8)eptm->pdpt.virt[index].memory_type,memory_type,force):memory_type;
+		// Mark this PDPTE is covered by variable MTRR.
+		eptm->pdpt.virt[index].var_mtrr_covered=true;
 		return true;
 	}
 	else
@@ -383,13 +391,11 @@ void static nvc_ept_update_per_var_mtrr(noir_ept_manager_p eptm,u32 mtrr_msr_ind
 		// Ignore MTRRs that defines the same memory type as default MTRR.
 		if(phys_base.type!=eptm->def_type.type)
 		{
-			// This mask is determined by cpuid.
-			const u64 mask=(1ui64<<eptm->phys_addr_size)-1;
-			// Determine the length from mask.
-			const u64 len=((~page_base(phys_mask.value))+1)&mask;
-			const u64 base=page_base(phys_base.value);
-			u64 increment=0;
-			nvd_printf("Variable MTRR (0x%X) Base: 0x%016llX, Mask: 0x%016llX, Length: 0x%016llX, Type: %u\n",mtrr_msr_index,phys_base.value,phys_mask.value,len,phys_base.type);
+			u32 exponential;
+			u64 len=0,increment=0,base=page_mult(phys_base.phys_base);
+			noir_bsf64(&exponential,page_mult(phys_mask.phys_mask));
+			len=1ui64<<exponential;
+			nv_dprintf("Variable MTRR (0x%X) Base: 0x%016llX, Mask: 0x%016llX, Length: 0x%016llX, Type: %u\n",mtrr_msr_index,phys_base.value,phys_mask.value,len,phys_base.type);
 			for(u64 addr=base;addr<base+len;addr+=increment)
 			{
 				// The increment depends on address alignment and remainder length.
@@ -432,7 +438,7 @@ void static nvc_ept_update_per_var_mtrr(noir_ept_manager_p eptm,u32 mtrr_msr_ind
 					}
 					default:
 					{
-						nvd_printf("[Variable MTRR] Unknown increment: 0x%llX!\n",increment);
+						nv_dprintf("[Variable MTRR] Unknown increment: 0x%llX!\n",increment);
 						break;
 					}
 				}
@@ -443,48 +449,6 @@ void static nvc_ept_update_per_var_mtrr(noir_ept_manager_p eptm,u32 mtrr_msr_ind
 
 void nvc_ept_update_by_mtrr(noir_ept_manager_p eptm)
 {
-	noir_ept_pte_descriptor_p pte_p=eptm->pte.head;
-	noir_ept_pde_descriptor_p pde_p=eptm->pde.head;
-	u64 def_type=ia32_uncacheable;
-	// Get the default memory type.
-	eptm->def_type.value=noir_rdmsr(ia32_mtrr_def_type);
-	// Although unlikely to happen, MTRRs can be disabled.
-	if(eptm->def_type.enabled)
-		def_type=eptm->def_type.type;
-	nv_dprintf("Default memory-type is %u\n",def_type);
-	// Traverse all EPT Paging Entries and set corresponding memory types.
-	// Set memory types for all huge-page PDPTEs.
-	for(u32 i=0;i<0x40000;i++)
-	{
-		if(eptm->pdpt.virt[i].huge_pdpte)
-		{
-			eptm->pdpt.virt[i].memory_type=def_type;
-			eptm->pdpt.virt[i].ignored0=0;
-		}
-	}
-	// Set memory types for all large-page PDEs.
-	while(pde_p)
-	{
-		for(u32 i=0;i<512;i++)
-		{
-			if(pde_p->large[i].large_pde)
-			{
-				pde_p->large[i].memory_type=def_type;
-				pde_p->large[i].ignored0=0;
-			}
-		}
-		pde_p=pde_p->next;
-	}
-	// Set memory types for all PTEs.
-	while(pte_p)
-	{
-		for(u32 i=0;i<512;i++)
-		{
-			pte_p->virt[i].memory_type=def_type;
-			pte_p->virt[i].ignored1=0;
-		}
-		pte_p=pte_p->next;
-	}
 	if(eptm->def_type.enabled)
 	{
 		ia32_mtrr_cap_msr mtrr_cap;
@@ -515,78 +479,104 @@ void nvc_ept_update_by_mtrr(noir_ept_manager_p eptm)
 		u64 fix4k_f0000=noir_rdmsr(ia32_mtrr_fix4k_f0000);
 		u64 fix4k_f8000=noir_rdmsr(ia32_mtrr_fix4k_f8000);
 		// Locate the PTE descriptor for first 2MiB.
-		pte_p=nvc_ept_split_pde(eptm,0,true,true);
+		noir_ept_pte_descriptor_p pte_p=nvc_ept_split_pde(eptm,0,true,true);
 		// MTRR Fixed64K 00000
 		// This register specifies eight 64KiB ranges, 512KiB in total.
 		type=(u8*)&fix64k_00000;
 		for(u32 i=0;i<8;i++)
 			for(u32 j=0;j<16;j++)	// 64KiB is actually 16 pages.
 				pte_p->virt[(i<<4)+j].memory_type=type[i];
-				// if(nvc_ept_update_pte_memory_type(eptm,(i<<16)+(j<<12),type[i])==false)return false;
 		// MTRR Fixed16K_80000
 		// This register specifies eight 16KiB ranges, 128KiB in total.
 		type=(u8*)&fix16k_80000;
 		for(u32 i=0;i<8;i++)
 			for(u32 j=0;j<4;j++)	// 16KiB is actually 4 pages.
 				pte_p->virt[0x80+(i<<2)+j].memory_type=type[i];
-				// if(nvc_ept_update_pte_memory_type(eptm,0x80000+(i<<14)+(j<<12),type[i])==false)return false;
 		// MTRR Fixed16K_a0000
 		// This register specifies eight 16KiB ranges, 128KiB in total.
 		type=(u8*)&fix16k_a0000;
 		for(u32 i=0;i<8;i++)
 			for(u32 j=0;j<4;j++)	// 16KiB is actually 4 pages.
 				pte_p->virt[0xa0+(i<<2)+j].memory_type=type[i];
-				// if(nvc_ept_update_pte_memory_type(eptm,0xa0000+(i<<14)+(j<<12),type[i])==false)return false;
 		// MTRR Fixed4K_c0000
 		// This register specifies eight 4KiB ranges, 32KiB in total
 		type=(u8*)&fix4k_c0000;
 		for(u32 i=0;i<8;i++)
 			pte_p->virt[0xc0+i].memory_type=type[i];
-			// if(nvc_ept_update_pte_memory_type(eptm,0xc0000+(i<<12),type[i])==false)return false;
 		// MTRR Fixed4K_c8000
 		// This register specifies eight 4KiB ranges, 32KiB in total
 		type=(u8*)&fix4k_c8000;
 		for(u32 i=0;i<8;i++)
 			pte_p->virt[0xc8+i].memory_type=type[i];
-			// if(nvc_ept_update_pte_memory_type(eptm,0xc8000+(i<<12),type[i])==false)return false;
 		// MTRR Fixed4K_d0000
 		// This register specifies eight 4KiB ranges, 32KiB in total
 		type=(u8*)&fix4k_d0000;
 		for(u32 i=0;i<8;i++)
 			pte_p->virt[0xd0+i].memory_type=type[i];
-			// if(nvc_ept_update_pte_memory_type(eptm,0xd0000+(i<<12),type[i])==false)return false;
 		// MTRR Fixed4K_d8000
 		// This register specifies eight 4KiB ranges, 32KiB in total
 		type=(u8*)&fix4k_d8000;
 		for(u32 i=0;i<8;i++)
 			pte_p->virt[0xd8+i].memory_type=type[i];
-			// if(nvc_ept_update_pte_memory_type(eptm,0xd8000+(i<<12),type[i])==false)return false;
 		// MTRR Fixed4K_e0000
 		// This register specifies eight 4KiB ranges, 32KiB in total
 		type=(u8*)&fix4k_e0000;
 		for(u32 i=0;i<8;i++)
 			pte_p->virt[0xe0+i].memory_type=type[i];
-			// if(nvc_ept_update_pte_memory_type(eptm,0xe0000+(i<<12),type[i])==false)return false;
 		// MTRR Fixed4K_e8000
 		// This register specifies eight 4KiB ranges, 32KiB in total
 		type=(u8*)&fix4k_e8000;
 		for(u32 i=0;i<8;i++)
 			pte_p->virt[0xe8+i].memory_type=type[i];
-			// if(nvc_ept_update_pte_memory_type(eptm,0xe8000+(i<<12),type[i])==false)return false;
 		// MTRR Fixed4K_f0000
 		// This register specifies eight 4KiB ranges, 32KiB in total
 		type=(u8*)&fix4k_f0000;
 		for(u32 i=0;i<8;i++)
 			pte_p->virt[0xf0+i].memory_type=type[i];
-			// if(nvc_ept_update_pte_memory_type(eptm,0xf0000+(i<<12),type[i])==false)return false;
 		// MTRR Fixed4K_f8000
 		// This register specifies eight 4KiB ranges, 32KiB in total
 		type=(u8*)&fix4k_f8000;
 		for(u32 i=0;i<8;i++)
 			pte_p->virt[0xf8+i].memory_type=type[i];
-			// if(nvc_ept_update_pte_memory_type(eptm,0xf8000+(i<<12),type[i])==false)return false;
 	}
-	// return true;
+	// Clear all MTRR-related bits.
+	for(u32 i=0;i<512*512;i++)
+		eptm->pdpt.virt[i].var_mtrr_covered=false;
+	for(noir_ept_pde_descriptor_p pde_p=eptm->pde.head;pde_p;pde_p=pde_p->next)
+		for(u32 i=0;i<512;i++)
+			pde_p->large[i].var_mtrr_covered=false;
+	for(noir_ept_pte_descriptor_p pte_p=eptm->pte.head;pte_p;pte_p=pte_p->next)
+		for(u32 i=0;i<512;i++)
+			pte_p->virt[i].var_mtrr_covered=false;
+}
+
+bool nvc_ept_install_mmio_hook(noir_ept_manager_p eptm,noir_io_avl_node_p node)
+{
+	bool r=true;
+	for(u64 i=0;i<node->mmio.size;i+=page_size)
+	{
+		const u64 p=node->mmio.phys+i;
+		bool r=(nvc_ept_update_pte(eptm,p,p,false,false,false,true,0,true)!=null);
+		if(!r)return r;
+	}
+	if(node->avl.left)
+	{
+		r=nvc_ept_install_mmio_hook(eptm,(noir_io_avl_node_p)node->avl.left);
+		if(!r)return r;
+	}
+	if(node->avl.right)
+	{
+		r=nvc_ept_install_mmio_hook(eptm,(noir_io_avl_node_p)node->avl.right);
+		if(!r)return r;
+	}
+	return r;
+}
+
+bool nvc_ept_setup_mmio_hooks(noir_ept_manager_p eptm)
+{
+	if(hvm_p->mmio_hooks.root)
+		return nvc_ept_install_mmio_hook(eptm,hvm_p->mmio_hooks.root);
+	return true;
 }
 
 bool nvc_ept_initialize_ci(noir_ept_manager_p eptm)
@@ -694,24 +684,31 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 	}
 	if(alloc_success)
 	{
+		u64 def_type=ia32_uncacheable;
 		u32 a;
 		noir_cpuid(ia32_cpuid_ext_pcap_prm_eid,0,&a,null,null,null);
 		eptm->phys_addr_size=a&0xff;
-		eptm->virt_addr_size=(a<<8)&0xff;
+		eptm->virt_addr_size=(a>>8)&0xff;
+		// Get the default memory type.
+		eptm->def_type.value=noir_rdmsr(ia32_mtrr_def_type);
+		// Although unlikely to happen, MTRRs can be disabled.
+		// If disabled, default memory type is uncacheable.
+		if(eptm->def_type.enabled)def_type=eptm->def_type.type;
 		for(u32 i=0;i<512;i++)
 		{
 			for(u32 j=0;j<512;j++)
 			{
 				const u32 k=(i<<9)+j;
-				// Build Page-Directory Entries (PDPTEs)
+				// Build Page-Directory-Pointer-Table Entries (PDPTEs)
 				eptm->pdpt.virt[k].value=0;
 				eptm->pdpt.virt[k].page_offset=k;
 				eptm->pdpt.virt[k].read=1;
 				eptm->pdpt.virt[k].write=1;
 				eptm->pdpt.virt[k].execute=1;
 				eptm->pdpt.virt[k].huge_pdpte=1;
+				eptm->pdpt.virt[k].memory_type=def_type;
 			}
-			// Build Page-Directory-Pointer-Table Entries (PML4Es)
+			// Build Page-Map-Level-4 Entries (PML4Es)
 			eptm->eptp.virt[i].value=0;
 			eptm->eptp.virt[i].pdpte_offset=page_count(eptm->pdpt.phys)+i;
 			eptm->eptp.virt[i].read=1;
@@ -727,6 +724,7 @@ noir_ept_manager_p nvc_ept_build_identity_map()
 			if(nvc_ept_insert_pte(eptm,eptm->hook_pages)==false)
 				goto alloc_failure;
 #endif
+		// Initialize CI.
 		if(nvc_ept_initialize_ci(eptm)==false)
 			goto alloc_failure;
 		// Make EPT-Pointer (EPTP)

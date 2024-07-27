@@ -18,3 +18,6 @@ void* noir_locate_acpi_rsdt(size_t *length);
 
 void* acpi_rsdt_ptr;
 size_t acpi_rsdt_len;
+
+acpi_common_description_header_p* acpi_description_tables;
+u32 acpi_description_table_count;

@@ -185,6 +185,17 @@ typedef struct _noir_rmt_directory_entry
 	u64 hpa_end;
 }noir_rmt_directory_entry,*noir_rmt_directory_entry_p;
 
+// NoirVisor will manage I/O regions in AVL-Tree
+typedef struct _noir_io_avl_node
+{
+	avl_node avl;		// AVL-Node must be at the top of the structure.
+	union
+	{
+		noir_pio_region pio;
+		noir_mmio_region mmio;
+	};
+}noir_io_avl_node,*noir_io_avl_node_p;
+
 // Hypervisor Structure
 typedef struct _noir_hypervisor
 {
@@ -242,17 +253,18 @@ typedef struct _noir_hypervisor
 	{
 		struct
 		{
-			u64 stealth_msr_hook:1;
-			u64 stealth_inline_hook:1;
-			u64 cpuid_hv_presence:1;
-			u64 disable_patchguard:1;
-			u64 nested_virtualization:1;
-			u64 kva_shadow_presence:1;
-			u64 tlfs_passthrough:1;
-			u64 hide_from_pt:1;
-			u64 enable_nsv:1;
-			u64 reserved:54;
-			u64 software_decoder:1;
+			u64 stealth_msr_hook:1;				// Bit 0
+			u64 stealth_inline_hook:1;			// Bit 1
+			u64 cpuid_hv_presence:1;			// Bit 2
+			u64 disable_patchguard:1;			// Bit 3
+			u64 nested_virtualization:1;		// Bit 4
+			u64 kva_shadow_presence:1;			// Bit 5
+			u64 tlfs_passthrough:1;				// Bit 6
+			u64 hide_from_pt:1;					// Bit 7
+			u64 enable_nsv:1;					// Bit 8
+			u64 enable_iommu:1;					// Bit 9
+			u64 reserved:53;					// Bits 10-62
+			u64 software_decoder:1;				// Bit 63
 		};
 		u64 value;
 	}options;		// Enable certain features.
@@ -306,12 +318,12 @@ typedef struct _noir_hypervisor
 	}host_memmap;
 	struct
 	{
-#if defined(_hv_type1)
-		u16 pm1a;
-		u16 pm1b;
-#endif
-		u16 serial;
-	}protected_ports;
+		noir_io_avl_node_p root;
+	}pio_hooks;
+	struct
+	{
+		noir_io_avl_node_p root;
+	}mmio_hooks;
 	struct
 	{
 		memory_descriptor directory;
@@ -395,6 +407,13 @@ u32 fastcall nvc_mshv_build_cpuid_handlers();
 void fastcall nvc_mshv_teardown_cpuid_handlers();
 u64 fastcall nvc_mshv_rdmsr_handler(noir_mshv_vcpu_p vcpu,u32 index);
 void fastcall nvc_mshv_wrmsr_handler(noir_mshv_vcpu_p vcpu,u32 index,u64 val);
+
+// Functions from I/O Hooks.
+noir_status nvc_register_pio_region(noir_pio_region_p pr);
+noir_status nvc_register_mmio_region(noir_mmio_region_p mr);
+void nvc_call_rw_pio_region(bool direction,u16 port,u16 size,u32p value);
+void nvc_call_rw_mmio_region(bool direction,u64 address,u64 size,u64p value);
+void nvc_cleanup_io_hooks(noir_io_avl_node_p root);
 
 // Functions from NoirVisor internal debugger.
 noir_status noir_configure_serial_port_debugger(u8 port_number,u16 port_base,u32 baudrate);

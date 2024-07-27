@@ -6,6 +6,7 @@
 			"vt_main.c",
 			"vt_exit.c",
 			"vt_ept.c",
+			"vt_iommu.c",
 			"vt_nvcpu.c",
 			"vt_custom.c",
 			"vt_cvexit.c"

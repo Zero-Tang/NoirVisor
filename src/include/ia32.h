@@ -413,6 +413,21 @@ typedef union _ia32_page_fault_error_code
 	u32 value;
 }ia32_page_fault_error_code,*ia32_page_fault_error_code_p;
 
+typedef union _ia32_addr_translator
+{
+	struct
+	{
+		u64 page_offset:12;
+		u64 pte_offset:9;
+		u64 pde_offset:9;
+		u64 pdpte_offset:9;
+		u64 pml4e_offset:9;
+		u64 pml5e_offset:9;
+		u64 canonical:7;
+	};
+	u64 value;
+}ia32_addr_translator,*ia32_addr_translator_p;
+
 typedef union _ia32_pml4e
 {
 	struct

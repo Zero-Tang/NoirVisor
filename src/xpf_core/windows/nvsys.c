@@ -557,6 +557,25 @@ void noir_copy_memory(void* dest,void* src,size_t cch)
 	RtlCopyMemory(dest,src,cch);
 }
 
+// We might need to map physical memory for ACPI-accesses.
+void* noir_map_physical_memory(ULONG64 physical_address,size_t length)
+{
+	PHYSICAL_ADDRESS pa={.QuadPart=physical_address};
+	return MmMapIoSpace(pa,length,MmCached);
+}
+
+// We might need to map physical memory for MMIO-accesses.
+void* noir_map_uncached_memory(ULONG64 physical_address,size_t length)
+{
+	PHYSICAL_ADDRESS pa={.QuadPart=physical_address};
+	return MmMapIoSpace(pa,length,MmNonCached);
+}
+
+void noir_unmap_physical_memory(void* virtual_address,size_t length)
+{
+	MmUnmapIoSpace(virtual_address,length);
+}
+
 void* noir_find_virt_by_phys(ULONG64 physical_address)
 {
 	PHYSICAL_ADDRESS pa;

@@ -88,6 +88,7 @@ void static nvc_emu_decode_instruction_mov(noir_cvm_virtual_cpu_p vcpu,ZydisDeco
 	// Get the first operand for MMIO reads and second operand for MMIO writes.
 	ZydisDecodedOperand* target_op=&operands[mem_ctxt->access.write];
 	ZydisDecodedOperand* counter_op=&operands[1-mem_ctxt->access.write];
+	mem_ctxt->flags.operand_size=target_op->size>>3;
 	// Decode the operand for MMIO operation.
 	switch(target_op->type)
 	{
