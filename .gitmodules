@@ -4,3 +4,6 @@
 [submodule "src/xpf_core/c99-snprintf"]
 	path = src/xpf_core/c99-snprintf
 	url = https://github.com/Zero-Tang/c99-snprintf.git
+[submodule "src/xpf_core/portable-dlmalloc"]
+	path = src/xpf_core/portable-dlmalloc
+	url = https://github.com/Zero-Tang/portable-dlmalloc.git

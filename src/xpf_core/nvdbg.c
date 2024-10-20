@@ -147,7 +147,7 @@ void cdecl nvd_panicf(const char* format,...)
 	noir_dbgport_write("\x1b[37m",5);
 	noir_dbgport_release_lock();
 }
-
+/*
 // Dead
 void nvd_deadloop()
 {
@@ -298,3 +298,4 @@ void noir_control_protection_fault_handler(noir_amd64_interrupt_frame_with_error
 	nvd_printf("Control Protection happened at rip=0x%p! Error Code: %u\n",exception_frame->return_rip,exception_frame->error_code);
 	nvd_deadloop();
 }
+*/

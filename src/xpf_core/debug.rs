@@ -15,6 +15,8 @@ use core::fmt;
 
 use qemu_debugcon::*;
 
+use crate::{Status, NOIR_NOT_IMPLEMENTED, NOIR_SUCCESS};
+
 mod qemu_debugcon;
 mod unknown;
 
@@ -48,12 +50,24 @@ impl fmt::Write for FormatBuffer
 		return Ok(());
 	}
 }
+
 pub trait DebuggerBackend
 {
 	unsafe fn read(self,buffer:*mut u8,length:usize)->bool;
 	unsafe fn write(self,buffer:*const u8,length:usize)->bool;
 }
 
+pub enum Debugger
+{
+	QemuDebugCon(QemuDebugConDebugger),
+	Unknown
+}
+
+pub static mut DEBUGGER:Debugger=Debugger::Unknown;
+
+// Currently, interactive debugger is in draft-stage, so `debug_read` will never be called.
+// Mark it as a piece of dead code.
+#[allow(dead_code)]
 pub unsafe fn debug_read(debugger:impl DebuggerBackend,buffer:*mut u8,length:usize)->bool
 {
 	debugger.read(buffer,length)
@@ -72,7 +86,17 @@ pub fn dbg_print(args: core::fmt::Arguments)
 	{
 		unsafe
 		{
-			debug_write(QemuDebugConDebugger::new(0x402),w.buffer.as_ptr(), w.used);
+			match DEBUGGER
+			{
+				Debugger::QemuDebugCon(item)=>
+				{
+					debug_write(item,w.buffer.as_ptr(),w.used);
+				}
+				Debugger::Unknown=>
+				{
+					// Do nothing.
+				}
+			}
 		}
 	}
 }
@@ -95,4 +119,18 @@ pub fn dbg_print(args: core::fmt::Arguments)
 	{
 		print!("{}\n",format_args!($($arg)*))
 	};
+}
+
+#[no_mangle] pub unsafe extern "C" fn noir_configure_serial_port_debugger(_port_number:u8,_port_base:u16,_baud_rate:u32)->Status
+{
+	NOIR_NOT_IMPLEMENTED
+}
+
+#[no_mangle] pub unsafe extern "C" fn noir_configure_qemu_debug_console(port:u16)->Status
+{
+	unsafe
+	{
+		DEBUGGER=Debugger::QemuDebugCon(QemuDebugConDebugger::new(port));
+	}
+	NOIR_SUCCESS
 }

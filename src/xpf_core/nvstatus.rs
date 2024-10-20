@@ -13,7 +13,9 @@
 
 #![allow(dead_code)]
 
-#[repr(C)] pub struct Status(pub u32);
+use core::fmt::Display;
+
+#[repr(C)] #[derive(PartialEq)] pub struct Status(pub u32);
 
 pub enum Severity
 {
@@ -72,6 +74,49 @@ impl Status
 	}
 }
 
+impl Display for Status
+{
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+	{
+		let s=match *self
+		{
+			NOIR_SUCCESS=>Some("Operation is successfully completed"),
+			NOIR_ALREADY_RESCINDED=>Some("vCPU is already rescinded"),
+			NOIR_UNSUCCESSFUL=>Some("Operation is unsuccessful with unspecified error"),
+			NOIR_INSUFFICIENT_RESOURCES=>Some("Resource is insufficient"),
+			NOIR_NOT_IMPLEMENTED=>Some("This operation is not implemented"),
+			NOIR_UNKNOWN_PROCESSOR=>Some("This processor is unknown"),
+			NOIR_INVALID_PARAMETER=>Some("One or more parameters are invalid"),
+			NOIR_HYPERVISION_ABSENT=>Some("NoirVisor has not subverted the system yet"),
+			NOIR_VCPU_ALREADY_CREATED=>Some("The vCPU is already created in the VM"),
+			NOIR_BUFFER_TOO_SMALL=>Some("The buffer is too small"),
+			NOIR_VCPU_NOT_EXIST=>Some("The vCPU does not exist in this VM"),
+			NOIR_GUEST_PAGE_ABSENT=>Some("The guest page is absent"),
+			NOIR_ACCESS_DENIED=>Some("Access is denied"),
+			NOIR_HARDWARE_ERROR=>Some("Hardware error"),
+			NOIR_UNINITIALIZED=>Some("Uninitialized"),
+			NOIR_NSV_VIOLATION=>Some("NoirVisor Secure Virtualization policy violated"),
+			NOIR_ACPI_NO_SUCH_TABLE=>Some("The specified ACPI table can't be found"),
+			NOIR_NOT_INTEL=>Some("This CPU is not manufactured by Intel"),
+			NOIR_VMX_NOT_SUPPORTED=>Some("This CPU does not support Intel VT-x"),
+			NOIR_EPT_NOT_SUPPORTED=>Some("This CPU does not support Extended Page Tables"),
+			NOIR_DMAR_NOT_SUPPORTED=>Some("This system does not support Intel VT-d"),
+			NOIR_NOT_AMD=>Some("This CPU is not manufactured by AMD"),
+			NOIR_SVM_NOT_SUPPORTED=>Some("This CPU does not support AMD-V"),
+			NOIR_NPT_NOT_SUPPORTED=>Some("This CPU does not support Nested Paging"),
+			NOIR_IVRS_NOT_SUPPROTED=>Some("This system does not support AMD-Vi"),
+			NOIR_EMU_NOT_EMULATABLE=>Some("This instruction cannot be emulated"),
+			NOIR_EMU_UNKNOWN_INSTRUCTION=>Some("This instruction is not recognized by the emulator"),
+			_=>None
+		};
+		match s
+		{
+			Some(reason_string)=>write!(f,"Reason: {}",reason_string),
+			None=>write!(f,"Unknown Status: 0x{:08X}",self.0)
+		}
+	}
+}
+
 // Success-level
 pub const NOIR_SUCCESS:Status=Status::new(Success,Xpf,0);
 
@@ -106,6 +151,7 @@ pub const NOIR_DMAR_NOT_SUPPORTED:Status=Status::new(Error,Intel,3);
 pub const NOIR_NOT_AMD:Status=Status::new(Error,AMD,0);
 pub const NOIR_SVM_NOT_SUPPORTED:Status=Status::new(Error,AMD,1);
 pub const NOIR_NPT_NOT_SUPPORTED:Status=Status::new(Error,AMD,2);
+pub const NOIR_IVRS_NOT_SUPPROTED:Status=Status::new(Error,AMD,3);
 
 // Error-level: Emulator
 pub const NOIR_EMU_NOT_EMULATABLE:Status=Status::new(Error,Emulator,0);

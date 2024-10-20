@@ -396,23 +396,3 @@ UINT64 noir_get_system_time()
 	}
 	return 0;
 }
-
-void NoirDisplayProcessorState()
-{
-	NOIR_PROCESSOR_STATE State;
-	NoirSaveProcessorState(&State);
-	NoirDebugPrint("CS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Cs.Selector,State.Cs.Attributes,State.Cs.Limit,State.Cs.Base);
-	NoirDebugPrint("DS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Ds.Selector,State.Ds.Attributes,State.Ds.Limit,State.Ds.Base);
-	NoirDebugPrint("ES Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Es.Selector,State.Es.Attributes,State.Es.Limit,State.Es.Base);
-	NoirDebugPrint("FS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Fs.Selector,State.Fs.Attributes,State.Fs.Limit,State.Fs.Base);
-	NoirDebugPrint("GS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Gs.Selector,State.Gs.Attributes,State.Gs.Limit,State.Gs.Base);
-	NoirDebugPrint("SS Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Ss.Selector,State.Ss.Attributes,State.Ss.Limit,State.Ss.Base);
-	NoirDebugPrint("TR Segment | Selector=0x%04X | Attributes=0x%04X | Limit=0x%08X | Base=0x%p\n",State.Tr.Selector,State.Tr.Attributes,State.Tr.Limit,State.Tr.Base);
-	NoirDebugPrint("GDT Base=0x%p, Limit=0x%04X | IDT Base=0x%p, Limit=0x%04X\n",State.Gdtr.Base,State.Gdtr.Limit,State.Idtr.Base,State.Idtr.Limit);
-	NoirDebugPrint("CR0=0x%p | CR2=0x%p | CR3=0x%p | CR4=0x%p | CR8=0x%p\n",State.Cr0,State.Cr2,State.Cr3,State.Cr4,State.Cr8);
-	NoirDebugPrint("DR0=0x%p | DR1=0x%p | DR2=0x%p | DR3=0x%p | DR6=0x%p | DR7=0x%p\n",State.Dr0,State.Dr1,State.Dr2,State.Dr3,State.Dr6,State.Dr7);
-	NoirDebugPrint("Debug Control MSR=0x%p | PAT MSR=0x%p | EFER MSR=0x%p\n",State.DebugControl,State.Pat,State.Efer);
-	NoirDebugPrint("SysEnter_CS MSR=0x%p | SysEnter_ESP MSR=0x%p | SysEnter_EIP MSR=0x%p\n",State.SysEnter_Cs,State.SysEnter_Esp,State.SysEnter_Eip);
-	NoirDebugPrint("Star MSR=0x%p | LStar MSR=0x%p | CStar MSR=0x%p | SfMask=0x%p\n",State.Star,State.LStar,State.CStar,State.SfMask);
-	NoirDebugPrint("FS Base MSR=0x%p | GS Base MSR=0x%p | GS Swap Base MSR=0x%p\n",State.FsBase,State.GsBase,State.GsSwap);
-}

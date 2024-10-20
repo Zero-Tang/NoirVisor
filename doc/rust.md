@@ -1,6 +1,6 @@
 # NoirVisor by Rust
 This document describes the plan of remastering NoirVisor with the [Rust](https://www.rust-lang.org) Programming Language. \
-By virtue of the formally-verified safety guaranteed by the compiler, core parts of the NoirVisor will be remastered with Rust.
+By virtue of the formally-verified memory-safety guaranteed by the compiler, core parts of the NoirVisor will be remastered with Rust.
 
 ## Code Architecture
 Not all codes are going be remastered with the Rust Programming Language, in that it involves too many works to get started with Rust.
@@ -15,7 +15,11 @@ Codes that will still be written in C:
 - Platform-specific Driver Framework
 - Cross-Platform Abstraction
 
-Rust codes will be managed with the Cargo package manager. They will be compiled into static library (`nvcore.lib`) and linked via linker. In other words, we will be calling the `cargo` command from the compiling script.
+Rust codes will be managed with the Cargo package manager. They will be compiled into static library (`nvcore.lib`) and linked via linker. In other words, we will be calling the `cargo` command from the compiling script. \
+Note: it may be counter-intuitive that NoirVisor for UEFI also links to `x86_64-pc-windows-msvc` target, but it just works.
+
+## Allocator
+NoirVisor uses [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc) as the global allocator.
 
 ## Coding Style
 The coding style for NoirVisor in Rust is probably drastically different than most projects you have seen:
@@ -57,7 +61,7 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 	}
 	// Commments can go here.
 	```
-- Single-line comments must begin with `//`. Do not use `/**/`. This is drastically different from Linux kernel and QEMU.
+- Single-line comments must begin with `//`. Do not use `/**/` in most circumstances. This is drastically different from Linux kernel and QEMU.
 - Do not use `/**/`, unless you are making documentation, or unless this comment will have more than 3 lines. Similar to the half-brace rule, lines with `/*` and `*/` are prohibited to contain comment texts.
 	```Rust
 	/*
@@ -70,4 +74,6 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 	```
 - Functions that are callable in C must begin with `#[no_mangle] pub extern "C" (unsafe) fn`.
 - Naming convention is the same to the [Rust default](https://doc.rust-lang.org/1.0.0/style/style/naming/README.html), with following additions:
-	- Architecture/Hardware-specific names must begin with its name ID.
+	- Architecture/Hardware-specific names must begin with its name ID as prefix.
+	- Method names must be concise, preferably a verb with optional nouns and/or adverbs.
+- Modules that handle VM-Exits forbid using the global allocator. An automated allocator checker will be enforced.

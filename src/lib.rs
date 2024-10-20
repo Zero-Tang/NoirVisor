@@ -12,10 +12,14 @@
 
 #![no_std]
 
-mod xpf_core;
-mod vt_core;
+extern crate alloc;
+
+pub mod drv_core;
+pub mod xpf_core;
+pub mod vt_core;
 
 use xpf_core::nvstatus::*;
+use xpf_core::debug::*;
 
 struct Hypervisor
 {
@@ -40,13 +44,29 @@ impl Hypervisor
 
 static mut HVM:Hypervisor=Hypervisor::default();
 
-#[no_mangle] extern "C" fn nvc_teardown_hypervisor()->()
+// This global variable is required to export to driver framework written in C.
+// Public core variables in NoirVisor are required to be named in lower-snake-case.
+#[allow(non_upper_case_globals)]
+#[no_mangle] pub static mut system_cr3:u64=0;
+
+#[no_mangle] pub extern "C" fn noir_get_virtualization_supportability()->u32
+{
+	3
+}
+
+#[no_mangle] pub extern "C" fn noir_is_virtualization_enabled()->bool
+{
+	true
+}
+
+#[no_mangle] pub extern "C" fn nvc_teardown_hypervisor()->()
 {
 
 }
 
-#[no_mangle] extern "C" fn nvc_build_hypervisor()->Status
+#[no_mangle] pub extern "C" fn nvc_build_hypervisor()->Status
 {
+	println!("Subverting the system...");
 	NOIR_SUCCESS
 }
 

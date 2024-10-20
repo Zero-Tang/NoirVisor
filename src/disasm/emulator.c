@@ -228,7 +228,7 @@ noir_status nvc_emu_decode_memory_access(noir_cvm_virtual_cpu_p vcpu)
 			for(u8 j=0;j<15;j++)
 				nv_snprintf(&ins_byte_str[j*3],sizeof(ins_byte_str)-(j*3),"%02X ",vcpu->exit_context.memory_access.instruction_bytes[j]);
 			if(mode==0)mode=1;
-			nvd_printf("[CVM MMIO] Failed to decode %u-bit instruction! Instruction Bytes: %s\n",mode<<4,ins_byte_str);
+			// nvd_printf("[CVM MMIO] Failed to decode %u-bit instruction! Instruction Bytes: %s\n",mode<<4,ins_byte_str);
 			noir_int3();
 		}
 	}
@@ -283,21 +283,21 @@ u8 noir_hvcode nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_s
 						}
 						else
 						{
-							nvd_printf("[Emulator] Only 32-bit source operand is supported!\n");
+							// nvd_printf("[Emulator] Only 32-bit source operand is supported!\n");
 							return ZyIns.length;
 						}
 						break;
 					}
 					case ZYDIS_OPERAND_TYPE_IMMEDIATE:
 					{
-						nvd_printf("[Emulator] Source operand register is immediate number! Value=0x%llX\n",ZyOp->imm.value);
+						// nvd_printf("[Emulator] Source operand register is immediate number! Value=0x%llX\n",ZyOp->imm.value);
 						noir_movsb(operand,&ZyOp->imm.value,*size);
 						return ZyIns.length;
 						break;
 					}
 					default:
 					{
-						nvd_printf("[Emulator] Source operand register is unknown!\n");
+						// nvd_printf("[Emulator] Source operand register is unknown!\n");
 						break;
 					}
 				}
@@ -305,7 +305,7 @@ u8 noir_hvcode nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_s
 			}
 			case ZYDIS_MNEMONIC_PUSH:
 			{
-				nvd_printf("[Emulator] push instruction is unsupported!\n");
+				// nvd_printf("[Emulator] push instruction is unsupported!\n");
 				break;
 			}
 			default:
@@ -316,7 +316,7 @@ u8 noir_hvcode nvc_emu_try_vmexit_write_memory(noir_gpr_state_p gpr_state,noir_s
 				for(u8 i=0;i<ZyIns.length;i++)
 					nv_snprintf(&raw_ins_str[i*3],sizeof(raw_ins_str)-(i*3),"%02X ",instruction[i]);
 				ZydisFormatterFormatInstruction(&ZyFmt,&ZyIns,ZyOps,ZYDIS_MAX_OPERAND_COUNT,fmt_ins_str,sizeof(fmt_ins_str),ZYDIS_RUNTIME_ADDRESS_NONE,ZYAN_NULL);
-				nvd_printf("[Emulator] Unknown Instruction: %s\t%s\n",raw_ins_str,fmt_ins_str);
+				// nvd_printf("[Emulator] Unknown Instruction: %s\t%s\n",raw_ins_str,fmt_ins_str);
 				break;
 			}
 		}
