@@ -10,5 +10,6 @@ pause.
 
 echo Performing cleanup...
 del ..\bin /q /s
+cargo clean
 
 if "%~1"=="/s" (echo Cleanup Completed!) else (pause)

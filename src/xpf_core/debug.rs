@@ -132,5 +132,6 @@ pub fn dbg_print(args: core::fmt::Arguments)
 	{
 		DEBUGGER=Debugger::QemuDebugCon(QemuDebugConDebugger::new(port));
 	}
+	println!("Internal Debugger is configured to QEMU ISA-DebugCon! Port=0x{:04X}",port);
 	NOIR_SUCCESS
 }

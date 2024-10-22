@@ -38,13 +38,12 @@ Algorithm regarding the Nested Virtualization was written in the readme files in
 For Nested Intel VT-x Algorithm, visit [here](src/vt_core/readme.md#vmx-nesting-algorithm-incomplete-version). \
 For Nested AMD-V Algorithm, visit [here](src/svm_core/readme.md#svm-nesting-algorithm-incomplete-version).
 
-Nested AMD-V is now in debugging stage. NoirVisor currently can run a modified version of [SimpleSvm](https://github.com/tandasat/SimpleSvm) as nested hypervisor where NPT is turned off. \
+Nested AMD-V is not supported yet. \
 Nested Intel VT-x is not supported yet.
 
 # Announcement to all contributors
-NoirVisor is coded in the C programming language and the assembly since it is procedure-oriented designed. \
-Contributing Guidelines are available in repository. For details, see the markdown file in the root directory of repository. \
-**DO NOT PROVIDE CODES WITH C++ WHICH INVOLVES THE NoirVisor Core IN YOUR PULL-REQUEST!**
+NoirVisor is coded in the C programming language, Assembly and Rust for the Core. \
+**NO C++ CODES ARE ACCEPTED IN THIS PROJECT!**
 
 # Build
 To build NoirVisor, using batch is essential. \
@@ -58,7 +57,12 @@ cd build
 ```
 
 ## NoirVisor Core
-NoirVisor Core is now written in Rust. See [documentation for NoirVisor in Rust](./doc/rust.md).
+NoirVisor Core is written in Rust. See [documentation for NoirVisor in Rust](./doc/rust.md).
+
+You must install [Rust](https://www.rust-lang.org/tools/install) for `x86_64-pc-windows-msvc` host. \
+The toolchain is up to you. It is recommended to use the `stable` toolchain.
+
+Please note that `cargo build` command only builds the NoirVisor Core. It is a static library, not an executable.
 
 ## Windows Driver
 To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 11 (Visual Studio Build Tools 16.11.10 and 17.8.6) ISO file to T: and V: drives. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. \
@@ -71,7 +75,7 @@ Presets for Free/Release build are available. Please note that the compiled bina
 
 ## EFI Application and Runtime Driver
 Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. \
-To build a EFI Runtime Driver and Application, you should NASM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. Also, you should mount [EWDK11 with VS Build Tools 17.1.5](https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022) to V: drive. \
+To build a EFI Runtime Driver and Application, you should install NASM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. Also, you should mount [EWDK11 with VS Build Tools 17.1.5](https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022) to V: drive. \
 You may download NASM from its official website: https://www.nasm.us/pub/nasm/stable/win64/. Make sure you have added the directory to the `PATH` environment variable. \
 You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases. Download the source code. \
 NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) on GitHub in order to build them.

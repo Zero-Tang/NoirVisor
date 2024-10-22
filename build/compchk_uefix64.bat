@@ -1,5 +1,6 @@
 @echo off
 set ddkpath=V:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.38.33130
+set oldpath=%path%
 set path=%ddkpath%\bin\Hostx64\x64;%path%
 set incpath=V:\Program Files\Windows Kits\10\Include\10.0.26100.0
 set mdepath=%EDK2_PATH%\edk2\MdePkg
@@ -26,6 +27,8 @@ cl ..\src\disasm\emulator.c /I"..\src\include" /I"..\src\disasm\zydis\include" /
 
 echo Compiling Core of Cross-Platform Framework (XPF)...
 for %%1 in (..\src\xpf_core\uefi\*.c) do (cl %%1 /I"%mdepath%\Include" /I"%mdepath%\Include\X64" /I"%ddkpath%\include" /I"..\src\disasm\zydis\include" /I"..\src\disasm\zydis\dependencies\zycore\include" /nologo /Zi /W3 /WX /Od /D"_efi_boot" /FAcs /Fa"%objpath%\driver\%%~n1.cod" /Fo"%objpath%\driver\%%~n1.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /utf-8 /c)
+
+ml64 /X /D"_amd64" /D"_msvc" /D"_efi" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\svm_hv.obj" /c ..\src\xpf_core\msvc\svm_hv.asm
 
 cl ..\src\xpf_core\devkits.c /I"..\src\include" /I"%ddkpath%\include" /nologo /Zi /W3 /WX /Od /Oi /D"_msvc" /D"_amd64" /D"_hv_type1" /D"_devkits" /FAcs /Fa"%objpath%\driver\devkits.cod" /Fo"%objpath%\driver\devkits.obj" /Fd"%objpath%\vc140.pdb" /GS- /Qspectre /Gr /TC /c
 
@@ -59,4 +62,5 @@ mcopy -i %binpath%\NoirVisor-Uefi.img %binpath%\NoirVisor.efi ::/
 mcopy -i %binpath%\NoirVisor-Uefi.img %binpath%\NoirVisorConfig.bin ::/
 mcopy -i %binpath%\NoirVisor-Uefi.img %binpath%\bootx64.efi ::/EFI/BOOT
 
+set path=%oldpath%
 if "%~1"=="/s" (echo Completed!) else (pause)

@@ -11,6 +11,7 @@
  */
 
 use core::{alloc::{GlobalAlloc,Layout}, ffi::c_void};
+use crate::{print,println,dbg_print};
 
 struct DLMalloc;
 
@@ -25,11 +26,13 @@ unsafe impl GlobalAlloc for DLMalloc
 {
 	unsafe fn alloc(&self, layout:Layout) -> *mut u8
 	{
+		println!("[alloc] length={}",layout.size());
 		dlmalloc(layout.size()).cast()
 	}
 
 	unsafe fn dealloc(&self, ptr: *mut u8, _layout:Layout)
 	{
+		println!("[free] pointer=0x{:p}",ptr);
 		dlfree(ptr.cast())
 	}
 
