@@ -64,6 +64,8 @@ The toolchain is up to you. It is recommended to use the `stable` toolchain.
 
 Please note that `cargo build` command only builds the NoirVisor Core. It is a static library, not an executable.
 
+Currently, NoirVisor Core in Rust can subvert the system with AMD-V in UEFI.
+
 ## Windows Driver
 To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 11 (Visual Studio Build Tools 16.11.10 and 17.8.6) ISO file to T: and V: drives. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. \
 Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. If you use WinCDEmu, however, you may order the system to mount EWDK10 and specify its drive letter during startup. \

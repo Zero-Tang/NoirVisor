@@ -18,7 +18,7 @@ pub mod io
 	// Note that the string-based I/O will never be implemented, in that x86-S will remove them.
 	use core::arch::asm;
 	
-	pub unsafe fn in_byte(port:u16)->u8
+	#[inline] pub unsafe fn in_byte(port:u16)->u8
 	{
 		let v:u8;
 		asm!
@@ -30,7 +30,7 @@ pub mod io
 		v
 	}
 
-	pub unsafe fn in_word(port:u16)->u16
+	#[inline] pub unsafe fn in_word(port:u16)->u16
 	{
 		let v:u16;
 		asm!
@@ -42,7 +42,7 @@ pub mod io
 		v
 	}
 
-	pub unsafe fn in_dword(port:u16)->u32
+	#[inline] pub unsafe fn in_dword(port:u16)->u32
 	{
 		let v:u32;
 		asm!
@@ -54,7 +54,7 @@ pub mod io
 		v
 	}
 
-	pub unsafe fn out_byte(port:u16,val:u8)->()
+	#[inline] pub unsafe fn out_byte(port:u16,val:u8)->()
 	{
 		asm!
 		(
@@ -64,7 +64,7 @@ pub mod io
 		)
 	}
 
-	pub unsafe fn out_word(port:u16,val:u16)->()
+	#[inline] pub unsafe fn out_word(port:u16,val:u16)->()
 	{
 		asm!
 		(
@@ -74,7 +74,7 @@ pub mod io
 		)
 	}
 
-	pub unsafe fn out_dword(port:u16,val:u32)->()
+	#[inline] pub unsafe fn out_dword(port:u16,val:u32)->()
 	{
 		asm!
 		(
@@ -89,7 +89,7 @@ pub mod cpuid
 {
 	use core::arch::asm;
 	
-	pub fn cpuid(ia:u32,ic:u32,a:Option<&mut u32>,b:Option<&mut u32>,c:Option<&mut u32>,d:Option<&mut u32>)->()
+	#[inline] pub fn cpuid(ia:u32,ic:u32,a:Option<&mut u32>,b:Option<&mut u32>,c:Option<&mut u32>,d:Option<&mut u32>)->()
 	{
 		let ca:u32;
 		let cb:u32;
@@ -129,7 +129,7 @@ pub mod cpuid
 		}
 	}
 
-	pub fn cpuid2(ia:u32,ic:u32)->(u32,u32,u32,u32)
+	#[inline] pub fn cpuid2(ia:u32,ic:u32)->(u32,u32,u32,u32)
 	{
 		let ca:u32;
 		let cb:u32;
@@ -162,7 +162,7 @@ pub mod msr
 	/** # Read MSR
 	 * Returns the Model-Specific Register value with specified `index`.
 	 */
-	pub fn rdmsr(index:u32)->u64
+	#[inline] pub fn rdmsr(index:u32)->u64
 	{
 		let lo:u32;
 		let hi:u32;
@@ -182,7 +182,7 @@ pub mod msr
 	/** # Write MSR
 	 * Writes the Model-Specific Register specified in `index` with `value`.
 	 */
-	pub fn wrmsr(index:u32,value:u64)->()
+	#[inline] pub fn wrmsr(index:u32,value:u64)->()
 	{
 		let lo:u32=(value&0xffffffff) as u32;
 		let hi:u32=(value>>32) as u32;
@@ -203,7 +203,7 @@ pub mod svm
 {
 	use core::arch::asm;
 
-	pub fn vmload(vmcb_phys:u64)->()
+	#[inline] pub fn vmload(vmcb_phys:u64)->()
 	{
 		unsafe
 		{
@@ -215,7 +215,7 @@ pub mod svm
 		}
 	}
 
-	pub fn vmsave(vmcb_phys:u64)->()
+	#[inline] pub fn vmsave(vmcb_phys:u64)->()
 	{
 		unsafe
 		{
@@ -227,7 +227,7 @@ pub mod svm
 		}
 	}
 
-	pub fn stgi()->()
+	#[inline] pub fn stgi()->()
 	{
 		unsafe
 		{
@@ -235,7 +235,7 @@ pub mod svm
 		}
 	}
 
-	pub fn clgi()->()
+	#[inline] pub fn clgi()->()
 	{
 		unsafe 
 		{
@@ -243,7 +243,7 @@ pub mod svm
 		}
 	}
 
-	pub fn invlpga(ptr:u64,asid:u32)->()
+	#[inline] pub fn invlpga(ptr:u64,asid:u32)->()
 	{
 		unsafe
 		{

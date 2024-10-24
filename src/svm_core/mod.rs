@@ -13,7 +13,7 @@
 use core::{ffi::c_void, ptr::null_mut};
 use alloc::vec::Vec;
 
-use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*},*};
+use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*},*};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
@@ -36,12 +36,14 @@ pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*4;
 
 #[derive(Copy,Clone)] #[repr(C)] pub struct SvmVcpu
 {
-	pub hsave:MemoryDescriptor,
 	pub vmcb:MemoryDescriptor,
+	pub hsave:MemoryDescriptor,
 	pub hvmcb:MemoryDescriptor,
 	pub hv_stack:*mut c_void,
+	pub hypervisor:*mut c_void,
 	pub vcpu_id:u32,
-	pub apic_id:u32,
+	pub apic_id:u8,
+	pub x2apic_id:u32,
 	pub cpuid_fms:u32,
 }
 
@@ -51,12 +53,14 @@ impl SvmVcpu
 	{
 		Self
 		{
-			hsave:MemoryDescriptor::null(),
 			vmcb:MemoryDescriptor::null(),
+			hsave:MemoryDescriptor::null(),
 			hvmcb:MemoryDescriptor::null(),
 			hv_stack:null_mut(),
+			hypervisor:null_mut(),
 			vcpu_id:0,
 			apic_id:0,
+			x2apic_id:0,
 			cpuid_fms:0,
 		}
 	}
@@ -75,22 +79,84 @@ extern "C"
 
 impl SvmVcpu
 {
-	extern "C" fn subvert_i(&mut self,gsp:u64)->u64
+	fn subvert_i(&mut self,gsp:u64)->u64
 	{
-		println!("Processor {} is setting up Guest VMCB...",self.vcpu_id);
 		unsafe
 		{
 			let mut state=ProcessorState::default();
 			noir_save_processor_state(&raw mut state);
+			// Setup Control Area.
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR1,INTERCEPT_VECTOR1_CPUID);
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR1,INTERCEPT_VECTOR1_INVLPGA);
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR1,INTERCEPT_VECTOR1_IO);
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR1,INTERCEPT_VECTOR1_MSR);
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR1,INTERCEPT_VECTOR1_SHUTDOWN);
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_VMRUN);
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_VMMCALL);
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_VMLOAD);
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_VMSAVE);
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_STGI);
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_CLGI);
+			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_SKINIT);
+			// Setup Host State.
+			vmsave(self.hvmcb.phys);
+			// Setup APIC ID.
+			let (_,xid,_,_)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
+			let (_,_,_,x2id)=cpuid2(CPUID_STD_EXTENDED_TOPOLOGY_INFORMATION,0);
+			self.apic_id=(xid&0xFF) as u8;
+			self.x2apic_id=x2id;
+			// Save Segment States.
+			vmwrite_segment(self.vmcb.virt,GUEST_CS_SELECTOR,state.cs);
+			vmwrite_segment(self.vmcb.virt,GUEST_DS_SELECTOR,state.ds);
+			vmwrite_segment(self.vmcb.virt,GUEST_ES_SELECTOR,state.es);
+			vmwrite_segment(self.vmcb.virt,GUEST_FS_SELECTOR,state.fs);
+			vmwrite_segment(self.vmcb.virt,GUEST_GS_SELECTOR,state.gs);
+			vmwrite_segment(self.vmcb.virt,GUEST_SS_SELECTOR,state.ss);
+			vmwrite_segment(self.vmcb.virt,GUEST_TR_SELECTOR,state.tr);
+			vmwrite_segment(self.vmcb.virt,GUEST_LDTR_SELECTOR,state.ldtr);
+			vmwrite_segment(self.vmcb.virt,GUEST_IDTR_SELECTOR,state.idtr);
+			vmwrite_segment(self.vmcb.virt,GUEST_GDTR_SELECTOR,state.gdtr);
+			// Save Control Registers.
+			vmwrite(self.vmcb.virt,GUEST_CR0,state.cr0);
+			vmwrite(self.vmcb.virt,GUEST_CR2,state.cr2);
+			vmwrite(self.vmcb.virt,GUEST_CR3,state.cr3);
+			vmwrite(self.vmcb.virt,GUEST_CR4,state.cr4);
+			// Save Debug Registers.
+			vmwrite(self.vmcb.virt,GUEST_DR6,state.dr6);
+			vmwrite(self.vmcb.virt,GUEST_DR7,state.dr7);
+			// Save rflags, rsp and rip.
+			vmwrite(self.vmcb.virt,GUEST_RFLAGS,2u64);
 			vmwrite(self.vmcb.virt,GUEST_RSP,gsp);
 			vmwrite(self.vmcb.virt,GUEST_RIP,nvc_svm_guest_start as u64);
+			// Save Processor Hidden State.
+			vmsave(self.vmcb.phys);
+			// Save Model-Specific Registers.
+			vmwrite(self.vmcb.virt,GUEST_PAT,state.pat);
+			vmwrite(self.vmcb.virt,GUEST_EFER,state.efer);
+			vmwrite(self.vmcb.virt,GUEST_STAR,state.star);
+			vmwrite(self.vmcb.virt,GUEST_LSTAR,state.lstar);
+			vmwrite(self.vmcb.virt,GUEST_CSTAR,state.cstar);
+			vmwrite(self.vmcb.virt,GUEST_SFMASK,state.sfmask);
+			vmwrite(self.vmcb.virt,GUEST_KERNEL_GS_BASE,state.gsswap);
+			vmwrite(self.vmcb.virt,GUEST_SYSENTER_CS,state.sysenter_cs);
+			vmwrite(self.vmcb.virt,GUEST_SYSENTER_ESP,state.sysenter_esp);
+			vmwrite(self.vmcb.virt,GUEST_SYSENTER_EIP,state.sysenter_eip);
+			// Setup IOPM and MSRPM.
+			let hv=self.hypervisor as *mut SvmHypervisor;
+			vmwrite(self.vmcb.virt,IOPM_PHYSICAL_ADDRESS,(*hv).iopm.phys);
+			vmwrite(self.vmcb.virt,MSRPM_PHYSICAL_ADDRESS,(*hv).msrpm.phys);
+			vmwrite(self.vmcb.virt,GUEST_ASID,1u32);
+			// Load Guest State.
+			vmload(self.vmcb.phys);
 		}
+		println!("Processor {} Completed setting up VMCB!",self.vcpu_id);
+		// "Return" puts the VMCB on rax register.
 		self.vmcb.phys
 	}
 
 	fn subvert(&mut self)
 	{
-		println!("Processor {} entered subversion routine!",self.vcpu_id);
+		println!("Processor {}/{:p} entered subversion routine!",self.vcpu_id,self as *const Self);
 		// Enable SVM in EFER.
 		let efer=rdmsr(MSR_EFER)|MSR_EFER_SVME;
 		wrmsr(MSR_EFER,efer);
@@ -107,9 +173,10 @@ impl SvmVcpu
 		// Initialize Hypervisor Context stack.
 		unsafe
 		{
-			let stack:*mut SvmStackTop=(self.hv_stack as *mut u8).add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()) as *mut SvmStackTop;
+			let stack:*mut SvmStackTop=self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()) as *mut SvmStackTop;
 			(*stack).guest_vmcb_pa=self.vmcb.phys;
 			(*stack).host_vmcb_pa=self.hvmcb.phys;
+			(*stack).vcpu=self as *mut Self;
 			(*stack).proc_id=self.vcpu_id;
 			(*stack).custom_vcpu=null_mut();
 			(*stack).nested_vcpu=null_mut();
@@ -235,6 +302,7 @@ impl HypervisorEssentials for SvmHypervisor
 				Some(md)=>vcpu.hv_stack=md.virt,
 				None=>fail_cleanup!("Failed to allocate hypervisor stack for processor {}!",i)
 			}
+			vcpu.hypervisor=self as *mut Self as *mut c_void;
 			vcpu.vcpu_id=i;
 			self.vcpus.push(vcpu);
 		}

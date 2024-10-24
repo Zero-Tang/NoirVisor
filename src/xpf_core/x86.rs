@@ -34,6 +34,58 @@ pub mod cpuid
 	pub const CPUID_1GB_PAGE:u32=0x4000000;
 }
 
+pub mod rflags
+{
+	pub const RFLAGS_CF_BIT:u32=0;
+	pub const RFLAGS_PF_BIT:u32=2;
+	pub const RFLAGS_AF_BIT:u32=4;
+	pub const RFLAGS_ZF_BIT:u32=6;
+	pub const RFLAGS_SF_BIT:u32=7;
+	pub const RFLAGS_TF_BIT:u32=8;
+	pub const RFLAGS_IF_BIT:u32=9;
+	pub const RFLAGS_DF_BIT:u32=10;
+	pub const RFLAGS_OF_BIT:u32=11;
+	pub const RFLAGS_NT_BIT:u32=14;
+	pub const RFLAGS_RF_BIT:u32=16;
+	pub const RFLAGS_VM_BIT:u32=17;
+	pub const RFLAGS_AC_BIT:u32=18;
+	pub const RFLAGS_VIF_BIT:u32=19;
+	pub const RFLAGS_VIP_BIT:u32=20;
+	pub const RFLAGS_ID_BIT:u32=21;
+}
+
+pub mod interrupts
+{
+	pub const DIVIDE_ERROR_FAULT:u8=0;
+	pub const DEBUG_FAULT_OR_TRAP:u8=1;
+	pub const NMI_INTERRUPT:u8=2;
+	pub const BREAKPOINT_TRAP:u8=3;
+	pub const OVERFLOW_TRAP:u8=4;
+	pub const EXCEED_BOUND_RANGE_FAULT:u8=5;
+	pub const INVALID_OPCODE_FAULT:u8=6;
+	pub const NO_MATH_COPROCESSOR_FAULT:u8=7;
+	pub const DOUBLE_FAULT_ABORT:u8=8;
+	pub const SEGMENT_OVERRUN_FAULT:u8=9;
+	pub const INVALID_TSS_FAULT:u8=10;
+	pub const SEGMENT_ABSENT_FAULT:u8=11;
+	pub const STACK_FAULT:u8=12;
+	pub const GENERAL_PROTECTION_FAULT:u8=13;
+	pub const PAGE_FAULT:u8=14;
+	pub const X87_FP_EXCEPTION_FAULT:u8=16;
+	pub const ALIGNMENT_CHECK_FAULT:u8=17;
+	pub const MACHINE_CHECK_ABORT:u8=18;
+	pub const SIMD_FP_EXCEPTION_FAULT:u8=19;
+	pub const CONTROL_PROTECTION_FAULT:u8=21;
+
+	pub enum EventType
+	{
+		ExternalInterrupt=0,
+		NonMaskableInterrupt=2,
+		HardwareException=3,
+		SoftwareInterrupt=4
+	}
+}
+
 pub mod msr
 {
 	pub const MSR_TSC:u32=0x10;
