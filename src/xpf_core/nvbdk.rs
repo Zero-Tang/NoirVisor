@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::c_void, ptr::null_mut, usize, fmt::Display};
+use core::{ffi::c_void, ptr::null_mut, fmt::Display};
 use paste::paste;
 
 #[derive(Copy,Clone)] #[repr(C)] pub struct MemoryDescriptor
@@ -25,8 +25,8 @@ impl MemoryDescriptor
 	{
 		Self
 		{
-			virt:virt,
-			phys:phys
+			virt,
+			phys
 		}
 	}
 
@@ -110,14 +110,14 @@ impl Display for GprState
 {
 	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 	{
-		let r=write!(f,"rax=0x{:016X} rcx=0x{:016X} rdx=0x{:016X} rbx=0x{:016X}\n",self.rax,self.rcx,self.rdx,self.rbx);
-		if let Err(_)=r {return r;}
-		let r=write!(f,"rsp=0x{:016X} rbp=0x{:016X} rsi=0x{:016X} rdi=0x{:016X}\n",self.rsp,self.rbp,self.rsi,self.rdi);
-		if let Err(_)=r {return r;}
-		let r=write!(f,"r8 =0x{:016X} r9 =0x{:016X} r10=0x{:016X} r11=0x{:016X}\n",self.r8,self.r9,self.r10,self.r11);
-		if let Err(_)=r {return r;}
-		let r=write!(f,"r12=0x{:016X} r13=0x{:016X} r14=0x{:016X} r15=0x{:016X}\n",self.r12,self.r13,self.r14,self.r15);
-		return r;
+		let r=writeln!(f,"rax=0x{:016X} rcx=0x{:016X} rdx=0x{:016X} rbx=0x{:016X}",self.rax,self.rcx,self.rdx,self.rbx);
+		r?;
+		let r=writeln!(f,"rsp=0x{:016X} rbp=0x{:016X} rsi=0x{:016X} rdi=0x{:016X}",self.rsp,self.rbp,self.rsi,self.rdi);
+		r?;
+		let r=writeln!(f,"r8 =0x{:016X} r9 =0x{:016X} r10=0x{:016X} r11=0x{:016X}",self.r8,self.r9,self.r10,self.r11);
+		r?;
+		let r=writeln!(f,"r12=0x{:016X} r13=0x{:016X} r14=0x{:016X} r15=0x{:016X}",self.r12,self.r13,self.r14,self.r15);
+		r
 	}
 }
 
@@ -146,20 +146,20 @@ impl GprState
 	}
 }
 
-type BroadcastWorker=extern "C" fn(context:*mut c_void,processor_id:u32)->();
-type PhysicalRangeCallback=extern "C" fn(start:u64,length:u64,context:*mut c_void)->();
+type BroadcastWorker=extern "C" fn(context:*mut c_void,processor_id:u32);
+type PhysicalRangeCallback=extern "C" fn(start:u64,length:u64,context:*mut c_void);
 
 extern "C"
 {
 	// Processor State Facility
 	pub fn noir_get_processor_count()->u32;
 	pub fn noir_get_current_processor()->u32;
-	pub fn noir_save_processor_state(state:*mut ProcessorState)->();
-	pub fn noir_generic_call(worker:BroadcastWorker,context:*mut c_void)->();
+	pub fn noir_save_processor_state(state:*mut ProcessorState);
+	pub fn noir_generic_call(worker:BroadcastWorker,context:*mut c_void);
 	// Memory Facility
 	pub fn noir_alloc_contd_memory(length:usize)->*mut c_void;
-	pub fn noir_free_contd_memory(virtual_address:*mut c_void,length:usize)->();
-	pub fn noir_enum_physical_memory_ranges(callback_rt:PhysicalRangeCallback,context:*mut c_void)->();
+	pub fn noir_free_contd_memory(virtual_address:*mut c_void,length:usize);
+	pub fn noir_enum_physical_memory_ranges(callback_rt:PhysicalRangeCallback,context:*mut c_void);
 	pub fn noir_get_physical_address(virtual_address:*mut c_void)->u64;
 }
 
@@ -173,7 +173,7 @@ extern "C"
 pub fn alloc_contd_pages(length:usize)->Option<MemoryDescriptor>
 {
 	let p=unsafe{noir_alloc_contd_memory(length)};
-	if p==null_mut()
+	if p.is_null()
 	{
 		None
 	}
@@ -190,9 +190,17 @@ pub fn alloc_contd_pages(length:usize)->Option<MemoryDescriptor>
 	}
 }
 
-pub fn free_contd_pages(ptr:*mut c_void,length:usize)->()
+/**
+ * # `free_contd_pages`
+ * Free some contiguous pages specified in `ptr` with `length` bytes.
+ * 
+ * # Safety
+ * Remember, you are freeing pages here.
+ * Check you parameters.
+ */
+pub unsafe fn free_contd_pages(ptr:*mut c_void,length:usize)
 {
-	unsafe{noir_free_contd_memory(ptr,length)}
+	noir_free_contd_memory(ptr,length)
 }
 
 // Page-related definitions

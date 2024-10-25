@@ -62,7 +62,7 @@ impl ProcessorManufacturer
 		str_raw[4..8].copy_from_slice(&d.to_le_bytes());
 		str_raw[8..].copy_from_slice(&c.to_le_bytes());
 		*vendor_string=str_raw;
-		let r=str::from_utf8(&mut str_raw);
+		let r=str::from_utf8(&str_raw);
 		match r
 		{
 			Ok(s)=>
@@ -139,7 +139,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 	SvmHypervisor::check_enabled()
 }
 
-#[no_mangle] pub extern "C" fn nvc_teardown_hypervisor()->()
+#[no_mangle] pub extern "C" fn nvc_teardown_hypervisor()
 {
 	unsafe
 	{
@@ -156,19 +156,18 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 	println!("Subverting the system...");
 	let mut vstr_raw:[u8;12]=[0;12];
 	let cpu_manuf=ProcessorManufacturer::query(&mut vstr_raw);
-	let hv:Option<Box<dyn HypervisorEssentials>>;
-	match cpu_manuf
+	let hv:Option<Box<dyn HypervisorEssentials>>=match cpu_manuf
 	{
 		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>
 		{
 			// Use Intel VT-x.
 			println!("Intel VT-x is not supported yet!");
-			hv=None;
+			None
 		}
 		ProcessorManufacturer::AMD|ProcessorManufacturer::Hygon=>
 		{
 			// Use AMD-V.
-			hv=Some(Box::<SvmHypervisor>::new(SvmHypervisor::new()));
+			Some(Box::<SvmHypervisor>::new(SvmHypervisor::default()))
 		}
 		_=>
 		{
@@ -179,9 +178,9 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 			{
 				println!("The processor vendor (\"{}\") is unknown!",s);
 			}
-			return NOIR_UNKNOWN_PROCESSOR;
+			None
 		}
-	}
+	};
 	if let Some(mut hypervisor)=hv
 	{
 		let st=hypervisor.subvert_system();

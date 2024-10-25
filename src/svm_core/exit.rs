@@ -88,22 +88,25 @@ impl SvmVcpu
 	}
 }
 
-#[no_mangle] pub extern "C" fn nvc_svm_exit_handler(gpr_state:*mut GprState,vcpu:*mut SvmVcpu)
+/// # Safety
+/// This function is unsafe is because it's called from assembly.
+/// DO NOT CALL THIS FUNCTION FROM RUST CODE!
+#[no_mangle] pub unsafe extern "C" fn nvc_svm_exit_handler(gpr_state:*mut GprState,vcpu:*mut SvmVcpu)
 {
-	let vp=&mut unsafe{*vcpu};
-	let gpr=&mut unsafe{*gpr_state};
-	let stack:*mut SvmStackTop=unsafe{vp.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>())}.cast();
-	let cur_vmcb=unsafe{*gpr_state}.rax as *mut c_void;
+	let vp=&mut (*vcpu);
+	let gpr=&mut (*gpr_state);
+	let stack:*mut SvmStackTop=(vp.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>())).cast();
+	let cur_vmcb=(*gpr_state).rax as *mut c_void;
 	// Intercept code is supposed to be 64-bit, but Linux KVM has a bug that treats the intercept code as 32-bit.
-	let intercept_code:i32=unsafe{vmread(cur_vmcb,EXIT_CODE)};
+	let intercept_code:i32=vmread(cur_vmcb,EXIT_CODE);
 	let handler=dispatch_handler(intercept_code as i64);
 	// Handle the VM-Exit!
-	gpr.rax=unsafe{vmread(cur_vmcb,GUEST_RAX)};
+	gpr.rax=vmread(cur_vmcb,GUEST_RAX);
 	handler(vp,gpr);
 	// The rax in GPR state should be the physical address of VMCB
 	// in order to execute the vmrun instruction properly.
 	// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.
-	gpr.rax=unsafe{(*stack).guest_vmcb_pa};
+	gpr.rax=(*stack).guest_vmcb_pa;
 }
 
 pub const SVM_MAXIMUM_GROUPS:usize=2;

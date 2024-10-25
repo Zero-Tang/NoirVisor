@@ -47,13 +47,17 @@ impl fmt::Write for FormatBuffer
 		}
 		remainder[..current.len()].copy_from_slice(current);
 		self.used+=current.len();
-		return Ok(());
+		Ok(())
 	}
 }
 
 pub trait DebuggerBackend
 {
+	/// # Safety
+	/// The `buffer` argument is a raw pointer.
 	unsafe fn read(self,buffer:*mut u8,length:usize)->bool;
+	/// # Safety
+	/// The `buffer` argument is a raw pointer.
 	unsafe fn write(self,buffer:*const u8,length:usize)->bool;
 }
 
@@ -68,12 +72,12 @@ pub static mut DEBUGGER:Debugger=Debugger::Unknown;
 // Currently, interactive debugger is in draft-stage, so `debug_read` will never be called.
 // Mark it as a piece of dead code.
 #[allow(dead_code)]
-pub unsafe fn debug_read(debugger:impl DebuggerBackend,buffer:*mut u8,length:usize)->bool
+unsafe fn debug_read(debugger:impl DebuggerBackend,buffer:*mut u8,length:usize)->bool
 {
 	debugger.read(buffer,length)
 }
 
-pub unsafe fn debug_write(debugger:impl DebuggerBackend,buffer:*const u8,length:usize)->bool
+unsafe fn debug_write(debugger:impl DebuggerBackend,buffer:*const u8,length:usize)->bool
 {
 	debugger.write(buffer,length)
 }
@@ -82,7 +86,7 @@ pub fn dbg_print(args: core::fmt::Arguments)
 {
 	let mut w=FormatBuffer::new();
 	let r=fmt::write(&mut w, args);
-	if let Ok(_)=r
+	if r.is_ok()
 	{
 		unsafe
 		{
@@ -121,12 +125,12 @@ pub fn dbg_print(args: core::fmt::Arguments)
 	};
 }
 
-#[no_mangle] pub unsafe extern "C" fn noir_configure_serial_port_debugger(_port_number:u8,_port_base:u16,_baud_rate:u32)->Status
+#[no_mangle] pub extern "C" fn noir_configure_serial_port_debugger(_port_number:u8,_port_base:u16,_baud_rate:u32)->Status
 {
 	NOIR_NOT_IMPLEMENTED
 }
 
-#[no_mangle] pub unsafe extern "C" fn noir_configure_qemu_debug_console(port:u16)->Status
+#[no_mangle] pub extern "C" fn noir_configure_qemu_debug_console(port:u16)->Status
 {
 	unsafe
 	{

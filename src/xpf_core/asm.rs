@@ -17,79 +17,65 @@ pub mod io
 	// FIXME: Use a macro to reduce effort.
 	// Note that the string-based I/O will never be implemented, in that x86-S will remove them.
 	use core::arch::asm;
-	
-	#[inline] pub unsafe fn in_byte(port:u16)->u8
+	use paste::paste;
+
+	macro_rules! build_in_func
 	{
-		let v:u8;
-		asm!
-		(
-			"in al,dx",
-			in("dx") port,
-			out("al") v
-		);
-		v
+		($name:tt,$out_type:tt,$reg:tt) =>
+		{
+			paste!
+			{
+				/// # Safety
+				/// I/O operations are not guaranteed to be safe.
+				#[inline] pub unsafe fn [<in _ $name>](port:u16)->$out_type
+				{
+					let v:$out_type;
+					asm!
+					(
+						concat!("in ",$reg,",dx"),
+						in("dx") port,
+						out($reg) v
+					);
+					v
+				}
+			}
+		};
 	}
 
-	#[inline] pub unsafe fn in_word(port:u16)->u16
+	macro_rules! build_out_func
 	{
-		let v:u16;
-		asm!
-		(
-			"in ax,dx",
-			in("dx") port,
-			out("ax") v
-		);
-		v
+		($name:tt,$in_type:tt,$reg:tt) =>
+		{
+			paste!
+			{
+				/// # Safety
+				/// I/O operations are not guaranteed to be safe.
+				#[inline] pub unsafe fn [<out _ $name>](port:u16,val:$in_type)
+				{
+					asm!
+					(
+						concat!("out dx,",$reg),
+						in("dx") port,
+						in($reg) val
+					);
+				}
+			}
+		};
 	}
 
-	#[inline] pub unsafe fn in_dword(port:u16)->u32
-	{
-		let v:u32;
-		asm!
-		(
-			"in eax,dx",
-			in("dx") port,
-			out("eax") v
-		);
-		v
-	}
-
-	#[inline] pub unsafe fn out_byte(port:u16,val:u8)->()
-	{
-		asm!
-		(
-			"out dx,al",
-			in("dx") port,
-			in("al") val
-		)
-	}
-
-	#[inline] pub unsafe fn out_word(port:u16,val:u16)->()
-	{
-		asm!
-		(
-			"out dx,ax",
-			in("dx") port,
-			in("ax") val
-		)
-	}
-
-	#[inline] pub unsafe fn out_dword(port:u16,val:u32)->()
-	{
-		asm!
-		(
-			"out dx,eax",
-			in("dx") port,
-			in("eax") val
-		)
-	}
+	build_in_func!(byte,u8,"al");
+	build_in_func!(word,u16,"ax");
+	build_in_func!(dword,u32,"eax");
+	build_out_func!(byte,u8,"al");
+	build_out_func!(word,u16,"ax");
+	build_out_func!(dword,u32,"eax");
 }
 
 pub mod cpuid
 {
 	use core::arch::asm;
 	
-	#[inline] pub fn cpuid(ia:u32,ic:u32,a:Option<&mut u32>,b:Option<&mut u32>,c:Option<&mut u32>,d:Option<&mut u32>)->()
+	#[inline] pub fn cpuid(ia:u32,ic:u32,a:Option<&mut u32>,b:Option<&mut u32>,c:Option<&mut u32>,d:Option<&mut u32>)
 	{
 		let ca:u32;
 		let cb:u32;
@@ -159,9 +145,8 @@ pub mod msr
 {
 	use core::arch::asm;
 
-	/** # Read MSR
-	 * Returns the Model-Specific Register value with specified `index`.
-	 */
+	/// # Read MSR
+	/// Returns the Model-Specific Register value with specified `index`.
 	#[inline] pub fn rdmsr(index:u32)->u64
 	{
 		let lo:u32;
@@ -179,10 +164,9 @@ pub mod msr
 		(lo as u64)|((hi as u64)<<32)
 	}
 
-	/** # Write MSR
-	 * Writes the Model-Specific Register specified in `index` with `value`.
-	 */
-	#[inline] pub fn wrmsr(index:u32,value:u64)->()
+	/// # Write MSR
+	/// Writes the Model-Specific Register specified in `index` with `value`.
+	#[inline] pub fn wrmsr(index:u32,value:u64)
 	{
 		let lo:u32=(value&0xffffffff) as u32;
 		let hi:u32=(value>>32) as u32;
@@ -203,7 +187,7 @@ pub mod svm
 {
 	use core::arch::asm;
 
-	#[inline] pub fn vmload(vmcb_phys:u64)->()
+	#[inline] pub fn vmload(vmcb_phys:u64)
 	{
 		unsafe
 		{
@@ -215,7 +199,7 @@ pub mod svm
 		}
 	}
 
-	#[inline] pub fn vmsave(vmcb_phys:u64)->()
+	#[inline] pub fn vmsave(vmcb_phys:u64)
 	{
 		unsafe
 		{
@@ -227,7 +211,7 @@ pub mod svm
 		}
 	}
 
-	#[inline] pub fn stgi()->()
+	#[inline] pub fn stgi()
 	{
 		unsafe
 		{
@@ -235,7 +219,7 @@ pub mod svm
 		}
 	}
 
-	#[inline] pub fn clgi()->()
+	#[inline] pub fn clgi()
 	{
 		unsafe 
 		{
@@ -243,7 +227,7 @@ pub mod svm
 		}
 	}
 
-	#[inline] pub fn invlpga(ptr:u64,asid:u32)->()
+	#[inline] pub fn invlpga(ptr:u64,asid:u32)
 	{
 		unsafe
 		{

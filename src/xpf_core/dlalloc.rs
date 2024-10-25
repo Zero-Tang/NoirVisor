@@ -18,7 +18,7 @@ struct DLMalloc;
 extern "C"
 {
 	pub fn dlmalloc(length:usize)->*mut c_void;
-	pub fn dlfree(ptr:*mut c_void)->();
+	pub fn dlfree(ptr:*mut c_void);
 	pub fn dlrealloc(ptr:*mut c_void,length:usize)->*mut c_void;
 }
 

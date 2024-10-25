@@ -27,7 +27,7 @@ use core::ffi::*;
 	false
 }
 
-#[no_mangle] pub extern "C" fn noir_finalize_ci()->()
+#[no_mangle] pub extern "C" fn noir_finalize_ci()
 {
 
 }

@@ -45,6 +45,6 @@ impl QemuDebugConDebugger
 {
 	pub fn new(port_base:u16)->QemuDebugConDebugger
 	{
-		QemuDebugConDebugger{port_base:port_base}
+		QemuDebugConDebugger{port_base}
 	}
 }

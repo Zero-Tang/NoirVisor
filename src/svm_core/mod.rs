@@ -72,6 +72,9 @@ extern "C"
 	fn nvc_svm_guest_start();
 }
 
+/// # Safety
+/// This function is unsafe because it's called from assembly.
+/// DO NOT CALL THIS FUNCTION FROM RUST!
 #[no_mangle] pub unsafe extern "C" fn nvc_svm_subvert_processor_i(vcpu:*mut SvmVcpu,gsp:u64)
 {
 	(*vcpu).subvert_i(gsp);
@@ -127,7 +130,7 @@ impl SvmVcpu
 			// Save rflags, rsp and rip.
 			vmwrite(self.vmcb.virt,GUEST_RFLAGS,2u64);
 			vmwrite(self.vmcb.virt,GUEST_RSP,gsp);
-			vmwrite(self.vmcb.virt,GUEST_RIP,nvc_svm_guest_start as u64);
+			vmwrite(self.vmcb.virt,GUEST_RIP,nvc_svm_guest_start as usize as u64);
 			// Save Processor Hidden State.
 			vmsave(self.vmcb.phys);
 			// Save Model-Specific Registers.
@@ -195,9 +198,9 @@ impl SvmVcpu
 	pub iopm:MemoryDescriptor
 }
 
-impl SvmHypervisor
+impl Default for SvmHypervisor
 {
-	pub fn new()->Self
+	fn default() -> Self
 	{
 		Self
 		{
@@ -206,9 +209,13 @@ impl SvmHypervisor
 			msrpm:MemoryDescriptor::null(),
 			iopm:MemoryDescriptor::null()
 		}
+		
 	}
+}
 
-	fn cleanup(&mut self)->()
+impl SvmHypervisor
+{
+	fn cleanup(&mut self)
 	{
 		println!("Cleaning up...")
 	}
@@ -240,7 +247,7 @@ impl HypervisorCapabilities for SvmHypervisor
 	fn check_enabled()->bool
 	{
 		let vmcr=rdmsr(MSR_VMCR);
-		return (vmcr&MSR_VMCR_SVMDIS)==0;
+		(vmcr&MSR_VMCR_SVMDIS)==0
 	}
 }
 
@@ -320,7 +327,7 @@ impl HypervisorEssentials for SvmHypervisor
 	}
 }
 
-#[no_mangle] extern "C" fn nvc_svm_subvert_processor_thunk(context:*mut c_void,processor_id:u32)->()
+#[no_mangle] extern "C" fn nvc_svm_subvert_processor_thunk(context:*mut c_void,processor_id:u32)
 {
 	let hv=context as *mut SvmHypervisor;
 	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};

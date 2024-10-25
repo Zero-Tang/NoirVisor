@@ -26,6 +26,8 @@ use super::{xpf_core::x86::{interrupts::*, rflags::*}, SegmentRegister};
 	((attrib&0xF00)<<4)|(attrib&0xFF)
 }
 
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn inject_event(vmcb:*mut c_void,vector:u8,event_type:EventType,error_code:Option<u32>,valid:bool)
 {
 	let evt=match error_code
@@ -36,6 +38,8 @@ use super::{xpf_core::x86::{interrupts::*, rflags::*}, SegmentRegister};
 	vmwrite(vmcb,EVENT_INJECTION,evt.0);
 }
 
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn advance_rip(vmcb:*mut c_void)
 {
 	vmwrite(vmcb,GUEST_RIP,vmread::<u64>(vmcb,NEXT_RIP));
@@ -50,6 +54,8 @@ use super::{xpf_core::x86::{interrupts::*, rflags::*}, SegmentRegister};
 	// FIXME: Check Debug Registers. If rip matches one of DR0-DR3, inject #DB exception.
 }
 
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmread_segment(vmcb:*mut c_void,offset:usize)->SegmentRegister
 {
 	SegmentRegister
@@ -61,6 +67,8 @@ use super::{xpf_core::x86::{interrupts::*, rflags::*}, SegmentRegister};
 	}
 }
 
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmwrite_segment(vmcb:*mut c_void,offset:usize,value:SegmentRegister)
 {
 	vmwrite(vmcb,offset,value.selector);
@@ -70,36 +78,51 @@ use super::{xpf_core::x86::{interrupts::*, rflags::*}, SegmentRegister};
 }
 
 // Let's abuse generics here!
+
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmread<T>(vmcb:*mut c_void,offset:usize)->T
 {
 	vmcb.byte_add(offset).cast::<T>().read()
 }
 
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmwrite<T>(vmcb:*mut c_void,offset:usize,value:T)
 {
 	vmcb.byte_add(offset).cast::<T>().write(value)
 }
 
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmcopy<T>(dest:*mut c_void,src:*mut c_void,offset:usize)
 {
 	vmwrite(dest,offset,vmread::<T>(src,offset))
 }
 
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmcb_and<T:BitAndAssign>(vmcb:*mut c_void,offset:usize,value:T)
 {
 	*vmcb.byte_add(offset).cast::<T>()&=value
 }
 
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmcb_or<T:BitOrAssign>(vmcb:*mut c_void,offset:usize,value:T)
 {
 	*vmcb.byte_add(offset).cast::<T>()|=value
 }
 
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmcb_xor<T:BitXorAssign>(vmcb:*mut c_void,offset:usize,value:T)
 {
 	*vmcb.byte_add(offset).cast::<T>()^=value
 }
 
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmcb_bt32(vmcb:*mut c_void,offset:usize,pos:u32)->bool
 {
 	let p=vmcb.byte_add(offset) as usize;
@@ -112,7 +135,7 @@ use super::{xpf_core::x86::{interrupts::*, rflags::*}, SegmentRegister};
 		pos=in(reg) pos,
 		out("al") flag
 	);
-	return flag!=0;
+	flag!=0
 }
 
 // Using offsets is much easier than defining a structure.
@@ -328,7 +351,7 @@ macro_rules! build_bit_get_set
 				(self.0&[<$pfield:upper _ $field:upper>])==[<$pfield:upper _ $field:upper>]
 			}
 
-			#[inline] pub fn [<set_ $field:lower>](&mut self,val:bool)->()
+			#[inline] pub fn [<set_ $field:lower>](&mut self,val:bool)
 			{
 				if val
 				{
@@ -354,7 +377,8 @@ macro_rules! build_int_get_set
 				((self.0&[<$pfield:upper _ $field:upper _MASK>])>>[<$pfield:upper _ $field:upper _BIT_START>]) as $type
 			}
 	
-			#[inline] pub fn[<set_ $field:lower>](&mut self,val:$type)->()
+			#[allow(arithmetic_overflow)]
+			#[inline] pub fn[<set_ $field:lower>](&mut self,val:$type)
 			{
 				// Clear via logical and.
 				self.0&=[<$pfield:upper _ $field:upper _MASK>];
@@ -366,6 +390,7 @@ macro_rules! build_int_get_set
 }
 
 // Offset 0x060: AVIC Control
+#[derive(Default)]
 #[repr(C)] pub struct AvicControl(u64);
 
 pub const AVIC_CONTROL_V_TPR_BIT_START:u64=0;
@@ -387,11 +412,6 @@ pub const AVIC_CONTROL_V_INTR_VECTOR_MASK:u64=!0xFF00000000;
 
 impl AvicControl
 {
-	pub fn new()->Self
-	{
-		Self(0)
-	}
-
 	build_int_get_set!(AVIC_CONTROL,V_TPR,u8,u64);
 	build_bit_get_set!(AVIC_CONTROL,V_IRQ);
 	build_bit_get_set!(AVIC_CONTROL,V_GIF);
@@ -408,6 +428,7 @@ impl AvicControl
 }
 
 // Offset 0x068: Interrupt Control
+#[derive(Default)]
 #[repr(C)] pub struct InterruptControl(u64);
 
 pub const INTERRUPT_CONTROL_SHADOW:u64=1<<0;
@@ -425,6 +446,7 @@ impl InterruptControl
 }
 
 // Offset 0x090: Nested Paing
+#[derive(Default)]
 #[repr(C)] pub struct NptControl(u64);
 
 pub const NPT_CONTROL_ENABLE:u64=1<<0;
@@ -438,11 +460,6 @@ pub const NPT_CONTROL_INVLPGB_ENABLE:u64=1<<7;
 
 impl NptControl
 {
-	pub fn new()->Self
-	{
-		Self(0)
-	}
-
 	build_bit_get_set!(NPT_CONTROL,ENABLE);
 	build_bit_get_set!(NPT_CONTROL,SEV_ENABLE);
 	build_bit_get_set!(NPT_CONTROL,SEV_ES_ENABLE);
@@ -454,6 +471,7 @@ impl NptControl
 }
 
 // Offset 0x0A8: Event Injection
+#[derive(Default)]
 #[repr(C)] pub struct EventInjection(u64);
 
 pub const EVENT_INJECTION_VECTOR_BIT_START:u64=0;
@@ -487,6 +505,7 @@ impl EventInjection
 }
 
 // Offset 0x0B8: LBR Virtualization
+#[derive(Default)]
 #[repr(C)] pub struct LbrVirtualization(u64);
 
 pub const LBR_VIRT_ENABLE:u64=1<<0;
@@ -495,11 +514,6 @@ pub const LBR_VIRT_IBS_ENABLE:u64=1<<2;
 
 impl LbrVirtualization
 {
-	pub fn new()->Self
-	{
-		Self(0)
-	}
-
 	build_bit_get_set!(LBR_VIRT,ENABLE);
 	build_bit_get_set!(LBR_VIRT,VMLS_ENABLE);
 	build_bit_get_set!(LBR_VIRT,IBS_ENABLE);
