@@ -12,14 +12,17 @@
 
 use core::{ffi::c_void, ptr::null_mut};
 use alloc::vec::Vec;
+use npt::SvmNptManager;
 
 use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*},*};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
 pub mod amd64;
-pub mod vmcb;
-pub mod exit;
+// These modules aren't supposed to be public, but we need to permit dead_code for future utility.
+#[allow(dead_code)] mod vmcb;
+#[allow(dead_code)] mod exit;
+#[allow(dead_code)] mod npt;
 
 pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*4;
 
@@ -148,6 +151,10 @@ impl SvmVcpu
 			let hv=self.hypervisor as *mut SvmHypervisor;
 			vmwrite(self.vmcb.virt,IOPM_PHYSICAL_ADDRESS,(*hv).iopm.phys);
 			vmwrite(self.vmcb.virt,MSRPM_PHYSICAL_ADDRESS,(*hv).msrpm.phys);
+			// Setup NPT.
+			vmwrite(self.vmcb.virt,NPT_CR3,(*hv).nptm.pml4e.phys);
+			vmwrite(self.vmcb.virt,NPT_CONTROL,NPT_CONTROL_ENABLE);
+			// ASID is required in AMD-V.
 			vmwrite(self.vmcb.virt,GUEST_ASID,1u32);
 			// Load Guest State.
 			vmload(self.vmcb.phys);
@@ -159,7 +166,7 @@ impl SvmVcpu
 
 	fn subvert(&mut self)
 	{
-		println!("Processor {}/{:p} entered subversion routine!",self.vcpu_id,self as *const Self);
+		println!("Processor {} entered subversion routine!",self.vcpu_id);
 		// Enable SVM in EFER.
 		let efer=rdmsr(MSR_EFER)|MSR_EFER_SVME;
 		wrmsr(MSR_EFER,efer);
@@ -195,7 +202,8 @@ impl SvmVcpu
 	pub vcpu_count:u32,
 	pub vcpus:Vec<SvmVcpu>,
 	pub msrpm:MemoryDescriptor,
-	pub iopm:MemoryDescriptor
+	pub iopm:MemoryDescriptor,
+	pub nptm:SvmNptManager,
 }
 
 impl Default for SvmHypervisor
@@ -207,9 +215,9 @@ impl Default for SvmHypervisor
 			vcpu_count:0,
 			vcpus:Vec::new(),
 			msrpm:MemoryDescriptor::null(),
-			iopm:MemoryDescriptor::null()
+			iopm:MemoryDescriptor::null(),
+			nptm:SvmNptManager::default()
 		}
-		
 	}
 }
 
@@ -217,7 +225,7 @@ impl SvmHypervisor
 {
 	fn cleanup(&mut self)
 	{
-		println!("Cleaning up...")
+		unimplemented!("Cleaning up...")
 	}
 }
 
@@ -281,6 +289,7 @@ impl HypervisorEssentials for SvmHypervisor
 			Some(md)=>self.iopm=md,
 			None=>fail_cleanup!("Failed to allocate I/O Permission-Map!")
 		}
+		self.nptm.build_identity_map();
 		self.vcpu_count=unsafe{noir_get_processor_count()};
 		for i in 0..self.vcpu_count
 		{

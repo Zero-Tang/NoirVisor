@@ -10,7 +10,10 @@
  * or fitness for a particular purpose, etc.).
  */
 
+use npt::NptFaultCode;
+
 use super::*;
+use crate::mshv_core::cpuid::*;
 
 // Place all VM-Exit handlers from the subverted host into this implementation!
 impl SvmVcpu
@@ -26,13 +29,49 @@ impl SvmVcpu
 	{
 		let ia=gpr_state.rax as u32;
 		let ic=gpr_state.rcx as u32;
-		let (a,b,c,d)=cpuid2(ia,ic);
+		let (a,b,c,d)=
+		if (ia&0x40000000)==0x40000000
+		{
+			// This is Hypervisor's CPUID.
+			let leaf_func=(ia&0x3FFFFFFF) as usize;
+			if leaf_func>=MSHV_CPUID_HANDLERS_COUNT
+			{
+				(0,0,0,0)
+			}
+			else
+			{
+				MSHV_CPUID_HANDLERS[leaf_func](ia,ic)
+			}
+		}
+		else
+		{
+			// This is processor's CPUID.
+			// Execute the original CPUID and filter stuff.
+			let (mut a,mut b,mut c,mut d)=cpuid2(ia,ic);
+			match ia
+			{
+				CPUID_STD_PROCESSOR_FEATURE=>c|=CPUID_UNDER_HYPERVISOR,
+				// NoirVisor currently does not support nested virtualization.
+				CPUID_EXT_PROCESSOR_FEATURE=>b&=!CPUID_SVM,
+				CPUID_EXT_SECURE_VIRTUAL_MACHINE_FEATURE=>
+				{
+					a=0;
+					b=0;
+					c=0;
+					d=0;
+				}
+				_=>{}
+			}
+			(a,b,c,d)
+		};
 		unsafe
 		{
+			// Write the results back to eax, ebx, ecx and edx.
 			(&raw mut gpr_state.rax).cast::<u32>().write(a);
 			(&raw mut gpr_state.rbx).cast::<u32>().write(b);
 			(&raw mut gpr_state.rcx).cast::<u32>().write(c);
 			(&raw mut gpr_state.rdx).cast::<u32>().write(d);
+			// Advance the rip.
 			advance_rip(self.vmcb.virt);
 		}
 	}
@@ -79,12 +118,16 @@ impl SvmVcpu
 
 	fn handle_npf(&mut self,_gpr_state:&mut GprState)
 	{
-		panic!("Nested Paging is unsupported!");
+		let vmcb=self.vmcb.virt;
+		let fault:NptFaultCode=unsafe{vmread(vmcb,EXIT_INFO1)};
+		let gpa:u64=unsafe{vmread(vmcb,EXIT_INFO2)};
+		panic!("Nested Page Fault is intercepted! GPA=0x{:016X}\nReason: {}",gpa,fault);
 	}
 
 	fn handle_invalid(&mut self,_gpr_state:&mut GprState)
 	{
-		panic!("Invalid State!");
+		let intercept_code:i64=unsafe{vmread(self.vmcb.virt,EXIT_CODE)};
+		panic!("Invalid State! Exit Code: 0x{:X}",intercept_code);
 	}
 }
 

@@ -18,6 +18,7 @@ pub mod drv_core;
 pub mod xpf_core;
 pub mod vt_core;
 pub mod svm_core;
+pub mod mshv_core;
 
 use alloc::boxed::Box;
 use core::str;
@@ -161,8 +162,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>
 		{
 			// Use Intel VT-x.
-			println!("Intel VT-x is not supported yet!");
-			None
+			unimplemented!("Intel VT-x is not supported yet!");
 		}
 		ProcessorManufacturer::AMD|ProcessorManufacturer::Hygon=>
 		{
@@ -176,7 +176,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 			let r=core::str::from_utf8(&vstr_raw);
 			if let Ok(s)=r
 			{
-				println!("The processor vendor (\"{}\") is unknown!",s);
+				panic!("The processor vendor (\"{}\") is unknown!",s);
 			}
 			None
 		}

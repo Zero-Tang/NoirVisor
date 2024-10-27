@@ -21,8 +21,8 @@ NoirVisor is a hardware-accelerated hypervisor (a.k.a VMM, Virtual Machine Monit
 Namesake: NoirVisor is named after the [***Grimoire Noir***](https://nier.fandom.com/wiki/Grimoire_Noir) in NieR:Gestalt/Replicant.
 
 # Processor Requirement
-Intel Processors based on Intel 64 and IA-32 Architecture, with support to Intel VT-x. Intel EPT is prefered, but not required. \
-AMD Processors based on AMD64 Architecture, with support to AMD-V. Nested Paging is prefered, but not required. \
+Intel Processors based on Intel 64 and IA-32 Architecture, with support to Intel VT-x /w EPT. \
+AMD Processors based on AMD64 Architecture, with support to AMD-V /w NPT. \
 Other processors based on x86 architecture may be supported in future. \
 Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hygon supports Hardware-Accelerated Virtualization Technology. In summary, certain facts are observed that:
 - Processors produced by Intel Corporation may support Intel VT-x.
@@ -33,6 +33,8 @@ Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hyg
 
 Note that early Zhaoxin and VIA use Centaur as vendor.
 
+After refactoring NoirVisor Core with Rust, Intel EPT and AMD NPT are now required to boot NoirVisor!
+
 # Nested Virtualization
 Algorithm regarding the Nested Virtualization was written in the readme files in both VT-Core and SVM-Core directories. \
 For Nested Intel VT-x Algorithm, visit [here](src/vt_core/readme.md#vmx-nesting-algorithm-incomplete-version). \
@@ -42,8 +44,14 @@ Nested AMD-V is not supported yet. \
 Nested Intel VT-x is not supported yet.
 
 # Announcement to all contributors
-NoirVisor is coded in the C programming language, Assembly and Rust for the Core. \
+NoirVisor is coded in the C programming language, Assembly and Rust. \
 **NO C++ CODES ARE ACCEPTED IN THIS PROJECT!**
+
+If your patch includes Rust codes, make sure it could pass `cargo clippy` checks! No warnings and errors are allowed. \
+If you believe `clippy` is prompting dubious warnings and errors, do not put `#[allow(...)]` on your own. Instead, report in your PR and state why you think that is false positive. \
+If it is really is false positive, relevant suppression will be put.
+
+For your convenience, if `clippy` prompted too many errors and warnings, you may double click `clippy.bat` to restrict the output in one window.
 
 # Build
 To build NoirVisor, using batch is essential. \
@@ -85,6 +93,9 @@ NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit
 ## Disassembler
 Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should pre-compile Zydis as a static library. Visit the [documents for disassembler](src/disasm/readme.md) for further details. \
 In that Zydis is included as a submodule, and because Zydis itself has a submodule, you must clone this repository recursively.
+
+## Memory Allocator
+Since the adoption of the Rust programming language, NoirVisor will include an internal memory allocator: [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc). This allocator will enable NoirVisor to gather its allocated memories together so that they can be protected by nested paging. If using system-provided memory allocator, NoirVisor's memories do not exclusively own the pages, and thus can't be protected by nested paging, leaving NoirVisor vulnerable to attacks from guest.
 
 ## Python script
 Since January 2024, NoirVisor can be built using Python script. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, building NoirVisor through Python script in Windows 7 is not supported. There is no `pip` package requirements for compilation. \

@@ -110,14 +110,10 @@ impl Display for GprState
 {
 	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 	{
-		let r=writeln!(f,"rax=0x{:016X} rcx=0x{:016X} rdx=0x{:016X} rbx=0x{:016X}",self.rax,self.rcx,self.rdx,self.rbx);
-		r?;
-		let r=writeln!(f,"rsp=0x{:016X} rbp=0x{:016X} rsi=0x{:016X} rdi=0x{:016X}",self.rsp,self.rbp,self.rsi,self.rdi);
-		r?;
-		let r=writeln!(f,"r8 =0x{:016X} r9 =0x{:016X} r10=0x{:016X} r11=0x{:016X}",self.r8,self.r9,self.r10,self.r11);
-		r?;
-		let r=writeln!(f,"r12=0x{:016X} r13=0x{:016X} r14=0x{:016X} r15=0x{:016X}",self.r12,self.r13,self.r14,self.r15);
-		r
+		writeln!(f,"rax=0x{:016X} rcx=0x{:016X} rdx=0x{:016X} rbx=0x{:016X}",self.rax,self.rcx,self.rdx,self.rbx)?;
+		writeln!(f,"rsp=0x{:016X} rbp=0x{:016X} rsi=0x{:016X} rdi=0x{:016X}",self.rsp,self.rbp,self.rsi,self.rdi)?;
+		writeln!(f,"r8 =0x{:016X} r9 =0x{:016X} r10=0x{:016X} r11=0x{:016X}",self.r8,self.r9,self.r10,self.r11)?;
+		writeln!(f,"r12=0x{:016X} r13=0x{:016X} r14=0x{:016X} r15=0x{:016X}",self.r12,self.r13,self.r14,self.r15)
 	}
 }
 
@@ -161,6 +157,8 @@ extern "C"
 	pub fn noir_free_contd_memory(virtual_address:*mut c_void,length:usize);
 	pub fn noir_enum_physical_memory_ranges(callback_rt:PhysicalRangeCallback,context:*mut c_void);
 	pub fn noir_get_physical_address(virtual_address:*mut c_void)->u64;
+	pub fn noir_alloc_2mb_page()->*mut c_void;
+	pub fn noir_free_2mb_page(virtual_address:*mut c_void);
 }
 
 /**
@@ -191,16 +189,56 @@ pub fn alloc_contd_pages(length:usize)->Option<MemoryDescriptor>
 }
 
 /**
- * # `free_contd_pages`
- * Free some contiguous pages specified in `ptr` with `length` bytes.
- * 
- * # Safety
- * Remember, you are freeing pages here.
- * Check you parameters.
+  # `free_contd_pages`
+  Free some contiguous pages specified in `ptr` with `length` bytes.
+  
+  # Safety
+  Remember, you are freeing pages here.
+  Check you parameters.
  */
 pub unsafe fn free_contd_pages(ptr:*mut c_void,length:usize)
 {
 	noir_free_contd_memory(ptr,length)
+}
+
+/**
+  # `alloc_2mb_page`
+  Allocate 2MiB Page aligned on 2MiB-boundary.
+  Return Value: Option<MemoryDescriptor>
+  - Some(MemoryDescriptor)=> Both virtual/physical addresses of the start of contiguous pages.
+  - None=> Insufficient resource!
+ */
+pub fn alloc_2mb_page()->Option<MemoryDescriptor>
+{
+	let p=unsafe{noir_alloc_2mb_page()};
+	if p.is_null()
+	{
+		None
+	}
+	else
+	{
+		Some
+		(
+			MemoryDescriptor
+			{
+				virt:p,
+				phys:unsafe{noir_get_physical_address(p)}
+			}
+		)
+	}
+}
+
+/**
+  # `free_contd_pages`
+  Free the 2MiB page specified in `ptr`.
+  
+  # Safety
+  Remember, you are freeing a page here.
+  Check you parameters.
+ */
+pub unsafe fn free_2mb_page(ptr:*mut c_void)
+{
+	noir_free_2mb_page(ptr);
 }
 
 // Page-related definitions
@@ -243,7 +281,7 @@ build_page_size!(_1GB_);
 build_page_size!(_512GB_);
 build_page_size!(_256TB_);
 
-pub const PAGE_SHIFT_DIFF:usize=if cfg!(target_arch="x86_64") {10} else {9};
+pub const PAGE_SHIFT_DIFF:usize=if cfg!(target_arch="x86_64") {9} else {10};
 pub const PAGE_TABLE_ENTRIES:usize=if cfg!(target_arch="x86_64") {512} else {1024};
 
 #[inline] pub fn page_entry_index(addr:usize)->usize
@@ -365,3 +403,43 @@ build_page_base!(_4mb_);
 build_page_base!(_1gb_);
 build_page_base!(_512gb_);
 build_page_base!(_256tb_);
+
+// Restrict maximum physical base to 52 bits!
+macro_rules! build_phys_page_base
+{
+	($size:tt) =>
+	{
+		paste!
+		{
+			// Use function in order to check type.
+			#[inline] pub fn [<phys_page $size:lower base>](addr:usize)->usize
+			{
+				[<page $size:lower base>](addr)&0xFFFFFFFFFF000
+			}
+		}
+	};
+}
+
+build_phys_page_base!(_);
+build_phys_page_base!(_4kb_);
+build_phys_page_base!(_2mb_);
+build_phys_page_base!(_4mb_);
+build_phys_page_base!(_1gb_);
+build_phys_page_base!(_512gb_);
+build_phys_page_base!(_256tb_);
+
+macro_rules! build_phys_page_mask
+{
+	($size:tt) =>
+	{
+		paste!
+		{
+			pub const [<PHYS_PAGE $size:upper MASK>]:u64=0xFFF0000000000000|(([<PAGE $size:upper SIZE>] as u64)-1);
+		}
+	};
+}
+
+build_phys_page_mask!(_);
+build_phys_page_mask!(_4kb_);
+build_phys_page_mask!(_2mb_);
+build_phys_page_mask!(_1gb_);

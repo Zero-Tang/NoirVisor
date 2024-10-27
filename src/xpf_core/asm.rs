@@ -14,7 +14,6 @@
 
 pub mod io
 {
-	// FIXME: Use a macro to reduce effort.
 	// Note that the string-based I/O will never be implemented, in that x86-S will remove them.
 	use core::arch::asm;
 	use paste::paste;

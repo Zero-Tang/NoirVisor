@@ -11,7 +11,6 @@
  */
 
 use core::{arch::asm, ffi::c_void, ops::{BitAndAssign, BitOrAssign, BitXorAssign}};
-
 use paste::paste;
 
 use super::{xpf_core::x86::{interrupts::*, rflags::*}, SegmentRegister};
@@ -121,22 +120,42 @@ use super::{xpf_core::x86::{interrupts::*, rflags::*}, SegmentRegister};
 	*vmcb.byte_add(offset).cast::<T>()^=value
 }
 
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn vmcb_bt32(vmcb:*mut c_void,offset:usize,pos:u32)->bool
+// It seems impossible to use generics to build bit-test operations on VMCB.
+// So let's abuse macros to make generate operations on VMCB.
+macro_rules! build_vmcb_bt
 {
-	let p=vmcb.byte_add(offset) as usize;
-	let flag:u8;
-	asm!
-	(
-		"bt dword ptr [{ptr}],{pos:e}",
-		"setc al",
-		ptr=in(reg) p,
-		pos=in(reg) pos,
-		out("al") flag
-	);
-	flag!=0
+	($ins:tt,$size:tt,$bits:tt) =>
+	{
+		paste!
+		{
+			/// # Safety
+			/// The `vmcb` argument is not guaranteed to be valid.
+			#[inline] pub unsafe fn [<vmcb_ $ins $bits>](vmcb:*mut c_void,offset:usize,pos:u32)->bool
+			{
+				let p=vmcb.byte_add(offset);
+				let flag:u8;
+				asm!
+				(
+					concat!(stringify!($ins)," ",$size," ptr [{p}],{b:e}"),
+					"setc {f}",
+					p=in(reg) p,
+					b=in(reg) pos,
+					f=out(reg_byte) flag
+				);
+				flag!=0
+			}
+		}
+	};
 }
+
+build_vmcb_bt!(bt,"dword",32);
+build_vmcb_bt!(bts,"dword",32);
+build_vmcb_bt!(btr,"dword",32);
+build_vmcb_bt!(btc,"dword",32);
+build_vmcb_bt!(bt,"qword",64);
+build_vmcb_bt!(bts,"qword",64);
+build_vmcb_bt!(btr,"qword",64);
+build_vmcb_bt!(btc,"qword",64);
 
 // Using offsets is much easier than defining a structure.
 // This is also how NoirVisor in C operates the VMCB.
