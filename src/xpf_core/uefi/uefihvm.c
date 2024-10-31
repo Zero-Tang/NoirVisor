@@ -204,7 +204,7 @@ BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)
 			EFI_IMAGE_SECTION_HEADER *SectionHeaders=(EFI_IMAGE_SECTION_HEADER*)((UINTN)NtHead+sizeof(EFI_IMAGE_NT_HEADERS));
 			if(noir_initialize_ci(FALSE,TRUE)==FALSE)
 			{
-				NoirDebugPrint("Failed to initialize Code-Integrity!\n");
+				Print(L"Failed to initialize Code-Integrity!\n");
 				return FALSE;
 			}
 			for(UINT16 i=0;i<NtHead->FileHeader.NumberOfSections;i++)
@@ -218,7 +218,7 @@ BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)
 					// Hence, we will run Hardware CI Enforcement only in EFI.
 					if(noir_add_section_to_ci(CodeBase,CodeSize,TRUE)==FALSE)
 					{
-						NoirDebugPrint("Failed to add code section to CI!\n");
+						Print(L"Failed to add code section to CI!\n");
 						noir_finalize_ci();
 						return FALSE;
 					}
@@ -230,7 +230,7 @@ BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase)
 					UINT32 DataSize=SectionHeaders[i].SizeOfRawData;
 					if(noir_add_section_to_ci(DataBase,DataSize,TRUE)==FALSE)
 					{
-						NoirDebugPrint("Failed to add data section to CI!\n");
+						Print(L"Failed to add data section to CI!\n");
 						noir_finalize_ci();
 						return FALSE;
 					}
@@ -253,21 +253,21 @@ BOOLEAN noir_query_pm1_port_address(OUT UINT16 *PM1a,OUT UINT16 *PM1b)
 	EFI_ACPI_2_0_FIXED_ACPI_DESCRIPTION_TABLE *Fadt=(EFI_ACPI_2_0_FIXED_ACPI_DESCRIPTION_TABLE*)EfiLocateFirstAcpiTable(EFI_ACPI_2_0_FIXED_ACPI_DESCRIPTION_TABLE_SIGNATURE);
 	if(Fadt)
 	{
-		NoirDebugPrint("Located ACPI FADT at 0x%p\n",Fadt);
+		Print(L"Located ACPI FADT at 0x%p\n",Fadt);
 		// Use non-extended data for now.
 		*PM1a=(UINT16)Fadt->Pm1aCntBlk;
 		*PM1b=(UINT16)Fadt->Pm1bCntBlk;
 		// Do some assertions.
 		if(Fadt->XPm1aCntBlk.AddressSpaceId!=EFI_ACPI_2_0_SYSTEM_IO)
-			NoirDebugPrint("X-PM1a does not use port I/O! It use space type %u instead!\n",Fadt->XPm1aCntBlk.AddressSpaceId);
+			Print(L"X-PM1a does not use port I/O! It use space type %u instead!\n",Fadt->XPm1aCntBlk.AddressSpaceId);
 		else
-			NoirDebugPrint("X-PM1a register bit width: %u\n",Fadt->XPm1aCntBlk.RegisterBitWidth);
+			Print(L"X-PM1a register bit width: %u\n",Fadt->XPm1aCntBlk.RegisterBitWidth);
 		if(Fadt->XPm1bCntBlk.AddressSpaceId!=EFI_ACPI_2_0_SYSTEM_IO)
-			NoirDebugPrint("X-PM1b does not use port I/O! It use space type %u instead!\n",Fadt->XPm1bCntBlk.AddressSpaceId);
+			Print(L"X-PM1b does not use port I/O! It use space type %u instead!\n",Fadt->XPm1bCntBlk.AddressSpaceId);
 		else
-			NoirDebugPrint("X-PM1b register bit width: %u\n",Fadt->XPm1bCntBlk.RegisterBitWidth);
-		NoirDebugPrint("X-PM1a Address=0x%llX, PM1a Address=0x%X\n",Fadt->XPm1aCntBlk.Address,Fadt->Pm1aCntBlk);
-		NoirDebugPrint("X-PM1b Address=0x%llX, PM1b Address=0x%X\n",Fadt->XPm1bCntBlk.Address,Fadt->Pm1bCntBlk);
+			Print(L"X-PM1b register bit width: %u\n",Fadt->XPm1bCntBlk.RegisterBitWidth);
+		Print(L"X-PM1a Address=0x%llX, PM1a Address=0x%X\n",Fadt->XPm1aCntBlk.Address,Fadt->Pm1aCntBlk);
+		Print(L"X-PM1b Address=0x%llX, PM1b Address=0x%X\n",Fadt->XPm1bCntBlk.Address,Fadt->Pm1bCntBlk);
 	}
 	return FALSE;
 }

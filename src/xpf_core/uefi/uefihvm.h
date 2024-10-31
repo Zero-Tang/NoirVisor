@@ -47,7 +47,6 @@ EFI_HANDLE NvImageDeviceHandle;
 VOID* NvImageBase=NULL;
 UINT32 NvImageSize=0;
 
-void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 EFI_STATUS NoirGetConfigurationRecord(IN CHAR8* RecordName,OUT UINT32* RecordType,OUT VOID* RecordData,IN UINT32 RecordLength,OUT UINT32* OutputLength);
 
 BOOLEAN noir_initialize_ci(BOOLEAN soft_ci,BOOLEAN hard_ci);

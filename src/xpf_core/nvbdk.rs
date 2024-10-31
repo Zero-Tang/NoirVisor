@@ -159,6 +159,7 @@ extern "C"
 	pub fn noir_get_physical_address(virtual_address:*mut c_void)->u64;
 	pub fn noir_alloc_2mb_page()->*mut c_void;
 	pub fn noir_free_2mb_page(virtual_address:*mut c_void);
+	pub fn noir_enum_allocated_large_pages(callback_rt:PhysicalRangeCallback,context:*mut c_void);
 }
 
 /**

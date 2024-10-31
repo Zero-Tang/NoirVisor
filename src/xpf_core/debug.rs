@@ -105,6 +105,21 @@ pub fn dbg_print(args: core::fmt::Arguments)
 	}
 }
 
+#[no_mangle] pub unsafe extern "C" fn noir_debug_output(buffer:*const u8,length:usize)
+{
+	match DEBUGGER
+	{
+		Debugger::QemuDebugCon(item)=>
+		{
+			debug_write(item,buffer,length);
+		}
+		Debugger::Unknown=>
+		{
+
+		}
+	};
+}
+
 #[macro_export] macro_rules! print
 {
 	($($arg:tt)*) =>

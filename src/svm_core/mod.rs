@@ -322,10 +322,12 @@ impl HypervisorEssentials for SvmHypervisor
 			vcpu.vcpu_id=i;
 			self.vcpus.push(vcpu);
 		}
+		self.nptm.protect_allocated_pages();
 		unsafe
 		{
 			noir_generic_call(nvc_svm_subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
+		println!("System subversion completed!");
 		NOIR_SUCCESS
 	}
 

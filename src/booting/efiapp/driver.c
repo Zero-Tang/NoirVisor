@@ -22,14 +22,14 @@ EFI_STATUS EFIAPI NoirDriverUnload(IN EFI_HANDLE ImageHandle)
 {
 	NoirFinalizeCodeIntegrity();
 	NoirFinalizeConfigurationManager();
-	NoirDebugPrint("NoirVisor is unloaded!\r\n");
+	Print(L"NoirVisor is unloaded!\r\n");
 	return EFI_SUCCESS;
 }
 
 void EFIAPI NoirNotifyExitBootServices(IN EFI_EVENT Event,IN VOID* Context)
 {
 	NoirEfiInRuntimeStage=TRUE;
-	NoirDebugPrint("UEFI now enters Runtime Stage!\n");
+	Print(L"UEFI now enters Runtime Stage!\n");
 }
 
 void NoirBlockUntilKeyStroke(IN CHAR16 Unicode)
@@ -50,7 +50,7 @@ EFI_STATUS EFIAPI NoirRegisterHypervisorVariables()
 	{
 		if(sizeof(LayeringPasscode)>255)
 		{
-			NoirDebugPrint("Passcode for Layered Hypervisor is too long!\n");
+			Print(L"Passcode for Layered Hypervisor is too long!\n");
 			st=EFI_BAD_BUFFER_SIZE;
 		}
 		else
@@ -89,8 +89,8 @@ void NoirPrintCompilerVersion()
 	UINT32 Build=_MSC_FULL_VER%100000;
 	UINT32 Minor=_MSC_VER%100;
 	UINT32 Major=_MSC_VER/100;
-	NoirDebugPrint("Compiler Version: MSVC %02d.%02d.%05d\n",Major,Minor,Build);
-	NoirDebugPrint("NoirVisor Compliation Date: %a %a\n",__DATE__,__TIME__);
+	Print(L"Compiler Version: MSVC %02d.%02d.%05d\n",Major,Minor,Build);
+	Print(L"NoirVisor Compliation Date: %a %a\n",__DATE__,__TIME__);
 }
 
 EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable)
@@ -98,7 +98,7 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	EFI_STATUS st=NoirEfiInitialize(ImageHandle,SystemTable);
 	EFI_LOADED_IMAGE_PROTOCOL* ImageInfo=NULL;
 	UINT32 Supportability=NoirQueryVirtualizationSupportability();
-	NoirDebugPrint("Welcome to NoirVisor Runtime Driver!\r\n");
+	Print(L"Welcome to NoirVisor Runtime Driver!\r\n");
 	NoirPrintCompilerVersion();
 	if((Supportability&3)!=3)
 	{
@@ -117,11 +117,11 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 		ImageInfo->Unload=NoirDriverUnload;
 		RootDeviceHandle=ImageInfo->DeviceHandle;
 	}
-	NoirDebugPrint("NoirVisor is loaded to base 0x%p, Size=0x%X\n",ImageInfo->ImageBase,ImageInfo->ImageSize);
+	Print(L"NoirVisor is loaded to base 0x%p, Size=0x%X\n",ImageInfo->ImageBase,ImageInfo->ImageSize);
 	NoirInitializeDisassembler();
 	NoirInitializeConfigurationManager();
 	st=NoirRegisterHypervisorVariables();
-	NoirDebugPrint("NoirVisor Variables Registration Status=0x%X\n",st);
+	Print(L"NoirVisor Variables Registration Status=0x%X\n",st);
 	StdOut->OutputString(StdOut,L"Press Enter key to continue subversion!\r\n");
 	NoirBlockUntilKeyStroke(L'\r');
 	system_cr3=AsmReadCr3();

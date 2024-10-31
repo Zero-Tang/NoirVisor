@@ -33,7 +33,7 @@ Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hyg
 
 Note that early Zhaoxin and VIA use Centaur as vendor.
 
-After refactoring NoirVisor Core with Rust, Intel EPT and AMD NPT are now required to boot NoirVisor!
+After refactoring NoirVisor Core with Rust, Intel EPT and AMD NPT are now required to boot NoirVisor for security reasons!
 
 # Nested Virtualization
 Algorithm regarding the Nested Virtualization was written in the readme files in both VT-Core and SVM-Core directories. \

@@ -10,12 +10,12 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::fmt::Display;
+use core::{fmt::Display,ffi::c_void};
 use alloc::vec::Vec;
 
 use paste::paste;
 
-use crate::{println, print, dbg_print, xpf_core::nvbdk::*};
+use crate::{print,println,dbg_print,xpf_core::nvbdk::*};
 
 // Use a macro to reduce effort making bit definitions for nested page table entries.
 macro_rules! build_npt_entry_bit_def
@@ -271,6 +271,17 @@ impl NptPde
 					(nx as u64)<<NPT_ENTRY_NO_EXECUTE;
 		Self(val)
 	}
+
+	pub fn new_large(present:bool,write:bool,user:bool,page_base:u64,nx:bool)->Self
+	{
+		let val:u64=(present as u64)<<NPT_ENTRY_PRESENT |
+					(write as u64)<<NPT_ENTRY_WRITE |
+					(user as u64)<<NPT_ENTRY_USER |
+					NPT_ENTRY_PAGE_SIZE_BIT |
+					page_2mb_base(page_base as usize) as u64 |
+					(nx as u64)<<NPT_ENTRY_NO_EXECUTE;
+		Self(val)
+	}
 }
 
 // Page-Table Entry (Bits 12-20)
@@ -355,13 +366,14 @@ impl SvmNptManager
 			Some(md)=>self.pml4e=md,
 			None=>panic!("Failed to allocate PML4E!")
 		}
+		println!("PML4E is allocated at {:p}",self.pml4e.virt);
 		let pdpte=alloc_2mb_page();
 		match pdpte
 		{
 			Some(md)=>self.pdpte=md,
 			None=>panic!("Failed to allocate PDPTE!")
 		}
-		println!("PML4E: {:p}, PDPTE: {:p}",self.pml4e.virt,self.pdpte.virt);
+		println!("PDPTE is allocated at {:p}",self.pdpte.virt);
 		for i in 0..512
 		{
 			for j in 0..512
@@ -381,6 +393,105 @@ impl SvmNptManager
 				let pml4e_p=(self.pml4e.virt as *mut NptPml4e).add(i);
 				pml4e_p.write(pml4e_v);
 			}
+		}
+	}
+
+	pub fn locate_pdpte_mut(&mut self,gpa:u64)->&mut NptPdpte
+	{
+		let pfn=page_1gb_count(gpa as usize);
+		unsafe 
+		{
+			let pdpte_p=self.pdpte.virt as *mut NptPdpte;
+			&mut *pdpte_p.add(pfn)
+		}
+	}
+
+	pub fn split_pdpte(&mut self,gpa:u64)
+	{
+		let pde_md=alloc_contd_pages(PAGE_SIZE);
+		match pde_md
+		{
+			Some(md)=>
+			{
+				let gpa_start=page_1gb_base(gpa as usize) as u64;
+				let pde_array=md.virt as *mut NptPde;
+				let pde_d=SvmNptPageTableDescriptor
+				{
+					gpa_start:gpa_start,
+					table:md
+				};
+				let pdpte_p=self.locate_pdpte_mut(gpa);
+				for i in 0..512
+				{
+					unsafe 
+					{
+						let new_pde=NptPde::new_large(pdpte_p.get_present(),pdpte_p.get_write(),pdpte_p.get_user(),gpa_start+page_2mb_mult(i) as u64,pdpte_p.get_no_execute());
+						pde_array.add(i).write(new_pde);
+					}
+				}
+				println!("Splitted PDPTE Entry: {:p} for GPA 0x{:016X}",pdpte_p,gpa);
+				pdpte_p.set_page_size(false);
+				pdpte_p.set_next_level_base(md.phys);
+				self.pde.push(pde_d);
+			}
+			None=>panic!("Failed to split PDPTE while allocating PDE!")
+		}
+	}
+
+	fn locate_pde_mut(&mut self,gpa:u64)->Option<&mut SvmNptPageTableDescriptor>
+	{
+		for pde_p in &mut self.pde
+		{
+			if gpa>=pde_p.gpa_start && gpa<pde_p.gpa_start+PAGE_1GB_SIZE as u64
+			{
+				return Some(pde_p);
+			}
+		}
+		None
+	}
+
+	pub fn update_pde(&mut self,gpa:u64,hpa:u64,r:bool,w:bool,x:bool,l:bool)
+	{
+		let mut pde_op=self.locate_pde_mut(gpa);
+		if pde_op.is_none()
+		{
+			// Build PDE.
+			self.split_pdpte(gpa);
+			pde_op=self.locate_pde_mut(gpa);
+		}
+		match pde_op
+		{
+			Some(pde_d)=>
+			{
+				let pde_array=pde_d.table.virt as *mut NptPde;
+				let index=page_entry_index(page_2mb_count(gpa as usize));
+				unsafe 
+				{
+					let pde_p=&mut *pde_array.add(index);
+					let pde_v=if l {NptPde::new_large(r,w,true,hpa,!x)} else {NptPde::new(r,w,true,pde_p.get_next_level_base(),!x)};
+					*pde_p=pde_v;
+				}
+			}
+			None=>panic!("Failed to update PDE!")
+		}
+	}
+
+	extern "C" fn enum_page_rt(start:u64,length:u64,context:*mut c_void)
+	{
+		let s:&mut Self=unsafe{&mut *(context as *mut Self)};
+		if length!=PAGE_2MB_SIZE as u64
+		{
+			panic!("While enumerating allocated large pages, Page 0x{:016X} does not have exactly 2MiB size! (0x{:X})",start,length);
+		}
+		println!("Protecting page range 0x{:X} to 0x{:X}...",start,start+length);
+		s.update_pde(start,start,true,false,false,true);
+	}
+
+	pub fn protect_allocated_pages(&mut self)
+	{
+		unsafe
+		{
+			noir_enum_allocated_large_pages(SvmNptManager::enum_page_rt,self as *mut Self as *mut c_void);
 		}
 	}
 

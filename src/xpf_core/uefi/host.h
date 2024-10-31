@@ -105,18 +105,7 @@ typedef struct _NV_MP_SERVICE_GENERIC_INFO
 #define NoirSaveProcessorState		noir_save_processor_state
 #define NoirGetSegmentAttributes	noir_get_segment_attributes
 void noir_save_processor_state(OUT PNOIR_PROCESSOR_STATE State);
-void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
-void NoirBlockUntilKeyStroke(IN CHAR16 Unicode);
-void NoirUnexpectedInterruptHandler(void);
-void NoirSetupDebugSupportPerProcessor(IN VOID *ProcedureArgument);
-UINT64 nvc_hpet_read_counter();
-
-UINT8 NoirGetInstructionLength16(IN UINT8 *Code,IN UINTN CodeLength);
-UINT8 NoirGetInstructionLength32(IN UINT8 *Code,IN UINTN CodeLength);
-UINT8 NoirGetInstructionLength64(IN UINT8 *Code,IN UINTN CodeLength);
-UINT8 NoirDisasmCode16(OUT CHAR8 *Mnemonic,IN UINTN MnemonicLength,IN UINT8 *Code,IN UINTN CodeLength,IN UINT64 VirtualAddress);
-UINT8 NoirDisasmCode32(OUT CHAR8 *Mnemonic,IN UINTN MnemonicLength,IN UINT8 *Code,IN UINTN CodeLength,IN UINT64 VirtualAddress);
-UINT8 NoirDisasmCode64(OUT CHAR8 *Mnemonic,IN UINTN MnemonicLength,IN UINT8 *Code,IN UINTN CodeLength,IN UINT64 VirtualAddress);
+void noir_debug_output(IN CHAR8 *buffer,IN UINTN length);
 
 extern EFI_MP_SERVICES_PROTOCOL *MpServices;
 extern EFI_BOOT_SERVICES *gBS;

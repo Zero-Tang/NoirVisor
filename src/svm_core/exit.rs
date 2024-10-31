@@ -16,6 +16,7 @@ use super::*;
 use crate::mshv_core::cpuid::*;
 
 // Place all VM-Exit handlers from the subverted host into this implementation!
+// Rules of thumb in implementing VM-Exit Handlers: Do not allocate memories from heap!
 impl SvmVcpu
 {
 	fn handle_unknown(&mut self,_gpr_state:&mut GprState)
@@ -121,7 +122,8 @@ impl SvmVcpu
 		let vmcb=self.vmcb.virt;
 		let fault:NptFaultCode=unsafe{vmread(vmcb,EXIT_INFO1)};
 		let gpa:u64=unsafe{vmread(vmcb,EXIT_INFO2)};
-		panic!("Nested Page Fault is intercepted! GPA=0x{:016X}\nReason: {}",gpa,fault);
+		let rip:u64=unsafe{vmread(vmcb,GUEST_RIP)};
+		panic!("Nested Page Fault is intercepted! rip=0x{:016X}, GPA=0x{:016X}\nReason: {}",rip,gpa,fault);
 	}
 
 	fn handle_invalid(&mut self,_gpr_state:&mut GprState)
