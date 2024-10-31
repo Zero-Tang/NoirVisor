@@ -34,6 +34,21 @@ void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...)
 	noir_debug_output(Buffer,Size);
 }
 
+VOID* noir_map_physical_memory(IN UINT64 PhysicalAddress,IN UINTN Length)
+{
+	return (VOID*)PhysicalAddress;
+}
+
+VOID* noir_map_uncached_memory(IN UINT64 PhysicalAddress,IN UINTN Length)
+{
+	return (VOID*)PhysicalAddress;
+}
+
+void noir_unmap_physical_memory(IN VOID* VirtualAddress,IN UINTN Length)
+{
+	__nop();
+}
+
 void noir_copy_memory(IN VOID* Destination,IN VOID* Source,IN UINT32 Length)
 {
 	CopyMem(Destination,Source,Length);
