@@ -125,7 +125,7 @@ u8 nvc_svm_disable()
 
 void static nvc_svm_setup_io_hook(noir_hypervisor_p hvm_p)
 {
-	void* bitmap=hvm_p->relative_hvm->iopm.virt;
+	// void* bitmap=hvm_p->relative_hvm->iopm.virt;
 	// Setup interceptions to Port I/O that may interfere with NoirVisor's operations.
 	// e.g.: Protect Serial Port communications in order to transmit debug messages.
 	// If you can't add your I/O ports into the predefined array, add the ports here.
@@ -135,14 +135,6 @@ void static nvc_svm_setup_io_hook(noir_hypervisor_p hvm_p)
 		for(u32 i=0;i<8;i++)
 			noir_set_bitmap(bitmap,hvm_p->protected_ports.serial+i);
 	*/
-#if defined(_hv_type1)
-	// Protect the Power Management I/O Ports.
-	if(noir_query_pm1_port_address(&hvm_p->protected_ports.pm1a,&hvm_p->protected_ports.pm1b))
-	{
-		noir_set_bitmap(bitmap,hvm_p->protected_ports.pm1a);
-		noir_set_bitmap(bitmap,hvm_p->protected_ports.pm1b);
-	}
-#endif
 }
 
 void static nvc_svm_setup_msr_hook(noir_hypervisor_p hvm_p)

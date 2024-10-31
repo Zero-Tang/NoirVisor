@@ -60,4 +60,7 @@ dkms.conf
 # Compiler Logs
 *.log
 
+# Rust outputs
+target/
+
 bin/

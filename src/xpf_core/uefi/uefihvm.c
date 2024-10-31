@@ -62,12 +62,14 @@ void NoirTeardownHypervisor()
 UINT64 noir_query_enabled_features_in_system()
 {
 	UINT32 Type;
-	UINT32 CpuidPresence=1,NestedVirtualization=0;
+	UINT32 CpuidPresence=1,NestedVirtualization=0,EnableIommu=1;
 	UINT64 Features=0;
 	NoirGetConfigurationRecord("CpuidPresence",&Type,&CpuidPresence,sizeof(UINT32),NULL);
 	NoirGetConfigurationRecord("NestedVirtualization",&Type,&NestedVirtualization,sizeof(UINT32),NULL);
+	NoirGetConfigurationRecord("EnableIommu",&Type,&EnableIommu,sizeof(UINT32),NULL);
 	Features|=(CpuidPresence!=0)<<NOIR_HVM_FEATURE_CPUID_PRESENCE_BIT;
 	Features|=(NestedVirtualization!=0)<<NOIR_HVM_FEATURE_NESTED_VIRTUALIZATION_BIT;
+	Features|=(EnableIommu!=0)<<NOIR_HVM_FEATURE_ENABLE_IOMMU_BIT;
 	return Features;
 }
 

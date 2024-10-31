@@ -246,6 +246,13 @@ void inline noir_cpuid(u32 ia,u32 ic,u32* a,u32* b,u32* c,u32* d)
 	if(d)*d=info[3];
 }
 
+u8 inline noir_test_bitmap(void* bitmap,u32 bit_position)
+{
+	u32* bmp=(u32*)bitmap;
+	u32 i=bit_position>>5,j=bit_position&0x1F;
+	return noir_bt(&bmp[i],j);
+}
+
 u8 inline noir_set_bitmap(void* bitmap,u32 bit_position)
 {
 	u32* bmp=(u32*)bitmap;

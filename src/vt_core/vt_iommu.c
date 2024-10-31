@@ -397,7 +397,7 @@ noir_status nvc_vt_iommu_create_512gb_page_map(noir_dmar_manager_p dmar_manager,
 					intel_iommu_stage2_pml5e_p pml5e_p=dmar_manager->pml5.virt;
 					ia32_addr_translator gat;
 					gat.value=gpa;
-					pml5e_p[gat.pml5e_offset].read=pml5e_p[gat.pml5e_offset].write=pml5e_p[gat.pml5e_offset].execute=true;
+					pml5e_p[gat.pml5e_offset].read=pml5e_p[gat.pml5e_offset].write=true;
 					pml5e_p[gat.pml5e_offset].pml4_ptr=page_count(pml4e_p->phys);
 					*descriptor=pml4e_p;
 					st=noir_success;
@@ -429,7 +429,7 @@ noir_status nvc_vt_iommu_create_1gb_page_map(noir_dmar_manager_p dmar_manager,u6
 			// Set-up Identity-Mapping if this PDPTE is created to map huge pages.
 			for(u32 i=0;i<page_table_entries64;i++)
 			{
-				pdpte_p[i].read=pdpte_p[i].write=pdpte_p[i].execute=pdpte_p[i].huge_page=true;
+				pdpte_p[i].read=pdpte_p[i].write=pdpte_p[i].huge_page=true;
 				pdpte_p[i].page_ptr=page_1gb_count(gpa)+i;
 			}
 		}
@@ -471,7 +471,7 @@ noir_status nvc_vt_iommu_create_1gb_page_map(noir_dmar_manager_p dmar_manager,u6
 						// Set-up Identity-Mapping if this PDPTE is created to map huge pages.
 						for(u32 i=0;i<page_table_entries64;i++)
 						{
-							pdpte_p->huge[i].read=pdpte_p->huge[i].write=pdpte_p->huge[i].execute=pdpte_p->huge[i].huge_page=true;
+							pdpte_p->huge[i].read=pdpte_p->huge[i].write=pdpte_p->huge[i].huge_page=true;
 							pdpte_p->huge[i].page_ptr=page_1gb_count(pdpte_p->gpa_start)+i;
 						}
 					}
@@ -482,7 +482,7 @@ noir_status nvc_vt_iommu_create_1gb_page_map(noir_dmar_manager_p dmar_manager,u6
 						intel_iommu_stage2_pml4e_p pml4e_p=dmar_manager->pml4.virt;	// Note that this is a shadowed variable.
 						ia32_addr_translator gat;
 						gat.value=gpa;
-						pml4e_p[gat.pml4e_offset].read=pml4e_p[gat.pml4e_offset].write=pml4e_p[gat.pml4e_offset].execute=true;
+						pml4e_p[gat.pml4e_offset].read=pml4e_p[gat.pml4e_offset].write=true;
 						pml4e_p[gat.pml4e_offset].pdpt_ptr=page_count(pdpte_p->phys);
 						*descriptor=pdpte_p;
 						st=noir_success;
@@ -491,7 +491,7 @@ noir_status nvc_vt_iommu_create_1gb_page_map(noir_dmar_manager_p dmar_manager,u6
 					{
 						ia32_addr_translator gat;
 						gat.value=gpa;
-						pml4e_p->virt[gat.pml4e_offset].read=pml4e_p->virt[gat.pml4e_offset].write=pml4e_p->virt[gat.pml4e_offset].execute=true;
+						pml4e_p->virt[gat.pml4e_offset].read=pml4e_p->virt[gat.pml4e_offset].write=true;
 						pml4e_p->virt[gat.pml4e_offset].pdpt_ptr=page_count(pdpte_p->phys);
 						*descriptor=pdpte_p;
 						st=noir_success;
@@ -546,7 +546,7 @@ noir_status nvc_vt_iommu_create_2mb_page_map(noir_dmar_manager_p dmar_manager,u6
 					// Set-up Identity-Mapping if this PDE is created to map large pages.
 					for(u32 i=0;i<page_table_entries64;i++)
 					{
-						pde_p->large[i].read=pde_p->large[i].write=pde_p->large[i].execute=pde_p->large[i].large_page=true;
+						pde_p->large[i].read=pde_p->large[i].write=pde_p->large[i].large_page=true;
 						pde_p->large[i].page_ptr=page_2mb_count(pde_p->gpa_start)+i;
 					}
 				}
@@ -557,7 +557,7 @@ noir_status nvc_vt_iommu_create_2mb_page_map(noir_dmar_manager_p dmar_manager,u6
 					intel_iommu_stage2_pdpte_p pdpte_p=dmar_manager->pdpte.virt;	// Note that this is a shadowed variable.
 					ia32_addr_translator gat;
 					gat.value=gpa;
-					pdpte_p[gat.pdpte_offset].read=pdpte_p[gat.pdpte_offset].write=pdpte_p[gat.pdpte_offset].execute=true;
+					pdpte_p[gat.pdpte_offset].read=pdpte_p[gat.pdpte_offset].write=true;
 					pdpte_p[gat.pdpte_offset].huge_page=false;
 					pdpte_p[gat.pdpte_offset].pde_ptr=page_count(pde_p->phys);
 					*descriptor=pde_p;
@@ -568,7 +568,7 @@ noir_status nvc_vt_iommu_create_2mb_page_map(noir_dmar_manager_p dmar_manager,u6
 					// PDPTE is not the top-level. Find the descriptor.
 					ia32_addr_translator gat;
 					gat.value=gpa;
-					pdpte_p->virt[gat.pdpte_offset].read=pdpte_p->virt[gat.pdpte_offset].write=pdpte_p->virt[gat.pdpte_offset].execute=true;
+					pdpte_p->virt[gat.pdpte_offset].read=pdpte_p->virt[gat.pdpte_offset].write=true;
 					pdpte_p->virt[gat.pdpte_offset].huge_page=false;
 					pdpte_p->virt[gat.pdpte_offset].pde_ptr=page_count(pde_p->phys);
 					*descriptor=pde_p;
@@ -621,13 +621,13 @@ noir_status nvc_vt_iommu_create_4kb_page_map(noir_dmar_manager_p dmar_manager,u6
 				// Set-up Identity-Mapping.
 				for(u32 i=0;i<page_table_entries64;i++)
 				{
-					pte_p->virt[i].read=pte_p->virt[i].write=pte_p->virt[i].execute=true;
+					pte_p->virt[i].read=pte_p->virt[i].write=true;
 					pte_p->virt[i].page_ptr=page_4kb_count(pte_p->gpa_start)+i;
 				}
 				// Set-up upper-level mapping.
 				ia32_addr_translator gat;
 				gat.value=gpa;
-				pde_p->virt[gat.pde_offset].read=pde_p->virt[gat.pde_offset].write=pde_p->virt[gat.pde_offset].execute=true;
+				pde_p->virt[gat.pde_offset].read=pde_p->virt[gat.pde_offset].write=true;
 				pde_p->virt[gat.pde_offset].large_page=false;
 				pde_p->virt[gat.pde_offset].pte_ptr=page_count(pte_p->phys);
 				*descriptor=pte_p;
@@ -946,6 +946,16 @@ noir_status nvc_vt_iommu_initialize()
 			}
 			st=nvc_acpi_search_table('RAMD',(acpi_common_description_header_p)dmar_table,(acpi_common_description_header_p*)&dmar_table);
 		}
+#if defined(_hv_type1)
+		// Destroy all DMAR ACPI signatures...
+		st=nvc_acpi_search_table('RAMD',null,(acpi_common_description_header_p*)&dmar_table);
+		while(st==noir_success)
+		{
+			dmar_table->header.signature='????';
+			nvd_printf("Destroying DMAR Signature at 0x%p...\n",dmar_table);
+			st=nvc_acpi_search_table('RAMD',(acpi_common_description_header_p)dmar_table,(acpi_common_description_header_p*)&dmar_table);
+		}
+#endif
 		nvc_vt_iommu_activate();
 		// Eventually, register the IOMMU MMIO Regions.
 		st=nvc_vt_iommu_register_mmio_region(dmarm);
@@ -973,7 +983,11 @@ void nvc_vt_iommu_activate()
 			intel_iommu_msi_ctrl_register fault_msi_ctrl;
 			nv_dprintf("Working with IOMMU at 0x%llX...\n",dmarm->bars[i].phys);
 			// Do not inadvertently disable anything that was enabled by the platform (OS, firmware, etc.).
-#if !defined(_hv_type1)
+#if defined(_hv_type1)
+			// Currently, NoirVisor will disable IOMMU fault notification.
+			fault_msi_ctrl.value=0;
+			noir_mmio_write32((u64)dmarm->bars[i].virt+mmio_offset_fault_control,fault_msi_ctrl.value);
+#else
 			fault_msi_ctrl.value=noir_mmio_read32((u64)dmarm->bars[i].virt+mmio_offset_fault_control);
 			if(fault_msi_ctrl.int_mask==false)
 			{
@@ -994,7 +1008,6 @@ void nvc_vt_iommu_activate()
 			noir_mmio_write64((u64)dmarm->bars[i].virt+mmio_offset_root_table_ptr,root_ptr.value);
 			// Inform the IOMMU unit that Root-Table Pointer is updated...
 			nvc_vt_iommu_set_global_command(&dmarm->bars[i],intel_iommu_global_set_root_ptr,true);
-			noir_int3();
 			// Invalidate Context-Cache.
 			nv_dprintf("Invalidating Context-Cache...\n");
 			nvc_vt_iommu_flush_context_cache(&dmarm->bars[i],0,0,0,intel_iommu_context_inval_global);
