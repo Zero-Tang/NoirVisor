@@ -1,0 +1,175 @@
+/*
+ * NoirVisor Core in Rust
+ * 
+ * Copyright (c) Zero Tang, 2024. All rights reserved.
+ * 
+ * This file defines I/O Filtering Architecture of NoirVisor Core in Rust.
+ * 
+ * This program is distributed in the hope that it will be useful, but 
+ * without any warranty (no matter implied warranty or merchantability
+ * or fitness for a particular purpose, etc.).
+ */
+
+use core::{ffi::c_void,cmp::Ordering,ops::Add};
+use alloc::{string::String,vec::Vec};
+
+use crate::{Status, NOIR_DISPATCH_FAILURE};
+
+pub type IoInputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*mut c_void);
+pub type IoOutputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*const c_void);
+
+// Use generics on I/O filtering architecture, as the sizes of addresses can vary.
+// For example, in x86 systems, there are two I/O subsystems: Port I/O and Memory-Mapped I/O.
+// PIO is 16-bit addressing, and MMIO is 64-bit addressing.
+// So PIO will use IoRegion<u16>, and MMIO will use IoRegion<u64>.
+// There might be some other weirdo addressing modes (probably not even simple integers) of I/O in other architectures, so use generics to reduce problems.
+pub struct IoRegion<T>
+{
+	pub name:String,
+	pub input_handler:IoInputFilterHandler<T>,
+	pub output_handler:IoOutputFilterHandler<T>,
+	pub addr:T,
+	pub size:T
+}
+
+impl<T:PartialOrd+Add<Output=T>+Copy> IoRegion<T>
+{
+	/// ## `new` method
+	/// This method will create a new I/O region. \
+	/// You must also use `add_region` method from `IoAddressSpace` to bind the new region to a specific I/O address space.
+	pub fn new(name:&str,input_handler:IoInputFilterHandler<T>,output_handler:IoOutputFilterHandler<T>,addr:T,size:T)->Self
+	{
+		Self
+		{
+			name:String::from(name),
+			input_handler,
+			output_handler,
+			addr,
+			size
+		}
+	}
+
+	/// ## `try_dispatch` method
+	/// This is an internal method which helps binary search when dispatching I/O.
+	fn try_dispatch(&self,addr:T)->Ordering
+	{
+		if addr<self.addr
+		{
+			Ordering::Less
+		}
+		else if addr>=self.addr+self.size
+		{
+			Ordering::Greater
+		}
+		else
+		{
+			Ordering::Equal
+		}
+	}
+}
+
+impl<T:PartialEq> PartialEq for IoRegion<T>
+{
+	fn eq(&self, other: &Self) -> bool
+	{
+		self.addr==other.addr
+	}
+}
+
+impl<T:PartialOrd> PartialOrd for IoRegion<T>
+{
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering>
+	{
+		if self.addr<other.addr
+		{
+			Some(Ordering::Less)
+		}
+		else if self.addr>other.addr
+		{
+			Some(Ordering::Greater)
+		}
+		else
+		{
+			Some(Ordering::Equal)
+		}
+	}
+}
+
+pub struct IoAddressSpace<T>
+{
+	pub regions:Vec<IoRegion<T>>
+}
+
+impl<T:PartialOrd+Add<Output=T>+Copy> IoAddressSpace<T>
+{
+	/// ## `add_region` method
+	/// This method binds a region to this I/O address space. 
+	pub fn add_region(&mut self,region:IoRegion<T>)
+	{
+		for i in 0..self.regions.len()
+		{
+			if region<self.regions[i]
+			{
+				self.regions.insert(i,region);
+				return;
+			}
+		}
+		self.regions.push(region);
+	}
+
+	/// ## `try_dispatch` method
+	/// This is an internal method which uses binary search to dispatch I/O.
+	fn try_dispatch(&self,addr:T)->Option<&IoRegion<T>>
+	{
+		// Use binary search.
+		let mut lo:isize=0;
+		let mut hi:isize=self.regions.len() as isize;
+		while hi>=lo
+		{
+			let mid:usize=((lo+hi)>>1) as usize;
+			let r=self.regions[mid].try_dispatch(addr);
+			match r
+			{
+				Ordering::Less=>lo=(mid+1) as isize,
+				Ordering::Greater=>hi=(mid-1) as isize,
+				Ordering::Equal=>
+				{
+					return Some(&self.regions[mid]);
+				}
+			}
+		}
+		None
+	}
+
+	/// ## `dispatch_input` method
+	/// This method dispatches an input operation to the corresponding handler.
+	pub fn dispatch_input(&self,addr:T,size:T,value:*mut c_void)->Result<(),Status>
+	{
+		let io_region=self.try_dispatch(addr);
+		match io_region
+		{
+			Some(r)=>
+			{
+				(r.input_handler)(r,addr,size,value);
+				Ok(())
+			}
+			None=>Err(NOIR_DISPATCH_FAILURE)
+		}
+	}
+
+	/// ## `dispatch_output` method
+	/// This method dispatches an output operation to the corresponding handler.
+	pub fn dispatch_output(&self,addr:T,size:T,value:*const c_void)->Result<(),Status>
+	{
+		let io_region=self.try_dispatch(addr);
+		match io_region
+		{
+			Some(r)=>
+			{
+				(r.output_handler)(r,addr,size,value);
+				Ok(())
+			}
+			None=>Err(NOIR_DISPATCH_FAILURE)
+		}
+	}
+}

@@ -417,7 +417,7 @@ impl SvmNptManager
 				let pde_array=md.virt as *mut NptPde;
 				let pde_d=SvmNptPageTableDescriptor
 				{
-					gpa_start:gpa_start,
+					gpa_start,
 					table:md
 				};
 				let pdpte_p=self.locate_pdpte_mut(gpa);
@@ -440,14 +440,7 @@ impl SvmNptManager
 
 	fn locate_pde_mut(&mut self,gpa:u64)->Option<&mut SvmNptPageTableDescriptor>
 	{
-		for pde_p in &mut self.pde
-		{
-			if gpa>=pde_p.gpa_start && gpa<pde_p.gpa_start+PAGE_1GB_SIZE as u64
-			{
-				return Some(pde_p);
-			}
-		}
-		None
+		self.pde.iter_mut().find(|pde_p| gpa>=pde_p.gpa_start && gpa<pde_p.gpa_start+PAGE_1GB_SIZE as u64)
 	}
 
 	pub fn update_pde(&mut self,gpa:u64,hpa:u64,r:bool,w:bool,x:bool,l:bool)

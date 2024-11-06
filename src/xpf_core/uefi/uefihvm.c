@@ -248,28 +248,3 @@ void NoirFinalizeCodeIntegrity()
 {
 	noir_finalize_ci();
 }
-
-// Sleep-and-Wake setup in ACPI.
-BOOLEAN noir_query_pm1_port_address(OUT UINT16 *PM1a,OUT UINT16 *PM1b)
-{
-	EFI_ACPI_2_0_FIXED_ACPI_DESCRIPTION_TABLE *Fadt=(EFI_ACPI_2_0_FIXED_ACPI_DESCRIPTION_TABLE*)EfiLocateFirstAcpiTable(EFI_ACPI_2_0_FIXED_ACPI_DESCRIPTION_TABLE_SIGNATURE);
-	if(Fadt)
-	{
-		Print(L"Located ACPI FADT at 0x%p\n",Fadt);
-		// Use non-extended data for now.
-		*PM1a=(UINT16)Fadt->Pm1aCntBlk;
-		*PM1b=(UINT16)Fadt->Pm1bCntBlk;
-		// Do some assertions.
-		if(Fadt->XPm1aCntBlk.AddressSpaceId!=EFI_ACPI_2_0_SYSTEM_IO)
-			Print(L"X-PM1a does not use port I/O! It use space type %u instead!\n",Fadt->XPm1aCntBlk.AddressSpaceId);
-		else
-			Print(L"X-PM1a register bit width: %u\n",Fadt->XPm1aCntBlk.RegisterBitWidth);
-		if(Fadt->XPm1bCntBlk.AddressSpaceId!=EFI_ACPI_2_0_SYSTEM_IO)
-			Print(L"X-PM1b does not use port I/O! It use space type %u instead!\n",Fadt->XPm1bCntBlk.AddressSpaceId);
-		else
-			Print(L"X-PM1b register bit width: %u\n",Fadt->XPm1bCntBlk.RegisterBitWidth);
-		Print(L"X-PM1a Address=0x%llX, PM1a Address=0x%X\n",Fadt->XPm1aCntBlk.Address,Fadt->Pm1aCntBlk);
-		Print(L"X-PM1b Address=0x%llX, PM1b Address=0x%X\n",Fadt->XPm1bCntBlk.Address,Fadt->Pm1bCntBlk);
-	}
-	return FALSE;
-}

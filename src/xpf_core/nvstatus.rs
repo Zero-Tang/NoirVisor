@@ -97,6 +97,7 @@ impl Display for Status
 			NOIR_UNINITIALIZED=>Some("Uninitialized"),
 			NOIR_NSV_VIOLATION=>Some("NoirVisor Secure Virtualization policy violated"),
 			NOIR_ACPI_NO_SUCH_TABLE=>Some("The specified ACPI table can't be found"),
+			NOIR_DISPATCH_FAILURE=>Some("This I/O request is not properly dispatched"),
 			NOIR_NOT_INTEL=>Some("This CPU is not manufactured by Intel"),
 			NOIR_VMX_NOT_SUPPORTED=>Some("This CPU does not support Intel VT-x"),
 			NOIR_EPT_NOT_SUPPORTED=>Some("This CPU does not support Extended Page Tables"),
@@ -140,6 +141,7 @@ pub const NOIR_HARDWARE_ERROR:Status=Status::new(Error,Xpf,12);
 pub const NOIR_UNINITIALIZED:Status=Status::new(Error,Xpf,13);
 pub const NOIR_NSV_VIOLATION:Status=Status::new(Error,Xpf,14);
 pub const NOIR_ACPI_NO_SUCH_TABLE:Status=Status::new(Error,Xpf,15);
+pub const NOIR_DISPATCH_FAILURE:Status=Status::new(Error,Xpf,16);
 
 // Error-level: VT-Core
 pub const NOIR_NOT_INTEL:Status=Status::new(Error,Intel,0);

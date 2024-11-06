@@ -105,6 +105,8 @@ pub fn dbg_print(args: core::fmt::Arguments)
 	}
 }
 
+/// # Safety
+/// This function is intended to be called from C codes of NoirVisor.
 #[no_mangle] pub unsafe extern "C" fn noir_debug_output(buffer:*const u8,length:usize)
 {
 	match DEBUGGER
