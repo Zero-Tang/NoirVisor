@@ -17,6 +17,14 @@ endif
 
 .code
 
+__chkstk proc
+
+	; In Rust, sorting a Vec will call __chkstk.
+	; The ntoskrnl's implementation of __chkstk does nothing and returns.
+	ret
+
+__chkstk endp
+
 ifdef _amd64
 
 noir_hbreak proc

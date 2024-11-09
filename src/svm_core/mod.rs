@@ -289,6 +289,7 @@ impl HypervisorEssentials for SvmHypervisor
 			Some(md)=>self.iopm=md,
 			None=>fail_cleanup!("Failed to allocate I/O Permission-Map!")
 		}
+		// Initialize NPT.
 		self.nptm.build_identity_map();
 		self.vcpu_count=unsafe{noir_get_processor_count()};
 		for i in 0..self.vcpu_count
@@ -323,6 +324,7 @@ impl HypervisorEssentials for SvmHypervisor
 			self.vcpus.push(vcpu);
 		}
 		self.nptm.protect_allocated_pages();
+		self.nptm.protect_ci();
 		unsafe
 		{
 			noir_generic_call(nvc_svm_subvert_processor_thunk,self as *mut Self as *mut c_void);

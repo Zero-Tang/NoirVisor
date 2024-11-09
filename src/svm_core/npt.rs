@@ -17,6 +17,8 @@ use paste::paste;
 
 use crate::{print,println,dbg_print,xpf_core::nvbdk::*};
 
+use super::xpf_core::ci::enum_ci_phys_page;
+
 // Use a macro to reduce effort making bit definitions for nested page table entries.
 macro_rules! build_npt_entry_bit_def
 {
@@ -316,6 +318,7 @@ impl NptPte
 	}
 }
 
+#[derive(Clone, Copy)]
 pub struct SvmNptPageTableDescriptor
 {
 	pub table:MemoryDescriptor,
@@ -396,7 +399,7 @@ impl SvmNptManager
 		}
 	}
 
-	pub fn locate_pdpte_mut(&mut self,gpa:u64)->&mut NptPdpte
+	fn locate_pdpte_mut(&mut self,gpa:u64)->&mut NptPdpte
 	{
 		let pfn=page_1gb_count(gpa as usize);
 		unsafe 
@@ -406,35 +409,40 @@ impl SvmNptManager
 		}
 	}
 
-	pub fn split_pdpte(&mut self,gpa:u64)
+	fn split_pdpte(&mut self,gpa:u64)
 	{
-		let pde_md=alloc_contd_pages(PAGE_SIZE);
-		match pde_md
+		// Check if we have splitted it before.
+		if self.locate_pde_mut(gpa).is_none()
 		{
-			Some(md)=>
+			// Target PDE is absent.
+			let pde_md=alloc_contd_pages(PAGE_SIZE);
+			match pde_md
 			{
-				let gpa_start=page_1gb_base(gpa as usize) as u64;
-				let pde_array=md.virt as *mut NptPde;
-				let pde_d=SvmNptPageTableDescriptor
+				Some(md)=>
 				{
-					gpa_start,
-					table:md
-				};
-				let pdpte_p=self.locate_pdpte_mut(gpa);
-				for i in 0..512
-				{
-					unsafe 
+					let gpa_start=page_1gb_base(gpa as usize) as u64;
+					let pde_array=md.virt as *mut NptPde;
+					let pde_d=SvmNptPageTableDescriptor
 					{
-						let new_pde=NptPde::new_large(pdpte_p.get_present(),pdpte_p.get_write(),pdpte_p.get_user(),gpa_start+page_2mb_mult(i) as u64,pdpte_p.get_no_execute());
-						pde_array.add(i).write(new_pde);
+						gpa_start,
+						table:md
+					};
+					let pdpte_p=self.locate_pdpte_mut(gpa);
+					for i in 0..512
+					{
+						unsafe 
+						{
+							let new_pde=NptPde::new_large(pdpte_p.get_present(),pdpte_p.get_write(),pdpte_p.get_user(),gpa_start+page_2mb_mult(i) as u64,pdpte_p.get_no_execute());
+							pde_array.add(i).write(new_pde);
+						}
 					}
+					println!("Splitted PDPTE Entry: {:p} for GPA 0x{:016X}",pdpte_p,gpa);
+					pdpte_p.set_page_size(false);
+					pdpte_p.set_next_level_base(md.phys);
+					self.pde.push(pde_d);
 				}
-				println!("Splitted PDPTE Entry: {:p} for GPA 0x{:016X}",pdpte_p,gpa);
-				pdpte_p.set_page_size(false);
-				pdpte_p.set_next_level_base(md.phys);
-				self.pde.push(pde_d);
+				None=>panic!("Failed to split PDPTE while allocating PDE!")
 			}
-			None=>panic!("Failed to split PDPTE while allocating PDE!")
 		}
 	}
 
@@ -469,6 +477,85 @@ impl SvmNptManager
 		}
 	}
 
+	fn split_pde(&mut self,gpa:u64)
+	{
+		// Check if we have splitted it before.
+		if self.locate_pte_mut(gpa).is_none()
+		{
+			// This 2MiB page has not been described yet.
+			let pte_md=alloc_contd_pages(PAGE_SIZE);
+			match pte_md
+			{
+				Some(md)=>
+				{
+					// Also split the PDPTE.
+					self.split_pdpte(gpa);
+					let pde_op=self.locate_pde_mut(gpa);
+					assert!(pde_op.is_some(),"PDPTE was not splitted!");
+					if let Some(pde_d)=pde_op
+					{
+						let pfn_index=page_2mb_count(gpa as usize);
+						let pde_index=page_entry_index(pfn_index);
+						let pde_p=unsafe{pde_d.table.virt.byte_add(pde_index<<3)} as *mut NptPde;
+						let pte_d=SvmNptPageTableDescriptor
+						{
+							gpa_start:page_2mb_base(gpa as usize) as u64,
+							table:md
+						};
+						let pte_array=md.virt as *mut NptPte;
+						for i in 0..512
+						{
+							unsafe
+							{
+								let new_pte=NptPte::new((*pde_p).get_present(),(*pde_p).get_write(),(*pde_p).get_user(),pte_d.gpa_start+page_4kb_mult(i) as u64,(*pde_p).get_no_execute());
+								pte_array.add(i).write(new_pte);
+							}
+						}
+						println!("Splitted PDE Entry: {:p} for GPA 0x{:016X}",pde_p,gpa);
+						unsafe
+						{
+							(*pde_p).set_page_size(false);
+							(*pde_p).set_next_level_base(md.phys);
+						}
+						self.pte.push(pte_d);
+					}
+				}
+				None=>panic!("Failed to split PDE while allocating PDE! GPA=0x{:016X}",gpa)
+			}
+		}
+	}
+
+	fn locate_pte_mut(&mut self,gpa:u64)->Option<&mut SvmNptPageTableDescriptor>
+	{
+		self.pte.iter_mut().find(|pte_p| gpa>=pte_p.gpa_start && gpa<pte_p.gpa_start+PAGE_2MB_SIZE as u64)
+	}
+
+	pub fn update_pte(&mut self,gpa:u64,hpa:u64,r:bool,w:bool,x:bool)
+	{
+		let mut pte_op=self.locate_pte_mut(gpa);
+		if pte_op.is_none()
+		{
+			// Build PTE.
+			self.split_pde(gpa);
+			pte_op=self.locate_pte_mut(gpa);
+		}
+		match pte_op
+		{
+			Some(pte_d)=>
+			{
+				let pte_array=pte_d.table.virt as *mut NptPte;
+				let index=page_entry_index(page_4kb_count(gpa as usize));
+				unsafe
+				{
+					let pte_p=&mut *pte_array.add(index);
+					let pte_v=NptPte::new(r,w,true,hpa,!x);
+					*pte_p=pte_v;
+				}
+			}
+			None=>panic!("Failed to update PTE for GPA 0x{:016X}!",gpa)
+		}
+	}
+
 	extern "C" fn enum_page_rt(start:u64,length:u64,context:*mut c_void)
 	{
 		let s:&mut Self=unsafe{&mut *(context as *mut Self)};
@@ -485,6 +572,16 @@ impl SvmNptManager
 		unsafe
 		{
 			noir_enum_allocated_large_pages(SvmNptManager::enum_page_rt,self as *mut Self as *mut c_void);
+		}
+	}
+
+	pub fn protect_ci(&mut self)
+	{
+		let ci_pages=unsafe{&*enum_ci_phys_page()};
+		// Enumerate all pages in CI and update the PTEs.
+		for p in ci_pages
+		{
+			self.update_pte(*p,*p,true,false,true);
 		}
 	}
 

@@ -11,23 +11,90 @@
  */
 
 use core::ffi::*;
+use alloc::vec::Vec;
 
-#[no_mangle] pub extern "C" fn noir_add_section_to_ci(_base:*const c_void,_size:usize,_enable_scan:bool)->bool
+use crate::{println,print,dbg_print};
+
+use super::nvbdk::{bytes_to_pages, noir_get_physical_address, page_mult, PAGE_SIZE};
+
+static mut CI_PAGES:Vec<u64>=Vec::new();
+
+pub fn enum_ci_phys_page()->*const Vec<u64>
 {
+	&raw const CI_PAGES
+}
+
+// We will use this routine to check if a page is protected in Code-Integrity.
+#[allow(static_mut_refs)]
+pub fn is_ci_phys_page(phys:u64)->bool
+{
+	let mut lo:isize=0;
+	// Use binary search to reduce running time complexity.
+	let mut hi=unsafe{CI_PAGES.len()} as isize;
+	while hi>=lo
+	{
+		let mid=((lo+hi)>>1) as usize;
+		let cur_page=unsafe{CI_PAGES[mid]};
+		if phys<cur_page
+		{
+			hi=(mid-1) as isize;
+		}
+		else if phys>=cur_page+PAGE_SIZE as u64
+		{
+			lo=(mid+1) as isize;
+		}
+		else
+		{
+			return true;
+		}
+	}
 	false
 }
 
-#[no_mangle] pub extern "C" fn noir_activate_ci()->bool
+/// # Safety
+/// `noir_add_section_to_ci` must be called by C functions.
+#[no_mangle] pub unsafe extern "C" fn noir_add_section_to_ci(base:*mut c_void,size:usize,_enable_scan:bool)->bool
 {
-	false
+	let page_num=bytes_to_pages(size);
+	for i in 0..page_num
+	{
+		let phys=noir_get_physical_address(base)+page_mult(i) as u64;
+		// Add this page to CI.
+		#[allow(static_mut_refs)]
+		CI_PAGES.push(phys);
+	}
+	true
 }
 
-#[no_mangle] pub extern "C" fn noir_initialize_ci(_soft_ci:bool,_hard_ci:bool)->bool
+/// # Safety
+/// `noir_activate_ci` must be called by C functions.
+#[allow(static_mut_refs)]
+#[no_mangle] pub unsafe extern "C" fn noir_activate_ci()->bool
 {
-	false
+	// Sort the list since we will use binary search to confirm if a page belongs to CI.
+	CI_PAGES.sort();
+	true
+}
+
+#[no_mangle] pub extern "C" fn noir_initialize_ci(soft_ci:bool,hard_ci:bool)->bool
+{
+	if soft_ci
+	{
+		println!("Software-based Code-Integrity is deprecated!\nIgnoring software CI request...");
+	}
+	if !hard_ci
+	{
+		println!("Hardware-based Code-Integrity is required!");
+		false
+	}
+	else
+	{
+		// There is nothing to do in Rust when we initialize CI.
+		true
+	}
 }
 
 #[no_mangle] pub extern "C" fn noir_finalize_ci()
 {
-
+	// There is nothing to do in Rust when we finalize CI.
 }

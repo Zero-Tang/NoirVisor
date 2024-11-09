@@ -53,7 +53,7 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 - Brace marks should go to the new line. Comments and codes are prohibited on lines with half-braces. For example:
 	```Rust
 	// Commments can go here.
-	if(a>b)	// Comments can go here.
+	if a>b	// Comments can go here.
 	{
 		// Commments can go here.
 		fn_true();		// Commments can go here.
@@ -82,4 +82,4 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 - Naming convention is the same to the [Rust default](https://doc.rust-lang.org/1.0.0/style/style/naming/README.html), with following additions:
 	- Architecture/Hardware-specific names must begin with its name ID as prefix.
 	- Method names must be concise, preferably a verb with optional nouns and/or adverbs.
-- Modules that handle VM-Exits forbid using the global allocator. An automated allocator checker will be enforced.
+- Modules that handle VM-Exits forbid using the global allocator. An automated allocator checker will be enforced in future.

@@ -11,6 +11,7 @@
  */
 
 use npt::NptFaultCode;
+use xpf_core::ci::is_ci_phys_page;
 
 use super::*;
 use crate::mshv_core::cpuid::*;
@@ -123,6 +124,11 @@ impl SvmVcpu
 		let fault:NptFaultCode=unsafe{vmread(vmcb,EXIT_INFO1)};
 		let gpa:u64=unsafe{vmread(vmcb,EXIT_INFO2)};
 		let rip:u64=unsafe{vmread(vmcb,GUEST_RIP)};
+		// Check if this #NPF is due to Code Integrity violation.
+		if is_ci_phys_page(gpa)
+		{
+			println!("CI-fault is intercepted!");
+		}
 		panic!("Nested Page Fault is intercepted! rip=0x{:016X}, GPA=0x{:016X}\nReason: {}",rip,gpa,fault);
 	}
 
