@@ -13,6 +13,7 @@
 use core::{ffi::c_void, ptr::null_mut};
 use alloc::vec::Vec;
 use npt::SvmNptManager;
+use xpf_core::bitmap::set_bitmap;
 
 use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*},*};
 use amd64::{cpuid::*,msr::*};
@@ -37,6 +38,16 @@ pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*4;
 	pub reserved:u32
 }
 
+#[derive(Clone, Copy)]
+#[repr(C)] pub struct SvmNestedVcpu
+{
+	pub svme:bool,
+	pub ignne:bool,
+	pub hsave_pa:u64,
+	pub vmcr:u64,
+	pub svm_key:u64
+}
+
 #[derive(Copy,Clone)] #[repr(C)] pub struct SvmVcpu
 {
 	pub vmcb:MemoryDescriptor,
@@ -48,6 +59,7 @@ pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*4;
 	pub apic_id:u8,
 	pub x2apic_id:u32,
 	pub cpuid_fms:u32,
+	pub nested_hvm:SvmNestedVcpu,
 }
 
 impl SvmVcpu
@@ -65,6 +77,14 @@ impl SvmVcpu
 			apic_id:0,
 			x2apic_id:0,
 			cpuid_fms:0,
+			nested_hvm:SvmNestedVcpu
+			{
+				svme:false,
+				ignne:false,
+				hsave_pa:0,
+				vmcr:0,
+				svm_key:0
+			}
 		}
 	}
 }
@@ -281,7 +301,45 @@ impl HypervisorEssentials for SvmHypervisor
 		let iopm=alloc_contd_pages(PAGE_SIZE*3);
 		match msrpm
 		{
-			Some(md)=>self.msrpm=md,
+			Some(md)=>
+			{
+				self.msrpm=md;
+				// Setup basic interceptions to MSRs that may interfere with SVM normal operations.
+				// This is also for nested virtualization.
+				unsafe
+				{
+					// Use macros to build MSR Permission Map more elegantly.
+					macro_rules! intercept_read
+					{
+						($index:expr) =>
+						{
+							set_bitmap(self.msrpm.virt,0x2000,svm_msrpm_bit($index,false));
+						};
+					}
+					macro_rules! intercept_write
+					{
+						($index:expr) =>
+						{
+							set_bitmap(self.msrpm.virt,0x2000,svm_msrpm_bit($index,true));
+						};
+					}
+					macro_rules! intercept_any
+					{
+						($index:expr) =>
+						{
+							intercept_read!($index);
+							intercept_write!($index);
+						};
+					}
+					intercept_any!(MSR_EFER);
+					intercept_any!(MSR_TSC_RATIO);
+					intercept_any!(MSR_VMCR);
+					intercept_any!(MSR_IGNNE);
+					intercept_any!(MSR_SMM_CTRL);
+					intercept_any!(MSR_HSAVE_PA);
+					intercept_any!(MSR_SVM_KEY);
+				}
+			}
 			None=>fail_cleanup!("Failed to allocate MSR Permission-Map!")
 		}
 		match iopm
@@ -289,8 +347,6 @@ impl HypervisorEssentials for SvmHypervisor
 			Some(md)=>self.iopm=md,
 			None=>fail_cleanup!("Failed to allocate I/O Permission-Map!")
 		}
-		// Initialize NPT.
-		self.nptm.build_identity_map();
 		self.vcpu_count=unsafe{noir_get_processor_count()};
 		for i in 0..self.vcpu_count
 		{
@@ -323,6 +379,8 @@ impl HypervisorEssentials for SvmHypervisor
 			vcpu.vcpu_id=i;
 			self.vcpus.push(vcpu);
 		}
+		// Initialize NPT.
+		self.nptm.build_identity_map();
 		self.nptm.protect_allocated_pages();
 		self.nptm.protect_ci();
 		unsafe

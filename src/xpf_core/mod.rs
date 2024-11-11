@@ -3,6 +3,7 @@ pub mod asm;
 pub mod dlalloc;
 pub mod nvstatus;
 pub mod ci;
+pub mod bitmap;
 pub mod ioflt;
 pub mod x86;
 pub mod nvbdk;

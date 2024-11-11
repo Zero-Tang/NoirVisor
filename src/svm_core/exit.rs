@@ -10,8 +10,10 @@
  * or fitness for a particular purpose, etc.).
  */
 
+use paste::paste;
+
 use npt::NptFaultCode;
-use xpf_core::ci::is_ci_phys_page;
+use xpf_core::{ci::is_ci_phys_page, x86::interrupts::*};
 
 use super::*;
 use crate::mshv_core::cpuid::*;
@@ -75,6 +77,175 @@ impl SvmVcpu
 			(&raw mut gpr_state.rdx).cast::<u32>().write(d);
 			// Advance the rip.
 			advance_rip(self.vmcb.virt);
+		}
+	}
+
+	/// # `handle_rdmsr`
+	/// Handles an incoming `rdmsr` on this vCPU.
+	/// Return `Some(u64)` if this `rdmsr` request should advance rip.
+	/// Return `None` if this `rdmsr` request failed. Exception was injected.
+	fn handle_rdmsr(&mut self,index:u32)->Option<u64>
+	{
+		match index
+		{
+			MSR_EFER=>
+			{
+				// Read the EFER value from VMCB.
+				let v:u64=unsafe{vmread(self.vmcb.virt,GUEST_EFER)};
+				// The SVME bit should be filtered.
+				if self.nested_hvm.svme
+				{
+					Some(v)
+				}
+				else
+				{
+					Some(v&!MSR_EFER_SVME)
+				}
+			}
+			MSR_TSC_RATIO=>
+			{
+				// TSC Ratio is not supported.
+				unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+				None
+			}
+			MSR_VMCR=>
+			{
+				Some(self.nested_hvm.vmcr)
+			}
+			MSR_IGNNE=>
+			{
+				Some(if self.nested_hvm.ignne {1} else {0})
+			}
+			MSR_SMM_CTRL=>
+			{
+				unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+				None
+			}
+			MSR_HSAVE_PA=>
+			{
+				Some(self.nested_hvm.hsave_pa)
+			}
+			MSR_SVM_KEY=>
+			{
+				// For security reasons, reads from this MSR always returns zero.
+				Some(0)
+			}
+			_=>
+			{
+				println!("Unexpected rdmsr is intercepted! Index=0x{:X}",index);
+				unsafe
+				{
+					inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
+				}
+				None
+			}
+		}
+	}
+
+	/// # `handle_wrmsr`
+	/// Handles an incoming `wrmsr` on this vCPU.
+	/// Return `true` if this `wrmsr` request should advance rip.
+	/// Return `false` if this `wrmsr` request failed. Exception was injected.
+	fn handle_wrmsr(&mut self,index:u32,value:u64)->bool
+	{
+		match index
+		{
+			MSR_EFER=>
+			{
+				let svme=(value&MSR_EFER_SVME)==MSR_EFER_SVME;
+				self.nested_hvm.svme=svme;
+				unsafe
+				{
+					// SVME bit should always be set.
+					vmwrite(self.vmcb.virt,GUEST_EFER,value|MSR_EFER_SVME);
+					// We have updated EFER. Therefore, Control-Register fields should be invalidated.
+					vmcb_clean_cr(self.vmcb.virt);
+				};
+				true
+			}
+			MSR_TSC_RATIO=>
+			{
+				// TSC Ratio is not supported.
+				unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+				false
+			}
+			MSR_VMCR=>
+			{
+				todo!("TODO: VMCR Emulation not implemented yet!");
+			}
+			MSR_IGNNE=>
+			{
+				// Only the lowest bit can be set to 1.
+				if (value&0xFFFFFFFFFFFFFFFE)!=0
+				{
+					unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+					false
+				}
+				else
+				{
+					self.nested_hvm.ignne=value==1;
+					true
+				}
+			}
+			MSR_SMM_CTRL=>
+			{
+				unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+				false
+			}
+			MSR_HSAVE_PA=>
+			{
+				// HSAVE must be aligned on page-boundary.
+				if page_4kb_offset(value as usize)!=0
+				{
+					unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+					false
+				}
+				else
+				{
+					self.nested_hvm.hsave_pa=value;
+					true
+				}
+			}
+			MSR_SVM_KEY=>
+			{
+				todo!("SVM-Key Emulation is not implemented!");
+			}
+			_=>
+			{
+				println!("Unexpected wrmsr is intercepted! Index=0x{:X}, Value=0x{:016X}",index,value);
+				unsafe
+				{
+					inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
+				}
+				false
+			}
+		}
+	}
+
+	fn handle_msr(&mut self,gpr_state:&mut GprState)
+	{
+		let index=gpr_state.rcx as u32;
+		let op_write:bool=unsafe{vmread(self.vmcb.virt,EXIT_INFO1)};
+		if op_write
+		{
+			let value=(gpr_state.rax&0xFFFFFFFF)|(gpr_state.rdx<<32);
+			if self.handle_wrmsr(index,value)
+			{
+				// Advance rip.
+				unsafe{advance_rip(self.vmcb.virt)};
+			}
+		}
+		else if let Some(value)=self.handle_rdmsr(index)
+		{
+			// Write back to registers and advance rip.
+			let lo=(value&0xFFFFFFFF) as u32;
+			let hi=(value>>32) as u32;
+			unsafe
+			{
+				(&raw mut gpr_state.rax).cast::<u32>().write(lo);
+				(&raw mut gpr_state.rdx).cast::<u32>().write(hi);
+				advance_rip(self.vmcb.virt);
+			}
 		}
 	}
 
@@ -164,6 +335,73 @@ pub const SVM_MAXIMUM_GROUPS:usize=2;
 pub const SVM_MAXIMUM_CODE1:usize=0xA5;
 pub const SVM_MAXIMUM_CODE2:usize=0x4;
 pub const SVM_MAXIMUM_NEGATIVE:usize=3;
+
+// Use a macro to reduce repetitions for defining CR/DR interceptions.
+macro_rules! build_crdr_interception
+{
+	($name:tt,$action:tt,$start:literal) =>
+	{
+		paste!
+		{
+			pub const [<INTERCEPTED_ $name:upper 0 _ $action:upper>]:i64=$start+0;
+			pub const [<INTERCEPTED_ $name:upper 1 _ $action:upper>]:i64=$start+1;
+			pub const [<INTERCEPTED_ $name:upper 2 _ $action:upper>]:i64=$start+2;
+			pub const [<INTERCEPTED_ $name:upper 3 _ $action:upper>]:i64=$start+3;
+			pub const [<INTERCEPTED_ $name:upper 4 _ $action:upper>]:i64=$start+4;
+			pub const [<INTERCEPTED_ $name:upper 5 _ $action:upper>]:i64=$start+5;
+			pub const [<INTERCEPTED_ $name:upper 6 _ $action:upper>]:i64=$start+6;
+			pub const [<INTERCEPTED_ $name:upper 7 _ $action:upper>]:i64=$start+7;
+			pub const [<INTERCEPTED_ $name:upper 8 _ $action:upper>]:i64=$start+8;
+			pub const [<INTERCEPTED_ $name:upper 9 _ $action:upper>]:i64=$start+9;
+			pub const [<INTERCEPTED_ $name:upper 10 _ $action:upper>]:i64=$start+10;
+			pub const [<INTERCEPTED_ $name:upper 11 _ $action:upper>]:i64=$start+11;
+			pub const [<INTERCEPTED_ $name:upper 12 _ $action:upper>]:i64=$start+12;
+			pub const [<INTERCEPTED_ $name:upper 13 _ $action:upper>]:i64=$start+13;
+			pub const [<INTERCEPTED_ $name:upper 14 _ $action:upper>]:i64=$start+14;
+			pub const [<INTERCEPTED_ $name:upper 15 _ $action:upper>]:i64=$start+15;
+		}
+	};
+}
+
+// This macro is probably not as beautiful as the one for CR/DR interceptions.
+macro_rules! build_exception_interception
+{
+	($name:tt,$index:literal) =>
+	{
+		paste!
+		{
+			pub const [<INTERCEPTED_ $name:upper _EXCEPTION>]:i64=0x40+$index;
+		}
+	};
+}
+
+build_crdr_interception!(CR,READ,0x0);
+build_crdr_interception!(CR,WRITE,0x10);
+build_crdr_interception!(DR,READ,0x20);
+build_crdr_interception!(DR,WRITE,0x30);
+build_crdr_interception!(CR,WRITE_TRAP,0x90);
+
+build_exception_interception!(DE,0);
+build_exception_interception!(DB,1);
+build_exception_interception!(BP,3);
+build_exception_interception!(OF,4);
+build_exception_interception!(BR,5);
+build_exception_interception!(UD,6);
+build_exception_interception!(NM,7);
+build_exception_interception!(DF,8);
+build_exception_interception!(TS,10);
+build_exception_interception!(NP,11);
+build_exception_interception!(SS,12);
+build_exception_interception!(GP,13);
+build_exception_interception!(PF,14);
+build_exception_interception!(MF,16);
+build_exception_interception!(AC,17);
+build_exception_interception!(MC,18);
+build_exception_interception!(XF,19);
+build_exception_interception!(CP,21);
+build_exception_interception!(HV,28);
+build_exception_interception!(VC,29);
+build_exception_interception!(SX,30);
 
 pub const INTERCEPTED_INTERRUPT:i64=0x60;
 pub const INTERCEPTED_NMI:i64=0x61;

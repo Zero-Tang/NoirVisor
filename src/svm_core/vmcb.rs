@@ -25,6 +25,27 @@ use super::{xpf_core::x86::{interrupts::*, rflags::*}, SegmentRegister};
 	((attrib&0xF00)<<4)|(attrib&0xFF)
 }
 
+#[inline] pub fn svm_msrpm_bit(index:u32,operation:bool)->u32
+{
+	let base=if index<0x2000
+	{
+		index<<1
+	}
+	else if (0xC0000000..0xC0002000).contains(&index)
+	{
+		((index-0xC0000000)<<1)+0x4000
+	}
+	else if (0xC0010000..0xC0012000).contains(&index)
+	{
+		((index-0xC0010000)<<1)+0x8000
+	}
+	else
+	{
+		panic!("Uncovered MSR Range 0x{:X}!",index)
+	};
+	base+if operation {1} else {0}
+}
+
 /// # Safety
 /// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn inject_event(vmcb:*mut c_void,vector:u8,event_type:EventType,error_code:Option<u32>,valid:bool)
@@ -537,6 +558,49 @@ impl LbrVirtualization
 	build_bit_get_set!(LBR_VIRT,VMLS_ENABLE);
 	build_bit_get_set!(LBR_VIRT,IBS_ENABLE);
 }
+
+// Offset 0x0C0: VMCB Clean Bits
+pub const CLEAN_INTERCEPTION_BIT:u32=0;
+pub const CLEAN_IOMSRPM_BIT:u32=1;
+pub const CLEAN_ASID_BIT:u32=2;
+pub const CLEAN_TPR_BIT:u32=3;
+pub const CLEAN_NPT_BIT:u32=4;
+pub const CLEAN_CR_BIT:u32=5;
+pub const CLEAN_DR_BIT:u32=6;
+pub const CLEAN_DT_BIT:u32=7;
+pub const CLEAN_SEG_BIT:u32=8;
+pub const CLEAN_CR2_BIT:u32=9;
+pub const CLEAN_LBR_BIT:u32=10;
+pub const CLEAN_AVIC_BIT:u32=11;
+pub const CLEAN_CET_BIT:u32=12;
+
+macro_rules! build_clean_bit_fn
+{
+	($name:tt) =>
+	{
+		paste!
+		{
+			#[inline] pub unsafe fn [<vmcb_clean_ $name:lower>](vmcb:*mut c_void)
+			{
+				vmcb_btr32(vmcb,VMCB_CLEAN_BITS,[<CLEAN_ $name:upper _BIT>]);
+			}
+		}
+	};
+}
+
+build_clean_bit_fn!(interception);
+build_clean_bit_fn!(iomsrpm);
+build_clean_bit_fn!(asid);
+build_clean_bit_fn!(tpr);
+build_clean_bit_fn!(npt);
+build_clean_bit_fn!(cr);
+build_clean_bit_fn!(dr);
+build_clean_bit_fn!(dt);
+build_clean_bit_fn!(seg);
+build_clean_bit_fn!(cr2);
+build_clean_bit_fn!(lbr);
+build_clean_bit_fn!(avic);
+build_clean_bit_fn!(cet);
 
 // Following definitions is for State Save Area with SEV-ES Enabled
 // You may notice the offset is 0x400 different from corresponding fields.
