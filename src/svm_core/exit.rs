@@ -125,11 +125,6 @@ impl SvmVcpu
 			{
 				Some(self.nested_hvm.hsave_pa)
 			}
-			MSR_SVM_KEY=>
-			{
-				// For security reasons, reads from this MSR always returns zero.
-				Some(0)
-			}
 			_=>
 			{
 				println!("Unexpected rdmsr is intercepted! Index=0x{:X}",index);
@@ -472,6 +467,7 @@ const SVM_EXIT_HANDLER_GROUP1:[SvmExitHandler;SVM_MAXIMUM_CODE1]=
 {
 	let mut array:[SvmExitHandler;SVM_MAXIMUM_CODE1]=[SvmVcpu::handle_unknown;SVM_MAXIMUM_CODE1];
 	array[INTERCEPTED_CPUID as usize]=SvmVcpu::handle_cpuid;
+	array[INTERCEPTED_MSR as usize]=SvmVcpu::handle_msr;
 	array[INTERCEPTED_SHUTDOWN as usize]=SvmVcpu::handle_shutdown;
 	array[INTERCEPTED_VMRUN as usize]=SvmVcpu::handle_vmrun;
 	array[INTERCEPTED_VMMCALL as usize]=SvmVcpu::handle_vmmcall;

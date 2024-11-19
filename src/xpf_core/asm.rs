@@ -70,6 +70,186 @@ pub mod io
 	build_out_func!(dword,u32,"eax");
 }
 
+pub mod seg
+{
+	use core::arch::asm;
+	use paste::paste;
+
+	use crate::xpf_core::x86::descriptors::DescriptorTable;
+
+	macro_rules! build_fn
+	{
+		($name:tt) =>
+		{
+			paste!
+			{
+				#[inline] pub fn [<read_ $name:lower>]()->u16
+				{
+					let val:u16;
+					unsafe
+					{
+						asm!
+						(
+							concat!("mov {val:x},",stringify!($name)),
+							val=out(reg) val
+						);
+					}
+					val
+				}
+
+				#[inline] pub fn [<write_ $name:lower>](val:u16)
+				{
+					unsafe
+					{
+						asm!
+						(
+							concat!("mov ",stringify!($name),"{val:x}"),
+							val=in(reg) val
+						);
+					}
+				}
+			}
+		};
+	}
+
+	macro_rules! build_fn_special_16bit
+	{
+		($name:tt) =>
+		{
+			paste!
+			{
+				#[inline] pub fn [<read_ $name:lower>]()->u16
+				{
+					let val:u16;
+					unsafe
+					{
+						asm!
+						(
+							concat!("s",stringify!($name)," {val:x}"),
+							val=out(reg) val
+						);
+					}
+					val
+				}
+
+				#[inline] pub fn [<write_ $name:lower>](val:u16)
+				{
+					unsafe
+					{
+						asm!
+						(
+							concat!("l",stringify!($name)," {val:x}"),
+							val=in(reg) val
+						);
+					}
+				}
+			}
+		};
+	}
+
+	macro_rules! build_fn_special_80bit
+	{
+		($name:tt) =>
+		{
+			paste!
+			{
+				#[inline] pub fn [<read_ $name:lower r>]()->DescriptorTable
+				{
+					let mut val=DescriptorTable{limit:0,base:0};
+					unsafe
+					{
+						asm!
+						(
+							concat!("s",stringify!($name)," [{p}]"),
+							p=in(reg) &raw mut val
+						);
+					}
+					val
+				}
+
+				/// # Safety
+				/// Use this function only if you understand the outcome
+				/// of modifying the descriptor table register!
+				#[inline] pub unsafe fn [<write_ $name:lower r>](reg:*const DescriptorTable)
+				{
+					asm!
+					(
+						concat!("l",stringify!($name)," [{p}]"),
+						p=in(reg) reg
+					);
+				}
+			}
+		};
+	}
+
+	build_fn!(cs);
+	build_fn!(ds);
+	build_fn!(es);
+	build_fn!(fs);
+	build_fn!(gs);
+	build_fn!(ss);
+
+	build_fn_special_16bit!(tr);
+	build_fn_special_16bit!(ldtr);
+
+	build_fn_special_80bit!(gdt);
+	build_fn_special_80bit!(idt);
+}
+
+pub mod crdr
+{
+	use core::arch::asm;
+	use paste::paste;
+
+	macro_rules! build_fn
+	{
+		($name:tt) =>
+		{
+			paste!
+			{
+				#[inline] pub fn [<read_ $name:lower>]()->u64
+				{
+					let val:u64;
+					unsafe
+					{
+						asm!
+						(
+							concat!("mov {val},",stringify!($name)),
+							val=out(reg) val
+						);
+					}
+					val
+				}
+
+				#[inline] pub fn [<write_ $name:lower>](val:u64)
+				{
+					unsafe
+					{
+						asm!
+						(
+							concat!("mov ",stringify!($name),",{val}"),
+							val=in(reg) val
+						);
+					}
+				}
+			}
+		};
+	}
+
+	build_fn!(cr0);
+	build_fn!(cr2);
+	build_fn!(cr3);
+	build_fn!(cr4);
+	build_fn!(cr8);
+
+	build_fn!(dr0);
+	build_fn!(dr1);
+	build_fn!(dr2);
+	build_fn!(dr3);
+	build_fn!(dr6);
+	build_fn!(dr7);
+}
+
 pub mod cpuid
 {
 	use core::arch::asm;
@@ -236,6 +416,27 @@ pub mod svm
 				in("rax") ptr,
 				in("ecx") asid
 			);
+		}
+	}
+}
+
+pub mod misc
+{
+	use core::arch::asm;
+
+	/// # Safety
+	/// This function will purposefully generate an `ud2` instruction.
+	/// Use this function only to test panic handler of NoirVisor!
+	#[inline] pub unsafe fn ud2()
+	{
+		asm!("ud2");
+	}
+
+	#[inline] pub fn int3()
+	{
+		unsafe
+		{
+			asm!("int 3");
 		}
 	}
 }

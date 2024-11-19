@@ -10,6 +10,174 @@
  * or fitness for a particular purpose, etc.).
  */
 
+pub mod paging
+{
+	use crate::xpf_core::nvbdk::*;
+
+	pub const PAGING_PRESENT_BIT:u64=0;
+	pub const PAGING_WRITE_BIT:u64=1;
+	pub const PAGING_USER_BIT:u64=2;
+	pub const PAGING_PWT_BIT:u64=3;
+	pub const PAGING_PCD_BIT:u64=4;
+	pub const PAGING_ACCESSED_BIT:u64=5;
+	pub const PAGING_DIRTY_BIT:u64=6;
+	pub const PAGING_PAGE_SIZE_BIT:u64=7;
+	pub const PAGING_PTE_PAT_BIT:u64=7;
+	pub const PAGING_GLOBAL_BIT:u64=8;
+	pub const PAGING_AVL_BIT:u64=9;
+	pub const PAGING_PAT_BIT:u64=12;
+	pub const PAGING_NX_BIT:u64=63;
+
+	pub struct Pml4e(pub u64);
+	
+	impl Pml4e
+	{
+		pub fn new(present:bool,write:bool,user:bool,global:bool,no_execute:bool,pdpte_phys:u64)->Self
+		{
+			let p=(present as u64)<<PAGING_PRESENT_BIT;
+			let w=(write as u64)<<PAGING_WRITE_BIT;
+			let u=(user as u64)<<PAGING_USER_BIT;
+			let g=(global as u64)<<PAGING_GLOBAL_BIT;
+			let b=phys_page_4kb_base(pdpte_phys as usize) as u64;
+			let nx=(no_execute as u64)<<PAGING_NX_BIT;
+			Self(p|w|u|g|b|nx)
+		}
+	}
+
+	pub struct HugePdpte(pub u64);
+
+	impl HugePdpte
+	{
+		pub fn new(present:bool,write:bool,user:bool,global:bool,no_execute:bool,base_phys:u64)->Self
+		{
+			let p=(present as u64)<<PAGING_PRESENT_BIT;
+			let w=(write as u64)<<PAGING_WRITE_BIT;
+			let u=(user as u64)<<PAGING_USER_BIT;
+			let g=(global as u64)<<PAGING_GLOBAL_BIT;
+			let ps=1<<PAGING_PAGE_SIZE_BIT;
+			let b=phys_page_4kb_base(base_phys as usize) as u64;
+			let nx=(no_execute as u64)<<PAGING_NX_BIT;
+			Self(p|w|u|g|ps|b|nx)
+		}
+	}
+
+	// Remaining items are not yet implemented.
+}
+
+pub mod descriptors
+{
+	use core::fmt::{self,Display};
+    use crate::xpf_core::hv_host::x86::AsmInterruptHandler;
+
+	// Descriptor Table register forbids any paddings.
+	#[repr(C,packed)] pub struct DescriptorTable
+	{
+		pub limit:u16,
+		pub base:u64
+	}
+
+	impl Display for DescriptorTable
+	{
+		fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+		{
+			write!(f,"Limit: 0x{:04X}, Base: 0x{:016X}",{self.limit},{self.base})
+		}
+	}
+
+	#[repr(C,packed)] pub struct UserSegmentDescriptor
+	{
+		pub limit_lo:u16,
+		pub base_lo:u16,
+		pub base_mid:u8,
+		pub flags:u16,
+		pub base_hi:u8
+	}
+
+	#[repr(C,packed)] pub struct SystemSegmentDescriptor
+	{
+		pub limit_lo:u16,
+		pub base_lo:u16,
+		pub base_mid1:u8,
+		pub flags:u16,
+		pub base_mid2:u8,
+		pub base_hi:u32,
+		pub reserved:u32
+	}
+
+	pub const GATE_DESCRIPTOR_LDT:u16=0x2;
+	pub const GATE_DESCRIPTOR_AVAILABLE_TSS:u16=0x9;
+	pub const GATE_DESCRIPTOR_BUSY_TSS:u16=0xB;
+	pub const GATE_DESCRIPTOR_CALL_GATE:u16=0xC;
+	pub const GATE_DESCRIPTOR_INTERRUPT_GATE:u16=0xE;
+	pub const GATE_DESCRIPTOR_TRAP_GATE:u16=0xF;
+
+	pub const GATE_DESCRIPTOR_TYPE_BIT:u16=8;
+	pub const GATE_DESCRIPTOR_DPL_BIT:u16=13;
+	pub const GATE_DESCRIPTOR_PRESENT_BIT:u16=15;
+
+	#[derive(Default,Clone,Copy)]
+	#[repr(C,packed)] pub struct GateDescriptor
+	{
+		pub offset_lo:u16,
+		pub selector:u16,
+		pub flags:u16,
+		pub offset_mid:u16,
+		pub offset_hi:u32,
+		pub reserved:u32
+	}
+
+	impl GateDescriptor
+	{
+		pub fn new_intgate(target_handler:AsmInterruptHandler,selector:u16,dpl:u16,ist:u16)->Option<Self>
+		{
+			if dpl>3
+			{
+				return None;
+			}
+			if ist>7
+			{
+				return None;
+			}
+			let offset_lo=(target_handler as usize & 0xFFFF) as u16;
+			let offset_mid=((target_handler as usize >> 16) & 0xFFFF) as u16;
+			let offset_hi=(target_handler as usize >> 32) as u32;
+			let flags=ist|(GATE_DESCRIPTOR_INTERRUPT_GATE<<GATE_DESCRIPTOR_TYPE_BIT)|(dpl<<GATE_DESCRIPTOR_DPL_BIT)|(1<<GATE_DESCRIPTOR_PRESENT_BIT);
+			Some
+			(
+				Self
+				{
+					offset_lo,
+					offset_mid,
+					selector,
+					flags,
+					offset_hi,
+					reserved:0
+				}
+			)
+		}
+	}
+
+	#[derive(Default,Clone,Copy)]
+	#[repr(C,packed)] pub struct TaskSegmentState64
+	{
+		reserved0:u32,
+		pub rsp0:u64,
+		pub rsp1:u64,
+		pub rsp2:u64,
+		reserved1:u64,
+		pub ist1:u64,
+		pub ist2:u64,
+		pub ist3:u64,
+		pub ist4:u64,
+		pub ist5:u64,
+		pub ist6:u64,
+		pub ist7:u64,
+		reserved2:u64,
+		reserved3:u16,
+		iomap_base:u16
+	}
+}
+
 pub mod cpuid
 {
 	// Standard Leaf
@@ -58,6 +226,8 @@ pub mod rflags
 
 pub mod interrupts
 {
+	use core::fmt::Display;
+
 	pub const DIVIDE_ERROR_FAULT:u8=0;
 	pub const DEBUG_FAULT_OR_TRAP:u8=1;
 	pub const NMI_INTERRUPT:u8=2;
@@ -82,9 +252,55 @@ pub mod interrupts
 	pub enum EventType
 	{
 		ExternalInterrupt=0,
+		ReservedEvent=1,
 		NonMaskableInterrupt=2,
 		HardwareException=3,
-		SoftwareInterrupt=4
+		SoftwareInterrupt=4,
+		PrivilegedSoftwareException=5,
+		SoftwareException=6,
+		OtherEvent=7
+	}
+
+	#[derive(Clone, Copy)]
+	#[repr(C)] pub struct InterruptStackFrame
+	{
+		pub return_rip:u64,
+		pub return_cs:u16,
+		pub return_rflags:u64,
+		pub return_rsp:u64,
+		pub return_ss:u16
+	}
+
+	impl Display for InterruptStackFrame
+	{
+		fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+		{
+			writeln!(f,"Return cs:rip={:04X}:{:016X}, ",self.return_cs,self.return_rip)?;
+			writeln!(f,"Return ss:rip={:04X}:{:016X}, ",self.return_ss,self.return_rsp)?;
+			writeln!(f,"Return rflags=0x{:016X}",self.return_rflags)
+		}
+	}
+
+	#[derive(Clone, Copy)]
+	#[repr(C)] pub struct InterruptStackFrameWithErrorCode
+	{
+		pub error_code:u32,
+		pub return_rip:u64,
+		pub return_cs:u16,
+		pub return_rflags:u64,
+		pub return_rsp:u64,
+		pub return_ss:u16
+	}
+
+	impl Display for InterruptStackFrameWithErrorCode
+	{
+		fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+		{
+			writeln!(f,"Return cs:rip={:04X}:{:016X}, ",self.return_cs,self.return_rip)?;
+			writeln!(f,"Return ss:rip={:04X}:{:016X}, ",self.return_ss,self.return_rsp)?;
+			writeln!(f,"Return rflags=0x{:016X}",self.return_rflags)?;
+			writeln!(f,"Error-Code=0x{:08X}",self.error_code)
+		}
 	}
 }
 

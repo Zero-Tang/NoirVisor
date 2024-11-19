@@ -38,6 +38,15 @@ impl MemoryDescriptor
 			phys:0
 		}
 	}
+
+	pub fn add(&self,size:usize)->Self
+	{
+		Self
+		{
+			virt:unsafe{self.virt.byte_add(size)},
+			phys:self.phys+size as u64
+		}
+	}
 }
 
 #[repr(C)] #[derive(Default)] pub struct SegmentRegister
@@ -160,6 +169,8 @@ extern "C"
 	pub fn noir_alloc_2mb_page()->*mut c_void;
 	pub fn noir_free_2mb_page(virtual_address:*mut c_void);
 	pub fn noir_enum_allocated_large_pages(callback_rt:PhysicalRangeCallback,context:*mut c_void);
+	pub fn noir_find_virt_by_phys(physical_address:u64)->*mut c_void;
+	pub fn noir_copy_memory(dest:*mut c_void,src:*const c_void,cch:usize);
 }
 
 /**

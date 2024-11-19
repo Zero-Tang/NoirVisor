@@ -31,13 +31,25 @@
   internal usage are protected by NoirVisor.
 */
 
+void NoirPrintBitmap(IN PPAGE_ALLOCATION_INFORMATION AllocInfo)
+{
+	for(UINTN i=0;i<8;i++)NoirDebugPrint("%016llX",AllocInfo->Bitmap[7-i]);
+	NoirDebugPrint("\n");
+}
+
 void noir_enum_allocated_large_pages(NOIR_PHYSICAL_MEMORY_RANGE_CALLBACK CallbackRoutine,IN OUT VOID* Context)
 {
 	for(UINT64 i=0;i<AllocatedLargePages;i++)
+	{
 		if(CallbackRoutine)
 			CallbackRoutine(PageAllocList[i].PhysicalAddress,SIZE_2MB,Context);
 		else
+		{
 			NoirDebugPrint("Start: 0x%llX, Length: 0x%llX\n",PageAllocList[i].PhysicalAddress,SIZE_2MB);
+			for(INTN j=7;j>=0;j--)NoirDebugPrint("%016llX",PageAllocList[i].Bitmap[j]);
+			NoirDebugPrint("\n");
+		}
+	}
 }
 
 // This is the root function that allocates NoirVisor's runtime memory!
@@ -124,6 +136,8 @@ void* noir_alloc_contd_memory(IN UINTN Length)
 					for(UINTN k=j;k<j+Pages;k++)
 						SetBitmap(&PageAllocList[i].Bitmap,k);
 					NoirDebugPrint("Allocated page 0x%p (to 0x%p)\n",p,(UINT64)p+Length);
+					NoirDebugPrint("Updated 2MiB Page Base: 0x%llX\n",PageAllocList[i].PhysicalAddress);
+					NoirPrintBitmap(&PageAllocList[i]);
 					ZeroMem(p,Length);
 					return p;
 				}
@@ -135,7 +149,11 @@ void* noir_alloc_contd_memory(IN UINTN Length)
 	void* p=NoirAllocateAlignedLargePages(Length,&Index);
 	if(p)
 	{
-		for(UINTN i=0;i<Pages;i++)SetBitmap(&PageAllocList[Index].Bitmap,Length);
+		for(UINTN i=0;i<Pages;i++)
+			SetBitmap(&PageAllocList[Index].Bitmap,i);
+		NoirDebugPrint("Allocated page 0x%p (to 0x%p)\n",p,(UINT64)p+Length);
+		NoirDebugPrint("Updated 2MiB Page Base: 0x%llX\n",PageAllocList[Index].PhysicalAddress);
+		NoirPrintBitmap(&PageAllocList[Index]);
 		return p;
 	}
 	return NULL;
@@ -148,7 +166,10 @@ void* noir_alloc_2mb_page()
 	if(p)
 	{
 		// Occupy the whole large page.
-		SetMem(PageAllocList[Index].Bitmap,sizeof(PageAllocList[Index].Bitmap),0xFF);
+		SetMem(PageAllocList[Index].Bitmap,64,0xFF);
+		NoirDebugPrint("Allocated 0x%p! Index=%u\n",p,Index);
+		for(INTN j=7;j>=0;j--)NoirDebugPrint("%016llX",PageAllocList[Index].Bitmap[j]);
+		NoirDebugPrint("\n");
 	}
 	return p;
 }
@@ -201,9 +222,16 @@ VOID* custom_mmap(IN UINTN Length)
 	{
 		// These pages are all reserved by Rust global allocator.
 		UINTN Pages=EFI_SIZE_TO_PAGES(Length)>>9;
-		for(UINTN i=0;i<Pages;i++)SetMem(PageAllocList[Index+i].Bitmap,sizeof(PageAllocList->Bitmap),0xFF);
+		for(UINTN i=0;i<Pages;i++)SetMem(PageAllocList[Index+i].Bitmap,64,0xFF);
+		for(INTN i=Pages-1;i>=0;i--)
+		{
+			NoirDebugPrint("%u: ",i);
+			for(INTN j=7;j>=0;j--)
+				NoirDebugPrint("%016llX",PageAllocList[Index+i].Bitmap[j]);
+			NoirDebugPrint("\n");
+		}
 	}
-	NoirDebugPrint("[mmap] ptr: 0x%p, size: 0x%X\n",p,Length);
+	NoirDebugPrint("[mmap] ptr: 0x%p, size: 0x%X, index: %u\n",p,Length,Index);
 	return p?p:(void*)-1;
 }
 

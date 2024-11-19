@@ -13,9 +13,9 @@
 use core::{ffi::c_void, ptr::null_mut};
 use alloc::vec::Vec;
 use npt::SvmNptManager;
-use xpf_core::bitmap::set_bitmap;
+use xpf_core::{bitmap::set_bitmap, hv_host::x86::HostSystem};
 
-use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*},*};
+use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*,crdr::*,seg::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*},*};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
@@ -109,6 +109,7 @@ impl SvmVcpu
 	{
 		unsafe
 		{
+			let hv=self.hypervisor as *mut SvmHypervisor;
 			let mut state=ProcessorState::default();
 			noir_save_processor_state(&raw mut state);
 			// Setup Control Area.
@@ -126,6 +127,11 @@ impl SvmVcpu
 			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_SKINIT);
 			// Setup Host State.
 			vmsave(self.hvmcb.phys);
+			let idtr=(*hv).host.idt.get_reg();
+			write_idtr(&raw const idtr);
+			let gdtr=(*hv).host.gdt.get_reg();
+			write_gdtr(&raw const gdtr);
+			write_cr3((*hv).host.paging.cr3.phys);
 			// Setup APIC ID.
 			let (_,xid,_,_)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
 			let (_,_,_,x2id)=cpuid2(CPUID_STD_EXTENDED_TOPOLOGY_INFORMATION,0);
@@ -219,11 +225,11 @@ impl SvmVcpu
 
 #[repr(C)] pub struct SvmHypervisor
 {
-	pub vcpu_count:u32,
 	pub vcpus:Vec<SvmVcpu>,
 	pub msrpm:MemoryDescriptor,
 	pub iopm:MemoryDescriptor,
 	pub nptm:SvmNptManager,
+	pub host:HostSystem
 }
 
 impl Default for SvmHypervisor
@@ -232,11 +238,11 @@ impl Default for SvmHypervisor
 	{
 		Self
 		{
-			vcpu_count:0,
 			vcpus:Vec::new(),
 			msrpm:MemoryDescriptor::null(),
 			iopm:MemoryDescriptor::null(),
-			nptm:SvmNptManager::default()
+			nptm:SvmNptManager::default(),
+			host:HostSystem::build()
 		}
 	}
 }
@@ -337,7 +343,8 @@ impl HypervisorEssentials for SvmHypervisor
 					intercept_any!(MSR_IGNNE);
 					intercept_any!(MSR_SMM_CTRL);
 					intercept_any!(MSR_HSAVE_PA);
-					intercept_any!(MSR_SVM_KEY);
+					// There is no need to intercept read because the processor will always return zero on reads.
+					intercept_write!(MSR_SVM_KEY);
 				}
 			}
 			None=>fail_cleanup!("Failed to allocate MSR Permission-Map!")
@@ -347,8 +354,9 @@ impl HypervisorEssentials for SvmHypervisor
 			Some(md)=>self.iopm=md,
 			None=>fail_cleanup!("Failed to allocate I/O Permission-Map!")
 		}
-		self.vcpu_count=unsafe{noir_get_processor_count()};
-		for i in 0..self.vcpu_count
+		println!("MSRPM: 0x{:016X}, IOPM: 0x{:016X}",msrpm.unwrap().phys,iopm.unwrap().phys);
+		let vcpu_count=unsafe{noir_get_processor_count()};
+		for i in 0..vcpu_count
 		{
 			let mut vcpu=SvmVcpu::new();
 			let hsave=alloc_contd_pages(PAGE_SIZE);
