@@ -67,8 +67,8 @@ cd build
 ## NoirVisor Core
 NoirVisor Core is written in Rust. See [documentation for NoirVisor in Rust](./doc/rust.md).
 
-You must install [Rust](https://www.rust-lang.org/tools/install) for `x86_64-pc-windows-msvc` host. \
-The toolchain is up to you. It is recommended to use the `stable` toolchain.
+Install [Rust](https://www.rust-lang.org/tools/install). \
+The toolchain is up to you. It is recommended to use the `stable` toolchain. But feel free to use `nightly` toolchain.
 
 Please note that `cargo build` command only builds the NoirVisor Core. It is a static library, not an executable.
 
@@ -83,6 +83,11 @@ Make sure you have downloaded the correct version. NoirVisor would continue upda
 Note that EWDK11 with VS Build Tools **newer than 16 has removed import library for Windows 7**. \
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
+For Rust, you must install `x86_64-pc-windows-msvc` target host. This should be installed by default, but if you didn't, you may install it by:
+```
+rustup target add x86_64-pc-windows-msvc
+```
+
 ## EFI Application and Runtime Driver
 Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. \
 To build a EFI Runtime Driver and Application, you should install NASM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. Also, you should mount [EWDK11 with VS Build Tools 17.1.5](https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022) to V: drive. \
@@ -90,9 +95,13 @@ You may download NASM from its official website: https://www.nasm.us/pub/nasm/st
 You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases. Download the source code. \
 NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) on GitHub in order to build them.
 
+For Rust, you must install `x86_64-unknown-uefi` target host. This is not installed by default, so you may install it by:
+```
+rustup target add x86_64-unknown-uefi
+```
+
 ## Disassembler
-Project NoirVisor chooses Zydis as NoirVisor's disassembler engine. You should pre-compile Zydis as a static library. Visit the [documents for disassembler](src/disasm/readme.md) for further details. \
-In that Zydis is included as a submodule, and because Zydis itself has a submodule, you must clone this repository recursively.
+Project NoirVisor chooses iced-x86 as NoirVisor's disassembler engine. It will be built by Cargo on the first-time compilation. Visit the [documents for disassembler](src/disasm/readme.md) for further details.
 
 ## Memory Allocator
 Since the adoption of the Rust programming language, NoirVisor will include an internal memory allocator: [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc). This allocator will enable NoirVisor to gather its allocated memories together so that they can be protected by nested paging. If using system-provided memory allocator, NoirVisor's memories do not exclusively own the pages, and thus can't be protected by nested paging, leaving NoirVisor vulnerable to attacks from guest.

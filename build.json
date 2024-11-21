@@ -11,19 +11,5 @@
 			"src/vt_core/build.json",
 			"src/xpf_core/build.json"
 		]
-	},
-	"disassembler":
-	{
-		"manifests":
-		[
-			"src/disasm/disasm.json"
-		]
-	},
-	"snprintf":
-	{
-		"manifests":
-		[
-			"src/xpf_core/snprintf.json"
-		]
 	}
 }

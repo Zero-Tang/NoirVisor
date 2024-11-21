@@ -10,17 +10,11 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{alloc::{GlobalAlloc,Layout}, ffi::c_void};
+use core::alloc::{GlobalAlloc,Layout};
 use crate::{print,println,dbg_print};
+use portable_dlmalloc::raw::*;
 
 struct DLMalloc;
-
-extern "C"
-{
-	pub fn dlmalloc(length:usize)->*mut c_void;
-	pub fn dlfree(ptr:*mut c_void);
-	pub fn dlrealloc(ptr:*mut c_void,length:usize)->*mut c_void;
-}
 
 unsafe impl GlobalAlloc for DLMalloc
 {
