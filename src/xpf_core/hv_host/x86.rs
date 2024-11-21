@@ -31,7 +31,7 @@ impl HostSystem
 	{
 		let cs=read_cs();
 		println!("Default CS Selector: 0x{:04X}",cs);
-		 Self
+		Self
 		{
 			paging:HostPaging::default(),
 			gdt:HostGDT::default(),
@@ -153,7 +153,7 @@ impl HostGDT
 	{
 		DescriptorTable
 		{
-			limit:self.raw.len() as u16,
+			limit:self.raw.len() as u16 - 1,
 			base:self.raw.as_ptr() as u64
 		}
 	}
