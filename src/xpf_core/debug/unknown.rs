@@ -12,16 +12,16 @@
 
 use super::DebuggerBackend;
 
-#[derive(Copy,Clone)] pub struct UnknownDebugger;
+pub struct UnknownDebugger;
 
 impl DebuggerBackend for UnknownDebugger
 {
-	unsafe fn read(self,_buffer:*mut u8,_length:usize)->bool
+	unsafe fn read(&self,_buffer:*mut u8,_length:usize)->bool
 	{
 		false
 	}
 
-	unsafe fn write(self,_buffer:*const u8,_length:usize)->bool
+	unsafe fn write(&self,_buffer:*const u8,_length:usize)->bool
 	{
 		false
 	}

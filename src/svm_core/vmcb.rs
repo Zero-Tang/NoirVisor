@@ -76,6 +76,14 @@ use super::{xpf_core::x86::{interrupts::*, rflags::*}, SegmentRegister};
 
 /// # Safety
 /// The `vmcb` argument is not guaranteed to be valid.
+#[inline] pub unsafe fn advance_rip_manually(vmcb:*mut c_void,len:usize)
+{
+	vmwrite(vmcb,NEXT_RIP,vmread::<u64>(vmcb,GUEST_RIP)+(len as u64));
+	advance_rip(vmcb)
+}
+
+/// # Safety
+/// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmread_segment(vmcb:*mut c_void,offset:usize)->SegmentRegister
 {
 	SegmentRegister

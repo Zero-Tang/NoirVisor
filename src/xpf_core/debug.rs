@@ -10,8 +10,8 @@
  * or fitness for a particular purpose, etc.).
  */
 
-
-use core::fmt;
+use iced_x86::*;
+use core::{fmt, str};
 
 use qemu_debugcon::*;
 
@@ -21,7 +21,7 @@ mod qemu_debugcon;
 mod unknown;
 
 // We need to implement a formatter without alloc!
-struct FormatBuffer
+pub struct FormatBuffer
 {
 	buffer:[u8;512],
 	used:usize
@@ -29,9 +29,24 @@ struct FormatBuffer
 
 impl FormatBuffer
 {
-	fn new()->Self
+	pub fn as_str(&self)->&str
 	{
-		FormatBuffer{buffer:[0;512],used:0}
+		unsafe
+		{
+			str::from_utf8_unchecked(&self.buffer[..self.used])
+		}
+	}
+}
+
+impl Default for FormatBuffer
+{
+	fn default() -> Self
+	{
+		Self
+		{
+			buffer:[0;512],
+			used:0
+		}
 	}
 }
 
@@ -51,14 +66,24 @@ impl fmt::Write for FormatBuffer
 	}
 }
 
+impl FormatterOutput for FormatBuffer
+{
+	fn write(&mut self, text: &str, _kind: FormatterTextKind)
+	{
+		let b=text.as_bytes();
+		self.buffer[self.used..self.used+b.len()].copy_from_slice(b);
+		self.used+=b.len();
+	}
+}
+
 pub trait DebuggerBackend
 {
 	/// # Safety
 	/// The `buffer` argument is a raw pointer.
-	unsafe fn read(self,buffer:*mut u8,length:usize)->bool;
+	unsafe fn read(&self,buffer:*mut u8,length:usize)->bool;
 	/// # Safety
 	/// The `buffer` argument is a raw pointer.
-	unsafe fn write(self,buffer:*const u8,length:usize)->bool;
+	unsafe fn write(&self,buffer:*const u8,length:usize)->bool;
 }
 
 pub enum Debugger
@@ -72,25 +97,26 @@ pub static mut DEBUGGER:Debugger=Debugger::Unknown;
 // Currently, interactive debugger is in draft-stage, so `debug_read` will never be called.
 // Mark it as a piece of dead code.
 #[allow(dead_code)]
-unsafe fn debug_read(debugger:impl DebuggerBackend,buffer:*mut u8,length:usize)->bool
+unsafe fn debug_read(debugger:&impl DebuggerBackend,buffer:*mut u8,length:usize)->bool
 {
 	debugger.read(buffer,length)
 }
 
-unsafe fn debug_write(debugger:impl DebuggerBackend,buffer:*const u8,length:usize)->bool
+unsafe fn debug_write(debugger:&impl DebuggerBackend,buffer:*const u8,length:usize)->bool
 {
 	debugger.write(buffer,length)
 }
 
 pub fn dbg_print(args: core::fmt::Arguments)
 {
-	let mut w=FormatBuffer::new();
+	let mut w=FormatBuffer::default();
 	let r=fmt::write(&mut w, args);
 	if r.is_ok()
 	{
+
 		unsafe
 		{
-			match DEBUGGER
+			match &*&raw const DEBUGGER
 			{
 				Debugger::QemuDebugCon(item)=>
 				{
@@ -109,7 +135,7 @@ pub fn dbg_print(args: core::fmt::Arguments)
 /// This function is intended to be called from C codes of NoirVisor.
 #[no_mangle] pub unsafe extern "C" fn noir_debug_output(buffer:*const u8,length:usize)
 {
-	match DEBUGGER
+	match &*&raw const DEBUGGER
 	{
 		Debugger::QemuDebugCon(item)=>
 		{

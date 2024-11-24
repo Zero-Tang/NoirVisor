@@ -75,7 +75,11 @@ nvc_svm_exit_handler_a proc frame
 	; End of Prologue...
 	.endprolog
 	; Call Exit Handler
+	pushax_volatile
+	sub rsp,28h
 	call nvc_svm_exit_handler
+	add rsp,28h
+	popax_volatile
 	; Restore all the GPRs.
 	; Certain context should be revised by VMM.
 	popaq_fast 20h

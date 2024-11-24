@@ -10,8 +10,12 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use paste::paste;
+use core::slice;
 
+use paste::paste;
+use iced_x86::*;
+
+use decode::dispatch_decoder;
 use npt::NptFaultCode;
 use xpf_core::{ci::is_ci_phys_page, x86::interrupts::*};
 
@@ -290,12 +294,26 @@ impl SvmVcpu
 		let fault:NptFaultCode=unsafe{vmread(vmcb,EXIT_INFO1)};
 		let gpa:u64=unsafe{vmread(vmcb,EXIT_INFO2)};
 		let rip:u64=unsafe{vmread(vmcb,GUEST_RIP)};
+		let ins_bytes:&[u8]=unsafe{slice::from_raw_parts(vmcb.byte_add(GUEST_INSTRUCTION_BYTES).cast(),15)};
 		// Check if this #NPF is due to Code Integrity violation.
 		if is_ci_phys_page(gpa)
 		{
 			println!("CI-fault is intercepted!");
 		}
-		panic!("Nested Page Fault is intercepted! rip=0x{:016X}, GPA=0x{:016X}\nReason: {}",rip,gpa,fault);
+		let mut decoder=Decoder::with_ip(64,ins_bytes,rip,0);
+		let ins_info=decoder.decode();
+		let mut mnemonic=FormatBuffer::default();
+		let mut formatter=MasmFormatter::new();
+		formatter.format(&ins_info,&mut mnemonic);
+		print!("{:016X} ",rip);
+		for b in ins_bytes.iter().take(ins_info.len())
+		{
+			print!("{:02X} ",b);
+		}
+		println!("\t{}",mnemonic.as_str());
+		println!("Nested Page Fault is intercepted! rip=0x{:016X}, GPA=0x{:016X}\nReason: {}",rip,gpa,fault);
+		unsafe{advance_rip_manually(vmcb,2)};
+		println!("New Rip: 0x{:016X}",unsafe{vmread::<u64>(vmcb,GUEST_RIP)});
 	}
 
 	fn handle_invalid(&mut self,_gpr_state:&mut GprState)
@@ -316,9 +334,11 @@ impl SvmVcpu
 	let cur_vmcb=(*gpr_state).rax as *mut c_void;
 	// Intercept code is supposed to be 64-bit, but Linux KVM has a bug that treats the intercept code as 32-bit.
 	let intercept_code:i32=vmread(cur_vmcb,EXIT_CODE);
+	let decoder=dispatch_decoder(intercept_code as i64);
 	let handler=dispatch_handler(intercept_code as i64);
 	// Handle the VM-Exit!
 	gpr.rax=vmread(cur_vmcb,GUEST_RAX);
+	decoder(vp);
 	handler(vp,gpr);
 	// The rax in GPR state should be the physical address of VMCB
 	// in order to execute the vmrun instruction properly.
@@ -398,6 +418,9 @@ build_exception_interception!(HV,28);
 build_exception_interception!(VC,29);
 build_exception_interception!(SX,30);
 
+pub const INTERCEPTED_CR_ACCESS:i64=0x00;
+pub const INTERCEPTED_DR_ACCESS:i64=0x20;
+pub const INTERCEPTED_EXCEPTIONS:i64=0x40;
 pub const INTERCEPTED_INTERRUPT:i64=0x60;
 pub const INTERCEPTED_NMI:i64=0x61;
 pub const INTERCEPTED_SMI:i64=0x62;
@@ -494,7 +517,7 @@ const SVM_EXIT_HANDLER_GROUP_NEGATIVE:[SvmExitHandler;SVM_MAXIMUM_NEGATIVE]=
 };
 
 const SVM_EXIT_HANDLER_GROUPS:[&[SvmExitHandler];SVM_MAXIMUM_GROUPS]=[&SVM_EXIT_HANDLER_GROUP1,&SVM_EXIT_HANDLER_GROUP2];
-const SVM_EXIT_HANDLER_GROUP_LIMITS:[usize;SVM_MAXIMUM_GROUPS]=[SVM_MAXIMUM_CODE1,SVM_MAXIMUM_CODE2];
+pub const SVM_EXIT_HANDLER_GROUP_LIMITS:[usize;SVM_MAXIMUM_GROUPS]=[SVM_MAXIMUM_CODE1,SVM_MAXIMUM_CODE2];
 
 // This function is supposed to be time-sensitive!
 // The O(1) method of dispatching handler.

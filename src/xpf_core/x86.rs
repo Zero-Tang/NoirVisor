@@ -12,56 +12,345 @@
 
 pub mod paging
 {
-	use crate::xpf_core::nvbdk::*;
+	use core::ffi::c_void;	
+	use paste::paste;
+	use crate::{println,print,dbg_print, svm_core::amd64::msr::MSR_EFER_LMA, xpf_core::{nvbdk::*, x86::crdr::*}};
 
-	pub const PAGING_PRESENT_BIT:u64=0;
-	pub const PAGING_WRITE_BIT:u64=1;
-	pub const PAGING_USER_BIT:u64=2;
-	pub const PAGING_PWT_BIT:u64=3;
-	pub const PAGING_PCD_BIT:u64=4;
-	pub const PAGING_ACCESSED_BIT:u64=5;
-	pub const PAGING_DIRTY_BIT:u64=6;
-	pub const PAGING_PAGE_SIZE_BIT:u64=7;
-	pub const PAGING_PTE_PAT_BIT:u64=7;
-	pub const PAGING_GLOBAL_BIT:u64=8;
+	macro_rules! build_paging_def
+	{
+		($prefix:tt,$def:tt,$shift:literal) =>
+		{
+			paste!
+			{
+				pub const [<$prefix:upper _PAGING_ $def:upper _BIT>]:u64=$shift;
+				pub const [<$prefix:upper _PAGING_ $def:upper>]:u64=1<<$shift;
+			}
+		};
+	}
+
+	/// ## `build_paging_bit_impl!` macro
+	/// This macro is intended to reduce the effort of implementing common fields.
+	#[macro_export] macro_rules! build_paging_bit_impl
+	{
+		($prefix:tt,$def:tt) =>
+		{
+			paste!
+			{
+				#[inline] fn [<get_ $def:lower>](&self)->bool
+				{
+					self.0&[<$prefix:upper _PAGING_ $def:upper>]==[<$prefix:upper _PAGING_ $def:upper>]
+				}
+				
+				#[inline] fn [<set_ $def:lower>](&mut self,v:bool)
+				{
+					self.0|=(v as u64)<<[<$prefix:upper _PAGING_ $def:upper _BIT>];
+				}
+			}
+		};
+	}
+
+	build_paging_def!(x86,present,0);
+	build_paging_def!(x86,write,1);
+	build_paging_def!(x86,user,2);
+	build_paging_def!(x86,pwt,3);
+	build_paging_def!(x86,pcd,4);
+	build_paging_def!(x86,accessed,5);
+	build_paging_def!(x86,dirty,6);
+	build_paging_def!(x86,page_size,7);
+	build_paging_def!(x86,pte_pat,7);
+	build_paging_def!(x86,global,8);
+	build_paging_def!(x86,pat,12);
+	build_paging_def!(x86,nx,63);
+
 	pub const PAGING_AVL_BIT:u64=9;
-	pub const PAGING_PAT_BIT:u64=12;
-	pub const PAGING_NX_BIT:u64=63;
 
-	pub struct Pml4e(pub u64);
-	
-	impl Pml4e
+	/// ## `build_regular_paging_impl` macro
+	/// This macro implements regular x86 system page table entries. \
+	/// Just use this macro to quickly implement all sorts of entries like PML4E, PDPTE, etc.
+	/// - `$type_name`: Case-sensitive text. This parameter is the new type name.
+	/// - `$page_size`: Case-insensitive text. This paramater defines the size of the level.
+	/// - `$last_level`: Literal. This parameter defines if this is the last entry on traversal.
+	/// - `$ps_bit`: Literal. This parameter defines if constructor should set the page-size bit.
+	macro_rules! build_regular_paging_impl
 	{
-		pub fn new(present:bool,write:bool,user:bool,global:bool,no_execute:bool,pdpte_phys:u64)->Self
+		($type_name:tt,$page_size:tt,$last_level:literal,$ps_bit:literal) =>
 		{
-			let p=(present as u64)<<PAGING_PRESENT_BIT;
-			let w=(write as u64)<<PAGING_WRITE_BIT;
-			let u=(user as u64)<<PAGING_USER_BIT;
-			let g=(global as u64)<<PAGING_GLOBAL_BIT;
-			let b=phys_page_4kb_base(pdpte_phys as usize) as u64;
-			let nx=(no_execute as u64)<<PAGING_NX_BIT;
-			Self(p|w|u|g|b|nx)
+			paste!
+			{
+				pub struct $type_name(pub u64);
+
+				impl $type_name
+				{
+					pub fn new(present:bool,write:bool,user:bool,global:bool,no_execute:bool,next_phys:u64)->Self
+					{
+						let p:u64=(present as u64)<<X86_PAGING_PRESENT_BIT;
+						let w:u64=(write as u64)<<X86_PAGING_WRITE_BIT;
+						let u:u64=(user as u64)<<X86_PAGING_USER_BIT;
+						let g:u64=(global as u64)<<X86_PAGING_GLOBAL_BIT;
+						let b:u64=phys_page_4kb_base(next_phys as usize) as u64;
+						let ps:u64=($ps_bit as u64)<<X86_PAGING_PAGE_SIZE_BIT;
+						let nx:u64=(no_execute as u64)<<X86_PAGING_NX_BIT;
+						Self(p|w|u|ps|g|b|nx)
+					}
+				}
+
+				impl X86PageTableEntryOps for $type_name
+				{
+					build_paging_bit_impl!(x86,present);
+					build_paging_bit_impl!(x86,write);
+					build_paging_bit_impl!(x86,user);
+					build_paging_bit_impl!(x86,accessed);
+					build_paging_bit_impl!(x86,nx);
+
+					#[inline] fn get_next_level_base(&self)->u64
+					{
+						phys_page_4kb_base(self.0 as usize) as u64
+					}
+
+					#[inline] fn set_next_level_base(&mut self,v:u64)
+					{
+						self.0&=[<PHYS_PAGE_ $page_size:upper _MASK>];
+						self.0|=[<phys_page_ $page_size:lower _base>](v as usize) as u64;
+					}
+
+					#[inline] fn is_last_level(&self)->bool
+					{
+						$last_level
+					}
+				}
+			}
+		};
+	}
+
+	build_regular_paging_impl!(Pml4e,4kb,false,false);
+	build_regular_paging_impl!(HugePdpte,1gb,true,true);
+	build_regular_paging_impl!(Pdpte,4kb,false,false);
+	build_regular_paging_impl!(LargePde,2mb,true,true);
+	build_regular_paging_impl!(Pde,4kb,false,false);
+	build_regular_paging_impl!(Pte,4kb,true,false);
+
+	/// ## `X86PageTableOps`
+	/// This trait should share among System MMU, EPT, NPT and IOMMU in x86 systems. \
+	/// Implement the trait members as defined in the manual. If certain fields are missing, do not implement the corresponding methods.
+	pub trait X86PageTableEntryOps
+	{
+		fn get_present(&self)->bool;
+		fn get_write(&self)->bool;
+		fn get_user(&self)->bool;
+		fn get_accessed(&self)->bool;
+		fn get_next_level_base(&self)->u64;
+		fn get_nx(&self)->bool;
+
+		fn set_present(&mut self,v:bool);
+		fn set_write(&mut self,v:bool);
+		fn set_user(&mut self,v:bool);
+		fn set_accessed(&mut self,v:bool);
+		fn set_next_level_base(&mut self,v:u64);
+		fn set_nx(&mut self,v:bool);
+
+		fn is_last_level(&self)->bool;
+
+		#[inline] fn get_caching(&self)->u8 {0}
+		#[inline] fn set_caching(&mut self,_v:u8) {}
+		#[inline] fn get_dirty(&self)->bool {false}
+		#[inline] fn set_dirty(&mut self,_v:bool) {}
+	}
+
+	pub struct PageFaultErrorCode(pub u32);
+
+	impl PageFaultErrorCode
+	{
+		fn new(p:bool,w:bool,u:bool,r:bool,x:bool,pk:bool,ss:bool)->Self
+		{
+			Self
+			(
+				(p as u32)|
+				(w as u32)<<1|
+				(u as u32)<<2|
+				(r as u32)<<3|
+				(x as u32)<<4|
+				(pk as u32)<<5|
+				(ss as u32)<<6
+			)
 		}
 	}
 
-	pub struct HugePdpte(pub u64);
-
-	impl HugePdpte
+	/// ## `PageTranslator` trait
+	/// This trait is intended to help translating the virtual addresses to physical addresses on vCPU.
+	/// Implement this trait on vCPU objects.
+	pub trait PageTranslationHelper
 	{
-		pub fn new(present:bool,write:bool,user:bool,global:bool,no_execute:bool,base_phys:u64)->Self
+		fn get_cr0(&self)->u64;
+		fn get_cr3(&self)->u64;
+		fn get_cr4(&self)->u64;
+		fn get_efer(&self)->u64;
+		fn is_user_mode(&self)->bool;
+
+		fn read_phys_mem(&self,pa:u64,buffer:&mut [u8])->usize;
+		fn write_phys_mem(&self,pa:u64,buffer:&[u8])->usize;
+	}
+
+	/// ## `translate_64_bit_va_routine`
+	/// This routine is recursive!
+	#[allow(clippy::too_many_arguments)]
+	fn translate_64bit_va_routine(va:u64,vcpu:&mut impl PageTranslationHelper,pt_base:u64,level:u64,w:bool,x:bool,ss:bool)->Result<u64,PageFaultErrorCode>
+	{
+		let u=vcpu.is_user_mode();
+		// Calculate the address of entry.
+		let shift_amount:u64=(level-1)*(PAGE_SHIFT_DIFF64 as u64)+PAGE_SHIFT as u64;
+		let pt_index:u64=(va>>shift_amount)&(PAGE_TABLE_ENTRIES64 as u64 - 1);
+		let pml_pa:u64=pt_base+(pt_index<<3);
+		// Fetch current level entry.
+		let mut pml_raw:[u8;8]=[0;8];
+		let rsize=vcpu.read_phys_mem(pml_pa,&mut pml_raw);
+		assert_eq!(pml_raw.len(),rsize);
+		let pml_e:u64=u64::from_le_bytes(pml_raw);
+		let pml_p=(pml_e&X86_PAGING_PRESENT)==X86_PAGING_PRESENT;
+		let pml_w=(pml_e&X86_PAGING_WRITE)==X86_PAGING_WRITE;
+		let pml_u=(pml_e&X86_PAGING_USER)==X86_PAGING_USER;
+		let pml_nx=(pml_e&X86_PAGING_NX)==X86_PAGING_NX;
+		let pml_ps=(pml_e&X86_PAGING_PAGE_SIZE)==X86_PAGING_PAGE_SIZE;
+		// Set accessed & dirty bits.
+		let new_pml_d:u64=pml_e|X86_PAGING_ACCESSED|if w {X86_PAGING_DIRTY} else {0};
+		vcpu.write_phys_mem(pml_pa,&new_pml_d.to_le_bytes());
+		// Check access rights.
+		if !pml_p
 		{
-			let p=(present as u64)<<PAGING_PRESENT_BIT;
-			let w=(write as u64)<<PAGING_WRITE_BIT;
-			let u=(user as u64)<<PAGING_USER_BIT;
-			let g=(global as u64)<<PAGING_GLOBAL_BIT;
-			let ps=1<<PAGING_PAGE_SIZE_BIT;
-			let b=phys_page_4kb_base(base_phys as usize) as u64;
-			let nx=(no_execute as u64)<<PAGING_NX_BIT;
-			Self(p|w|u|g|ps|b|nx)
+			return Err(PageFaultErrorCode::new(false,w,u,false,x,false,false));
+		}
+		if !pml_w && w
+		{
+			return Err(PageFaultErrorCode::new(pml_p,w,u,false,x,false,false));
+		}
+		if !pml_u && u
+		{
+			return Err(PageFaultErrorCode::new(pml_p,w,u,false,x,false,false));
+		}
+		if pml_nx && !x
+		{
+			return Err(PageFaultErrorCode::new(pml_p,w,u,false,x,false,false));
+		}
+		if pml_ps || level==1
+		{
+			// This is the last level!
+			// Check Shadow-Stack: R/W bit is cleared while D bit is set means a shadow-stack page.
+			let pml_d=(pml_e&X86_PAGING_DIRTY)==X86_PAGING_DIRTY;
+			let pml_ss=pml_d&!pml_w;
+			if pml_ss && !ss
+			{
+				Err(PageFaultErrorCode::new(pml_p,w,u,false,x,false,true))
+			}
+			else
+			{
+				let offset_mask:u64=(1<<shift_amount)-1;
+				let base:u64=(pml_e>>shift_amount)<<shift_amount;
+				println!("Offset Mask: 0x{:016X}, Base: 0x{:016X}, Shift-Amount: {}",offset_mask,base,shift_amount);
+				let pa=(va&offset_mask)|base;
+				println!("Final Physical Address: 0x{:016X} in level {}!",pa,level);
+				Ok(pa)
+			}
+		}
+		else
+		{
+			// This is the intermediate level!
+			let next_pt_base=phys_page_4kb_base(pml_e as usize) as u64;
+			println!("Translating 0x{:016X} in level {}! Page-Table: 0x{:016X}",va,level,next_pt_base);
+			translate_64bit_va_routine(va,vcpu,next_pt_base,level-1,w,x,ss)
 		}
 	}
 
-	// Remaining items are not yet implemented.
+	pub fn translate_virtual_address(va:u64,vcpu:&mut impl PageTranslationHelper,w:bool,x:bool,ss:bool)->Result<u64,PageFaultErrorCode>
+	{
+		let cr0=vcpu.get_cr0();
+		if (cr0&CR0_PG)==CR0_PG
+		{
+			let cr3=vcpu.get_cr3();
+			// Paging is enabled! Determine which mode we are working with!
+			let cr4=vcpu.get_cr4();
+			if (cr4&CR4_PAE)==CR4_PAE
+			{
+				// Physical-Address Extension is enabled!
+				let mut va:u64=va;
+				let efer=vcpu.get_efer();
+				let level=if (efer&MSR_EFER_LMA)==MSR_EFER_LMA
+				{
+					// Long-Mode is activated. Virtual-Address is 64-bit!
+					if (cr4&CR4_LA57)==CR4_LA57
+					{
+						// 5-level 57-bit Linear-Address.
+						5
+					}
+					else
+					{
+						// 4-level 48-bit Linear-Address.
+						4
+					}
+				}
+				else
+				{
+					// 3-level 32-bit PAE paging.
+					va&=0xFFFFFFFF;
+					3
+				};
+				println!("Translating 0x{:016X} with {} levels of paging structure! CR3=0x{:X}",va,level,cr3);
+				translate_64bit_va_routine(va,vcpu,cr3,level,w,x,ss)
+			}
+			else
+			{
+				// 2-level 32-bit legacy paging.
+				unimplemented!("32-bit legacy paging is not supported!")
+			}
+		}
+		else
+		{
+			// Paging is disabled! Just return the address.
+			Ok(va)
+		}
+	}
+
+	unsafe fn read_virtual_address_in_page(va:u64,vcpu:&mut impl PageTranslationHelper,buffer:*mut u8,copy_size:usize)->Result<(),PageFaultErrorCode>
+	{
+		let r=translate_virtual_address(va,vcpu,false,false,false);
+		match r
+		{
+			Ok(pa)=>
+			{
+				noir_copy_memory(buffer.cast(),pa as *const c_void,copy_size);
+				Ok(())
+			}
+			Err(e)=>
+			{
+				Err(e)
+			}
+		}
+	}
+
+	pub fn read_virtual_address(va:u64,vcpu:&mut impl PageTranslationHelper,buffer:&mut [u8],fault_va:&mut Option<u64>)->Result<(),PageFaultErrorCode>
+	{
+		let mut cur_va=va;
+		let mut copied_size:u64=0;
+		let end_va=va+buffer.len() as u64;
+		while cur_va<end_va
+		{
+			let end_len=(PAGE_SIZE-page_offset(va as usize)) as u64;
+			let rem_len=end_va-cur_va;
+			let copy_size=if end_len<rem_len {end_len} else {rem_len};
+			println!("Copying {} bytes at VA 0x{:016X}!",copy_size,cur_va);
+			let r=unsafe
+			{
+				read_virtual_address_in_page(va+copied_size,vcpu,buffer.as_mut_ptr().add(copied_size as usize),copy_size as usize)
+			};
+			if r.is_err()
+			{
+				*fault_va=Some(cur_va);
+				return r;
+			}
+			copied_size+=copy_size;
+			cur_va+=copy_size;
+		}
+		*fault_va=None;
+		Ok(())
+	}
 }
 
 pub mod descriptors
@@ -157,7 +446,7 @@ pub mod descriptors
 		}
 	}
 
-	#[derive(Default,Clone,Copy)]
+	#[derive(Default)]
 	#[repr(C,packed)] pub struct TaskSegmentState64
 	{
 		reserved0:u32,
@@ -176,6 +465,67 @@ pub mod descriptors
 		reserved3:u16,
 		iomap_base:u16
 	}
+}
+
+pub mod crdr
+{
+	use paste::paste;
+
+	#[macro_export] macro_rules! define_bit
+	{
+		($name:tt,$pos:literal) =>
+		{
+			paste!
+			{
+				pub const [<$name:upper _BIT>]:u64=$pos;
+				pub const [<$name:upper>]:u64=1<<$pos;
+			}
+		};
+	}
+
+	define_bit!(CR0_PE,0);
+	define_bit!(CR0_MP,1);
+	define_bit!(CR0_EM,2);
+	define_bit!(CR0_TS,3);
+	define_bit!(CR0_ET,4);
+	define_bit!(CR0_NE,5);
+	define_bit!(CR0_WP,16);
+	define_bit!(CR0_AM,18);
+	define_bit!(CR0_NW,29);
+	define_bit!(CR0_CD,30);
+	define_bit!(CR0_PG,31);
+
+	define_bit!(CR4_VME,0);
+	define_bit!(CR4_PVI,1);
+	define_bit!(CR4_TSD,2);
+	define_bit!(CR4_DE,3);
+	define_bit!(CR4_PSE,4);
+	define_bit!(CR4_PAE,5);
+	define_bit!(CR4_MCE,6);
+	define_bit!(CR4_PGE,7);
+	define_bit!(CR4_PCE,8);
+	define_bit!(CR4_OSFXSR,9);
+	define_bit!(CR4_OSXMMEXCEPT,10);
+	define_bit!(CR4_UMIP,11);
+	define_bit!(CR4_LA57,12);
+	define_bit!(CR4_VMXE,13);
+	define_bit!(CR4_SMXE,14);
+	define_bit!(CR4_FSGSBASE,16);
+	define_bit!(CR4_PCIDE,17);
+	define_bit!(CR4_OSXSAVE,18);
+	define_bit!(CR4_SMEP,20);
+	define_bit!(CR4_SMAP,21);
+	define_bit!(CR4_PKE,22);
+	define_bit!(CR4_CET,23);
+	define_bit!(CR4_PKS,24);
+
+	define_bit!(DR6_B0,0);
+	define_bit!(DR6_B1,1);
+	define_bit!(DR6_B2,2);
+	define_bit!(DR6_B3,3);
+	define_bit!(DR6_BD,13);
+	define_bit!(DR6_BS,14);
+	define_bit!(DR6_BT,15);
 }
 
 pub mod cpuid
@@ -261,7 +611,6 @@ pub mod interrupts
 		OtherEvent=7
 	}
 
-	#[derive(Clone, Copy)]
 	#[repr(C)] pub struct InterruptStackFrame
 	{
 		pub return_rip:u64,
@@ -281,7 +630,6 @@ pub mod interrupts
 		}
 	}
 
-	#[derive(Clone, Copy)]
 	#[repr(C)] pub struct InterruptStackFrameWithErrorCode
 	{
 		pub error_code:u32,

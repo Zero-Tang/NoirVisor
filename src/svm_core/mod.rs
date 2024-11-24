@@ -22,10 +22,13 @@ use vmcb::*;
 pub mod amd64;
 // These modules aren't supposed to be public, but we need to permit dead_code for future utility.
 #[allow(dead_code)] mod vmcb;
+#[allow(dead_code)] mod decode;
 #[allow(dead_code)] mod exit;
 #[allow(dead_code)] mod npt;
 
-pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*4;
+// Limit stack size to 64KiB. Should be enough for most circumstances.
+// FIXME: Implement runtime stack overflow detector.
+pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*16;
 
 #[repr(C)] pub struct SvmStackTop
 {
@@ -38,7 +41,6 @@ pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*4;
 	pub reserved:u32
 }
 
-#[derive(Clone, Copy)]
 #[repr(C)] pub struct SvmNestedVcpu
 {
 	pub svme:bool,
@@ -48,7 +50,7 @@ pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*4;
 	pub svm_key:u64
 }
 
-#[derive(Copy,Clone)] #[repr(C)] pub struct SvmVcpu
+#[repr(C)] pub struct SvmVcpu
 {
 	pub vmcb:MemoryDescriptor,
 	pub hsave:MemoryDescriptor,
@@ -131,6 +133,7 @@ impl SvmVcpu
 			write_idtr(&raw const idtr);
 			let gdtr=(*hv).host.gdt.get_reg();
 			write_gdtr(&raw const gdtr);
+			println!("Writing CR3 (0x{:016X})...",(*hv).host.paging.cr3.phys);
 			write_cr3((*hv).host.paging.cr3.phys);
 			// Setup APIC ID.
 			let (_,xid,_,_)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);

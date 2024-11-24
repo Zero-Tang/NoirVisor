@@ -13,14 +13,14 @@
 use super::DebuggerBackend;
 use crate::xpf_core::asm::io::*;
 
-#[derive(Clone, Copy)] pub struct QemuDebugConDebugger
+pub struct QemuDebugConDebugger
 {
 	port_base:u16
 }
 
 impl DebuggerBackend for QemuDebugConDebugger
 {
-	unsafe fn read(self,buffer:*mut u8,length:usize)->bool
+	unsafe fn read(&self,buffer:*mut u8,length:usize)->bool
 	{
 		// QEMU ISA-DebugCon has a fixed readback state.
 		// It is actually meaningless to implement read.
@@ -31,7 +31,7 @@ impl DebuggerBackend for QemuDebugConDebugger
 		true
 	}
 
-	unsafe fn write(self,buffer:*const u8,length:usize)->bool
+	unsafe fn write(&self,buffer:*const u8,length:usize)->bool
 	{
 		for i in 0..length
 		{

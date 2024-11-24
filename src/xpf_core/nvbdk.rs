@@ -95,7 +95,7 @@ impl MemoryDescriptor
 	pub gsswap:u64
 }
 
-#[repr(C)] #[derive(Clone, Copy)] pub struct GprState
+#[repr(C)] pub struct GprState
 {
 	pub rax:u64,
 	pub rcx:u64,
@@ -255,128 +255,41 @@ pub unsafe fn free_2mb_page(ptr:*mut c_void)
 
 // Page-related definitions
 // Use macro to reduce effort and make sure correctness.
-macro_rules! build_page_shift
+macro_rules! build_page_def
 {
 	($size:tt,$shift:literal) =>
 	{
 		paste!
 		{
 			pub const [<PAGE $size:upper SHIFT>]:usize=$shift;
-		}
-	};
-}
-
-build_page_shift!(_,12);
-build_page_shift!(_4KB_,12);
-build_page_shift!(_2MB_,21);
-build_page_shift!(_4MB_,22);
-build_page_shift!(_1GB_,30);
-build_page_shift!(_512GB_,39);
-build_page_shift!(_256TB_,48);
-
-macro_rules! build_page_size
-{
-	($size:tt) =>
-	{
-		paste!
-		{
 			pub const [<PAGE $size:upper SIZE>]:usize=1<<[<PAGE $size:upper SHIFT>];
-		}
-	};
-}
-
-build_page_size!(_);
-build_page_size!(_4KB_);
-build_page_size!(_2MB_);
-build_page_size!(_4MB_);
-build_page_size!(_1GB_);
-build_page_size!(_512GB_);
-build_page_size!(_256TB_);
-
-pub const PAGE_SHIFT_DIFF:usize=if cfg!(target_arch="x86_64") {9} else {10};
-pub const PAGE_TABLE_ENTRIES:usize=if cfg!(target_arch="x86_64") {512} else {1024};
-
-#[inline] pub fn page_entry_index(addr:usize)->usize
-{
-	addr&(PAGE_TABLE_ENTRIES-1)
-}
-
-macro_rules! build_page_offset
-{
-	($size:tt) =>
-	{
-		paste!
-		{
-			// Use function in order to check type.
+			pub const [<PHYS_PAGE $size:upper MASK>]:u64=0xFFF0000000000000|(([<PAGE $size:upper SIZE>] as u64)-1);
+			
 			#[inline] pub fn [<page $size:lower offset>](addr:usize)->usize
 			{
 				addr&([<PAGE $size:upper SIZE>]-1)
 			}
-		}
-	};
-}
 
-build_page_offset!(_);
-build_page_offset!(_4kb_);
-build_page_offset!(_2mb_);
-build_page_offset!(_4mb_);
-build_page_offset!(_1gb_);
-build_page_offset!(_512gb_);
-build_page_offset!(_256tb_);
-
-macro_rules! build_page_count
-{
-	($size:tt) =>
-	{
-		paste!
-		{
-			// Use function in order to check type.
 			#[inline] pub fn [<page $size:lower count>](addr:usize)->usize
 			{
 				addr>>[<PAGE $size:upper SHIFT>]
 			}
-		}
-	};
-}
 
-build_page_count!(_);
-build_page_count!(_4kb_);
-build_page_count!(_2mb_);
-build_page_count!(_4mb_);
-build_page_count!(_1gb_);
-build_page_count!(_512gb_);
-build_page_count!(_256tb_);
-
-macro_rules! build_page_mult
-{
-	($size:tt) =>
-	{
-		paste!
-		{
-			// Use function in order to check type.
 			#[inline] pub fn [<page $size:lower mult>](addr:usize)->usize
 			{
 				addr<<[<PAGE $size:upper SHIFT>]
 			}
-		}
-	};
-}
+			
+			#[inline] pub fn [<page $size:lower base>](addr:usize)->usize
+			{
+				addr&(!([<PAGE $size:upper SIZE>]-1))
+			}
+			
+			#[inline] pub fn [<phys_page $size:lower base>](addr:usize)->usize
+			{
+				[<page $size:lower base>](addr)&0xFFFFFFFFFF000
+			}
 
-build_page_mult!(_);
-build_page_mult!(_4kb_);
-build_page_mult!(_2mb_);
-build_page_mult!(_4mb_);
-build_page_mult!(_1gb_);
-build_page_mult!(_512gb_);
-build_page_mult!(_256tb_);
-
-macro_rules! build_bytes_to_pages
-{
-	($size:tt) =>
-	{
-		paste!
-		{
-			// Use function in order to check type.
 			#[inline] pub fn [<bytes_to $size:lower pages>](len:usize)->usize
 			{
 				[<page $size:lower count>](len)+(if [<page $size:lower offset>](len)!=0 {1} else {0})
@@ -385,73 +298,22 @@ macro_rules! build_bytes_to_pages
 	};
 }
 
-build_bytes_to_pages!(_);
-build_bytes_to_pages!(_4kb_);
-build_bytes_to_pages!(_2mb_);
-build_bytes_to_pages!(_4mb_);
-build_bytes_to_pages!(_1gb_);
-build_bytes_to_pages!(_512gb_);
-build_bytes_to_pages!(_256tb_);
+build_page_def!(_,12);
+build_page_def!(_4KB_,12);
+build_page_def!(_2MB_,21);
+build_page_def!(_4MB_,22);
+build_page_def!(_1GB_,30);
+build_page_def!(_512GB_,39);
+build_page_def!(_256TB_,48);
 
-macro_rules! build_page_base
+pub const PAGE_SHIFT_DIFF64:usize=9;
+pub const PAGE_SHIFT_DIFF32:usize=10;
+pub const PAGE_SHIFT_DIFF:usize=if cfg!(target_arch="x86_64") {PAGE_SHIFT_DIFF64} else {PAGE_SHIFT_DIFF32};
+pub const PAGE_TABLE_ENTRIES:usize=if cfg!(target_arch="x86_64") {PAGE_TABLE_ENTRIES64} else {PAGE_TABLE_ENTRIES32};
+pub const PAGE_TABLE_ENTRIES64:usize=512;
+pub const PAGE_TABLE_ENTRIES32:usize=1024;
+
+#[inline] pub fn page_entry_index(addr:usize)->usize
 {
-	($size:tt) =>
-	{
-		paste!
-		{
-			// Use function in order to check type.
-			#[inline] pub fn [<page $size:lower base>](addr:usize)->usize
-			{
-				addr&(!([<PAGE $size:upper SIZE>]-1))
-			}
-		}
-	};
+	addr&(PAGE_TABLE_ENTRIES-1)
 }
-
-build_page_base!(_);
-build_page_base!(_4kb_);
-build_page_base!(_2mb_);
-build_page_base!(_4mb_);
-build_page_base!(_1gb_);
-build_page_base!(_512gb_);
-build_page_base!(_256tb_);
-
-// Restrict maximum physical base to 52 bits!
-macro_rules! build_phys_page_base
-{
-	($size:tt) =>
-	{
-		paste!
-		{
-			// Use function in order to check type.
-			#[inline] pub fn [<phys_page $size:lower base>](addr:usize)->usize
-			{
-				[<page $size:lower base>](addr)&0xFFFFFFFFFF000
-			}
-		}
-	};
-}
-
-build_phys_page_base!(_);
-build_phys_page_base!(_4kb_);
-build_phys_page_base!(_2mb_);
-build_phys_page_base!(_4mb_);
-build_phys_page_base!(_1gb_);
-build_phys_page_base!(_512gb_);
-build_phys_page_base!(_256tb_);
-
-macro_rules! build_phys_page_mask
-{
-	($size:tt) =>
-	{
-		paste!
-		{
-			pub const [<PHYS_PAGE $size:upper MASK>]:u64=0xFFF0000000000000|(([<PAGE $size:upper SIZE>] as u64)-1);
-		}
-	};
-}
-
-build_phys_page_mask!(_);
-build_phys_page_mask!(_4kb_);
-build_phys_page_mask!(_2mb_);
-build_phys_page_mask!(_1gb_);

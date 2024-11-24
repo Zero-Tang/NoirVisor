@@ -47,7 +47,7 @@ link "%objpath%\driver\*.obj" "..\target\x86_64-unknown-uefi\debug\libnvcore.a" 
 
 echo ============Start Imaging============
 echo Creating Disk Image...
-set /A imagesize_kb=1440
+set /A imagesize_kb=2880
 set /A imagesize_b=%imagesize_kb*1024
 if exist %binpath%\NoirVisor-Uefi.img (fsutil file setzerodata offset=0 length=%imagesize_b% %binpath%\NoirVisor-Uefi.img) else (fsutil file createnew %binpath%\NoirVisor-Uefi.img %imagesize_b%)
 echo Formatting Disk Image...

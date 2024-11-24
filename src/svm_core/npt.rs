@@ -318,7 +318,6 @@ impl NptPte
 	}
 }
 
-#[derive(Clone, Copy)]
 pub struct SvmNptPageTableDescriptor
 {
 	pub table:MemoryDescriptor,
