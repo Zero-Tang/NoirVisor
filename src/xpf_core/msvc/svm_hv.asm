@@ -34,8 +34,6 @@ extern nvc_svm_exit_handler:proc
 
 ifdef _amd64
 
-extern system_cr3:qword
-
 nvc_svm_return proc
 
 	; Switch the stack where state is saved.

@@ -113,10 +113,10 @@ pub fn dbg_print(args: core::fmt::Arguments)
 	let r=fmt::write(&mut w, args);
 	if r.is_ok()
 	{
-
+		let dbg=&raw const DEBUGGER;
 		unsafe
 		{
-			match &*&raw const DEBUGGER
+			match &*dbg
 			{
 				Debugger::QemuDebugCon(item)=>
 				{
@@ -135,7 +135,8 @@ pub fn dbg_print(args: core::fmt::Arguments)
 /// This function is intended to be called from C codes of NoirVisor.
 #[no_mangle] pub unsafe extern "C" fn noir_debug_output(buffer:*const u8,length:usize)
 {
-	match &*&raw const DEBUGGER
+	let dbg=&raw const DEBUGGER;
+	match &*dbg
 	{
 		Debugger::QemuDebugCon(item)=>
 		{

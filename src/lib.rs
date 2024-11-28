@@ -118,11 +118,6 @@ pub trait VirtualCpu
 
 static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 
-// This global variable is required to export to driver framework written in C.
-// Public core variables in NoirVisor are required to be named in lower-snake-case.
-#[allow(non_upper_case_globals)]
-#[no_mangle] pub static mut system_cr3:u64=0;
-
 #[no_mangle] pub extern "C" fn noir_get_virtualization_supportability()->u32
 {
 	let mut vstr_raw:[u8;12]=[0;12];
@@ -137,15 +132,22 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 
 #[no_mangle] pub extern "C" fn noir_is_virtualization_enabled()->bool
 {
-	SvmHypervisor::check_enabled()
+	let mut vstr_raw:[u8;12]=[0;12];
+	let cpu_manuf=ProcessorManufacturer::query(&mut vstr_raw);
+	match cpu_manuf
+	{
+		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>false,
+		ProcessorManufacturer::AMD|ProcessorManufacturer::Hygon=>SvmHypervisor::check_enabled(),
+		_=>false
+	}
 }
 
 #[no_mangle] pub extern "C" fn nvc_teardown_hypervisor()
 {
 	unsafe
 	{
-		#[allow(static_mut_refs)]
-		if let Some(ref mut hypervisor)=&mut HVM
+		let hv=&raw mut HVM;
+		if let Some(hypervisor)=&mut *hv
 		{
 			hypervisor.restore_system();
 		}

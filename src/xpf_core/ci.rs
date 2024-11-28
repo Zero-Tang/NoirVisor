@@ -25,23 +25,23 @@ pub fn enum_ci_phys_page()->*const Vec<u64>
 }
 
 // We will use this routine to check if a page is protected in Code-Integrity.
-#[allow(static_mut_refs)]
 pub fn is_ci_phys_page(phys:u64)->bool
 {
 	let mut lo:isize=0;
 	// Use binary search to reduce running time complexity.
-	let mut hi=unsafe{CI_PAGES.len()} as isize;
+	let ci=&raw const CI_PAGES;
+	let mut hi=unsafe{(*ci).len()} as isize;
 	while hi>=lo
 	{
-		let mid=((lo+hi)>>1) as isize;
+		let mid=(lo+hi)>>1;
 		let cur_page=unsafe{CI_PAGES[mid as usize]};
 		if phys<cur_page
 		{
-			hi=(mid-1) as isize;
+			hi=mid-1;
 		}
 		else if phys>=cur_page+PAGE_SIZE as u64
 		{
-			lo=(mid+1) as isize;
+			lo=mid+1;
 		}
 		else
 		{
@@ -56,23 +56,23 @@ pub fn is_ci_phys_page(phys:u64)->bool
 #[no_mangle] pub unsafe extern "C" fn noir_add_section_to_ci(base:*mut c_void,size:usize,_enable_scan:bool)->bool
 {
 	let page_num=bytes_to_pages(size);
+	let ci=&raw mut CI_PAGES;
 	for i in 0..page_num
 	{
 		let phys=noir_get_physical_address(base)+page_mult(i) as u64;
 		// Add this page to CI.
-		#[allow(static_mut_refs)]
-		CI_PAGES.push(phys);
+		(*ci).push(phys);
 	}
 	true
 }
 
 /// # Safety
 /// `noir_activate_ci` must be called by C functions.
-#[allow(static_mut_refs)]
 #[no_mangle] pub unsafe extern "C" fn noir_activate_ci()->bool
 {
+	let ci=&raw mut CI_PAGES;
 	// Sort the list since we will use binary search to confirm if a page belongs to CI.
-	CI_PAGES.sort();
+	(*ci).sort();
 	true
 }
 
