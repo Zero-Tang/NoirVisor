@@ -10,10 +10,10 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::c_void, ptr::null_mut};
+use core::{ffi::c_void, ptr::*};
 use alloc::vec::Vec;
 use npt::SvmNptManager;
-use xpf_core::{bitmap::set_bitmap, hv_host::x86::HostSystem};
+use xpf_core::{bitmap::set_bitmap, hv_host::x86::*};
 
 use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*,crdr::*,seg::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*},*};
 use amd64::{cpuid::*,msr::*};
@@ -57,10 +57,12 @@ pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*16;
 	pub hvmcb:MemoryDescriptor,
 	pub hv_stack:*mut c_void,
 	pub hypervisor:*mut c_void,
+	pub ist:[*mut c_void;8],
 	pub vcpu_id:u32,
 	pub apic_id:u8,
 	pub x2apic_id:u32,
 	pub cpuid_fms:u32,
+	pub host_cpu:HostProcessor,
 	pub nested_hvm:SvmNestedVcpu,
 }
 
@@ -75,10 +77,12 @@ impl SvmVcpu
 			hvmcb:MemoryDescriptor::null(),
 			hv_stack:null_mut(),
 			hypervisor:null_mut(),
+			ist:[null_mut();8],
 			vcpu_id:0,
 			apic_id:0,
 			x2apic_id:0,
 			cpuid_fms:0,
+			host_cpu:HostProcessor::default(),
 			nested_hvm:SvmNestedVcpu
 			{
 				svme:false,
@@ -128,12 +132,15 @@ impl SvmVcpu
 			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_CLGI);
 			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_SKINIT);
 			// Setup Host State.
+			let mut ist:[*mut c_void;8]=self.ist;
+			ist[1]=self.ist[1].byte_add(HYPERVISOR_STACK_SIZE);
+			HostProcessor::build(&mut self.host_cpu,&ist);
 			vmsave(self.hvmcb.phys);
 			let idtr=(*hv).host.idt.get_reg();
 			write_idtr(&raw const idtr);
-			let gdtr=(*hv).host.gdt.get_reg();
+			let gdtr=self.host_cpu.gdt.get_reg();
 			write_gdtr(&raw const gdtr);
-			println!("Writing CR3 (0x{:016X})...",(*hv).host.paging.cr3.phys);
+			write_tr(self.host_cpu.tr_sel);
 			write_cr3((*hv).host.paging.cr3.phys);
 			// Setup APIC ID.
 			let (_,xid,_,_)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
@@ -197,7 +204,7 @@ impl SvmVcpu
 	{
 		println!("Processor {} entered subversion routine!",self.vcpu_id);
 		// Enable SVM in EFER.
-		let efer=rdmsr(MSR_EFER)|MSR_EFER_SVME;
+		let efer=rdmsr(MSR_EFER)|MSR_EFER_SVME|MSR_EFER_NXE;
 		wrmsr(MSR_EFER,efer);
 		// Block A20M & Redirect INIT
 		// Intel blocks A20M in vmxon, why not we do this as well?
@@ -366,6 +373,7 @@ impl HypervisorEssentials for SvmHypervisor
 			let vmcb=alloc_contd_pages(PAGE_SIZE);
 			let hvmcb=alloc_contd_pages(PAGE_SIZE);
 			let stack=alloc_contd_pages(HYPERVISOR_STACK_SIZE);
+			let ist1=alloc_contd_pages(HYPERVISOR_STACK_SIZE);
 			match hsave
 			{
 				Some(md)=>vcpu.hsave=md,
@@ -385,6 +393,11 @@ impl HypervisorEssentials for SvmHypervisor
 			{
 				Some(md)=>vcpu.hv_stack=md.virt,
 				None=>fail_cleanup!("Failed to allocate hypervisor stack for processor {}!",i)
+			}
+			match ist1
+			{
+				Some(md)=>vcpu.ist[1]=md.virt,
+				None=>fail_cleanup!("Failed to allocate host IST1 stack for processor {}!",i)
 			}
 			vcpu.hypervisor=self as *mut Self as *mut c_void;
 			vcpu.vcpu_id=i;

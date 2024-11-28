@@ -33,8 +33,8 @@ pub fn is_ci_phys_page(phys:u64)->bool
 	let mut hi=unsafe{CI_PAGES.len()} as isize;
 	while hi>=lo
 	{
-		let mid=((lo+hi)>>1) as usize;
-		let cur_page=unsafe{CI_PAGES[mid]};
+		let mid=((lo+hi)>>1) as isize;
+		let cur_page=unsafe{CI_PAGES[mid as usize]};
 		if phys<cur_page
 		{
 			hi=(mid-1) as isize;

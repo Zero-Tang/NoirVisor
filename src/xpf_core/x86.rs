@@ -356,7 +356,7 @@ pub mod paging
 pub mod descriptors
 {
 	use core::fmt::{self,Display};
-    use crate::xpf_core::hv_host::x86::AsmInterruptHandler;
+	use crate::xpf_core::{hv_host::x86::AsmInterruptHandler, nvbdk::PAGE_SHIFT};
 
 	// Descriptor Table register forbids any paddings.
 	#[repr(C,packed)] pub struct DescriptorTable
@@ -391,6 +391,26 @@ pub mod descriptors
 		pub base_mid2:u8,
 		pub base_hi:u32,
 		pub reserved:u32
+	}
+
+	impl SystemSegmentDescriptor
+	{
+		pub fn new(limit:u32,base:u64,descriptor_type:u16,dpl:u8,present:bool)->Self
+		{
+			let limit_lo=(if limit<=0xFFFFF {limit&0xFFFF} else {(limit>>PAGE_SHIFT)&0xFFFF}) as u16;
+			let limit_hi=(if limit<=0xFFFFF {limit>>16} else {limit>>28}) as u16;
+			let granularity=limit>0xFFFFF;
+			Self
+			{
+				limit_lo,
+				base_lo:(base&0xFFFF) as u16,
+				base_mid1:((base>>16)&0xFF) as u8,
+				flags:(descriptor_type|((dpl as u16)<<5)|((present as u16)<<7)|(limit_hi<<8)|((granularity as u16)<<15)),
+				base_mid2:((base>>24)&0xFF) as u8,
+				base_hi:(base>>32) as u32,
+				reserved:0
+			}
+		}
 	}
 
 	pub const GATE_DESCRIPTOR_LDT:u16=0x2;
@@ -625,7 +645,7 @@ pub mod interrupts
 		fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 		{
 			writeln!(f,"Return cs:rip={:04X}:{:016X}, ",self.return_cs,self.return_rip)?;
-			writeln!(f,"Return ss:rip={:04X}:{:016X}, ",self.return_ss,self.return_rsp)?;
+			writeln!(f,"Return ss:rsp={:04X}:{:016X}, ",self.return_ss,self.return_rsp)?;
 			writeln!(f,"Return rflags=0x{:016X}",self.return_rflags)
 		}
 	}
@@ -645,7 +665,7 @@ pub mod interrupts
 		fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 		{
 			writeln!(f,"Return cs:rip={:04X}:{:016X}, ",self.return_cs,self.return_rip)?;
-			writeln!(f,"Return ss:rip={:04X}:{:016X}, ",self.return_ss,self.return_rsp)?;
+			writeln!(f,"Return ss:rsp={:04X}:{:016X}, ",self.return_ss,self.return_rsp)?;
 			writeln!(f,"Return rflags=0x{:016X}",self.return_rflags)?;
 			writeln!(f,"Error-Code=0x{:08X}",self.error_code)
 		}

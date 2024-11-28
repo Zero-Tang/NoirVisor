@@ -15,7 +15,10 @@ debug = true
 
 [dependencies]
 paste = "1.0.15"
-portable-dlmalloc = "0.1.2"
+
+[dependencies.portable-dlmalloc]
+version = "0.2.1"
+features = []
 
 [dependencies.iced-x86]
 version = "1.21.0"

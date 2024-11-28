@@ -12,18 +12,14 @@
 
 use core::ffi::c_void;
 
-use crate::xpf_core::{asm::{crdr::*, seg::*}, nvbdk::*, x86::{descriptors::*, interrupts::*, paging::*}};
+use crate::xpf_core::{asm::{crdr::*, seg::*, misc::get_rsp}, nvbdk::*, x86::{descriptors::*, interrupts::*, paging::*}};
 use crate::*;
 
 pub struct HostSystem
 {
 	pub paging:HostPaging,
 	pub idt:HostIDT,
-	pub gdt:HostGDT,
-	pub tss:TaskSegmentState64
 }
-
-unsafe impl Sync for HostSystem{}
 
 impl HostSystem
 {
@@ -34,10 +30,35 @@ impl HostSystem
 		Self
 		{
 			paging:HostPaging::default(),
-			gdt:HostGDT::default(),
 			idt:HostIDT::build(cs),
-			tss:TaskSegmentState64::default()
 		}
+	}
+}
+
+#[derive(Default)]
+#[repr(C)] pub struct HostProcessor
+{
+	pub gdt:HostGDT,
+	pub tss:TaskSegmentState64,
+	pub tr_sel:u16
+}
+
+impl HostProcessor
+{
+	pub fn build(&mut self,ist:&[*mut c_void])
+	{
+		self.tss.ist1=ist[1] as u64;
+		self.tss.ist2=ist[2] as u64;
+		self.tss.ist3=ist[3] as u64;
+		self.tss.ist4=ist[4] as u64;
+		self.tss.ist5=ist[5] as u64;
+		self.tss.ist6=ist[6] as u64;
+		self.tss.ist7=ist[7] as u64;
+		let tss_d=SystemSegmentDescriptor::new(size_of::<TaskSegmentState64>() as u32 -1,&self.tss as *const TaskSegmentState64 as u64,GATE_DESCRIPTOR_AVAILABLE_TSS,3,true);
+		let tr_sel=self.gdt.allocated;
+		self.gdt.allocated+=16;
+		self.gdt.write_sys_seg(tr_sel,tss_d);
+		self.tr_sel=tr_sel;
 	}
 }
 
@@ -108,6 +129,7 @@ impl Drop for HostPaging
 
 #[repr(C,align(16))] pub struct HostGDT
 {
+	allocated:u16,
 	raw:[u8;256]
 }
 
@@ -115,14 +137,15 @@ impl Default for HostGDT
 {
 	fn default() -> Self
 	{
-		let mut r=HostGDT{raw:[0;256]};
+		let mut r=HostGDT{allocated:0,raw:[0;256]};
 		let gdtr=read_gdtr();
 		unsafe
 		{
 			// Copy from current system.
 			let l=if gdtr.limit<r.raw.len() as u16 {gdtr.limit as usize} else {r.raw.len()};
-			noir_copy_memory(r.raw.as_mut_ptr() as *mut c_void,gdtr.base as *mut c_void,l);
+			noir_copy_memory(r.raw.as_mut_ptr().cast(),gdtr.base as *mut c_void,l);
 		}
+		r.allocated=gdtr.limit+1;
 		r
 	}
 }
@@ -168,10 +191,10 @@ impl HostIDT
 {
 	/// ## `HostIDT::set_idt_entry`
 	/// Sets an IDT entry for specified `vector` with `selector` and `entry`
-	pub fn set_idt_entry(&mut self,vector:u8,selector:u16,entry:AsmInterruptHandler)
+	pub fn set_idt_entry(&mut self,vector:u8,selector:u16,entry:AsmInterruptHandler,ist:u16)
 	{
 		// The `unwrap` shouldn't fail since `DPL` and `IST` are zero.
-		self.idt[vector as usize]=GateDescriptor::new_intgate(entry,selector,0,0).unwrap();
+		self.idt[vector as usize]=GateDescriptor::new_intgate(entry,selector,0,ist).unwrap();
 	}
 
 	/// ## `HostIDT::build`
@@ -179,24 +202,24 @@ impl HostIDT
 	pub fn build(selector:u16)->HostIDT
 	{
 		let mut r=HostIDT{idt:[GateDescriptor::default();256]};
-		r.set_idt_entry(DIVIDE_ERROR_FAULT,selector,noir_divide_error_fault_handler_a);
-		r.set_idt_entry(DEBUG_FAULT_OR_TRAP,selector,noir_debug_fault_trap_handler_a);
-		r.set_idt_entry(BREAKPOINT_TRAP,selector,noir_breakpoint_trap_handler_a);
-		r.set_idt_entry(OVERFLOW_TRAP,selector,noir_overflow_trap_handler_a);
-		r.set_idt_entry(EXCEED_BOUND_RANGE_FAULT,selector,noir_bound_range_fault_handler_a);
-		r.set_idt_entry(INVALID_OPCODE_FAULT,selector,noir_invalid_opcode_fault_handler_a);
-		r.set_idt_entry(NO_MATH_COPROCESSOR_FAULT,selector,noir_device_not_available_fault_handler_a);
-		r.set_idt_entry(DOUBLE_FAULT_ABORT,selector,noir_double_fault_abort_handler_a);
-		r.set_idt_entry(INVALID_TSS_FAULT,selector,noir_invalid_tss_fault_handler_a);
-		r.set_idt_entry(SEGMENT_ABSENT_FAULT,selector,noir_segment_not_present_fault_handler_a);
-		r.set_idt_entry(STACK_FAULT,selector,noir_stack_fault_handler_a);
-		r.set_idt_entry(GENERAL_PROTECTION_FAULT,selector,noir_general_protection_fault_handler_a);
-		r.set_idt_entry(PAGE_FAULT,selector,noir_page_fault_handler_a);
-		r.set_idt_entry(X87_FP_EXCEPTION_FAULT,selector,noir_x87_floating_point_fault_handler_a);
-		r.set_idt_entry(ALIGNMENT_CHECK_FAULT,selector,noir_alignment_check_fault_handler_a);
-		r.set_idt_entry(MACHINE_CHECK_ABORT,selector,noir_machine_check_abort_handler_a);
-		r.set_idt_entry(SIMD_FP_EXCEPTION_FAULT,selector,noir_simd_floating_point_fault_handler_a);
-		r.set_idt_entry(CONTROL_PROTECTION_FAULT,selector,noir_control_protection_fault_handler_a);
+		r.set_idt_entry(DIVIDE_ERROR_FAULT,selector,noir_divide_error_fault_handler_a,0);
+		r.set_idt_entry(DEBUG_FAULT_OR_TRAP,selector,noir_debug_fault_trap_handler_a,0);
+		r.set_idt_entry(BREAKPOINT_TRAP,selector,noir_breakpoint_trap_handler_a,0);
+		r.set_idt_entry(OVERFLOW_TRAP,selector,noir_overflow_trap_handler_a,0);
+		r.set_idt_entry(EXCEED_BOUND_RANGE_FAULT,selector,noir_bound_range_fault_handler_a,0);
+		r.set_idt_entry(INVALID_OPCODE_FAULT,selector,noir_invalid_opcode_fault_handler_a,1);
+		r.set_idt_entry(NO_MATH_COPROCESSOR_FAULT,selector,noir_device_not_available_fault_handler_a,0);
+		r.set_idt_entry(DOUBLE_FAULT_ABORT,selector,noir_double_fault_abort_handler_a,1);
+		r.set_idt_entry(INVALID_TSS_FAULT,selector,noir_invalid_tss_fault_handler_a,0);
+		r.set_idt_entry(SEGMENT_ABSENT_FAULT,selector,noir_segment_not_present_fault_handler_a,0);
+		r.set_idt_entry(STACK_FAULT,selector,noir_stack_fault_handler_a,1);
+		r.set_idt_entry(GENERAL_PROTECTION_FAULT,selector,noir_general_protection_fault_handler_a,1);
+		r.set_idt_entry(PAGE_FAULT,selector,noir_page_fault_handler_a,1);
+		r.set_idt_entry(X87_FP_EXCEPTION_FAULT,selector,noir_x87_floating_point_fault_handler_a,0);
+		r.set_idt_entry(ALIGNMENT_CHECK_FAULT,selector,noir_alignment_check_fault_handler_a,0);
+		r.set_idt_entry(MACHINE_CHECK_ABORT,selector,noir_machine_check_abort_handler_a,0);
+		r.set_idt_entry(SIMD_FP_EXCEPTION_FAULT,selector,noir_simd_floating_point_fault_handler_a,0);
+		r.set_idt_entry(CONTROL_PROTECTION_FAULT,selector,noir_control_protection_fault_handler_a,0);
 		r
 	}
 
@@ -279,6 +302,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	print!("Dumping Exception Frame:\n{}",*exception_frame);
 	print!("Dumping GPR State:\n{}",*gpr_state);
+	println!("Current rsp: 0x{:016X}",get_rsp());
 	panic!("Invalid-Opcode Fault happened!");
 }
 
@@ -345,6 +369,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	print!("Dumping Exception Frame:\n{}",*exception_frame);
 	print!("Dumping GPR State:\n{}",*gpr_state);
+	println!("Current rsp: 0x{:016X}",get_rsp());
 	panic!("General-Protection Fault happened!");
 }
 
@@ -354,9 +379,10 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[no_mangle] pub unsafe extern "C" fn noir_page_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
+	let cr2=read_cr2();
 	print!("Dumping Exception Frame:\n{}",*exception_frame);
 	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Page Fault happened!");
+	panic!("Page Fault happened! Virtual-Address: 0x{:016X}",cr2);
 }
 
 /// ## Vector 16 #MF - x87 Floating-Point Exception-Pending Fault

@@ -439,4 +439,18 @@ pub mod misc
 			asm!("int 3");
 		}
 	}
+
+	#[inline] pub fn get_rsp()->u64
+	{
+		unsafe
+		{
+			let rsp:u64;
+			asm!
+			(
+				"mov {s},rsp",
+				s=out(reg) rsp
+			);
+			rsp
+		}
+	}
 }

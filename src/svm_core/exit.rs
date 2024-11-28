@@ -17,7 +17,7 @@ use iced_x86::*;
 
 use decode::dispatch_decoder;
 use npt::NptFaultCode;
-use xpf_core::{ci::is_ci_phys_page, x86::interrupts::*};
+use xpf_core::{asm::misc::get_rsp, ci::is_ci_phys_page, x86::interrupts::*};
 
 use super::*;
 use crate::mshv_core::cpuid::*;
@@ -312,8 +312,11 @@ impl SvmVcpu
 		}
 		println!("\t{}",mnemonic.as_str());
 		println!("Nested Page Fault is intercepted! rip=0x{:016X}, GPA=0x{:016X}\nReason: {}",rip,gpa,fault);
-		unsafe{advance_rip_manually(vmcb,2)};
+		unsafe{advance_rip_manually(vmcb,ins_info.len())};
 		println!("New Rip: 0x{:016X}",unsafe{vmread::<u64>(vmcb,GUEST_RIP)});
+		let rsp=get_rsp();
+		let top=self.hv_stack as u64 + HYPERVISOR_STACK_SIZE as u64;
+		println!("Used Stack: {} bytes",top-rsp);
 	}
 
 	fn handle_invalid(&mut self,_gpr_state:&mut GprState)

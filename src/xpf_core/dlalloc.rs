@@ -10,6 +10,22 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use portable_dlmalloc::DLMalloc;
+use portable_dlmalloc::{DLMalloc,raw::*};
 
 #[global_allocator] static GLOBAL_ALLOCATOR:DLMalloc=DLMalloc;
+
+pub fn get_used()->usize
+{
+	unsafe
+	{
+		dlmallinfo().uordblks
+	}
+}
+
+pub fn get_free()->usize
+{
+	unsafe 
+	{
+		dlmallinfo().fordblks
+	}
+}
