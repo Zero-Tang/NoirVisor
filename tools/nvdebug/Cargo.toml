@@ -1,0 +1,11 @@
+[package]
+name = "nvdebug"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+uefi-raw = "0.9.0"
+
+[dependencies.windows]
+version = "0.58.0"
+features = ["Win32_System_Diagnostics_Debug","Win32_System_Threading","Win32_System_SystemServices","Win32_Storage_FileSystem","Win32_Security"]

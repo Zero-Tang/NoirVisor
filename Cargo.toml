@@ -13,6 +13,9 @@ panic = "abort"
 panic = "abort"
 debug = true
 
+[workspace]
+members = ["tools/nvdebug"]
+
 [dependencies]
 paste = "1.0.15"
 
