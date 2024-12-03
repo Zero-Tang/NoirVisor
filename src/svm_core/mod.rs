@@ -13,7 +13,7 @@
 use core::{ffi::c_void, ptr::*};
 use alloc::vec::Vec;
 use npt::SvmNptManager;
-use xpf_core::{bitmap::set_bitmap, hv_host::x86::*};
+use xpf_core::{asm::misc::ud2, bitmap::set_bitmap, hv_host::x86::*};
 
 use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*,crdr::*,seg::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*},*};
 use amd64::{cpuid::*,msr::*};
@@ -142,6 +142,7 @@ impl SvmVcpu
 			write_gdtr(&raw const gdtr);
 			write_tr(self.host_cpu.tr_sel);
 			write_cr3((*hv).host.paging.cr3.phys);
+			ud2();
 			// Setup APIC ID.
 			let (_,xid,_,_)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
 			let (_,_,_,x2id)=cpuid2(CPUID_STD_EXTENDED_TOPOLOGY_INFORMATION,0);

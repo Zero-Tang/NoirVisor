@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+iced-x86 = "1.21.0"
 uefi-raw = "0.9.0"
 
 [dependencies.windows]

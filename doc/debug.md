@@ -6,7 +6,7 @@ Opearting Systems come with a debugging facility. However, they come with limita
 
 - Certain system components (e.g.: PatchGuard in Windows) are disabled when debugging mode is enabled.
 - Most things, including debug-printing, are unavailable in host context due to the highest TPL context.
-- Type-I hypervisor do not come with a debugging facility. EXDI is very powerful. However, very few hardware support EXDI.
+- Type-I hypervisor scenario do not come with a debugging facility. EXDI is very powerful. However, very few hardware support EXDI.
 
 Therefore, NoirVisor must have a special primitive for debugger.
 
@@ -27,4 +27,12 @@ For this debugging mode, the connection is considered a console. The remote host
 NoirVisor uses buffers with a size of 512 bytes. Therefore, any single print should not exceed this limit. Overflown parts will be discarded.
 
 ## Interactive Debugging
-The specification is unavailable yet.
+The specification is unavailable yet. In future, the `nvdebug` tool might become the interactive debugger.
+
+## Tool: nvdebug
+This is a simple tool that parses the UEFI environment and locates the symbol according to the address. Currently, `nvdebug` can parse QEMU guest through GDB connection. \
+In `tools/nvdebug` directory, execute:
+```
+cargo run qemu://[kvmhost]:[port] [fault-rip]
+```
+If you specified `-s` when you launch QEMU, the port number is 1234.

@@ -49,6 +49,7 @@ dependencies = [
 name = "nvdebug"
 version = "0.1.0"
 dependencies = [
+ "iced-x86",
  "uefi-raw",
  "windows",
 ]

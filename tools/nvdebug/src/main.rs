@@ -3,6 +3,7 @@ use std::{env::*, net::TcpStream, slice};
 use pe::{locate_symbol, RemotePEImage};
 use windows::Win32::System::{Diagnostics::Debug::*,Threading::*};
 use uefi_raw::{protocol::{device_path::*, loaded_image::LoadedImageProtocol}, table::{configuration::ConfigurationTable, system::SystemTable}, Guid, Handle};
+use iced_x86::*;
 
 use gdb::Target;
 
@@ -27,7 +28,7 @@ const EFI_DEBUG_IMAGE_INFO_TABLE_GUID:Guid=Guid::new([0x77,0x2e,0x15,0x49],[0xda
 	handle:Handle
 }
 
-#[derive(Eq, Ord, Debug)]
+#[derive(Eq, Debug)]
 struct ImageInfo
 {
 	base:u64,
@@ -43,11 +44,19 @@ impl PartialEq for ImageInfo
 	}
 }
 
+impl Ord for ImageInfo
+{
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering
+	{
+		self.base.cmp(&other.base)
+	}
+}
+
 impl PartialOrd for ImageInfo
 {
 	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering>
 	{
-		self.base.partial_cmp(&other.base)
+		Some(self.cmp(other))
 	}
 }
 
@@ -198,24 +207,24 @@ fn enum_efi_images(target:&mut Target)->Vec<ImageInfo>
 	}
 }
 
-fn locate_module_from_ptr(images:&Vec<ImageInfo>,ptr:u64)->Option<&ImageInfo>
+fn locate_module_from_ptr(images:&[ImageInfo],ptr:u64)->Option<&ImageInfo>
 {
 	let mut lo:isize=0;
 	let mut hi=images.len() as isize;
 	while hi>=lo
 	{
-		let mid=((lo+hi)>>1) as usize;
-		if images[mid].base+images[mid].length<ptr
+		let mid=(lo+hi)>>1;
+		if images[mid as usize].base+images[mid as usize].length<ptr
 		{
-			lo=(mid+1) as isize;
+			lo=mid+1;
 		}
-		else if images[mid].base>=ptr
+		else if images[mid as usize].base>=ptr
 		{
-			hi=(mid-1) as isize;
+			hi=mid-1;
 		}
 		else
 		{
-			return Some(&images[mid]);
+			return Some(&images[mid as usize]);
 		}
 	}
 	None
@@ -257,15 +266,37 @@ fn main()
 											Some(mut pe_img)=>
 											{
 												pe_img.load_symbols();
-												if let Some((sn,disp))=locate_symbol(target_address)
+												if let Some(r)=locate_symbol(target_address)
 												{
-													println!("Symbol: {}+{:X}",sn,disp);
+													println!("Symbol: {}+{:X} ({}@{})",r.name,r.displacement,r.source_file,r.line_number);
 												}
 											}
 											None=>println!("Failed to initialize PE Image!")
 										}
 									}
 									_=>println!("[Test] Failed to locate!")
+								}
+								// Also disassemble the instruction.
+								match target.read_memory(target_address,15)
+								{
+									Ok(ins_bytes)=>
+									{
+										let mut decoder=Decoder::with_ip(64,&ins_bytes,target_address,0);
+										if decoder.can_decode()
+										{
+											let mut formatter=MasmFormatter::new();
+											let instruction=decoder.decode();
+											let mut output=String::new();
+											formatter.format(&instruction,&mut output);
+											print!("{:016X}\t",target_address);
+											for b in ins_bytes.iter().take(instruction.len())
+											{
+												print!("{:02X} ",*b);
+											}
+											println!("\t{output}");
+										}
+									}
+									Err(e)=>println!("Failed to read instruction bytes! Reason: {e}")
 								}
 							}
 							Err(e)=>

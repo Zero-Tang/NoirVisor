@@ -1,10 +1,11 @@
 // PE Image and Symbols.
-use std::{str, slice};
+use std::{ptr::null_mut, slice, str};
 
 use windows::{core::*, Win32::{Foundation::*, Storage::FileSystem::*, System::{Diagnostics::Debug::*, SystemServices::*, Threading::GetCurrentProcess}}};
 
 use crate::gdb::Target;
 
+// Some structures are not defined in windows crate.
 #[allow(non_camel_case_types,non_snake_case,dead_code)]
 #[repr(C)] pub struct IMAGE_FILE_HEADER
 {
@@ -185,7 +186,15 @@ impl <'a> RemotePEImage<'a>
 	}
 }
 
-pub fn locate_symbol(address:u64)->Option<(String,u64)>
+pub struct SymbolSearchResult
+{
+	pub name:String,
+	pub displacement:u64,
+	pub source_file:String,
+	pub line_number:u32
+}
+
+pub fn locate_symbol(address:u64)->Option<SymbolSearchResult>
 {
 	let mut buff:[u8;1024]=[0;1024];
 	let mut disp:u64=0;
@@ -201,7 +210,50 @@ pub fn locate_symbol(address:u64)->Option<(String,u64)>
 				let sym_name_raw:&[u16]=slice::from_raw_parts((*sym_info).Name.as_ptr(),(*sym_info).NameLen as usize);
 				match String::from_utf16(sym_name_raw)
 				{
-					Ok(sym_name)=>return Some((sym_name,disp)),
+					Ok(sym_name)=>
+					{
+						let mut line_disp:u32=0;
+						let mut line_info=IMAGEHLP_LINEW64
+						{
+							SizeOfStruct:size_of::<IMAGEHLP_LINEW64>() as u32,
+							Key:null_mut(),
+							LineNumber:0,
+							FileName:PWSTR::null(),
+							Address:0
+						};
+						match SymGetLineFromAddrW64(GetCurrentProcess(),address,&raw mut line_disp,&raw mut line_info)
+						{
+							Ok(_)=>
+							{
+								let mut src_name_raw:Vec<u16>=Vec::new();
+								let mut l=0;
+								loop
+								{
+									let c=line_info.FileName.0.add(l).read();
+									if c==0
+									{
+										break;
+									}
+									else
+									{
+										src_name_raw.push(c);
+									}
+									l+=1;
+								}
+								return Some
+								(
+									SymbolSearchResult
+									{
+										name:sym_name,
+										displacement:disp,
+										source_file:String::from_utf16(&src_name_raw).unwrap(),
+										line_number:line_info.LineNumber
+									}
+								)
+							}
+							Err(e)=>println!("Failed to locate line number! Reason: {e}")
+						}
+					}
 					Err(e)=>println!("Failed to convert from UTF-16! Reason: {e}")
 				}
 			}
