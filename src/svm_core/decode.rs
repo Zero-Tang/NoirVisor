@@ -13,6 +13,8 @@
 
 use alloc::slice;
 use exit::*;
+use iced_x86::{Decoder, DecoderOptions};
+use npt::NptFaultCode;
 
 use super::{xpf_core::x86::paging::*,svm_core::*};
 
@@ -83,10 +85,60 @@ impl SvmVcpu
 		panic!("Unknown interception decode request! Intercept Code: 0x{:016X}",exit_reason);
 	}
 
+	fn fetch_instruction(&mut self)
+	{
+		let rip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
+		let buff=unsafe{slice::from_raw_parts_mut(self.vmcb.virt.cast::<u8>().add(GUEST_INSTRUCTION_BYTES),15)};
+		let mut fault_pa:Option<u64>=None;
+		if let Err(e)=read_virtual_address(rip,self,buff,&mut fault_pa)
+		{
+			panic!("Page-Fault is triggered by software while fetching instruction! Code: 0x{:08X}",e.0);
+		}
+	}
+
 	fn decode_instruction(&mut self)
 	{
 		// This interception does not involve assisting decodings.
 		// However, it still helps if Next-RIP Saving is unsupported by the processor.
+		if !self.nrip_saving
+		{
+			let rip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
+			let buff=unsafe{slice::from_raw_parts_mut(self.vmcb.virt.cast::<u8>().add(GUEST_INSTRUCTION_BYTES),15)};
+			// Fetch instructions.
+			self.fetch_instruction();
+			// Check bitness.
+			let bitness:u32=unsafe
+			{
+				if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)	// The CS.L bit.
+				{
+					64
+				}
+				else if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,10)	// The CS.D bit.
+				{
+					32
+				}
+				else
+				{
+					16
+				}
+			};
+			// Call disassembler.
+			let mut decoder=Decoder::new(bitness,buff,DecoderOptions::AMD);
+			if decoder.can_decode()
+			{
+				let ins=decoder.decode();
+				let mut nrip:u64=rip+ins.len() as u64;
+				// If the vCPU is in compatibility mode, advancing rip should drop the higher 32 bits.
+				unsafe
+				{
+					if !vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)
+					{
+						nrip&=0xFFFFFFFF;
+					}
+					vmwrite(self.vmcb.virt,NEXT_RIP,nrip);
+				}
+			}
+		}
 	}
 
 	fn decode_event(&mut self)
@@ -95,16 +147,48 @@ impl SvmVcpu
 		// Event has no instruction length, so just do nothing.
 	}
 
+	fn decode_pf(&mut self)
+	{
+		if !self.decode_assists
+		{
+			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
+			// We will have to emulate this on our own.
+			let fault_code=PageFaultErrorCode::from_u32(unsafe{vmread(self.vmcb.virt,EXIT_INFO1)});
+			if fault_code.is_execute()
+			{
+				// Fetching instruction is only needed if the operation is not instruction fetch!
+				self.fetch_instruction();
+			}
+		}
+	}
+
+	fn decode_io(&mut self)
+	{
+		// I/O instruction is a special case, since the next rip is saved in the EXIT_INFO2
+		// field, even if the next-rip-saving feature is not supported by the processor.
+		// Therefore, there is no need to fetch-and-decode the intercepted I/O instructions!
+		if !self.nrip_saving
+		{
+			unsafe
+			{
+				let nrip:u64=vmread(self.vmcb.virt,EXIT_INFO2);
+				vmwrite(self.vmcb.virt,NEXT_RIP,nrip);
+			}
+		}
+	}
+
 	fn decode_npf(&mut self)
 	{
-		let rip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
-		println!("Fetching instruction for #NPF! rip=0x{:016X}",rip);
-		let buff=unsafe{slice::from_raw_parts_mut(self.vmcb.virt.cast::<u8>().add(GUEST_INSTRUCTION_BYTES),15)};
-		let mut fault_pa:Option<u64>=None;
-		let r=read_virtual_address(rip,self,buff,&mut fault_pa);
-		if let Err(e)=r
+		if !self.decode_assists
 		{
-			panic!("Page-Fault is triggered by software! Reason: 0x{:08X}",e.0);
+			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
+			// We will have to emulate this on our own.
+			let fault_code=NptFaultCode::from_u64(unsafe{vmread(self.vmcb.virt,EXIT_INFO1)});
+			if !fault_code.is_code_read()
+			{
+				// Fetching instruction is only needed if the operation is not instruction fetch!
+				self.fetch_instruction();
+			}
 		}
 	}
 }
@@ -125,6 +209,7 @@ const SVM_HOST_DECODE_HANDLER_GROUP1:[SvmHostDecodeHandler;SVM_MAXIMUM_CODE1]=
 	array[INTERCEPTED_SMI as usize]=SvmVcpu::decode_event;
 	array[INTERCEPTED_INIT as usize]=SvmVcpu::decode_event;
 	array[INTERCEPTED_VINTR as usize]=SvmVcpu::decode_event;
+	array[INTERCEPTED_IO as usize]=SvmVcpu::decode_io;
 	array
 };
 

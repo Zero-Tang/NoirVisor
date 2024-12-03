@@ -13,7 +13,7 @@
 use core::{ffi::c_void, ptr::*};
 use alloc::vec::Vec;
 use npt::SvmNptManager;
-use xpf_core::{asm::misc::ud2, bitmap::set_bitmap, hv_host::x86::*};
+use xpf_core::{bitmap::set_bitmap, hv_host::x86::*};
 
 use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*,crdr::*,seg::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*},*};
 use amd64::{cpuid::*,msr::*};
@@ -64,6 +64,8 @@ pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*16;
 	pub cpuid_fms:u32,
 	pub host_cpu:HostProcessor,
 	pub nested_hvm:SvmNestedVcpu,
+	pub decode_assists:bool,
+	pub nrip_saving:bool
 }
 
 impl SvmVcpu
@@ -90,7 +92,9 @@ impl SvmVcpu
 				hsave_pa:0,
 				vmcr:0,
 				svm_key:0
-			}
+			},
+			decode_assists:false,
+			nrip_saving:false
 		}
 	}
 }
@@ -115,6 +119,11 @@ impl SvmVcpu
 	{
 		unsafe
 		{
+			let mut d=0;
+			cpuid(CPUID_EXT_SECURE_VIRTUAL_MACHINE_FEATURE,0,None,None,None,Some(&mut d));
+			// Setup supported features.
+			self.decode_assists=(d&CPUID_SVM_DECODE_ASSIST)==CPUID_SVM_DECODE_ASSIST;
+			self.nrip_saving=(d&CPUID_SVM_NEXT_RIP_SAVING)==CPUID_SVM_NEXT_RIP_SAVING;
 			let hv=self.hypervisor as *mut SvmHypervisor;
 			let mut state=ProcessorState::default();
 			noir_save_processor_state(&raw mut state);
@@ -142,7 +151,6 @@ impl SvmVcpu
 			write_gdtr(&raw const gdtr);
 			write_tr(self.host_cpu.tr_sel);
 			write_cr3((*hv).host.paging.cr3.phys);
-			ud2();
 			// Setup APIC ID.
 			let (_,xid,_,_)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
 			let (_,_,_,x2id)=cpuid2(CPUID_STD_EXTENDED_TOPOLOGY_INFORMATION,0);

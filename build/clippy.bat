@@ -3,7 +3,7 @@
 :loop
 
 cls
-cargo clippy
+cargo clippy --all
 
 echo Continue will restart clippy!
 pause.

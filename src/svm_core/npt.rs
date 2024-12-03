@@ -633,6 +633,11 @@ macro_rules! build_fault_code_checker
 
 impl NptFaultCode
 {
+	pub fn from_u64(v:u64)->Self
+	{
+		Self(v)
+	}
+	
 	build_fault_code_checker!(present);
 	build_fault_code_checker!(write);
 	build_fault_code_checker!(user);

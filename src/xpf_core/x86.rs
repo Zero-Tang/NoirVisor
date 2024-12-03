@@ -14,7 +14,7 @@ pub mod paging
 {
 	use core::ffi::c_void;	
 	use paste::paste;
-	use crate::{println,print,dbg_print, svm_core::amd64::msr::MSR_EFER_LMA, xpf_core::{nvbdk::*, x86::crdr::*}};
+	use crate::{svm_core::amd64::msr::MSR_EFER_LMA, xpf_core::{nvbdk::*, x86::crdr::*}};
 
 	macro_rules! build_paging_def
 	{
@@ -158,6 +158,40 @@ pub mod paging
 
 	pub struct PageFaultErrorCode(pub u32);
 
+	macro_rules! build_page_fault_bit
+	{
+		($name:tt,$pos:literal) =>
+		{
+			paste!
+			{
+				pub const [<PAGE_FAULT_ $name:upper _BIT>]:u32=$pos;
+				pub const [<PAGE_FAULT_ $name:upper>]:u32=1<<$pos;
+			}
+		};
+	}
+
+	macro_rules! build_page_fault_bit_checker
+	{
+		($name:tt) =>
+		{
+			paste!
+			{
+				#[inline] pub fn [<is_ $name:lower>](&self)->bool
+				{
+					(self.0&[<PAGE_FAULT_ $name:upper>])!=0
+				}
+			}
+		};
+	}
+
+	build_page_fault_bit!(present,0);
+	build_page_fault_bit!(write,1);
+	build_page_fault_bit!(user,2);
+	build_page_fault_bit!(reserved,3);
+	build_page_fault_bit!(execute,4);
+	build_page_fault_bit!(protection_key,5);
+	build_page_fault_bit!(shadow_stack,6);
+
 	impl PageFaultErrorCode
 	{
 		fn new(p:bool,w:bool,u:bool,r:bool,x:bool,pk:bool,ss:bool)->Self
@@ -173,6 +207,19 @@ pub mod paging
 				(ss as u32)<<6
 			)
 		}
+
+		pub fn from_u32(v:u32)->Self
+		{
+			Self(v)
+		}
+
+		build_page_fault_bit_checker!(present);
+		build_page_fault_bit_checker!(write);
+		build_page_fault_bit_checker!(user);
+		build_page_fault_bit_checker!(reserved);
+		build_page_fault_bit_checker!(execute);
+		build_page_fault_bit_checker!(protection_key);
+		build_page_fault_bit_checker!(shadow_stack);
 	}
 
 	/// ## `PageTranslator` trait
@@ -244,9 +291,7 @@ pub mod paging
 			{
 				let offset_mask:u64=(1<<shift_amount)-1;
 				let base:u64=(pml_e>>shift_amount)<<shift_amount;
-				println!("Offset Mask: 0x{:016X}, Base: 0x{:016X}, Shift-Amount: {}",offset_mask,base,shift_amount);
 				let pa=(va&offset_mask)|base;
-				println!("Final Physical Address: 0x{:016X} in level {}!",pa,level);
 				Ok(pa)
 			}
 		}
@@ -254,7 +299,6 @@ pub mod paging
 		{
 			// This is the intermediate level!
 			let next_pt_base=phys_page_4kb_base(pml_e as usize) as u64;
-			println!("Translating 0x{:016X} in level {}! Page-Table: 0x{:016X}",va,level,next_pt_base);
 			translate_64bit_va_routine(va,vcpu,next_pt_base,level-1,w,x,ss)
 		}
 	}
@@ -292,7 +336,6 @@ pub mod paging
 					va&=0xFFFFFFFF;
 					3
 				};
-				println!("Translating 0x{:016X} with {} levels of paging structure! CR3=0x{:X}",va,level,cr3);
 				translate_64bit_va_routine(va,vcpu,cr3,level,w,x,ss)
 			}
 			else
@@ -335,7 +378,6 @@ pub mod paging
 			let end_len=(PAGE_SIZE-page_offset(va as usize)) as u64;
 			let rem_len=end_va-cur_va;
 			let copy_size=if end_len<rem_len {end_len} else {rem_len};
-			println!("Copying {} bytes at VA 0x{:016X}!",copy_size,cur_va);
 			let r=unsafe
 			{
 				read_virtual_address_in_page(va+copied_size,vcpu,buffer.as_mut_ptr().add(copied_size as usize),copy_size as usize)
