@@ -64,8 +64,10 @@ pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*16;
 	pub cpuid_fms:u32,
 	pub host_cpu:HostProcessor,
 	pub nested_hvm:SvmNestedVcpu,
+	// Features supported by the processors.
 	pub decode_assists:bool,
-	pub nrip_saving:bool
+	pub nrip_saving:bool,
+	pub vmcb_clean:bool
 }
 
 impl SvmVcpu
@@ -94,7 +96,8 @@ impl SvmVcpu
 				svm_key:0
 			},
 			decode_assists:false,
-			nrip_saving:false
+			nrip_saving:false,
+			vmcb_clean:false
 		}
 	}
 }
@@ -124,6 +127,7 @@ impl SvmVcpu
 			// Setup supported features.
 			self.decode_assists=(d&CPUID_SVM_DECODE_ASSIST)==CPUID_SVM_DECODE_ASSIST;
 			self.nrip_saving=(d&CPUID_SVM_NEXT_RIP_SAVING)==CPUID_SVM_NEXT_RIP_SAVING;
+			self.vmcb_clean=(d&CPUID_SVM_VMCB_CLEAN)==CPUID_SVM_VMCB_CLEAN;
 			let hv=self.hypervisor as *mut SvmHypervisor;
 			let mut state=ProcessorState::default();
 			noir_save_processor_state(&raw mut state);

@@ -2,19 +2,9 @@
 This directory is the virtualization engine based on AMD-V. \
 All code in this directory should be cross-platform designed.
 
-# Files
-svm_main.c is the code file that initializes, sets up, and finalizes the virtualization engine based on AMD-V. \
-svm_exit.c is the code file that handles all the VM-Exits derived from the processor. \
-svm_cpuid.c is the code file that handles the VM-Exits induced by CPUID instruction. \
-svm_def.h defines basic structures for AMD-V, details regarding the VMCB. \
-svm_exit.h defines defines basic constants, and miscellaneous stuff for VM-Exit. \
-svm_vmcb.h defines macros for operating the VMCB and offsets of fields in VMCB. \
-svm_cpuid.h defines facilities for CPUID VM-Exit handlers.
-
 # Features
 NoirVisor uses the following AMD-V features:
-- Decode Assists. This feature is the basic requirement. Otherwise, NoirVisor don't know what is going on in the VM-Exit.
-- Next-RIP Saving. This feature is the basic requirement, Otherwise, NoirVisor don't know how to advance the instruction pointer.
+- Nested Paging. This feature enables NoirVisor to protect itself.
 - MSR Permission Map. This feature enables the stealth MSR-hook for syscall and sysenter hook.
 - Address Space Identifier. This is also known as ASID. This feature would tag the TLBs with an ASID so that - on VM-Entry and VM-Exit - processor would not invalidate TLB.
 - VMCB Clean Bits. This is used for VMCB state caching. This feature would allow processor to cache the VMCB state so that the processor has a better performance in virtualization.

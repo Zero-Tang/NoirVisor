@@ -13,48 +13,40 @@
 
 use alloc::slice;
 use exit::*;
-use iced_x86::{Decoder, DecoderOptions};
+use iced_x86::{Code, Decoder, DecoderOptions, Instruction, Mnemonic};
+use paste::paste;
 use npt::NptFaultCode;
 
 use super::{xpf_core::x86::paging::*,svm_core::*};
 
+macro_rules! build_get_reg_helper
+{
+	($name:tt) =>
+	{
+		paste!
+		{
+			#[inline] fn [<get_ $name:lower>](&self)->u64
+			{
+				unsafe
+				{
+					vmread(self.vmcb.virt,[<GUEST_ $name:upper>])
+				}
+			}
+		}
+	};
+}
+
 impl PageTranslationHelper for SvmVcpu
 {
-	fn get_cr0(&self)->u64
-	{
-		unsafe 
-		{
-			vmread(self.vmcb.virt,GUEST_CR0)
-		}
-	}
-
-	fn get_cr3(&self)->u64
-	{
-		unsafe
-		{
-			vmread(self.vmcb.virt,GUEST_CR3)
-		}
-	}
-
-	fn get_cr4(&self)->u64
-	{
-		unsafe
-		{
-			vmread(self.vmcb.virt,GUEST_CR4)
-		}
-	}
-
-	fn get_efer(&self)->u64
-	{
-		unsafe
-		{
-			vmread(self.vmcb.virt,GUEST_EFER)
-		}
-	}
+	build_get_reg_helper!(cr0);
+	build_get_reg_helper!(cr3);
+	build_get_reg_helper!(cr4);
+	build_get_reg_helper!(efer);
 
 	fn is_user_mode(&self)->bool
 	{
-		false
+		let cpl:u8=unsafe{vmread(self.vmcb.virt,GUEST_CPL)};
+		cpl==3
 	}
 
 	fn read_phys_mem(&self,pa:u64,buffer:&mut [u8])->usize
@@ -96,48 +88,55 @@ impl SvmVcpu
 		}
 	}
 
+	fn decode_instruction_internal(&mut self)->Option<Instruction>
+	{
+		let rip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
+		let buff=unsafe{slice::from_raw_parts_mut(self.vmcb.virt.cast::<u8>().add(GUEST_INSTRUCTION_BYTES),15)};
+		// Fetch instructions.
+		self.fetch_instruction();
+		// Check bitness.
+		let bitness:u32=unsafe
+		{
+			if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)	// The CS.L bit.
+			{
+				64
+			}
+			else if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,10)	// The CS.D bit.
+			{
+				32
+			}
+			else
+			{
+				16
+			}
+		};
+		// Call disassembler.
+		let mut decoder=Decoder::with_ip(bitness,buff,rip,DecoderOptions::AMD);
+		if decoder.can_decode()
+		{
+			let ins=decoder.decode();
+			let mut nrip:u64=rip+ins.len() as u64;
+			// If the vCPU is in compatibility mode, advancing rip should drop the higher 32 bits.
+			unsafe
+			{
+				if !vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)
+				{
+					nrip&=0xFFFFFFFF;
+				}
+				vmwrite(self.vmcb.virt,NEXT_RIP,nrip);
+			}
+			return Some(ins);
+		}
+		None
+	}
+
 	fn decode_instruction(&mut self)
 	{
 		// This interception does not involve assisting decodings.
 		// However, it still helps if Next-RIP Saving is unsupported by the processor.
 		if !self.nrip_saving
 		{
-			let rip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
-			let buff=unsafe{slice::from_raw_parts_mut(self.vmcb.virt.cast::<u8>().add(GUEST_INSTRUCTION_BYTES),15)};
-			// Fetch instructions.
-			self.fetch_instruction();
-			// Check bitness.
-			let bitness:u32=unsafe
-			{
-				if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)	// The CS.L bit.
-				{
-					64
-				}
-				else if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,10)	// The CS.D bit.
-				{
-					32
-				}
-				else
-				{
-					16
-				}
-			};
-			// Call disassembler.
-			let mut decoder=Decoder::new(bitness,buff,DecoderOptions::AMD);
-			if decoder.can_decode()
-			{
-				let ins=decoder.decode();
-				let mut nrip:u64=rip+ins.len() as u64;
-				// If the vCPU is in compatibility mode, advancing rip should drop the higher 32 bits.
-				unsafe
-				{
-					if !vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)
-					{
-						nrip&=0xFFFFFFFF;
-					}
-					vmwrite(self.vmcb.virt,NEXT_RIP,nrip);
-				}
-			}
+			self.decode_instruction_internal();
 		}
 	}
 
@@ -145,6 +144,70 @@ impl SvmVcpu
 	{
 		// This interception does not involve assisting decodings.
 		// Event has no instruction length, so just do nothing.
+	}
+
+	fn decode_cr(&mut self)
+	{
+		if !self.decode_assists
+		{
+			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
+			// We will have to emulate this on our own.
+			// First, fetch the instruction.
+			self.fetch_instruction();
+			// Second, decode the instruction.
+			if let Some(ins)=self.decode_instruction_internal()
+			{
+				// Then put the results back.
+				let ins_kind=ins.mnemonic();
+				match ins_kind
+				{
+					Mnemonic::Mov=>
+					{
+						let ins_code=ins.code();
+						match ins_code
+						{
+							Code::Mov_cr_r32|Code::Mov_cr_r64=>unsafe{vmwrite(self.vmcb.virt,EXIT_INFO1,(ins.op1_register().number() as u64)|0x8000000000000000)},
+							Code::Mov_r32_cr|Code::Mov_r64_cr=>unsafe{vmwrite(self.vmcb.virt,EXIT_INFO1,(ins.op0_register().number() as u64)|0x8000000000000000)},
+							_=>panic!("Unexpected instruction code {:?}!",ins_code)
+						}
+					}
+					// There are additional instructions which can access control registers!
+					Mnemonic::Lmsw|Mnemonic::Smsw|Mnemonic::Clts=>unsafe{vmwrite::<u64>(self.vmcb.virt,EXIT_INFO1,0)},
+					_=>panic!("Unexpected instruction mnemonic {:?}!",ins_kind)
+				}
+			}
+		}
+	}
+
+	fn decode_dr(&mut self)
+	{
+		if !self.decode_assists
+		{
+			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
+			// We will have to emulate this on our own.
+			// First, fetch the instruction.
+			self.fetch_instruction();
+			// Second, decode the instruction.
+			if let Some(ins)=self.decode_instruction_internal()
+			{
+				// Then put the results back.
+				let ins_kind=ins.mnemonic();
+				match ins_kind
+				{
+					Mnemonic::Mov=>
+					{
+						let ins_code=ins.code();
+						match ins_code
+						{
+							Code::Mov_dr_r32|Code::Mov_dr_r64=>unsafe{vmwrite::<u64>(self.vmcb.virt,EXIT_INFO1,(ins.op1_register().number() as u64)|0x8000000000000000)},
+							Code::Mov_r32_dr|Code::Mov_r64_dr=>unsafe{vmwrite::<u64>(self.vmcb.virt,EXIT_INFO1,(ins.op0_register().number() as u64)|0x8000000000000000)},
+							_=>panic!("Unexpected instruction code {:?}!",ins_code)
+						}
+					}
+					_=>panic!("Unexpected instruction mnemonic {:?}!",ins_kind)
+				}
+			}
+		}
 	}
 
 	fn decode_pf(&mut self)
@@ -159,6 +222,37 @@ impl SvmVcpu
 				// Fetching instruction is only needed if the operation is not instruction fetch!
 				self.fetch_instruction();
 			}
+		}
+	}
+
+	fn decode_int(&mut self)
+	{
+		if !self.decode_assists
+		{
+			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
+			// We will have to emulate this on our own.
+			// First, fetch the instruction.
+			self.fetch_instruction();
+			// Second, decode the instruction.
+			if let Some(ins)=self.decode_instruction_internal()
+			{
+				// Then put the results back.
+				let ins_kind=ins.mnemonic();
+				match ins_kind
+				{
+					Mnemonic::Int=>unsafe{vmwrite(self.vmcb.virt,EXIT_INFO1,ins.immediate8() as u64)},
+					_=>panic!("Unexpected instruction mnemonic {:?}!",ins_kind)
+				}
+			}
+		}
+	}
+
+	fn decode_invlpg(&mut self)
+	{
+		if !self.decode_assists
+		{
+			// FIXME: load registers to obtain the target address.
+			todo!("Software-emulated decode-assists for invlpg is not supported yet!");
 		}
 	}
 
@@ -204,11 +298,26 @@ const SVM_HOST_DECODE_HANDLER_GROUP1:[SvmHostDecodeHandler;SVM_MAXIMUM_CODE1]=
 		array[i]=SvmVcpu::decode_event;
 		i+=1;
 	}
+	i=INTERCEPTED_CR0_READ as usize;
+	while i<=INTERCEPTED_CR15_WRITE as usize
+	{
+		array[i]=SvmVcpu::decode_cr;
+		i+=1;
+	}
+	i=INTERCEPTED_DR0_READ as usize;
+	while i<=INTERCEPTED_DR15_WRITE as usize
+	{
+		array[i]=SvmVcpu::decode_dr;
+		i+=1;
+	}
+	array[INTERCEPTED_PF_EXCEPTION as usize]=SvmVcpu::decode_pf;
 	array[INTERCEPTED_INTERRUPT as usize]=SvmVcpu::decode_event;
 	array[INTERCEPTED_NMI as usize]=SvmVcpu::decode_event;
 	array[INTERCEPTED_SMI as usize]=SvmVcpu::decode_event;
 	array[INTERCEPTED_INIT as usize]=SvmVcpu::decode_event;
 	array[INTERCEPTED_VINTR as usize]=SvmVcpu::decode_event;
+	array[INTERCEPTED_INT as usize]=SvmVcpu::decode_int;
+	array[INTERCEPTED_INVLPG as usize]=SvmVcpu::decode_invlpg;
 	array[INTERCEPTED_IO as usize]=SvmVcpu::decode_io;
 	array
 };

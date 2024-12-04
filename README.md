@@ -30,6 +30,7 @@ Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hyg
 - Processors produced by VIA Technologies Inc. may support Intel VT-x.
 - Processors produced by Shanghai Zhaoxin Semiconductor Co, Ltd. may support Intel VT-x.
 - Processors produced by Tianjin Haiguang Advanced Technology Investment Co, Ltd. may support AMD-V.
+- Processors produced by Montage Technologies may support Intel VT-x.
 
 Note that early Zhaoxin and VIA use Centaur as vendor.
 
@@ -70,7 +71,8 @@ NoirVisor Core is written in Rust. See [documentation for NoirVisor in Rust](./d
 Install [Rust](https://www.rust-lang.org/tools/install). \
 The toolchain is up to you. It is recommended to use the `stable` toolchain. But feel free to use `nightly` toolchain.
 
-Please note that `cargo build` command only builds the NoirVisor Core. It is a static library, not an executable.
+Please note that `cargo build` command only builds the NoirVisor Core. It is a static library, not an executable. \
+You should execute the batch script to build a full executable!
 
 Currently, NoirVisor Core in Rust can subvert the system with AMD-V in UEFI.
 
@@ -104,7 +106,7 @@ rustup target add x86_64-unknown-uefi
 Project NoirVisor chooses iced-x86 as NoirVisor's disassembler engine. It will be built by Cargo on the first-time compilation. Visit the [documents for disassembler](src/disasm/readme.md) for further details.
 
 ## Memory Allocator
-Since the adoption of the Rust programming language, NoirVisor will include an internal memory allocator: [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc). This allocator will enable NoirVisor to gather its allocated memories together so that they can be protected by nested paging. If using system-provided memory allocator, NoirVisor's memories do not exclusively own the pages, and thus can't be protected by nested paging, leaving NoirVisor vulnerable to attacks from guest.
+Since the adoption of the Rust programming language, NoirVisor will include an internal memory allocator: [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc). This allocator will enable NoirVisor to gather its allocated memories together so that they can be protected by nested paging. If using system-provided memory allocator, NoirVisor's memories do not exclusively own the pages, and thus can't be protected by nested paging, leaving NoirVisor vulnerable to attacks from guest. In addition, the memory allocator may enable NoirVisor to allocate memory even in host mode.
 
 ## Python script
 Since January 2024, NoirVisor can be built using Python script. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, building NoirVisor through Python script in Windows 7 is not supported. There is no `pip` package requirements for compilation. \
@@ -126,6 +128,8 @@ Python-based compilation is parallel. It will achieve a great performance in bui
 Current implementation only supports building NoirVisor as Windows Driver.
 
 See [documentation](./doc/make.md) for more information using python script to build NoirVisor.
+
+Currently, the Python script does not support building NoirVisor Core in Rust.
 
 # Test
 

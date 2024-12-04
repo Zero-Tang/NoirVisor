@@ -339,6 +339,8 @@ impl SvmVcpu
 	let intercept_code:i32=vmread(cur_vmcb,EXIT_CODE);
 	let decoder=dispatch_decoder(intercept_code as i64);
 	let handler=dispatch_handler(intercept_code as i64);
+	// If VMCB-Clean-Bits is supported, we may cache the VMCB fields.
+	if (*vcpu).vmcb_clean {vmwrite::<u32>((*vcpu).vmcb.virt,VMCB_CLEAN_BITS,0xFFFFFFFF)};
 	// Handle the VM-Exit!
 	gpr.rax=vmread(cur_vmcb,GUEST_RAX);
 	decoder(vp);
@@ -350,9 +352,9 @@ impl SvmVcpu
 }
 
 pub const SVM_MAXIMUM_GROUPS:usize=2;
-pub const SVM_MAXIMUM_CODE1:usize=0xA5;
+pub const SVM_MAXIMUM_CODE1:usize=0xA7;
 pub const SVM_MAXIMUM_CODE2:usize=0x4;
-pub const SVM_MAXIMUM_NEGATIVE:usize=3;
+pub const SVM_MAXIMUM_NEGATIVE:usize=4;
 
 // Use a macro to reduce repetitions for defining CR/DR interceptions.
 macro_rules! build_crdr_interception
@@ -476,6 +478,8 @@ pub const INTERCEPTED_INVLPGB:i64=0xA0;
 pub const ILLEGAL_INVLPGB:i64=0xA2;
 pub const INTERCEPTED_MCOMMIT:i64=0xA3;
 pub const INTERCEPTED_TLBSYNC:i64=0xA4;
+pub const INTERCEPTED_BUSLOCK:i64=0xA5;
+pub const INTERCEPTED_IDLE_HLT:i64=0xA6;
 
 pub const NESTED_PAGE_FAULT:i64=0x400;
 pub const AVIC_INCOMPLETE_IPI:i64=0x401;
@@ -485,6 +489,7 @@ pub const INTERCEPTED_VMGEXIT:i64=0x403;
 pub const INVALID_GUEST_STATE:i64=-1;
 pub const INTERCEPTED_VMSA_BUSY:i64=-2;
 pub const IDLE_REQUIRED:i64=-3;
+pub const INVALID_PMC:i64=-4;
 
 type SvmExitHandler=fn(&mut SvmVcpu,&mut GprState);
 
