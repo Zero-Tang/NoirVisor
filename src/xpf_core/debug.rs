@@ -84,6 +84,8 @@ pub trait DebuggerBackend
 	/// # Safety
 	/// The `buffer` argument is a raw pointer.
 	unsafe fn write(&self,buffer:*const u8,length:usize)->bool;
+	fn acquire(&mut self);
+	fn release(&mut self);
 }
 
 pub enum Debugger
@@ -97,14 +99,20 @@ pub static mut DEBUGGER:Debugger=Debugger::Unknown;
 // Currently, interactive debugger is in draft-stage, so `debug_read` will never be called.
 // Mark it as a piece of dead code.
 #[allow(dead_code)]
-unsafe fn debug_read(debugger:&impl DebuggerBackend,buffer:*mut u8,length:usize)->bool
+unsafe fn debug_read(debugger:&mut impl DebuggerBackend,buffer:*mut u8,length:usize)->bool
 {
-	debugger.read(buffer,length)
+	debugger.acquire();
+	let b=debugger.read(buffer,length);
+	debugger.release();
+	b
 }
 
-unsafe fn debug_write(debugger:&impl DebuggerBackend,buffer:*const u8,length:usize)->bool
+unsafe fn debug_write(debugger:&mut impl DebuggerBackend,buffer:*const u8,length:usize)->bool
 {
-	debugger.write(buffer,length)
+	debugger.acquire();
+	let b=debugger.write(buffer,length);
+	debugger.release();
+	b
 }
 
 pub fn dbg_print(args: core::fmt::Arguments)
@@ -113,10 +121,10 @@ pub fn dbg_print(args: core::fmt::Arguments)
 	let r=fmt::write(&mut w, args);
 	if r.is_ok()
 	{
-		let dbg=&raw const DEBUGGER;
+		let dbg=&raw mut DEBUGGER;
 		unsafe
 		{
-			match &*dbg
+			match &mut *dbg
 			{
 				Debugger::QemuDebugCon(item)=>
 				{
@@ -135,8 +143,8 @@ pub fn dbg_print(args: core::fmt::Arguments)
 /// This function is intended to be called from C codes of NoirVisor.
 #[no_mangle] pub unsafe extern "C" fn noir_debug_output(buffer:*const u8,length:usize)
 {
-	let dbg=&raw const DEBUGGER;
-	match &*dbg
+	let dbg=&raw mut DEBUGGER;
+	match &mut *dbg
 	{
 		Debugger::QemuDebugCon(item)=>
 		{

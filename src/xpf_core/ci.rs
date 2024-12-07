@@ -30,7 +30,7 @@ pub fn is_ci_phys_page(phys:u64)->bool
 	let mut lo:isize=0;
 	// Use binary search to reduce running time complexity.
 	let ci=&raw const CI_PAGES;
-	let mut hi=unsafe{(*ci).len()} as isize;
+	let mut hi=unsafe{(*ci).len()-1} as isize;
 	while hi>=lo
 	{
 		let mid=(lo+hi)>>1;

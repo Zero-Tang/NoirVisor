@@ -17,7 +17,7 @@ use paste::paste;
 
 use crate::{print,println,dbg_print,xpf_core::nvbdk::*};
 
-use super::xpf_core::ci::enum_ci_phys_page;
+use super::xpf_core::{ci::enum_ci_phys_page, ioflt::IoAddressSpace};
 
 // Use a macro to reduce effort making bit definitions for nested page table entries.
 macro_rules! build_npt_entry_bit_def
@@ -224,6 +224,17 @@ impl NptPdpte
 					(nx as u64)<<NPT_ENTRY_NO_EXECUTE;
 		Self(val)
 	}
+
+	pub fn new_huge(present:bool,write:bool,user:bool,page_base:u64,nx:bool)->Self
+	{
+		let val:u64=(present as u64)<<NPT_ENTRY_PRESENT |
+					(write as u64)<<NPT_ENTRY_WRITE |
+					(user as u64)<<NPT_ENTRY_USER |
+					NPT_ENTRY_PAGE_SIZE_BIT |
+					page_1gb_base(page_base as usize) as u64 |
+					(nx as u64)<<NPT_ENTRY_NO_EXECUTE;
+		Self(val)
+	}
 }
 
 // Page-Directory Entry (Bits 21-29)
@@ -396,6 +407,12 @@ impl SvmNptManager
 				pml4e_p.write(pml4e_v);
 			}
 		}
+	}
+
+	pub fn update_pdpte(&mut self,gpa:u64,hpa:u64,r:bool,w:bool,x:bool,h:bool)
+	{
+		let pdpte_p=self.locate_pdpte_mut(gpa);
+		*pdpte_p=if h {NptPdpte::new_huge(r,w,true,hpa,!x)} else {NptPdpte::new(r,w,true,pdpte_p.get_next_level_base(),!x)};
 	}
 
 	fn locate_pdpte_mut(&mut self,gpa:u64)->&mut NptPdpte
@@ -584,6 +601,40 @@ impl SvmNptManager
 		}
 	}
 
+	pub fn setup_mmio_filter(&mut self,mmio_space:&IoAddressSpace<u64>)
+	{
+		// NPT will handle MMIO filters in the host system.
+		for r in &mmio_space.regions
+		{
+			let mut p=r.addr;
+			let end=r.addr+r.size;
+			while p<end
+			{
+				let remainder=end-p;
+				let increment:u64=if page_1gb_offset(remainder as usize)==0 && page_1gb_offset(p as usize)==0
+				{
+					PAGE_1GB_SIZE as u64
+				}
+				else if page_2mb_offset(remainder as usize)==0 && page_2mb_offset(p as usize)==0
+				{
+					PAGE_2MB_SIZE as u64
+				}
+				else
+				{
+					PAGE_4KB_SIZE as u64
+				};
+				match increment as usize
+				{
+					PAGE_1GB_SIZE=>self.update_pdpte(p,0,false,false,false,true),
+					PAGE_2MB_SIZE=>self.update_pde(p,0,false,false,false,true),
+					PAGE_4KB_SIZE=>self.update_pte(p,0,false,false,false),
+					_=>panic!("Unknown increment size: 0x{:X}!",increment)
+				}
+				p+=increment;
+			}
+		}
+	}
+
 	pub fn cleanup(&mut self)
 	{
 		unimplemented!("Cleaning up NPT Manager...");
@@ -637,7 +688,7 @@ impl NptFaultCode
 	{
 		Self(v)
 	}
-	
+
 	build_fault_code_checker!(present);
 	build_fault_code_checker!(write);
 	build_fault_code_checker!(user);

@@ -17,10 +17,31 @@ use iced_x86::*;
 
 use decode::dispatch_decoder;
 use npt::NptFaultCode;
-use xpf_core::{asm::misc::get_rsp, ci::is_ci_phys_page, x86::interrupts::*};
+use xpf_core::{ci::is_ci_phys_page, x86::interrupts::*};
 
 use super::*;
 use crate::mshv_core::cpuid::*;
+
+pub fn svm_apic_input_handler(_region:&IoRegion<u64>,_address:u64,_size:u64,_value:*mut c_void,_context:*mut c_void)
+{
+	panic!("APIC-Read is not implemented!");
+}
+
+pub fn svm_apic_output_handler(_region:&IoRegion<u64>,address:u64,size:u64,value:*const c_void,_context:*mut c_void)
+{
+	// Current implementation is simply pass-thru.
+	unsafe
+	{
+		match size
+		{
+			1=>(address as *mut u8).write(value.cast::<u8>().read()),
+			2=>(address as *mut u16).write(value.cast::<u16>().read()),
+			4=>(address as *mut u32).write(value.cast::<u32>().read()),
+			8=>(address as *mut u64).write(value.cast::<u64>().read()),
+			_=>panic!("Unknown size: {size}!")
+		}
+	}
+}
 
 // Place all VM-Exit handlers from the subverted host into this implementation!
 // Rules of thumb in implementing VM-Exit Handlers: Do not allocate memories from heap!
@@ -288,35 +309,72 @@ impl SvmVcpu
 		panic!("Nested virtualization is unsupported!");
 	}
 
-	fn handle_npf(&mut self,_gpr_state:&mut GprState)
+	fn handle_npf(&mut self,gpr_state:&mut GprState)
 	{
 		let vmcb=self.vmcb.virt;
 		let fault:NptFaultCode=unsafe{vmread(vmcb,EXIT_INFO1)};
 		let gpa:u64=unsafe{vmread(vmcb,EXIT_INFO2)};
 		let rip:u64=unsafe{vmread(vmcb,GUEST_RIP)};
-		let ins_bytes:&[u8]=unsafe{slice::from_raw_parts(vmcb.byte_add(GUEST_INSTRUCTION_BYTES).cast(),15)};
 		// Check if this #NPF is due to Code Integrity violation.
 		if is_ci_phys_page(gpa)
 		{
 			println!("CI-fault is intercepted!");
 		}
-		let mut decoder=Decoder::with_ip(64,ins_bytes,rip,0);
-		let ins_info=decoder.decode();
-		let mut mnemonic=FormatBuffer::default();
-		let mut formatter=MasmFormatter::new();
-		formatter.format(&ins_info,&mut mnemonic);
-		print!("{:016X} ",rip);
-		for b in ins_bytes.iter().take(ins_info.len())
+		else if !fault.is_code_read()
 		{
-			print!("{:02X} ",b);
+			let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
+			// This could be MMIO Filter.
+			let ins_bytes:&[u8]=unsafe{slice::from_raw_parts(self.vmcb.virt.byte_add(GUEST_INSTRUCTION_BYTES).cast(),15)};
+			// Check bitness.
+			let bitness:u32=unsafe
+			{
+				if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)	// The CS.L bit.
+				{
+					64
+				}
+				else if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,10)	// The CS.D bit.
+				{
+					32
+				}
+				else
+				{
+					16
+				}
+			};
+			// Call disassembler.
+			let mut decoder=Decoder::with_ip(bitness,ins_bytes,rip,DecoderOptions::AMD);
+			assert!(decoder.can_decode());
+			let ins_info=decoder.decode();
+			let gpr_array=gpr_state as *mut GprState as *mut u64;
+			match ins_info.mnemonic()
+			{
+				Mnemonic::Mov=>
+				{
+					// Decode the operand.
+					if fault.is_write()
+					{
+						let data=match ins_info.op1_kind()
+						{
+							OpKind::Register=>unsafe{gpr_array.add(ins_info.op1_register().number()).read()},
+							OpKind::Immediate8=>ins_info.immediate8().into(),
+							OpKind::Immediate16=>ins_info.immediate16().into(),
+							OpKind::Immediate32=>ins_info.immediate32().into(),
+							_=>panic!("Unknown opcode kind: {:?}!",ins_info.op1_kind())
+						};
+						if let Err(e)=hv.mmio_space.dispatch_output(gpa,(ins_info.op_code().operand_size()>>3).into(),(&raw const data).cast(),self as *mut Self as *mut c_void)
+						{
+							panic!("Failed to dispatch MMIO output! Reason: {e}");
+						}
+					}
+					else
+					{
+						unimplemented!("MMIO Input virtualization is not implemented!");
+					};
+				}
+				_=>panic!("Unsupported instruction: {:?} is intercepted for decoding MMIO instruction!",ins_info.mnemonic())
+			}
+			unsafe{advance_rip_manually(vmcb,ins_info.len())};
 		}
-		println!("\t{}",mnemonic.as_str());
-		println!("Nested Page Fault is intercepted! rip=0x{:016X}, GPA=0x{:016X}\nReason: {}",rip,gpa,fault);
-		unsafe{advance_rip_manually(vmcb,ins_info.len())};
-		println!("New Rip: 0x{:016X}",unsafe{vmread::<u64>(vmcb,GUEST_RIP)});
-		let rsp=get_rsp();
-		let top=self.hv_stack as u64 + HYPERVISOR_STACK_SIZE as u64;
-		println!("Used Stack: {} bytes",top-rsp);
 	}
 
 	fn handle_invalid(&mut self,_gpr_state:&mut GprState)

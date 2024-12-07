@@ -12,8 +12,10 @@
 
 use core::{ffi::c_void, ptr::*};
 use alloc::vec::Vec;
+#[cfg(target_os="uefi")]
+use exit::{svm_apic_input_handler, svm_apic_output_handler};
 use npt::SvmNptManager;
-use xpf_core::{bitmap::set_bitmap, hv_host::x86::*};
+use xpf_core::{bitmap::set_bitmap, hv_host::x86::*, ioflt::{IoAddressSpace, IoRegion}};
 
 use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*,crdr::*,seg::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*},*};
 use amd64::{cpuid::*,msr::*};
@@ -252,7 +254,9 @@ impl SvmVcpu
 	pub msrpm:MemoryDescriptor,
 	pub iopm:MemoryDescriptor,
 	pub nptm:SvmNptManager,
-	pub host:HostSystem
+	pub host:HostSystem,
+	pub pio_space:IoAddressSpace<u16>,
+	pub mmio_space:IoAddressSpace<u64>,
 }
 
 impl Default for SvmHypervisor
@@ -265,7 +269,9 @@ impl Default for SvmHypervisor
 			msrpm:MemoryDescriptor::null(),
 			iopm:MemoryDescriptor::null(),
 			nptm:SvmNptManager::default(),
-			host:HostSystem::build()
+			host:HostSystem::build(),
+			pio_space:IoAddressSpace{regions:Vec::new()},
+			mmio_space:IoAddressSpace{regions:Vec::new()}
 		}
 	}
 }
@@ -416,9 +422,16 @@ impl HypervisorEssentials for SvmHypervisor
 			vcpu.vcpu_id=i;
 			self.vcpus.push(vcpu);
 		}
+		// Intercept APIC Accesses.
+		#[cfg(target_os="uefi")]
+		{
+			let apic_bar=rdmsr(MSR_APIC_BASE);
+			self.mmio_space.add_region(IoRegion::new("lapic",svm_apic_input_handler,svm_apic_output_handler,page_4kb_base(apic_bar as usize) as u64,PAGE_SIZE as u64));
+		}
 		// Initialize NPT.
 		self.nptm.build_identity_map();
 		self.nptm.protect_allocated_pages();
+		self.nptm.setup_mmio_filter(&self.mmio_space);
 		self.nptm.protect_ci();
 		unsafe
 		{

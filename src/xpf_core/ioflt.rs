@@ -15,8 +15,8 @@ use alloc::{string::String,vec::Vec};
 
 use crate::{Status, NOIR_DISPATCH_FAILURE};
 
-pub type IoInputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*mut c_void);
-pub type IoOutputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*const c_void);
+pub type IoInputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*mut c_void,context:*mut c_void);
+pub type IoOutputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*const c_void,context:*mut c_void);
 
 // Use generics on I/O filtering architecture, as the sizes of addresses can vary.
 // For example, in x86 systems, there are two I/O subsystems: Port I/O and Memory-Mapped I/O.
@@ -143,14 +143,14 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoAddressSpace<T>
 
 	/// ## `dispatch_input` method
 	/// This method dispatches an input operation to the corresponding handler.
-	pub fn dispatch_input(&self,addr:T,size:T,value:*mut c_void)->Result<(),Status>
+	pub fn dispatch_input(&self,addr:T,size:T,value:*mut c_void,context:*mut c_void)->Result<(),Status>
 	{
 		let io_region=self.try_dispatch(addr);
 		match io_region
 		{
 			Some(r)=>
 			{
-				(r.input_handler)(r,addr,size,value);
+				(r.input_handler)(r,addr,size,value,context);
 				Ok(())
 			}
 			None=>Err(NOIR_DISPATCH_FAILURE)
@@ -159,14 +159,14 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoAddressSpace<T>
 
 	/// ## `dispatch_output` method
 	/// This method dispatches an output operation to the corresponding handler.
-	pub fn dispatch_output(&self,addr:T,size:T,value:*const c_void)->Result<(),Status>
+	pub fn dispatch_output(&self,addr:T,size:T,value:*const c_void,context:*mut c_void)->Result<(),Status>
 	{
 		let io_region=self.try_dispatch(addr);
 		match io_region
 		{
 			Some(r)=>
 			{
-				(r.output_handler)(r,addr,size,value);
+				(r.output_handler)(r,addr,size,value,context);
 				Ok(())
 			}
 			None=>Err(NOIR_DISPATCH_FAILURE)

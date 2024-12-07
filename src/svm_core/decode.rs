@@ -166,12 +166,14 @@ impl SvmVcpu
 						let ins_code=ins.code();
 						match ins_code
 						{
+							// According to AMD64 manual, the highest bit of EXITINFO1 should be set if this is a mov-crx instruction.
 							Code::Mov_cr_r32|Code::Mov_cr_r64=>unsafe{vmwrite(self.vmcb.virt,EXIT_INFO1,(ins.op1_register().number() as u64)|0x8000000000000000)},
 							Code::Mov_r32_cr|Code::Mov_r64_cr=>unsafe{vmwrite(self.vmcb.virt,EXIT_INFO1,(ins.op0_register().number() as u64)|0x8000000000000000)},
 							_=>panic!("Unexpected instruction code {:?}!",ins_code)
 						}
 					}
 					// There are additional instructions which can access control registers!
+					// According to AMD64 manual, nothing will be reported if these instructions are lmsw, smsw or clts.
 					Mnemonic::Lmsw|Mnemonic::Smsw|Mnemonic::Clts=>unsafe{vmwrite::<u64>(self.vmcb.virt,EXIT_INFO1,0)},
 					_=>panic!("Unexpected instruction mnemonic {:?}!",ins_kind)
 				}
@@ -199,8 +201,8 @@ impl SvmVcpu
 						let ins_code=ins.code();
 						match ins_code
 						{
-							Code::Mov_dr_r32|Code::Mov_dr_r64=>unsafe{vmwrite::<u64>(self.vmcb.virt,EXIT_INFO1,(ins.op1_register().number() as u64)|0x8000000000000000)},
-							Code::Mov_r32_dr|Code::Mov_r64_dr=>unsafe{vmwrite::<u64>(self.vmcb.virt,EXIT_INFO1,(ins.op0_register().number() as u64)|0x8000000000000000)},
+							Code::Mov_dr_r32|Code::Mov_dr_r64=>unsafe{vmwrite::<u64>(self.vmcb.virt,EXIT_INFO1,ins.op1_register().number() as u64)},
+							Code::Mov_r32_dr|Code::Mov_r64_dr=>unsafe{vmwrite::<u64>(self.vmcb.virt,EXIT_INFO1,ins.op0_register().number() as u64)},
 							_=>panic!("Unexpected instruction code {:?}!",ins_code)
 						}
 					}

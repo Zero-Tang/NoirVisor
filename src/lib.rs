@@ -21,6 +21,7 @@ pub mod svm_core;
 pub mod mshv_core;
 
 use alloc::boxed::Box;
+use iced_x86::{Decoder, Mnemonic};
 use core::str;
 
 use xpf_core::{asm::cpuid::cpuid2, nvstatus::*};
@@ -156,10 +157,14 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 
 #[no_mangle] pub extern "C" fn nvc_build_hypervisor()->Status
 {
+	// Run disassembler once to initialize its lazy_static.
+	let mut decoder=Decoder::new(64,&[0x90;15],0);
+	let ins_info=decoder.decode();
+	assert_eq!(ins_info.mnemonic(),Mnemonic::Nop);
+	// Subvert the system.
 	println!("Subverting the system...");
 	let mut vstr_raw:[u8;12]=[0;12];
-	let cpu_manuf=ProcessorManufacturer::query(&mut vstr_raw);
-	let hv:Option<Box<dyn HypervisorEssentials>>=match cpu_manuf
+	let hv:Option<Box<dyn HypervisorEssentials>>=match ProcessorManufacturer::query(&mut vstr_raw)
 	{
 		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>
 		{
@@ -175,8 +180,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 		{
 			// Either this processor does not support virtualization at all,
 			// or we don't know what kind of virtualization this processor supports.
-			let r=core::str::from_utf8(&vstr_raw);
-			if let Ok(s)=r
+			if let Ok(s)=core::str::from_utf8(&vstr_raw)
 			{
 				panic!("The processor vendor (\"{}\") is unknown!",s);
 			}
@@ -185,6 +189,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 	};
 	if let Some(mut hypervisor)=hv
 	{
+		// Subvert the system.
 		let st=hypervisor.subvert_system();
 		unsafe 
 		{
