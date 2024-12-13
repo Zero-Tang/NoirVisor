@@ -17,7 +17,7 @@ use exit::{svm_apic_input_handler, svm_apic_output_handler};
 use npt::SvmNptManager;
 use xpf_core::{bitmap::set_bitmap, hv_host::x86::*, ioflt::{IoAddressSpace, IoRegion}};
 
-use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*,crdr::*,seg::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*},*};
+use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*,crdr::*,seg::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*,dlalloc::*},*};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
@@ -348,14 +348,14 @@ impl HypervisorEssentials for SvmHypervisor
 					{
 						($index:expr) =>
 						{
-							set_bitmap(self.msrpm.virt,0x2000,svm_msrpm_bit($index,false));
+							set_bitmap(self.msrpm.virt,0x2000,svm_msrpm_bit($index,false) as usize);
 						};
 					}
 					macro_rules! intercept_write
 					{
 						($index:expr) =>
 						{
-							set_bitmap(self.msrpm.virt,0x2000,svm_msrpm_bit($index,true));
+							set_bitmap(self.msrpm.virt,0x2000,svm_msrpm_bit($index,true) as usize);
 						};
 					}
 					macro_rules! intercept_any

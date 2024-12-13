@@ -16,3 +16,8 @@ use crate::xpf_core::nvstatus::*;
 {
 	NOIR_NOT_IMPLEMENTED
 }
+
+#[no_mangle] pub extern "C" fn nvc_acpi_finalize()
+{
+	
+}

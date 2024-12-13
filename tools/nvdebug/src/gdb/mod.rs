@@ -1,13 +1,17 @@
 // GDB Protocol
+pub mod registers;
 
 use core::str;
 use std::{fmt::Display, io::{Error, Read, Write}, net::TcpStream, num::ParseIntError};
+
+use registers::GdbRegisterTrait;
 
 #[derive(Debug)]
 pub enum GdbError
 {
 	Io(Error),
-	Gnu(u8)
+	Gnu(u8),
+	Nak
 }
 
 impl Display for GdbError
@@ -17,7 +21,8 @@ impl Display for GdbError
 		match self
 		{
 			Self::Io(e)=>write!(f,"I/O Fault: {}",e),
-			Self::Gnu(e)=>write!(f," GNU Errno: {}",e)
+			Self::Gnu(e)=>write!(f," GNU Errno: {}",e),
+			Self::Nak=>write!(f,"Not-Acknowledged!")
 		}
 	}
 }
@@ -32,6 +37,70 @@ impl Target
 	pub fn new(stream:TcpStream)->Self
 	{
 		Self{stream}
+	}
+
+	pub fn retrieve_packet(&mut self)->Result<Vec<u8>,GdbError>
+	{
+		let mut ack:[u8;1]=[0];
+		match self.stream.read(&mut ack)
+		{
+			Ok(_)=>
+			{
+				match ack[0]
+				{
+					b'+'=>
+					{
+						// Read the packet.
+						let mut buff:Vec<u8>=Vec::with_capacity(1024);
+						loop
+						{
+							let mut tmp:[u8;1024]=[0;1024];
+							match self.stream.read(&mut tmp)
+							{
+								Ok(s)=>
+								{
+									// println!("Received {s} bytes!");
+									buff.extend_from_slice(&tmp);
+									if tmp.len()!=s
+									{
+										break;
+									}
+								}
+								Err(e)=>return Err(GdbError::Io(e))
+							}
+						}
+						// Completed retrieving GDB packet!.
+						Ok(buff)
+					}
+					b'-'=>Err(GdbError::Nak),
+					_=>panic!("Unexpected acknowledgement character: {}!",ack[0])
+				}
+			}
+			Err(e)=>Err(GdbError::Io(e))
+		}
+	}
+
+	pub fn read_registers<T:GdbRegisterTrait>(&mut self)->Result<T,GdbError>
+	{
+		let raw_packet=create_packet(&String::from("g"));
+		let _=self.stream.write_all(&raw_packet);
+		match self.retrieve_packet()
+		{
+			Ok(buff)=>
+			{
+				match get_packet_data(&buff)
+				{
+					Some(hex_pkt)=>
+					{
+						let raw_str=unsafe{str::from_utf8_unchecked(hex_pkt)};
+						// println!("Length: {} Packet: {raw_str}",raw_str.len());
+						Ok(T::from_be_str(raw_str))
+					}
+					None=>panic!("Invalid Checksum!")
+				}
+			}
+			Err(e)=>Err(e)
+		}
 	}
 
 	pub fn read_memory(&mut self,address:u64,length:usize)->Result<Vec<u8>,GdbError>

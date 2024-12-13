@@ -43,7 +43,8 @@ pub struct RemotePEImage <'a>
 	pub size:u64,
 	pub path:String,
 	pub name:String,
-	debug_section:IMAGE_DATA_DIRECTORY
+	debug_section:IMAGE_DATA_DIRECTORY,
+	exception_section:IMAGE_DATA_DIRECTORY,
 }
 
 impl <'a> RemotePEImage<'a>
@@ -80,7 +81,8 @@ impl <'a> RemotePEImage<'a>
 											size,
 											path,
 											name,
-											debug_section:(*nt_head).OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DEBUG.0 as usize]
+											debug_section:(*nt_head).OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DEBUG.0 as usize],
+											exception_section:(*nt_head).OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION.0 as usize]
 										}
 									)
 								}
@@ -113,7 +115,6 @@ impl <'a> RemotePEImage<'a>
 
 	pub fn load_symbols(&mut self)
 	{
-		println!("Debug Directory: 0x{:X}, Size: 0x{:X}",self.debug_section.VirtualAddress,self.debug_section.Size);
 		match self.target.read_memory(self.base+self.debug_section.VirtualAddress as u64,self.debug_section.Size as usize)
 		{
 			Ok(raw)=>
@@ -164,6 +165,7 @@ impl <'a> RemotePEImage<'a>
 												{
 													println!("Failed to load symbol! Reason: {}",GetLastError().to_hresult().message());
 												}
+												println!("Symbol is successfully loaded!");
 												let _=CloseHandle(h_file);
 											}
 											Err(e)=>println!("Failed to open symbol file! Reason: {e}")
@@ -181,6 +183,37 @@ impl <'a> RemotePEImage<'a>
 			Err(e)=>
 			{
 				println!("Failed to dump IMAGE_DEBUG_DIRECTORY! Reason: {e}");
+			}
+		}
+	}
+
+	pub fn load_fpo_data(&mut self,address:u64)->Option<IMAGE_RUNTIME_FUNCTION_ENTRY>
+	{
+		match self.target.read_memory(self.base+self.exception_section.VirtualAddress as u64,self.exception_section.Size as usize)
+		{
+			Ok(v)=>
+			{
+				let exception_dir:*const IMAGE_RUNTIME_FUNCTION_ENTRY=v.as_ptr().cast();
+				let count:usize=v.len()/size_of::<IMAGE_RUNTIME_FUNCTION_ENTRY>();
+				for i in 0..count
+				{
+					unsafe
+					{
+						let exception_data=*exception_dir.add(i);
+						let start=self.base+exception_data.BeginAddress as u64;
+						let end=self.base+exception_data.EndAddress as u64;
+						if (start..end).contains(&address)
+						{
+							return Some(exception_data);
+						}
+					}
+				}
+				None
+			}
+			Err(e)=>
+			{
+				println!("Failed to dump IMAGE_EXCEPTION_DIRECTORY! Reason: {e}");
+				None
 			}
 		}
 	}
@@ -219,7 +252,7 @@ pub fn locate_symbol(address:u64)->Option<SymbolSearchResult>
 							Key:null_mut(),
 							LineNumber:0,
 							FileName:PWSTR::null(),
-							Address:0
+							Address:address
 						};
 						match SymGetLineFromAddrW64(GetCurrentProcess(),address,&raw mut line_disp,&raw mut line_info)
 						{
@@ -251,7 +284,20 @@ pub fn locate_symbol(address:u64)->Option<SymbolSearchResult>
 									}
 								)
 							}
-							Err(e)=>println!("Failed to locate line number! Reason: {e}")
+							Err(e)=>
+							{
+								println!("Failed to locate line number! Reason: {e}");
+								return Some
+								(
+									SymbolSearchResult
+									{
+										name:sym_name,
+										displacement:disp,
+										source_file:String::new(),
+										line_number:0
+									}
+								)
+							}
 						}
 					}
 					Err(e)=>println!("Failed to convert from UTF-16! Reason: {e}")

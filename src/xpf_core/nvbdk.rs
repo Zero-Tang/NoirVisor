@@ -151,8 +151,8 @@ impl GprState
 	}
 }
 
-type BroadcastWorker=extern "C" fn(context:*mut c_void,processor_id:u32);
-type PhysicalRangeCallback=extern "C" fn(start:u64,length:u64,context:*mut c_void);
+pub type BroadcastWorker=extern "C" fn(context:*mut c_void,processor_id:u32);
+pub type PhysicalRangeCallback=extern "C" fn(start:u64,length:u64,context:*mut c_void);
 
 extern "C"
 {
@@ -168,89 +168,8 @@ extern "C"
 	pub fn noir_get_physical_address(virtual_address:*mut c_void)->u64;
 	pub fn noir_alloc_2mb_page()->*mut c_void;
 	pub fn noir_free_2mb_page(virtual_address:*mut c_void);
-	pub fn noir_enum_allocated_large_pages(callback_rt:PhysicalRangeCallback,context:*mut c_void);
 	pub fn noir_find_virt_by_phys(physical_address:u64)->*mut c_void;
 	pub fn noir_copy_memory(dest:*mut c_void,src:*const c_void,cch:usize);
-}
-
-/**
-  # `alloc_contd_pages`
-  Allocate some contiguous pages in memory with `length` bytes.
-  Return Value: Option<MemoryDescriptor>
-  - Some(MemoryDescriptor)=> Both virtual/physical addresses of the start of contiguous pages.
-  - None=> Insufficient resource!
- */
-pub fn alloc_contd_pages(length:usize)->Option<MemoryDescriptor>
-{
-	let p=unsafe{noir_alloc_contd_memory(length)};
-	if p.is_null()
-	{
-		None
-	}
-	else
-	{
-		Some
-		(
-			MemoryDescriptor
-			{
-				virt:p,
-				phys:unsafe{noir_get_physical_address(p)}
-			}
-		)
-	}
-}
-
-/**
-  # `free_contd_pages`
-  Free some contiguous pages specified in `ptr` with `length` bytes.
-  
-  # Safety
-  Remember, you are freeing pages here.
-  Check you parameters.
- */
-pub unsafe fn free_contd_pages(ptr:*mut c_void,length:usize)
-{
-	noir_free_contd_memory(ptr,length)
-}
-
-/**
-  # `alloc_2mb_page`
-  Allocate 2MiB Page aligned on 2MiB-boundary.
-  Return Value: Option<MemoryDescriptor>
-  - Some(MemoryDescriptor)=> Both virtual/physical addresses of the start of contiguous pages.
-  - None=> Insufficient resource!
- */
-pub fn alloc_2mb_page()->Option<MemoryDescriptor>
-{
-	let p=unsafe{noir_alloc_2mb_page()};
-	if p.is_null()
-	{
-		None
-	}
-	else
-	{
-		Some
-		(
-			MemoryDescriptor
-			{
-				virt:p,
-				phys:unsafe{noir_get_physical_address(p)}
-			}
-		)
-	}
-}
-
-/**
-  # `free_contd_pages`
-  Free the 2MiB page specified in `ptr`.
-  
-  # Safety
-  Remember, you are freeing a page here.
-  Check you parameters.
- */
-pub unsafe fn free_2mb_page(ptr:*mut c_void)
-{
-	noir_free_2mb_page(ptr);
 }
 
 // Page-related definitions

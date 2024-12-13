@@ -19,10 +19,6 @@
 #define DEVICE_NAME			L"\\Device\\NoirVisor"
 #define LINK_NAME			L"\\DosDevices\\NoirVisor"
 
-// Intel HAXM Device Name
-#define HAX_DEVICE_NAME		L"\\Device\\HAX"
-#define HAX_LINK_NAME		L"\\DosDevices\\HAX"
-
 // Definitions of Status Codes of NoirVisor.
 #define NOIR_SUCCESS					0
 #define NOIR_UNSUCCESSFUL				0xC0000000
@@ -47,7 +43,6 @@ typedef ULONG32 NOIR_STATUS;
 #define IOCTL_SetNs			CTL_CODE_GEN(0x804)
 #define IOCTL_SetVs			CTL_CODE_GEN(0x805)
 #define IOCTL_SetName		CTL_CODE_GEN(0x806)
-#define IOCTL_NvVer			CTL_CODE_GEN(0x810)
 #define IOCTL_CpuVs			CTL_CODE_GEN(0x811)
 #define IOCTL_CpuPn			CTL_CODE_GEN(0x812)
 #define IOCTL_OsVer			CTL_CODE_GEN(0x813)
@@ -181,7 +176,6 @@ void NoirTeardownHypervisor();
 NTSTATUS NoirConfigureInternalDebugger();
 BOOL NoirAcpiInitialize();
 void NoirAcpiFinalize();
-ULONG NoirVisorVersion();
 ULONG NoirQueryVirtualizationSupportability();
 BOOLEAN NoirIsVirtualizationEnabled();
 void NoirLocatePsLoadedModule(IN PDRIVER_OBJECT DriverObject);
@@ -199,21 +193,18 @@ void NoirTeardownHookedPages();
 NTSTATUS NoirSubvertSystemOnDriverLoad(OUT PBOOLEAN Subvert);
 void __cdecl NoirDebugPrint(const char* Format,...);
 
-NTSTATUS NoirHaxInitializeDeviceExtension(IN PDRIVER_OBJECT DriverObject);
-void NoirHaxFinalizeDeviceExtension();
-NTSTATUS NoirHaxDispatchCreate(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp);
-NTSTATUS NoirHaxDispatchClose(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp);
-NTSTATUS NoirHaxDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp);
-
 extern ULONG32 noir_cvm_exit_context_size;
-extern ULONG_PTR system_cr3;
-extern ULONG_PTR orig_system_call;
-extern PSTR virtual_vstr;
-extern PSTR virtual_nstr;
+
+char virtual_vstr[12];
+char virtual_nstr[48];
+
+ULONG_PTR orig_system_call=0;
 
 PEPROCESS SubversionProcess=NULL;
 BOOLEAN SubvertOnDriverLoad=FALSE;
 
 PDRIVER_OBJECT NoirDriverObject=NULL;
 PDEVICE_OBJECT NoirDeviceObject=NULL;
-PDEVICE_OBJECT HaxDeviceObject=NULL;
+
+// Required for being compatible with Rust.
+int _fltused=0;

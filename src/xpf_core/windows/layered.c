@@ -236,7 +236,6 @@ NOIR_STATUS NoirReleaseVirtualMachine(IN CVM_HANDLE VirtualMachine)
 	}
 	ExfReleasePushLockExclusive(&NoirCvmHandleTable.HandleTableLock);
 	KeLeaveCriticalRegion();
-	NoirHaxRemoveVirtualMachineNotification(VirtualMachine);
 	return st;
 }
 
@@ -262,7 +261,6 @@ NOIR_STATUS NoirDecrementVirtualMachineReference(IN CVM_HANDLE VirtualMachine)
 			NoirDeleteHandleUnsafe(VirtualMachine,NoirCvmHandleTable.TableCode);
 			ExfReleasePushLockExclusive(&NoirCvmHandleTable.HandleTableLock);
 			KeLeaveCriticalRegion();
-			NoirHaxRemoveVirtualMachineNotification(VirtualMachine);
 		}
 	}
 	return VM==NULL?st:nvc_deref_vm(VM);
@@ -493,7 +491,6 @@ void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessI
 					nvc_release_vm(VirtualMachine);
 					NoirCvmHandleTable.HandleCount--;
 					NoirDeleteHandleUnsafe(Handle,NoirCvmHandleTable.TableCode);
-					NoirHaxRemoveVirtualMachineNotification(Handle);
 				}
 			}
 		}

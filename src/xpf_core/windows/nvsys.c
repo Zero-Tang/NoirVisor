@@ -390,43 +390,6 @@ void* noir_locate_acpi_rsdt(size_t *length)
 	return Rsdt;
 }
 
-ULONG32 noir_get_instruction_length(IN PVOID code,IN BOOLEAN LongMode)
-{
-	if(LongMode)
-		return NoirGetInstructionLength64(code,0);
-	return NoirGetInstructionLength32(code,0);
-}
-
-ULONG32 noir_get_instruction_length_ex(IN PVOID Code,IN BYTE Bits)
-{
-	switch(Bits)
-	{
-	case 16:
-		return NoirGetInstructionLength16(Code,0);
-	case 32:
-		return NoirGetInstructionLength32(Code,0);
-	case 64:
-		return NoirGetInstructionLength64(Code,0);
-	default:
-		return 0;
-	}
-}
-
-ULONG32 noir_disasm_instruction(IN PVOID Code,OUT PSTR Mnemonic,IN SIZE_T MnemonicLength,IN BYTE Bits,IN ULONG64 VirtualAddress)
-{
-	switch(Bits)
-	{
-	case 16:
-		return NoirDisasmCode16(Mnemonic,MnemonicLength,Code,15,VirtualAddress);
-	case 32:
-		return NoirDisasmCode32(Mnemonic,MnemonicLength,Code,15,VirtualAddress);
-	case 64:
-		return NoirDisasmCode64(Mnemonic,MnemonicLength,Code,15,VirtualAddress);
-	default:
-		return 0;
-	}
-}
-
 void* noir_alloc_contd_memory(size_t length)
 {
 	PHYSICAL_ADDRESS L={0};

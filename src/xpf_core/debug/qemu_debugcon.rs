@@ -45,9 +45,15 @@ impl DebuggerBackend for QemuDebugConDebugger
 
 	fn acquire(&mut self)
 	{
-		while self.lock.compare_exchange(false,true,Ordering::AcqRel,Ordering::SeqCst).is_err()
+		while self.lock.compare_exchange(false,true,Ordering::Acquire,Ordering::Relaxed).is_err()
 		{
-			unsafe{asm!("pause");}
+			while self.lock.load(Ordering::Relaxed)
+			{
+				unsafe
+				{
+					asm!("pause");
+				}
+			}
 		}
 	}
 

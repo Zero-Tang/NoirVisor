@@ -279,7 +279,6 @@ void __cdecl NoirDebugPrint(const char* Format,...);
 
 PVOID NoirLocateImageBaseByName(IN PWSTR ImageName);
 PVOID NoirLocateExportedProcedureByName(IN PVOID ImageBase,IN PSTR ProcedureName);
-NTSTATUS NoirHaxRemoveVirtualMachineNotification(IN CVM_HANDLE VmHandle);
 
 // Functions from NoirVisor XPF-Core for CVM.
 ULONG32 nvc_query_physical_asid_limit(IN PSTR vendor_string);

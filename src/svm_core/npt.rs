@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 
 use paste::paste;
 
-use crate::{print,println,dbg_print,xpf_core::nvbdk::*};
+use crate::{print,println,dbg_print,xpf_core::{nvbdk::*,dlalloc::*}};
 
 use super::xpf_core::{ci::enum_ci_phys_page, ioflt::IoAddressSpace};
 
@@ -585,10 +585,7 @@ impl SvmNptManager
 
 	pub fn protect_allocated_pages(&mut self)
 	{
-		unsafe
-		{
-			noir_enum_allocated_large_pages(SvmNptManager::enum_page_rt,self as *mut Self as *mut c_void);
-		}
+		enum_allocated_large_pages(SvmNptManager::enum_page_rt,self as *mut Self as *mut c_void);
 	}
 
 	pub fn protect_ci(&mut self)

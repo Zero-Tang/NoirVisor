@@ -1,11 +1,11 @@
 #![feature(str_from_utf16_endian)]
-use std::{env::*, net::TcpStream, slice};
+use std::{env::*, ffi::c_void, net::TcpStream, ptr::null_mut, slice};
 use pe::{locate_symbol, RemotePEImage};
-use windows::Win32::System::{Diagnostics::Debug::*,Threading::*};
+use windows::Win32::{Foundation::*, System::{Diagnostics::Debug::*,Threading::*,SystemInformation::*}};
 use uefi_raw::{protocol::{device_path::*, loaded_image::LoadedImageProtocol}, table::{configuration::ConfigurationTable, system::SystemTable}, Guid, Handle};
 use iced_x86::*;
 
-use gdb::Target;
+use gdb::{registers::x64::QemuGdbX64Registers, Target};
 
 mod gdb;
 mod pe;
@@ -34,6 +34,14 @@ struct ImageInfo
 	base:u64,
 	length:u64,
 	path:String
+}
+
+#[repr(C)] struct SymProcessHandle
+{
+	target:*mut Target,
+	images:*const ImageInfo,
+	count:usize,
+	fpo:IMAGE_RUNTIME_FUNCTION_ENTRY
 }
 
 impl PartialEq for ImageInfo
@@ -218,7 +226,7 @@ fn locate_module_from_ptr(images:&[ImageInfo],ptr:u64)->Option<&ImageInfo>
 		{
 			lo=mid+1;
 		}
-		else if images[mid as usize].base>=ptr
+		else if images[mid as usize].base>ptr
 		{
 			hi=mid-1;
 		}
@@ -238,25 +246,35 @@ fn main()
 	}
 	let argv:Vec<String>=args().collect();
 	let connection=argv.get(1);
-	match argv.get(2)
+	/*
+	if let Err(e)=unsafe{SymRegisterCallbackW64(GetCurrentProcess(),Some(sym_registered_callback),0)}
 	{
-		Some(s)=>
+		panic!("SymRegisterCallbackW64 failed! Reason: {e}");
+	}*/
+	match connection
+	{
+		Some(conn)=>
 		{
-			let target_address=u64::from_str_radix(s.as_str(),16).unwrap();
-			match connection
+			if let Some(conn_str)=conn.strip_prefix("qemu://")
 			{
-				Some(conn)=>
+				match TcpStream::connect(conn_str)
 				{
-					if let Some(conn_str)=conn.strip_prefix("qemu://")
+					Ok(stream)=>
 					{
-						match TcpStream::connect(conn_str)
+						println!("Connected to QEMU GDB Session at {}!",conn_str);
+						let mut target=Target::new(stream);
+						let mut r=enum_efi_images(&mut target);
+						r.sort();
+						match argv.get(2)
 						{
-							Ok(stream)=>
+							// Target address is specified. Halt target and see the symbol.
+							Some(s)=>
 							{
-								println!("Connected to QEMU GDB Session at {}!",conn_str);
-								let mut target=Target::new(stream);
-								let mut r=enum_efi_images(&mut target);
-								r.sort();
+								let target_address:u64=u64::from_str_radix(s.as_str(),16).unwrap();
+								if let Some(r)=locate_symbol(target_address)
+								{
+									println!("Symbol: {}+{:X} ({}@{})",r.name,r.displacement,r.source_file,r.line_number);
+								}
 								match locate_module_from_ptr(&r,target_address)
 								{
 									Some(img_info)=>
@@ -265,6 +283,7 @@ fn main()
 										{
 											Some(mut pe_img)=>
 											{
+												println!("Loading symbols for {} (Base: 0x{:016X}, Length: 0x{:X})...",img_info.path,img_info.base,img_info.length);
 												pe_img.load_symbols();
 												if let Some(r)=locate_symbol(target_address)
 												{
@@ -299,17 +318,142 @@ fn main()
 									Err(e)=>println!("Failed to read instruction bytes! Reason: {e}")
 								}
 							}
-							Err(e)=>
+							None=>
 							{
-								println!("Failed to connect to QEMU GDB Session at {}! {}",conn_str,e);
+								// Target address is not specified. Halt target and analyze stack trace.
+								// Read registers.
+								match target.read_registers::<QemuGdbX64Registers>()
+								{
+									Ok(regs)=>
+									{
+										println!("Registers: {regs:X?}");
+										let mut stk_f=STACKFRAME_EX::default();
+										stk_f.AddrPC=ADDRESS64{Offset:regs.rip,Segment:0,Mode:AddrModeFlat};
+										stk_f.AddrFrame=ADDRESS64{Offset:regs.rbp,Segment:0,Mode:AddrModeFlat};
+										stk_f.AddrStack=ADDRESS64{Offset:regs.rsp,Segment:0,Mode:AddrModeFlat};
+										stk_f.StackFrameSize=size_of::<STACKFRAME_EX>() as u32;
+										let mut ctxt=CONTEXT::default();
+										ctxt.MxCsr=regs.mxcsr;
+										ctxt.SegCs=regs.cs as u16;
+										ctxt.SegDs=regs.ds as u16;
+										ctxt.SegEs=regs.es as u16;
+										ctxt.SegFs=regs.fs as u16;
+										ctxt.SegGs=regs.gs as u16;
+										ctxt.SegSs=regs.ss as u16;
+										ctxt.EFlags=regs.eflags;
+										ctxt.Rax=regs.rax;
+										ctxt.Rcx=regs.rcx;
+										ctxt.Rdx=regs.rdx;
+										ctxt.Rbx=regs.rbx;
+										ctxt.Rsp=regs.rsp;
+										ctxt.Rbp=regs.rbp;
+										ctxt.Rsi=regs.rsi;
+										ctxt.Rdi=regs.rdi;
+										ctxt.R8=regs.r8;
+										ctxt.R9=regs.r9;
+										ctxt.R10=regs.r10;
+										ctxt.R11=regs.r11;
+										ctxt.R12=regs.r12;
+										ctxt.R13=regs.r13;
+										ctxt.R14=regs.r14;
+										ctxt.R15=regs.r15;
+										let mut handle=SymProcessHandle
+										{
+											target:&raw mut target,
+											images:r.as_ptr(),
+											count:r.len(),
+											fpo:IMAGE_RUNTIME_FUNCTION_ENTRY::default()
+										};
+										while unsafe{StackWalkEx(IMAGE_FILE_MACHINE_AMD64.0.into(),HANDLE(&raw mut handle as *mut c_void),None,&raw mut stk_f,&raw mut ctxt as *mut c_void,Some(sym_read_memory_rt),Some(sym_func_table_access_rt),Some(sym_get_module_base_rt),None,0)}.as_bool()
+										{
+											println!("Stack Info: {stk_f:X?}");
+										}
+									}
+									Err(e)=>println!("Failed to read registers! Reason: {e}")
+								}
 							}
 						}
 					}
+					Err(e)=>
+					{
+						println!("Failed to connect to QEMU GDB Session at {}! {}",conn_str,e);
+					}
 				}
-				_=>println!("No connection method is specified!")
 			}
 		}
-		None=>println!("Target address is not specified!")
+		_=>println!("No connection method is specified!")
 	}
 	let _=unsafe{SymCleanup(GetCurrentProcess())};
+}
+
+unsafe extern "system" fn sym_read_memory_rt(process:HANDLE,base_address:u64,buffer:*mut c_void,size:u32,number_of_bytes_read:*mut u32)->BOOL
+{
+	let target=unsafe{&mut *(process.0 as *mut Target)};
+	println!("Reading memory from 0x{base_address:016X} with {size} bytes!...");
+	match target.read_memory(base_address,size as usize)
+	{
+		Ok(r)=>
+		{
+			unsafe
+			{
+				let p:*mut u8=buffer.cast();
+				for i in 0..size as usize
+				{
+					p.add(i).write(r[i]);
+				}
+				number_of_bytes_read.write(size);
+			}
+			println!("Content: {r:X?}");
+		}
+		Err(e)=>panic!("Failed to read memory! Reason: {e}")
+	}
+	TRUE
+}
+
+unsafe extern "system" fn sym_func_table_access_rt(process:HANDLE,addr_base:u64)->*mut c_void
+{
+	// This routine must be manually implemented, in that this incurs remote memory accesses!
+	println!("Function-Table Access is queried! Address: 0x{addr_base:016X}");
+	let handle=unsafe{&mut *(process.0 as *mut SymProcessHandle)};
+	let images=slice::from_raw_parts(handle.images,handle.count);
+	match locate_module_from_ptr(images,addr_base)
+	{
+		Some(img)=>
+		{
+			println!("Image-Base: 0x{:016X}",img.base);
+			match RemotePEImage::new(&mut *handle.target,img.base,img.length,img.path.clone())
+			{
+				Some(mut pe_img)=>
+				{
+					match pe_img.load_fpo_data(addr_base)
+					{
+						Some(fpo)=>
+						{
+							handle.fpo=fpo;
+							&raw mut handle.fpo as *mut c_void
+						}
+						None=>
+						{
+							println!("Failed to locate FPO!");
+							null_mut()
+						}
+					}
+				}
+				None=>null_mut()
+			}
+		}
+		None=>
+		{
+			println!("Failed to locate image info!");
+			null_mut()
+		}
+	}
+}
+
+unsafe extern "system" fn sym_get_module_base_rt(_process:HANDLE,address:u64)->u64
+{
+	println!("Module-Base is queried! Address: 0x{address:016X}");
+	let p=SymGetModuleBase64(GetCurrentProcess(),address);
+	println!("Module-Base: 0x{p:016X}");
+	p
 }

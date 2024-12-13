@@ -16,6 +16,12 @@
 #include <windef.h>
 #include "driver.h"
 
+// Required for being compatible with Rust.
+PVOID __CxxFrameHandler3(PVOID ExceptionRecord,PVOID RegistrationNode,PVOID Context,PVOID DispatcherContext)
+{
+	return NULL;
+}
+
 PVOID NoirGetInputBuffer(IN PIRP Irp)
 {
 	PIO_STACK_LOCATION irpsp=IoGetCurrentIrpStackLocation(Irp);
@@ -58,12 +64,10 @@ void NoirDriverUnload(IN PDRIVER_OBJECT DriverObject)
 	NoirReportMemoryIntrospectionCounter();
 	IoDeleteSymbolicLink(&uniLinkName);
 	IoDeleteDevice(NoirDeviceObject);
-	NoirHaxFinalizeDeviceExtension();
 }
 
 NTSTATUS NoirDispatchCreate(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 {
-	if(DeviceObject==HaxDeviceObject)return NoirHaxDispatchCreate(DeviceObject,Irp);
 	Irp->IoStatus.Status=STATUS_SUCCESS;
 	Irp->IoStatus.Information=0;
 	IoCompleteRequest(Irp,IO_NO_INCREMENT);
@@ -72,14 +76,13 @@ NTSTATUS NoirDispatchCreate(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 
 NTSTATUS NoirDispatchClose(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 {
-	if(DeviceObject==HaxDeviceObject)return NoirHaxDispatchClose(DeviceObject,Irp);
 	Irp->IoStatus.Status=STATUS_SUCCESS;
 	Irp->IoStatus.Information=0;
 	IoCompleteRequest(Irp,IO_NO_INCREMENT);
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS NoirVisorDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
+NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 {
 	NTSTATUS st=STATUS_INVALID_DEVICE_REQUEST;
 	PIO_STACK_LOCATION irpsp=IoGetCurrentIrpStackLocation(Irp);
@@ -130,12 +133,6 @@ NTSTATUS NoirVisorDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		{
 			st=STATUS_SUCCESS;
 			NoirSetProtectedFile((PWSTR)InputBuffer);
-			break;
-		}
-		case IOCTL_NvVer:
-		{
-			st=STATUS_SUCCESS;
-			*(PULONG)OutputBuffer=NoirVisorVersion();
 			break;
 		}
 		case IOCTL_CpuVs:
@@ -336,18 +333,12 @@ NTSTATUS NoirVisorDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 	return st;
 }
 
-NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
-{
-	return DeviceObject==NoirDeviceObject?NoirVisorDispatchIoControl(DeviceObject,Irp):NoirHaxDispatchIoControl(DeviceObject,Irp);
-}
-
 void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Context OPTIONAL,IN ULONG Count)
 {
 	NoirPrintCompilerVersion();
 	NoirInitializeDisassembler();
 	NoirInitializeCodeIntegrity(DriverObject->DriverStart);
 	NoirLocatePsLoadedModule(DriverObject);
-	system_cr3=__readcr3();
 	orig_system_call=(ULONG_PTR)__readmsr(0xC0000082);
 	NoirGetNtOpenProcessIndex();
 	NoirSaveImageInfo(DriverObject);
@@ -383,13 +374,6 @@ NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING Regis
 		if(NT_ERROR(st))IoDeleteDevice(NoirDeviceObject);
 		NoirDriverObject=DriverObject;
 		st=STATUS_SUCCESS;
-	}
-	// Create a HAX Device in order to expose Intel HAXM functions.
-	st=NoirHaxInitializeDeviceExtension(DriverObject);
-	if(NT_ERROR(st))
-	{
-		IoDeleteSymbolicLink(&uniLinkName);
-		IoDeleteDevice(NoirDeviceObject);
 	}
 	return st;
 }

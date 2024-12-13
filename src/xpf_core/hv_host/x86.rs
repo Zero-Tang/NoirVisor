@@ -12,7 +12,7 @@
 
 use core::ffi::c_void;
 
-use crate::xpf_core::{asm::{crdr::*, seg::*, misc::get_rsp}, nvbdk::*, x86::{descriptors::*, interrupts::*, paging::*}};
+use crate::xpf_core::{asm::{crdr::*, seg::*, misc::get_rsp}, nvbdk::*, dlalloc::{alloc_contd_pages, free_contd_pages}, x86::{descriptors::*, interrupts::*, paging::*}};
 use crate::*;
 
 pub struct HostSystem
@@ -119,10 +119,7 @@ impl Drop for HostPaging
 		println!("Dropping Host Paging...");
 		if !self.cr3.virt.is_null()
 		{
-			unsafe
-			{
-				free_contd_pages(self.cr3.virt,PAGE_SIZE*2);
-			}
+			free_contd_pages(self.cr3.virt,PAGE_SIZE*2);
 		}
 	}
 }

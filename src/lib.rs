@@ -19,12 +19,13 @@ pub mod xpf_core;
 pub mod vt_core;
 pub mod svm_core;
 pub mod mshv_core;
+pub mod disasm;
 
 use alloc::boxed::Box;
 use iced_x86::{Decoder, Mnemonic};
 use core::str;
 
-use xpf_core::{asm::cpuid::cpuid2, nvstatus::*};
+use xpf_core::{asm::cpuid::cpuid2, dlalloc::set_alloc_checker, nvstatus::*, x86::cpuid::CPUID_EXT_BRAND_STRING_P1};
 pub use xpf_core::debug::*;
 use svm_core::SvmHypervisor;
 
@@ -52,6 +53,26 @@ pub enum ProcessorManufacturer
 	UMC,
 	Vortex,
 	Unknown
+}
+
+#[no_mangle] unsafe extern "C" fn noir_get_vendor_string(vstr:*mut u8)
+{
+	let (_,b,c,d)=cpuid2(0,0);
+	*vstr.cast()=b;
+	*vstr.byte_add(4).cast()=c;
+	*vstr.byte_add(8).cast()=d;
+}
+
+#[no_mangle] unsafe extern "C" fn noir_get_processor_name(pstr:*mut u8)
+{
+	for i in 0..3
+	{
+		let (a,b,c,d)=cpuid2(CPUID_EXT_BRAND_STRING_P1+i,0);
+		*pstr.byte_add((i<<4) as usize).cast()=a;
+		*pstr.byte_add((i<<4) as usize+0x4).cast()=b;
+		*pstr.byte_add((i<<4) as usize+0x8).cast()=c;
+		*pstr.byte_add((i<<4) as usize+0x10).cast()=d;
+	}
 }
 
 impl ProcessorManufacturer
@@ -191,6 +212,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 	{
 		// Subvert the system.
 		let st=hypervisor.subvert_system();
+		set_alloc_checker(true);
 		unsafe 
 		{
 			HVM=Some(hypervisor);

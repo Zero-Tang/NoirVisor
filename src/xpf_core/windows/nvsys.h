@@ -146,9 +146,6 @@ NTKERNELAPI void __fastcall ExfReleasePushLockExclusive(IN OUT PEX_PUSH_LOCK Pus
 NTKERNELAPI void __fastcall ExfReleasePushLockShared(IN OUT PEX_PUSH_LOCK PushLock);
 NTSYSAPI NTSTATUS NTAPI ZwAlertThread(IN HANDLE ThreadHandle);
 
-BYTE NoirDisasmCode16(PSTR Mnemonic,SIZE_T MnemonicLength,PBYTE Code,SIZE_T CodeLength,ULONG64 VirtualAddress);
-BYTE NoirDisasmCode32(PSTR Mnemonic,SIZE_T MnemonicLength,PBYTE Code,SIZE_T CodeLength,ULONG64 VirtualAddress);
-BYTE NoirDisasmCode64(PSTR Mnemonic,SIZE_T MnemonicLength,PBYTE Code,SIZE_T CodeLength,ULONG64 VirtualAddress);
 BYTE NoirGetInstructionLength16(PBYTE Code,SIZE_T CodeLength);
 BYTE NoirGetInstructionLength32(PBYTE Code,SIZE_T CodeLength);
 BYTE NoirGetInstructionLength64(PBYTE Code,SIZE_T CodeLength);

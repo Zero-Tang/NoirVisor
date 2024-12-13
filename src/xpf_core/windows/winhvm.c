@@ -441,11 +441,6 @@ void NoirTeardownHypervisor()
 	}
 }
 
-ULONG NoirVisorVersion()
-{
-	return noir_visor_version();
-}
-
 void NoirGetVendorString(OUT PSTR VendorString)
 {
 	noir_get_vendor_string(VendorString);

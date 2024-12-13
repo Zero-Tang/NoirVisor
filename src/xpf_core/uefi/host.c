@@ -34,6 +34,55 @@ void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...)
 	noir_debug_output(Buffer,Size);
 }
 
+VOID* noir_alloc_2mb_page()
+{
+	VOID* p=AllocateAlignedRuntimePages(512,SIZE_2MB);
+	if(p)ZeroMem(p,SIZE_2MB);
+	return p;
+}
+
+void noir_free_2mb_page(IN VOID* VirtualAddress)
+{
+	FreePages(VirtualAddress,SIZE_2MB);
+}
+
+UINT64 noir_get_physical_address(IN VOID* VirtualAddress)
+{
+	// Mapping is identical.
+	return (UINT64)VirtualAddress;
+}
+
+VOID* noir_find_virt_by_phys(IN UINT64 PhysicalAddress)
+{
+	// Mapping is identical.
+	return (VOID*)PhysicalAddress;
+}
+
+VOID* memcpy(OUT VOID* dest,IN VOID* src,IN UINTN cch)
+{
+	return CopyMem(dest,src,cch);
+}
+
+VOID* memmove(OUT VOID* dest,IN VOID* src,IN UINTN cch)
+{
+	return CopyMem(dest,src,cch);
+}
+
+VOID* memset(OUT VOID* dest,IN UINT8 val,IN UINTN cch)
+{
+	return SetMem(dest,cch,val);
+}
+
+INTN memcmp(IN VOID* dest,IN VOID* src,IN UINTN cch)
+{
+	return CompareMem(dest,src,cch);
+}
+
+UINTN strlen(IN CHAR8* str)
+{
+	return AsciiStrLen(str);
+}
+
 VOID* noir_map_physical_memory(IN UINT64 PhysicalAddress,IN UINTN Length)
 {
 	return (VOID*)PhysicalAddress;
