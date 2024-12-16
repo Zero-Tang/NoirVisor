@@ -1,4 +1,5 @@
 // This file defines registers in x64 targets.
+use hex;
 use super::GdbRegisterTrait;
 
 // This struct definition is generated from XML in QEMU.
@@ -75,76 +76,101 @@ use super::GdbRegisterTrait;
 
 impl GdbRegisterTrait for QemuGdbX64Registers
 {
-	// This trait method is generated from XML in QEMU.
 	fn from_be_str(buffer:&str)->Self
 	{
-		let mut r=Self::default();
-		r.rax=u64::from_be(u64::from_str_radix(&buffer[0..16],16).unwrap());
-		r.rbx=u64::from_be(u64::from_str_radix(&buffer[16..32],16).unwrap());
-		r.rcx=u64::from_be(u64::from_str_radix(&buffer[32..48],16).unwrap());
-		r.rdx=u64::from_be(u64::from_str_radix(&buffer[48..64],16).unwrap());
-		r.rsi=u64::from_be(u64::from_str_radix(&buffer[64..80],16).unwrap());
-		r.rdi=u64::from_be(u64::from_str_radix(&buffer[80..96],16).unwrap());
-		r.rbp=u64::from_be(u64::from_str_radix(&buffer[96..112],16).unwrap());
-		r.rsp=u64::from_be(u64::from_str_radix(&buffer[112..128],16).unwrap());
-		r.r8=u64::from_be(u64::from_str_radix(&buffer[128..144],16).unwrap());
-		r.r9=u64::from_be(u64::from_str_radix(&buffer[144..160],16).unwrap());
-		r.r10=u64::from_be(u64::from_str_radix(&buffer[160..176],16).unwrap());
-		r.r11=u64::from_be(u64::from_str_radix(&buffer[176..192],16).unwrap());
-		r.r12=u64::from_be(u64::from_str_radix(&buffer[192..208],16).unwrap());
-		r.r13=u64::from_be(u64::from_str_radix(&buffer[208..224],16).unwrap());
-		r.r14=u64::from_be(u64::from_str_radix(&buffer[224..240],16).unwrap());
-		r.r15=u64::from_be(u64::from_str_radix(&buffer[240..256],16).unwrap());
-		r.rip=u64::from_be(u64::from_str_radix(&buffer[256..272],16).unwrap());
-		r.eflags=u32::from_be(u32::from_str_radix(&buffer[272..280],16).unwrap());
-		r.cs=u32::from_be(u32::from_str_radix(&buffer[280..288],16).unwrap());
-		r.ss=u32::from_be(u32::from_str_radix(&buffer[288..296],16).unwrap());
-		r.ds=u32::from_be(u32::from_str_radix(&buffer[296..304],16).unwrap());
-		r.es=u32::from_be(u32::from_str_radix(&buffer[304..312],16).unwrap());
-		r.fs=u32::from_be(u32::from_str_radix(&buffer[312..320],16).unwrap());
-		r.gs=u32::from_be(u32::from_str_radix(&buffer[320..328],16).unwrap());
-		r.fs_base=u64::from_be(u64::from_str_radix(&buffer[328..344],16).unwrap());
-		r.gs_base=u64::from_be(u64::from_str_radix(&buffer[344..360],16).unwrap());
-		r.k_gs_base=u64::from_be(u64::from_str_radix(&buffer[360..376],16).unwrap());
-		r.cr0=u64::from_be(u64::from_str_radix(&buffer[376..392],16).unwrap());
-		r.cr2=u64::from_be(u64::from_str_radix(&buffer[392..408],16).unwrap());
-		r.cr3=u64::from_be(u64::from_str_radix(&buffer[408..424],16).unwrap());
-		r.cr4=u64::from_be(u64::from_str_radix(&buffer[424..440],16).unwrap());
-		r.cr8=u64::from_be(u64::from_str_radix(&buffer[440..456],16).unwrap());
-		r.efer=u64::from_be(u64::from_str_radix(&buffer[456..472],16).unwrap());
-		for i in (0..10).step_by(2) {r.st0[i]=u8::from_str_radix(&buffer[i+472..i+474],16).unwrap();}
-		for i in (0..10).step_by(2) {r.st1[i]=u8::from_str_radix(&buffer[i+492..i+494],16).unwrap();}
-		for i in (0..10).step_by(2) {r.st2[i]=u8::from_str_radix(&buffer[i+512..i+514],16).unwrap();}
-		for i in (0..10).step_by(2) {r.st3[i]=u8::from_str_radix(&buffer[i+532..i+534],16).unwrap();}
-		for i in (0..10).step_by(2) {r.st4[i]=u8::from_str_radix(&buffer[i+552..i+554],16).unwrap();}
-		for i in (0..10).step_by(2) {r.st5[i]=u8::from_str_radix(&buffer[i+572..i+574],16).unwrap();}
-		for i in (0..10).step_by(2) {r.st6[i]=u8::from_str_radix(&buffer[i+592..i+594],16).unwrap();}
-		for i in (0..10).step_by(2) {r.st7[i]=u8::from_str_radix(&buffer[i+612..i+614],16).unwrap();}
-		r.fctrl=u32::from_be(u32::from_str_radix(&buffer[632..640],16).unwrap());
-		r.fstat=u32::from_be(u32::from_str_radix(&buffer[640..648],16).unwrap());
-		r.ftag=u32::from_be(u32::from_str_radix(&buffer[648..656],16).unwrap());
-		r.fiseg=u32::from_be(u32::from_str_radix(&buffer[656..664],16).unwrap());
-		r.fioff=u32::from_be(u32::from_str_radix(&buffer[664..672],16).unwrap());
-		r.foseg=u32::from_be(u32::from_str_radix(&buffer[672..680],16).unwrap());
-		r.fooff=u32::from_be(u32::from_str_radix(&buffer[680..688],16).unwrap());
-		r.fop=u32::from_be(u32::from_str_radix(&buffer[688..696],16).unwrap());
-		for i in (0..16).step_by(2) {r.xmm0[i]=u8::from_str_radix(&buffer[i+696..i+698],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm1[i]=u8::from_str_radix(&buffer[i+728..i+730],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm2[i]=u8::from_str_radix(&buffer[i+760..i+762],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm3[i]=u8::from_str_radix(&buffer[i+792..i+794],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm4[i]=u8::from_str_radix(&buffer[i+824..i+826],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm5[i]=u8::from_str_radix(&buffer[i+856..i+858],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm6[i]=u8::from_str_radix(&buffer[i+888..i+890],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm7[i]=u8::from_str_radix(&buffer[i+920..i+922],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm8[i]=u8::from_str_radix(&buffer[i+952..i+954],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm9[i]=u8::from_str_radix(&buffer[i+984..i+986],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm10[i]=u8::from_str_radix(&buffer[i+1016..i+1018],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm11[i]=u8::from_str_radix(&buffer[i+1048..i+1050],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm12[i]=u8::from_str_radix(&buffer[i+1080..i+1082],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm13[i]=u8::from_str_radix(&buffer[i+1112..i+1114],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm14[i]=u8::from_str_radix(&buffer[i+1144..i+1146],16).unwrap();}
-		for i in (0..16).step_by(2) {r.xmm15[i]=u8::from_str_radix(&buffer[i+1176..i+1178],16).unwrap();}
-		r.mxcsr=u32::from_be(u32::from_str_radix(&buffer[1208..1216],16).unwrap());
+		let mut r=Self
+		{
+			rax:u64::from_be(u64::from_str_radix(&buffer[0..16],16).unwrap()),
+			rbx:u64::from_be(u64::from_str_radix(&buffer[16..32],16).unwrap()),
+			rcx:u64::from_be(u64::from_str_radix(&buffer[32..48],16).unwrap()),
+			rdx:u64::from_be(u64::from_str_radix(&buffer[48..64],16).unwrap()),
+			rsi:u64::from_be(u64::from_str_radix(&buffer[64..80],16).unwrap()),
+			rdi:u64::from_be(u64::from_str_radix(&buffer[80..96],16).unwrap()),
+			rbp:u64::from_be(u64::from_str_radix(&buffer[96..112],16).unwrap()),
+			rsp:u64::from_be(u64::from_str_radix(&buffer[112..128],16).unwrap()),
+			r8:u64::from_be(u64::from_str_radix(&buffer[128..144],16).unwrap()),
+			r9:u64::from_be(u64::from_str_radix(&buffer[144..160],16).unwrap()),
+			r10:u64::from_be(u64::from_str_radix(&buffer[160..176],16).unwrap()),
+			r11:u64::from_be(u64::from_str_radix(&buffer[176..192],16).unwrap()),
+			r12:u64::from_be(u64::from_str_radix(&buffer[192..208],16).unwrap()),
+			r13:u64::from_be(u64::from_str_radix(&buffer[208..224],16).unwrap()),
+			r14:u64::from_be(u64::from_str_radix(&buffer[224..240],16).unwrap()),
+			r15:u64::from_be(u64::from_str_radix(&buffer[240..256],16).unwrap()),
+			rip:u64::from_be(u64::from_str_radix(&buffer[256..272],16).unwrap()),
+			eflags:u32::from_be(u32::from_str_radix(&buffer[272..280],16).unwrap()),
+			cs:u32::from_be(u32::from_str_radix(&buffer[280..288],16).unwrap()),
+			ss:u32::from_be(u32::from_str_radix(&buffer[288..296],16).unwrap()),
+			ds:u32::from_be(u32::from_str_radix(&buffer[296..304],16).unwrap()),
+			es:u32::from_be(u32::from_str_radix(&buffer[304..312],16).unwrap()),
+			fs:u32::from_be(u32::from_str_radix(&buffer[312..320],16).unwrap()),
+			gs:u32::from_be(u32::from_str_radix(&buffer[320..328],16).unwrap()),
+			fs_base:u64::from_be(u64::from_str_radix(&buffer[328..344],16).unwrap()),
+			gs_base:u64::from_be(u64::from_str_radix(&buffer[344..360],16).unwrap()),
+			k_gs_base:u64::from_be(u64::from_str_radix(&buffer[360..376],16).unwrap()),
+			cr0:u64::from_be(u64::from_str_radix(&buffer[376..392],16).unwrap()),
+			cr2:u64::from_be(u64::from_str_radix(&buffer[392..408],16).unwrap()),
+			cr3:u64::from_be(u64::from_str_radix(&buffer[408..424],16).unwrap()),
+			cr4:u64::from_be(u64::from_str_radix(&buffer[424..440],16).unwrap()),
+			cr8:u64::from_be(u64::from_str_radix(&buffer[440..456],16).unwrap()),
+			efer:u64::from_be(u64::from_str_radix(&buffer[456..472],16).unwrap()),
+			st0:[0;10],
+			st1:[0;10],
+			st2:[0;10],
+			st3:[0;10],
+			st4:[0;10],
+			st5:[0;10],
+			st6:[0;10],
+			st7:[0;10],
+			fctrl:u32::from_be(u32::from_str_radix(&buffer[632..640],16).unwrap()),
+			fstat:u32::from_be(u32::from_str_radix(&buffer[640..648],16).unwrap()),
+			ftag:u32::from_be(u32::from_str_radix(&buffer[648..656],16).unwrap()),
+			fiseg:u32::from_be(u32::from_str_radix(&buffer[656..664],16).unwrap()),
+			fioff:u32::from_be(u32::from_str_radix(&buffer[664..672],16).unwrap()),
+			foseg:u32::from_be(u32::from_str_radix(&buffer[672..680],16).unwrap()),
+			fooff:u32::from_be(u32::from_str_radix(&buffer[680..688],16).unwrap()),
+			fop:u32::from_be(u32::from_str_radix(&buffer[688..696],16).unwrap()),
+			xmm0:[0;16],
+			xmm1:[0;16],
+			xmm2:[0;16],
+			xmm3:[0;16],
+			xmm4:[0;16],
+			xmm5:[0;16],
+			xmm6:[0;16],
+			xmm7:[0;16],
+			xmm8:[0;16],
+			xmm9:[0;16],
+			xmm10:[0;16],
+			xmm11:[0;16],
+			xmm12:[0;16],
+			xmm13:[0;16],
+			xmm14:[0;16],
+			xmm15:[0;16],
+			mxcsr:u32::from_be(u32::from_str_radix(&buffer[1208..1216],16).unwrap()),
+		};
+		let _=hex::decode_to_slice(&buffer[472..492],&mut r.st0);
+		let _=hex::decode_to_slice(&buffer[492..512],&mut r.st1);
+		let _=hex::decode_to_slice(&buffer[512..532],&mut r.st2);
+		let _=hex::decode_to_slice(&buffer[532..552],&mut r.st3);
+		let _=hex::decode_to_slice(&buffer[552..572],&mut r.st4);
+		let _=hex::decode_to_slice(&buffer[572..592],&mut r.st5);
+		let _=hex::decode_to_slice(&buffer[592..612],&mut r.st6);
+		let _=hex::decode_to_slice(&buffer[612..632],&mut r.st7);
+		let _=hex::decode_to_slice(&buffer[696..728],&mut r.xmm0);
+		let _=hex::decode_to_slice(&buffer[728..760],&mut r.xmm1);
+		let _=hex::decode_to_slice(&buffer[760..792],&mut r.xmm2);
+		let _=hex::decode_to_slice(&buffer[792..824],&mut r.xmm3);
+		let _=hex::decode_to_slice(&buffer[824..856],&mut r.xmm4);
+		let _=hex::decode_to_slice(&buffer[856..888],&mut r.xmm5);
+		let _=hex::decode_to_slice(&buffer[888..920],&mut r.xmm6);
+		let _=hex::decode_to_slice(&buffer[920..952],&mut r.xmm7);
+		let _=hex::decode_to_slice(&buffer[952..984],&mut r.xmm8);
+		let _=hex::decode_to_slice(&buffer[984..1016],&mut r.xmm9);
+		let _=hex::decode_to_slice(&buffer[1016..1048],&mut r.xmm10);
+		let _=hex::decode_to_slice(&buffer[1048..1080],&mut r.xmm11);
+		let _=hex::decode_to_slice(&buffer[1080..1112],&mut r.xmm12);
+		let _=hex::decode_to_slice(&buffer[1112..1144],&mut r.xmm13);
+		let _=hex::decode_to_slice(&buffer[1144..1176],&mut r.xmm14);
+		let _=hex::decode_to_slice(&buffer[1176..1208],&mut r.xmm15);
 		r
 	}
 }

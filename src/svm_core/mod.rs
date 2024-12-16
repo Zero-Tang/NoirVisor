@@ -113,9 +113,9 @@ extern "C"
 /// # Safety
 /// This function is unsafe because it's called from assembly.
 /// DO NOT CALL THIS FUNCTION FROM RUST!
-#[no_mangle] pub unsafe extern "C" fn nvc_svm_subvert_processor_i(vcpu:*mut SvmVcpu,gsp:u64)
+#[no_mangle] pub unsafe extern "C" fn nvc_svm_subvert_processor_i(vcpu:*mut SvmVcpu,gsp:u64)->u64
 {
-	(*vcpu).subvert_i(gsp);
+	(*vcpu).subvert_i(gsp)
 }
 
 impl SvmVcpu
@@ -265,7 +265,7 @@ impl Default for SvmHypervisor
 	{
 		Self
 		{
-			vcpus:Vec::new(),
+			vcpus:Vec::with_capacity(unsafe{noir_get_processor_count() as usize}),
 			msrpm:MemoryDescriptor::null(),
 			iopm:MemoryDescriptor::null(),
 			nptm:SvmNptManager::default(),

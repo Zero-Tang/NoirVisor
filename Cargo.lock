@@ -10,12 +10,18 @@ checksum = "b048fb63fd8b5923fc5aa7b340d8e156aec7ec02f0c78fa8a6ddc2613f6f71de"
 
 [[package]]
 name = "cc"
-version = "1.2.1"
+version = "1.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd9de9f2205d5ef3fd67e685b0df337994ddd4495e2a28d185500d0e1edfea47"
+checksum = "9157bbaa6b165880c27a4293a474c91cdcf265cc68cc829bf10be0964a391caf"
 dependencies = [
  "shlex",
 ]
+
+[[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "iced-x86"
@@ -39,7 +45,6 @@ dependencies = [
 name = "nvcore"
 version = "0.1.0"
 dependencies = [
- "cc",
  "iced-x86",
  "paste",
  "portable-dlmalloc",
@@ -49,6 +54,7 @@ dependencies = [
 name = "nvdebug"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "iced-x86",
  "uefi-raw",
  "windows",
@@ -62,9 +68,9 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "portable-dlmalloc"
-version = "0.2.1"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "935e29f5a17d8b2b6b9e645d8971849ffdb95511bd8383a243589506a3cb67ca"
+checksum = "ae4e7dd7389d1116fde253645693718cdfafda5d8a76059d38246b5d1870fef3"
 dependencies = [
  "cc",
 ]

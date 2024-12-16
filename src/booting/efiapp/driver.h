@@ -63,6 +63,7 @@ EFI_STATUS EFIAPI UefiRuntimeServicesTableLibConstructor(IN EFI_HANDLE ImageHand
 EFI_STATUS EFIAPI UefiLibConstructor(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable);
 EFI_STATUS EFIAPI DevicePathLibConstructor(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable);
 
+void NoirInitializeDisassembler();
 void NoirDisplayProcessorState();
 EFI_STATUS NoirBuildHostEnvironment();
 UINT32 NoirBuildHypervisor();

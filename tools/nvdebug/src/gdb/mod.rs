@@ -44,8 +44,9 @@ impl Target
 		let mut ack:[u8;1]=[0];
 		match self.stream.read(&mut ack)
 		{
-			Ok(_)=>
+			Ok(s)=>
 			{
+				assert_eq!(s,1);
 				match ack[0]
 				{
 					b'+'=>

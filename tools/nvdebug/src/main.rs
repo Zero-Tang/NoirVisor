@@ -324,6 +324,7 @@ fn main()
 								// Read registers.
 								match target.read_registers::<QemuGdbX64Registers>()
 								{
+									#[allow(clippy::field_reassign_with_default)]
 									Ok(regs)=>
 									{
 										println!("Registers: {regs:X?}");
@@ -397,9 +398,9 @@ unsafe extern "system" fn sym_read_memory_rt(process:HANDLE,base_address:u64,buf
 			unsafe
 			{
 				let p:*mut u8=buffer.cast();
-				for i in 0..size as usize
+				for (i,v) in r.iter().enumerate().take(size as usize)
 				{
-					p.add(i).write(r[i]);
+					p.add(i).write(*v);
 				}
 				number_of_bytes_read.write(size);
 			}

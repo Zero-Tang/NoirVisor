@@ -32,13 +32,10 @@ unsafe impl GlobalAlloc for InternalAllocator
 {
 	unsafe fn alloc(&self, layout: Layout) -> *mut u8
 	{
-		/*
 		if CHECK_ALLOC.load(Ordering::SeqCst)
 		{
-			println!("Intercepted unwanted allocation! Alignment: {} bytes. Size: {} bytes.",layout.align(),layout.size());
-			loop{}
+			panic!("Intercepted unwanted allocation! Alignment: {} bytes. Size: {} bytes.",layout.align(),layout.size());
 		}
-		*/
 		dlmemalign(layout.align(),layout.size()).cast()
 	}
 
@@ -134,22 +131,15 @@ impl PageAllocationInformation
 
 	fn new_full()->Option<Self>
 	{
-		match Self::new_blank()
-		{
-			Some(info)=>
+		Self::new_blank().map
+		(
+			|info| Self
 			{
-				Some
-				(
-					Self
-					{
-						virt:info.virt,
-						phys:info.phys,
-						alloc_type:PageAllocationType::Full
-					}
-				)
+				virt:info.virt,
+				phys:info.phys,
+				alloc_type:PageAllocationType::Full
 			}
-			None=>None
-		}
+		)
 	}
 
 	fn alloc_pages(&mut self,pages:usize)->Option<MemoryDescriptor>

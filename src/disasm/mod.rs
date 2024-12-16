@@ -33,6 +33,7 @@ static EXAMPLE_CODE: &[u8] = &[
 	{
 		let mut mnemonic=FormatBuffer::default();
 		let ins_info=decoder.decode();
+		let _=ins_info.op_code();
 		fmter.format(&ins_info,&mut mnemonic);
 	}
 }

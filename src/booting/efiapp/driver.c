@@ -120,6 +120,7 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	Print(L"NoirVisor is loaded to base 0x%p, Size=0x%X\n",ImageInfo->ImageBase,ImageInfo->ImageSize);
 	NoirInitializeConfigurationManager();
 	NoirConfigureInternalDebugger();
+	NoirInitializeDisassembler();
 	st=NoirRegisterHypervisorVariables();
 	Print(L"NoirVisor Variables Registration Status=0x%X\n",st);
 	StdOut->OutputString(StdOut,L"Press Enter key to continue subversion!\r\n");
