@@ -30,9 +30,20 @@ NoirVisor uses buffers with a size of 512 bytes. Therefore, any single print sho
 The specification is unavailable yet. In future, the `nvdebug` tool might become the interactive debugger.
 
 ## Tool: nvdebug
-This is a simple tool that parses the UEFI environment and locates the symbol according to the address. Currently, `nvdebug` can parse QEMU guest through GDB connection. \
+This is a simple tool that parses the UEFI environment and the symbol. Currently, `nvdebug` can parse QEMU guest through GDB connection. \
+If you specified `-s` when you launch QEMU, the port number is 1234.
+
+### Obtain the Symbol Name of the Faulting Instruction Pointer
+When NoirVisor panicked due to an exception intercepted by IDT, you may use this feature to obtain the symbol name of the faulting rip. \
 In `tools/nvdebug` directory, execute:
 ```
 cargo run qemu://[kvmhost]:[port] [fault-rip]
 ```
-If you specified `-s` when you launch QEMU, the port number is 1234.
+
+### Obtain the Stack Trace
+When NoirVisor panicked in runtime, you may use this feature to obtain a stack trace. \
+In `tools/nvdebug` directory, execute:
+```
+cargo run qemu:://[kvmhost]:[port]
+```
+You should be able to see a stack trace.

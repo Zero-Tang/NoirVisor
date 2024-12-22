@@ -218,7 +218,7 @@ fn enum_efi_images(target:&mut Target)->Vec<ImageInfo>
 fn locate_module_from_ptr(images:&[ImageInfo],ptr:u64)->Option<&ImageInfo>
 {
 	let mut lo:isize=0;
-	let mut hi=images.len() as isize;
+	let mut hi=images.len() as isize-1;
 	while hi>=lo
 	{
 		let mid=(lo+hi)>>1;
@@ -330,7 +330,6 @@ fn main()
 										println!("Registers: {regs:X?}");
 										let mut stk_f=STACKFRAME_EX::default();
 										stk_f.AddrPC=ADDRESS64{Offset:regs.rip,Segment:0,Mode:AddrModeFlat};
-										stk_f.AddrFrame=ADDRESS64{Offset:regs.rbp,Segment:0,Mode:AddrModeFlat};
 										stk_f.AddrStack=ADDRESS64{Offset:regs.rsp,Segment:0,Mode:AddrModeFlat};
 										stk_f.StackFrameSize=size_of::<STACKFRAME_EX>() as u32;
 										let mut ctxt=CONTEXT::default();
@@ -367,7 +366,37 @@ fn main()
 										};
 										while unsafe{StackWalkEx(IMAGE_FILE_MACHINE_AMD64.0.into(),HANDLE(&raw mut handle as *mut c_void),None,&raw mut stk_f,&raw mut ctxt as *mut c_void,Some(sym_read_memory_rt),Some(sym_func_table_access_rt),Some(sym_get_module_base_rt),None,0)}.as_bool()
 										{
-											println!("Stack Info: {stk_f:X?}");
+											// println!("Stack Info: {stk_f:X?}");
+											let target_address=stk_f.AddrPC.Offset;
+											match locate_module_from_ptr(&r,target_address)
+											{
+												Some(img_info)=>
+												{
+													match RemotePEImage::new(&mut target,img_info.base,img_info.length,img_info.path.clone())
+													{
+														Some(mut pe_img)=>
+														{
+															// println!("Loading symbols for {} (Base: 0x{:016X}, Length: 0x{:X})...",img_info.path,img_info.base,img_info.length);
+															pe_img.load_symbols();
+															if let Some(r)=locate_symbol(target_address)
+															{
+																println!("Symbol: {}+{:X} ({}@{})",r.name,r.displacement,r.source_file,r.line_number);
+															}
+														}
+														None=>println!("Failed to initialize PE Image!")
+													}
+												}
+												_=>println!("[Test] Failed to locate!")
+											}
+											// Move to next stack frame.
+											let pc=stk_f.AddrReturn;
+											let sp=stk_f.AddrFrame;
+											stk_f=STACKFRAME_EX::default();
+											stk_f.AddrPC=pc;
+											stk_f.AddrStack=sp;
+											stk_f.AddrStack.Offset=sp.Offset.wrapping_add(0x10);
+											stk_f.StackFrameSize=size_of::<STACKFRAME_EX>() as u32;
+											// println!("New Stack Info: {stk_f:X?}");
 										}
 									}
 									Err(e)=>println!("Failed to read registers! Reason: {e}")
@@ -389,8 +418,8 @@ fn main()
 
 unsafe extern "system" fn sym_read_memory_rt(process:HANDLE,base_address:u64,buffer:*mut c_void,size:u32,number_of_bytes_read:*mut u32)->BOOL
 {
-	let target=unsafe{&mut *(process.0 as *mut Target)};
-	println!("Reading memory from 0x{base_address:016X} with {size} bytes!...");
+	let handle=unsafe{&mut *(process.0 as *mut SymProcessHandle)};
+	let target=&mut *handle.target;
 	match target.read_memory(base_address,size as usize)
 	{
 		Ok(r)=>
@@ -404,7 +433,6 @@ unsafe extern "system" fn sym_read_memory_rt(process:HANDLE,base_address:u64,buf
 				}
 				number_of_bytes_read.write(size);
 			}
-			println!("Content: {r:X?}");
 		}
 		Err(e)=>panic!("Failed to read memory! Reason: {e}")
 	}
@@ -414,14 +442,13 @@ unsafe extern "system" fn sym_read_memory_rt(process:HANDLE,base_address:u64,buf
 unsafe extern "system" fn sym_func_table_access_rt(process:HANDLE,addr_base:u64)->*mut c_void
 {
 	// This routine must be manually implemented, in that this incurs remote memory accesses!
-	println!("Function-Table Access is queried! Address: 0x{addr_base:016X}");
+	// println!("Function-Table Access is queried! Address: 0x{addr_base:016X}");
 	let handle=unsafe{&mut *(process.0 as *mut SymProcessHandle)};
 	let images=slice::from_raw_parts(handle.images,handle.count);
 	match locate_module_from_ptr(images,addr_base)
 	{
 		Some(img)=>
 		{
-			println!("Image-Base: 0x{:016X}",img.base);
 			match RemotePEImage::new(&mut *handle.target,img.base,img.length,img.path.clone())
 			{
 				Some(mut pe_img)=>
@@ -435,7 +462,7 @@ unsafe extern "system" fn sym_func_table_access_rt(process:HANDLE,addr_base:u64)
 						}
 						None=>
 						{
-							println!("Failed to locate FPO!");
+							println!("Failed to locate FPO for 0x{addr_base:016X}!");
 							null_mut()
 						}
 					}
@@ -445,16 +472,28 @@ unsafe extern "system" fn sym_func_table_access_rt(process:HANDLE,addr_base:u64)
 		}
 		None=>
 		{
-			println!("Failed to locate image info!");
-			null_mut()
+			panic!("Failed to locate image info!");
+			// null_mut()
 		}
 	}
 }
 
-unsafe extern "system" fn sym_get_module_base_rt(_process:HANDLE,address:u64)->u64
+unsafe extern "system" fn sym_get_module_base_rt(process:HANDLE,address:u64)->u64
 {
-	println!("Module-Base is queried! Address: 0x{address:016X}");
-	let p=SymGetModuleBase64(GetCurrentProcess(),address);
-	println!("Module-Base: 0x{p:016X}");
-	p
+	let handle=unsafe{&mut *(process.0 as *mut SymProcessHandle)};
+	let images=slice::from_raw_parts(handle.images,handle.count);
+	match locate_module_from_ptr(images,address)
+	{
+		Some(img)=>
+		{
+			let p=img.base;
+			p
+
+		}
+		None=>
+		{
+			println!("Failed to locate image info!");
+			0
+		}
+	}
 }

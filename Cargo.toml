@@ -7,11 +7,12 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [profile.dev]
+debug = "full"
 panic = "abort"
 
 [profile.release]
 panic = "abort"
-debug = true
+debug = "full"
 codegen-units = 1
 lto = true
 opt-level = 3
@@ -23,7 +24,7 @@ members = ["tools/nvdebug"]
 paste = "1.0.15"
 
 [dependencies.portable-dlmalloc]
-version = "0.3.1"
+version = "1.0.0"
 features = []
 
 [dependencies.iced-x86]

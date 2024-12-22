@@ -137,7 +137,6 @@ impl <'a> RemotePEImage<'a>
 										let cv_dir:*const IMAGE_CODEVIEW_DEBUG_DIRECTORY=raw.as_ptr().cast();
 										let pdb_path_raw=slice::from_raw_parts((*cv_dir).Path.as_ptr(),(*debug_entry).SizeOfData as usize-size_of::<IMAGE_CODEVIEW_DEBUG_DIRECTORY>());
 										let pdb_path=str::from_utf8_unchecked(pdb_path_raw);
-										println!("CodeView PDB File: {}",pdb_path);
 										match CreateFileA(PCSTR::from_raw((*cv_dir).Path.as_ptr()),GENERIC_READ.0,FILE_SHARE_READ,None,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,None)
 										{
 											Ok(h_file)=>
@@ -189,33 +188,44 @@ impl <'a> RemotePEImage<'a>
 
 	pub fn load_fpo_data(&mut self,address:u64)->Option<IMAGE_RUNTIME_FUNCTION_ENTRY>
 	{
-		match self.target.read_memory(self.base+self.exception_section.VirtualAddress as u64,self.exception_section.Size as usize)
+		let pdata_base=self.base+self.exception_section.VirtualAddress as u64;
+		let mut lo:isize=0;
+		let mut hi:isize=(self.exception_section.Size as usize / size_of::<IMAGE_RUNTIME_FUNCTION_ENTRY>()) as isize-1;
+		while hi>=lo
 		{
-			Ok(v)=>
+			let mid:usize=((lo+hi)>>1) as usize;
+			let pdata_addr=pdata_base+(mid*size_of::<IMAGE_RUNTIME_FUNCTION_ENTRY>()) as u64;
+			match self.target.read_memory(pdata_addr,size_of::<IMAGE_RUNTIME_FUNCTION_ENTRY>())
 			{
-				let exception_dir:*const IMAGE_RUNTIME_FUNCTION_ENTRY=v.as_ptr().cast();
-				let count:usize=v.len()/size_of::<IMAGE_RUNTIME_FUNCTION_ENTRY>();
-				for i in 0..count
+				Ok(v)=>
 				{
+					let unwind_info:*const IMAGE_RUNTIME_FUNCTION_ENTRY=v.as_ptr().cast();
 					unsafe
 					{
-						let exception_data=*exception_dir.add(i);
-						let start=self.base+exception_data.BeginAddress as u64;
-						let end=self.base+exception_data.EndAddress as u64;
-						if (start..end).contains(&address)
+						let start=self.base+(*unwind_info).BeginAddress as u64;
+						let end=self.base+(*unwind_info).EndAddress as u64;
+						if address<start
 						{
-							return Some(exception_data);
+							hi=(mid-1) as isize;
+						}
+						else if address>=end
+						{
+							lo=(mid+1) as isize;
+						}
+						else
+						{
+							return Some(*unwind_info);
 						}
 					}
 				}
-				None
-			}
-			Err(e)=>
-			{
-				println!("Failed to dump IMAGE_EXCEPTION_DIRECTORY! Reason: {e}");
-				None
+				Err(e)=>
+				{
+					println!("Failed to dump IMAGE_EXCEPTION_DIRECTORY! Reason: {e}");
+					return None;
+				}
 			}
 		}
+		None
 	}
 }
 

@@ -68,9 +68,9 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "portable-dlmalloc"
-version = "0.3.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae4e7dd7389d1116fde253645693718cdfafda5d8a76059d38246b5d1870fef3"
+checksum = "0d6749c8a0933194d03b049f78a52219cec15d72f022c8fd32c83d9f3014394b"
 dependencies = [
  "cc",
 ]

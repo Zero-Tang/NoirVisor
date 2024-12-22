@@ -106,41 +106,47 @@ impl Target
 
 	pub fn read_memory(&mut self,address:u64,length:usize)->Result<Vec<u8>,GdbError>
 	{
-		let raw_packet=create_packet(&format!("m {:016X},{:x}",address,length));
-		let _=self.stream.write_all(&raw_packet);
-		let mut raw_response:Vec<u8>=vec![0;(length<<1)+4];
-		let r=self.stream.read(raw_response.as_mut_slice());
-		match r
+		let mut raw_response:Vec<u8>=vec![0;1028];
+		let mut ret_content:Vec<u8>=Vec::with_capacity(length);
+		for i in (0..length).step_by(512)
 		{
-			Ok(s)=>
+			let read_len=if length-i>512 {512} else {length-i};
+			let raw_packet=create_packet(&format!("m {:016X},{:x}",address+(i as u64),read_len));
+			let _=self.stream.write_all(&raw_packet);
+			let r=self.stream.read(raw_response.as_mut_slice());
+			match r
 			{
-				if s==1 && raw_response[0]==b'+'
+				Ok(s)=>
 				{
-					// Acknowledgement.
-					let _=self.stream.read(&mut raw_response);
+					if s==1 && raw_response[0]==b'+'
+					{
+						// Acknowledgement.
+						let _=self.stream.read(&mut raw_response);
+					}
 				}
+				Err(e)=>return Err(GdbError::Io(e))
 			}
-			Err(e)=>return Err(GdbError::Io(e))
-		}
-		let raw_pkt=get_packet_data(&raw_response);
-		match raw_pkt
-		{
-			Some(s)=>
+			let raw_pkt=get_packet_data(&raw_response);
+			match raw_pkt
 			{
-				let raw_str=unsafe{str::from_utf8_unchecked(s)};
-				if raw_str.chars().nth(0)==Some('E')
+				Some(s)=>
 				{
-					Err(GdbError::Gnu(u8::from_str_radix(&raw_str[1..3],16).unwrap()))
+					let raw_str=unsafe{str::from_utf8_unchecked(s)};
+					if raw_str.chars().nth(0)==Some('E')
+					{
+						return Err(GdbError::Gnu(u8::from_str_radix(&raw_str[1..3],16).unwrap()));
+					}
+					else
+					{
+						let resp:Result<Vec<u8>,ParseIntError>=(0..read_len<<1).step_by(2).map(|i| u8::from_str_radix(&raw_str[i..i+2],16)).collect();
+						ret_content.append(&mut resp.unwrap());
+					}
+	
 				}
-				else
-				{
-					let resp:Result<Vec<u8>,ParseIntError>=(0..length<<1).step_by(2).map(|i| u8::from_str_radix(&raw_str[i..i+2],16)).collect();
-					Ok(resp.unwrap())
-				}
-
+				_=>panic!("Invalid Checksum!")
 			}
-			_=>panic!("Invalid Checksum!")
 		}
+		return Ok(ret_content);
 	}
 }
 
