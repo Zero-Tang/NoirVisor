@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2024, Zero Tang. All rights reserved.
+  Copyright 2018-2025, Zero Tang. All rights reserved.
 
   This file is the invoker of the iced Disassembler Crate.
 
@@ -24,6 +24,8 @@ static EXAMPLE_CODE: &[u8] = &[
     0x05, 0x2F, 0x24, 0x0A, 0x00, 0x48, 0x8D, 0x05, 0x78, 0x7C, 0x04, 0x00, 0x33, 0xFF,
 ];
 
+// This routine is intended for eagerly initializing the iced-x86 crate
+// so that all `lazy_static` items are initialized.
 #[allow(non_snake_case)]
 #[no_mangle] extern "C" fn NoirInitializeDisassembler()
 {

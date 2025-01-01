@@ -1,7 +1,7 @@
 /*
  * NoirVisor Core in Rust
  * 
- * Copyright (c) Zero Tang, 2024. All rights reserved.
+ * Copyright (c) Zero Tang, 2018-2025. All rights reserved.
  * 
  * This file is the Intel VT-x driver of NoirVisor Core in Rust.
  * 

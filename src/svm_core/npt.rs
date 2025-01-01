@@ -1,7 +1,7 @@
 /*
  * NoirVisor Core in Rust
  * 
- * Copyright (c) Zero Tang, 2024. All rights reserved.
+ * Copyright (c) Zero Tang, 2018-2025. All rights reserved.
  * 
  * This file manages VMCB in NoirVisor Core in Rust.
  * 
@@ -622,9 +622,9 @@ impl SvmNptManager
 				};
 				match increment as usize
 				{
-					PAGE_1GB_SIZE=>self.update_pdpte(p,0,false,false,false,true),
-					PAGE_2MB_SIZE=>self.update_pde(p,0,false,false,false,true),
-					PAGE_4KB_SIZE=>self.update_pte(p,0,false,false,false),
+					PAGE_1GB_SIZE=>self.update_pdpte(p,0,r.input_handler.is_none(),false,false,true),
+					PAGE_2MB_SIZE=>self.update_pde(p,0,r.input_handler.is_none(),false,false,true),
+					PAGE_4KB_SIZE=>self.update_pte(p,0,r.input_handler.is_none(),false,false),
 					_=>panic!("Unknown increment size: 0x{:X}!",increment)
 				}
 				p+=increment;

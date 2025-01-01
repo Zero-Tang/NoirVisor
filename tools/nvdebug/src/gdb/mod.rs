@@ -146,7 +146,7 @@ impl Target
 				_=>panic!("Invalid Checksum!")
 			}
 		}
-		return Ok(ret_content);
+		Ok(ret_content)
 	}
 }
 

@@ -1,7 +1,7 @@
 /*
  * NoirVisor Core in Rust
  * 
- * Copyright (c) Zero Tang, 2024. All rights reserved.
+ * Copyright (c) Zero Tang, 2018-2025. All rights reserved.
  * 
  * This file defines global allocator for NoirVisor Core in Rust.
  * 
@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{alloc::*, arch::asm, ffi::c_void, fmt::{self,Display}, ptr::null_mut, sync::atomic::{AtomicBool, AtomicUsize, Ordering}};
+use core::{alloc::*, arch::asm, ffi::c_void, fmt::{self,Display}, ptr::null_mut, sync::atomic::*, slice, str};
 
 use portable_dlmalloc::raw::*;
 use paste::paste;
@@ -420,7 +420,15 @@ pub fn enum_allocated_large_pages(callback_rt:PhysicalRangeCallback,context:*mut
 	p.store(0,Ordering::Release);
 }
 
-#[no_mangle] unsafe extern "C" fn custom_abort()->!
+#[no_mangle] unsafe extern "C" fn custom_abort(message:*const u8,src_file:*const u8,src_line:u32)->!
 {
-	panic!("DLMalloc aborted!");
+	let msg=nulstr_from_ptr(message);
+	let sfn=nulstr_from_ptr(src_file);
+	panic!("DLMalloc aborted! Reason: {msg}\n{sfn}@{src_line}");
+}
+
+unsafe fn nulstr_from_ptr<'a>(ptr:*const u8)->&'a str
+{
+	let str_slice=slice::from_raw_parts(ptr,strlen(ptr));
+	str::from_utf8_unchecked(str_slice)
 }

@@ -1,7 +1,7 @@
 /*
  * NoirVisor Core in Rust
  * 
- * Copyright (c) Zero Tang, 2024. All rights reserved.
+ * Copyright (c) Zero Tang, 2018-2025. All rights reserved.
  * 
  * This file defines I/O Filtering Architecture of NoirVisor Core in Rust.
  * 
@@ -26,7 +26,7 @@ pub type IoOutputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:
 pub struct IoRegion<T>
 {
 	pub name:String,
-	pub input_handler:IoInputFilterHandler<T>,
+	pub input_handler:Option<IoInputFilterHandler<T>>,
 	pub output_handler:IoOutputFilterHandler<T>,
 	pub addr:T,
 	pub size:T
@@ -37,7 +37,7 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoRegion<T>
 	/// ## `new` method
 	/// This method will create a new I/O region. \
 	/// You must also use `add_region` method from `IoAddressSpace` to bind the new region to a specific I/O address space.
-	pub fn new(name:&str,input_handler:IoInputFilterHandler<T>,output_handler:IoOutputFilterHandler<T>,addr:T,size:T)->Self
+	pub fn new(name:&str,input_handler:Option<IoInputFilterHandler<T>>,output_handler:IoOutputFilterHandler<T>,addr:T,size:T)->Self
 	{
 		Self
 		{
@@ -150,8 +150,15 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoAddressSpace<T>
 		{
 			Some(r)=>
 			{
-				(r.input_handler)(r,addr,size,value,context);
-				Ok(())
+				match r.input_handler
+				{
+					Some(f)=>
+					{
+						f(r,addr,size,value,context);
+						Ok(())
+					}
+					None=>Err(NOIR_DISPATCH_FAILURE)
+				}
 			}
 			None=>Err(NOIR_DISPATCH_FAILURE)
 		}

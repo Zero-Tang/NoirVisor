@@ -486,9 +486,7 @@ unsafe extern "system" fn sym_get_module_base_rt(process:HANDLE,address:u64)->u6
 	{
 		Some(img)=>
 		{
-			let p=img.base;
-			p
-
+			img.base
 		}
 		None=>
 		{

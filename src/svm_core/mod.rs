@@ -1,7 +1,7 @@
 /*
  * NoirVisor Core in Rust
  * 
- * Copyright (c) Zero Tang, 2024. All rights reserved.
+ * Copyright (c) Zero Tang, 2018-2025. All rights reserved.
  * 
  * This file is the AMD-V driver of NoirVisor Core in Rust.
  * 
@@ -13,7 +13,7 @@
 use core::{ffi::c_void, ptr::*};
 use alloc::vec::Vec;
 #[cfg(target_os="uefi")]
-use exit::{svm_apic_input_handler, svm_apic_output_handler};
+use exit::svm_apic_output_handler;
 use npt::SvmNptManager;
 use xpf_core::{bitmap::set_bitmap, hv_host::x86::*, ioflt::{IoAddressSpace, IoRegion}};
 
@@ -426,7 +426,7 @@ impl HypervisorEssentials for SvmHypervisor
 		#[cfg(target_os="uefi")]
 		{
 			let apic_bar=rdmsr(MSR_APIC_BASE);
-			self.mmio_space.add_region(IoRegion::new("lapic",svm_apic_input_handler,svm_apic_output_handler,page_4kb_base(apic_bar as usize) as u64,PAGE_SIZE as u64));
+			self.mmio_space.add_region(IoRegion::new("lapic",None,svm_apic_output_handler,page_4kb_base(apic_bar as usize) as u64,PAGE_SIZE as u64));
 		}
 		// Initialize NPT.
 		self.nptm.build_identity_map();

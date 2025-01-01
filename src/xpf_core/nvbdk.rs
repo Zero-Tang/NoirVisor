@@ -1,7 +1,7 @@
 /*
  * NoirVisor Core in Rust
  * 
- * Copyright (c) Zero Tang, 2024. All rights reserved.
+ * Copyright (c) Zero Tang, 2018-2025. All rights reserved.
  * 
  * This file defines Basic Development Kits for NoirVisor Core in Rust.
  * 
@@ -170,6 +170,8 @@ extern "C"
 	pub fn noir_free_2mb_page(virtual_address:*mut c_void);
 	pub fn noir_find_virt_by_phys(physical_address:u64)->*mut c_void;
 	pub fn noir_copy_memory(dest:*mut c_void,src:*const c_void,cch:usize);
+	// String Facility
+	pub fn strlen(ptr:*const u8)->usize;
 }
 
 // Page-related definitions

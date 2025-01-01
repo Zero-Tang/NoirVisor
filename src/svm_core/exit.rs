@@ -1,7 +1,7 @@
 /*
  * NoirVisor Core in Rust
  * 
- * Copyright (c) Zero Tang, 2024. All rights reserved.
+ * Copyright (c) Zero Tang, 2018-2025. All rights reserved.
  * 
  * This file handles VM-Exits in AMD-V of NoirVisor Core in Rust.
  * 
@@ -22,12 +22,7 @@ use xpf_core::{ci::is_ci_phys_page, x86::interrupts::*};
 use super::*;
 use crate::mshv_core::cpuid::*;
 
-pub fn svm_apic_input_handler(_region:&IoRegion<u64>,_address:u64,_size:u64,_value:*mut c_void,_context:*mut c_void)
-{
-	panic!("APIC-Read is not implemented!");
-}
-
-pub fn svm_apic_output_handler(_region:&IoRegion<u64>,address:u64,size:u64,value:*const c_void,_context:*mut c_void)
+pub(super) fn svm_apic_output_handler(_region:&IoRegion<u64>,address:u64,size:u64,value:*const c_void,_context:*mut c_void)
 {
 	// Current implementation is simply pass-thru.
 	unsafe
