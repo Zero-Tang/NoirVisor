@@ -366,7 +366,7 @@ impl SvmVcpu
 						unimplemented!("MMIO Input virtualization is not implemented!");
 					};
 				}
-				_=>panic!("Unsupported instruction: {:?} is intercepted for decoding MMIO instruction!",ins_info.mnemonic())
+				_=>panic!("Unsupported instruction: {:?} is intercepted for decoding MMIO instruction!\nrip=0x{rip:X}, GPA=0x{gpa:X}",ins_info.mnemonic())
 			}
 			unsafe{advance_rip_manually(vmcb,ins_info.len())};
 		}

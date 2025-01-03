@@ -15,7 +15,7 @@ Drivers inside NoirVisor should register MMIO interceptions and corresponding ca
 
 ## I/O Filtering
 NoirVisor implements an I/O filtering mechanism for subverted host. Drivers inside NoirVisor may register their I/O regions so that they can receive callbacks. \
-The I/O regions are organized in AVL-tree so that the I/O interceptions can be dispatched in `O(log_2_n)` time complexity.
+The I/O regions are organized in sorted list so that the I/O interceptions can be dispatched in `O(log_2_n)` time complexity.
 
 ## I/O Virtualization for Customizable VM
 This feature is intended for CVM Guest to access physical peripheral hardware with either exclusive or shared accesses. The documentation is not available yet.

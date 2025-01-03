@@ -22,19 +22,11 @@ pub mod mshv_core;
 pub mod disasm;
 
 use alloc::boxed::Box;
-use iced_x86::{Decoder, Mnemonic};
 use core::str;
 
 use xpf_core::{asm::cpuid::cpuid2, dlalloc::set_alloc_checker, nvstatus::*, x86::cpuid::CPUID_EXT_BRAND_STRING_P1};
 pub use xpf_core::debug::*;
 use svm_core::SvmHypervisor;
-
-pub enum VirtualCpuOption
-{
-	Vt,
-	Svm,
-	None
-}
 
 pub enum ProcessorManufacturer
 {
@@ -178,10 +170,6 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 
 #[no_mangle] pub extern "C" fn nvc_build_hypervisor()->Status
 {
-	// Run disassembler once to initialize its lazy_static.
-	let mut decoder=Decoder::new(64,&[0x90;15],0);
-	let ins_info=decoder.decode();
-	assert_eq!(ins_info.mnemonic(),Mnemonic::Nop);
 	// Subvert the system.
 	println!("Subverting the system...");
 	let mut vstr_raw:[u8;12]=[0;12];

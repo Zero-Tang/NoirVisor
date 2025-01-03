@@ -11,13 +11,16 @@
  */
 
 use iced_x86::*;
-use core::{fmt, str};
+use core::{fmt, str, sync::atomic::{AtomicPtr,Ordering}};
 
 use qemu_debugcon::*;
+use serial::*;
+use unknown::*;
 
-use crate::{Status, NOIR_NOT_IMPLEMENTED, NOIR_SUCCESS};
+use crate::{Status, NOIR_SUCCESS};
 
 mod qemu_debugcon;
+#[allow(dead_code)] mod serial;
 mod unknown;
 
 // We need to implement a formatter without alloc!
@@ -91,10 +94,12 @@ pub trait DebuggerBackend
 pub enum Debugger
 {
 	QemuDebugCon(QemuDebugConDebugger),
-	Unknown
+	Serial(SerialPort),
+	Unknown(UnknownDebugger)
 }
 
-pub static mut DEBUGGER:Debugger=Debugger::Unknown;
+static mut DEBUGGER:Debugger=Debugger::Unknown(UnknownDebugger);
+static DEBUGGER_PTR:AtomicPtr<Debugger>=AtomicPtr::new(&raw mut DEBUGGER);
 
 // Currently, interactive debugger is in draft-stage, so `debug_read` will never be called.
 // Mark it as a piece of dead code.
@@ -121,39 +126,34 @@ pub fn dbg_print(args: core::fmt::Arguments)
 	let r=fmt::write(&mut w, args);
 	if r.is_ok()
 	{
-		let dbg=&raw mut DEBUGGER;
 		unsafe
 		{
-			match &mut *dbg
-			{
-				Debugger::QemuDebugCon(item)=>
-				{
-					debug_write(item,w.buffer.as_ptr(),w.used);
-				}
-				Debugger::Unknown=>
-				{
-					// Do nothing.
-				}
-			}
+			noir_debug_output(w.buffer.as_ptr(),w.used);
 		}
 	}
 }
 
 /// # Safety
-/// This function is intended to be called from C codes of NoirVisor.
+/// Make sure `buffer` has the size of `length`.
 #[no_mangle] pub unsafe extern "C" fn noir_debug_output(buffer:*const u8,length:usize)
 {
-	let dbg=&raw mut DEBUGGER;
-	match &mut *dbg
+	match &mut *DEBUGGER_PTR.load(Ordering::Relaxed)
 	{
-		Debugger::QemuDebugCon(item)=>
-		{
-			debug_write(item,buffer,length);
-		}
-		Debugger::Unknown=>
-		{
+		Debugger::QemuDebugCon(d)=>debug_write(d,buffer,length),
+		Debugger::Serial(d)=>debug_write(d,buffer,length),
+		Debugger::Unknown(d)=>debug_write(d,buffer,length)
+	};
+}
 
-		}
+/// # Safety
+/// Make sure `buffer` has the size of `length` and is mutable.
+#[no_mangle] pub unsafe extern "C" fn noir_debug_input(buffer:*mut u8,length:usize)
+{
+	match &mut *DEBUGGER_PTR.load(Ordering::Relaxed)
+	{
+		Debugger::QemuDebugCon(d)=>debug_read(d,buffer,length),
+		Debugger::Serial(d)=>debug_write(d,buffer,length),
+		Debugger::Unknown(d)=>debug_read(d,buffer,length)
 	};
 }
 
@@ -177,9 +177,14 @@ pub fn dbg_print(args: core::fmt::Arguments)
 	};
 }
 
-#[no_mangle] pub extern "C" fn noir_configure_serial_port_debugger(_port_number:u8,_port_base:u16,_baud_rate:u32)->Status
+#[no_mangle] pub extern "C" fn noir_configure_serial_port_debugger(_port_number:u8,port_base:u16,baud_rate:u32)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	unsafe
+	{
+		DEBUGGER=Debugger::Serial(SerialPort::new(port_base,baud_rate).unwrap());
+	}
+	println!("Internal Debugger is configured to Serial Port! Port=0x{:04X}",port_base);
+	NOIR_SUCCESS
 }
 
 #[no_mangle] pub extern "C" fn noir_configure_qemu_debug_console(port:u16)->Status
