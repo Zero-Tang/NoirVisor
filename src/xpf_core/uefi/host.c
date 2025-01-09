@@ -58,31 +58,6 @@ VOID* noir_find_virt_by_phys(IN UINT64 PhysicalAddress)
 	return (VOID*)PhysicalAddress;
 }
 
-VOID* memcpy(OUT VOID* dest,IN VOID* src,IN UINTN cch)
-{
-	return CopyMem(dest,src,cch);
-}
-
-VOID* memmove(OUT VOID* dest,IN VOID* src,IN UINTN cch)
-{
-	return CopyMem(dest,src,cch);
-}
-
-VOID* memset(OUT VOID* dest,IN UINT8 val,IN UINTN cch)
-{
-	return SetMem(dest,cch,val);
-}
-
-INTN memcmp(IN VOID* dest,IN VOID* src,IN UINTN cch)
-{
-	return CompareMem(dest,src,cch);
-}
-
-UINTN strlen(IN CHAR8* str)
-{
-	return AsciiStrLen(str);
-}
-
 VOID* noir_map_physical_memory(IN UINT64 PhysicalAddress,IN UINTN Length)
 {
 	return (VOID*)PhysicalAddress;

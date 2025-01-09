@@ -1,7 +1,10 @@
 @echo off
 set ddkpath=V:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.38.33130
+set oldpath=%path%
 set path=%ddkpath%\bin\Hostx64\x64;%path%
+set crtpath=%ddkpath%\crt\src\x64
 set incpath=V:\Program Files\Windows Kits\10\Include\10.0.26100.0
+set wdlpath=V:\Program Files\Windows Kits\10\Lib\10.0.26100.0
 set mdepath=%EDK2_PATH%\edk2\MdePkg
 set libpath=%EDK2_PATH%\bin\MdePkg
 set binpath=..\bin\compfre_uefix64
@@ -29,6 +32,15 @@ ml64 /X /Zi /D"_amd64" /D"_msvc" /D"_efi" /nologo /I"..\src\xpf_core\msvc" /Fo"%
 ml64 /X /Zi /D"_amd64" /D"_msvc" /D"_efi" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\interrupt.obj" /c ..\src\xpf_core\msvc\interrupt.asm
 
 ml64 /X /Zi /D"_amd64" /D"_msvc" /D"_efi" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\kpcr.obj" /c ..\src\xpf_core\msvc\kpcr.asm
+
+echo Compiling and Extracting Microsoft-Optimized CRT...
+ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\driver\memcpy.obj" /c /nologo "%crtpath%\memcpy.asm"
+ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\driver\memcmp.obj" /c /nologo "%crtpath%\memcmp.asm"
+ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\driver\memset.obj" /c /nologo "%crtpath%\memset.asm"
+
+lib "%wdlpath%\ucrt\x64\libucrt.lib" /EXTRACT:"d:\os\obj\amd64fre\minkernel\crts\ucrt\src\appcrt\dll\mt\..\..\string\mt\objfre\amd64\strlen.obj" /NOLOGO /OUT:"%objpath%\driver\strlen.obj"
+lib "%ddkpath%\lib\x64\libcmt.lib" /EXTRACT:"D:\a\_work\1\s\Intermediate\crt\vcstartup\build\mt\libcmt_kernel32\libcmt_kernel32.nativeproj\objr\amd64\cpu_disp.obj" /NOLOGO /OUT:"%objpath%\driver\cpu_disp.obj"
+copy /Y "%ddkpath%\lib\x64\libcmt.amd64.pdb" "%binpath%\libcmt.amd64.pdb"
 
 echo Compiling NoirVisor Core in Rust...
 rem Wrapping lib into ar is required since Cargo cc does not know UEFI uses MSVC!
@@ -60,4 +72,5 @@ mcopy -i %binpath%\NoirVisor-Uefi.img %binpath%\NoirVisor.efi ::/
 mcopy -i %binpath%\NoirVisor-Uefi.img %binpath%\NoirVisorConfig.bin ::/
 mcopy -i %binpath%\NoirVisor-Uefi.img %binpath%\bootx64.efi ::/EFI/BOOT
 
+set path=%oldpath%
 if "%~1"=="/s" (echo Completed!) else (pause)

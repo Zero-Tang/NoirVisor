@@ -66,6 +66,7 @@ pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*16;
 	pub cpuid_fms:u32,
 	pub host_cpu:HostProcessor,
 	pub nested_hvm:SvmNestedVcpu,
+	pub under_hvm:bool,
 	// Features supported by the processors.
 	pub decode_assists:bool,
 	pub nrip_saving:bool,
@@ -97,6 +98,7 @@ impl SvmVcpu
 				vmcr:0,
 				svm_key:0
 			},
+			under_hvm:false,
 			decode_assists:false,
 			nrip_saving:false,
 			vmcb_clean:false
@@ -158,10 +160,12 @@ impl SvmVcpu
 			write_tr(self.host_cpu.tr_sel);
 			write_cr3((*hv).host.paging.cr3.phys);
 			// Setup APIC ID.
-			let (_,xid,_,_)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
+			let (_,xid,c,_)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
 			let (_,_,_,x2id)=cpuid2(CPUID_STD_EXTENDED_TOPOLOGY_INFORMATION,0);
 			self.apic_id=(xid&0xFF) as u8;
 			self.x2apic_id=x2id;
+			// Check if we are under nested hypervisor.
+			self.under_hvm=(c&CPUID_UNDER_HYPERVISOR)!=0;
 			// Save Segment States.
 			vmwrite_segment(self.vmcb.virt,GUEST_CS_SELECTOR,state.cs);
 			vmwrite_segment(self.vmcb.virt,GUEST_DS_SELECTOR,state.ds);

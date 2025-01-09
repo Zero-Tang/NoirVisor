@@ -79,6 +79,8 @@ EFI_STATUS NoirInitializeConfigurationManager();
 void NoirFinalizeConfigurationManager();
 EFI_STATUS NoirConfigureInternalDebugger();
 
+void __isa_available_init();
+
 EFI_GUID gEfiMpServicesProtocolGuid=EFI_MP_SERVICES_PROTOCOL_GUID;
 EFI_GUID gEfiNoirVisorVendorGuid=EFI_NOIRVISOR_VENDOR_GUID;
 

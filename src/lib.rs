@@ -18,6 +18,7 @@ pub mod drv_core;
 pub mod xpf_core;
 pub mod vt_core;
 pub mod svm_core;
+pub mod cvm_core;
 pub mod mshv_core;
 pub mod disasm;
 

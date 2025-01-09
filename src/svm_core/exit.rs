@@ -106,6 +106,11 @@ impl SvmVcpu
 	/// Return `None` if this `rdmsr` request failed. Exception was injected.
 	fn handle_rdmsr(&mut self,index:u32)->Option<u64>
 	{
+		if self.under_hvm && (0x40000000..0x80000000).contains(&index)
+		{
+			// If NoirVisor is running under a hypervisor (e.g.: Hyper-V), we may pass-thru this MSR to upper hypervisor.
+			return Some(rdmsr(index));
+		}
 		match index
 		{
 			MSR_EFER=>
@@ -163,6 +168,12 @@ impl SvmVcpu
 	/// Return `false` if this `wrmsr` request failed. Exception was injected.
 	fn handle_wrmsr(&mut self,index:u32,value:u64)->bool
 	{
+		if self.under_hvm && (0x40000000..0x80000000).contains(&index)
+		{
+			// If NoirVisor is running under a hypervisor (e.g.: Hyper-V), we may pass-thru this MSR to upper hypervisor.
+			wrmsr(index,value);
+			return true;
+		}
 		match index
 		{
 			MSR_EFER=>

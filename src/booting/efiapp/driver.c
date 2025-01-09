@@ -98,6 +98,7 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	EFI_STATUS st=NoirEfiInitialize(ImageHandle,SystemTable);
 	EFI_LOADED_IMAGE_PROTOCOL* ImageInfo=NULL;
 	UINT32 Supportability=NoirQueryVirtualizationSupportability();
+	__isa_available_init();
 	Print(L"Welcome to NoirVisor Runtime Driver!\r\n");
 	NoirPrintCompilerVersion();
 	if((Supportability&3)!=3)

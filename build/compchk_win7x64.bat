@@ -1,6 +1,8 @@
 @echo off
 set ddkpath=T:\Program Files\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133
+set oldpath=%path%
 set path=%ddkpath%\bin\Hostx64\x64;T:\Program Files\Windows Kits\10\bin\10.0.22000.0\x64;%path%
+set crtpath=%ddkpath%\crt\src\x64
 set incpath=T:\Program Files\Windows Kits\10\Include\10.0.22000.0
 set libpath=T:\Program Files\Windows Kits\10\Lib
 set binpath=..\bin\compchk_win7x64
@@ -31,14 +33,24 @@ ml64 /X /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\inte
 
 ml64 /X /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\kpcr.obj" /c ..\src\xpf_core\msvc\kpcr.asm
 
+echo Compiling and Extracting Microsoft-Optimized CRT...
+ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\memcpy.obj" /c /nologo "%crtpath%\memcpy.asm"
+ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\memcmp.obj" /c /nologo "%crtpath%\memcmp.asm"
+ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\memset.obj" /c /nologo "%crtpath%\memset.asm"
+
+lib "%libpath%\10.0.22000.0\ucrt\x64\libucrt.lib" /EXTRACT:"d:\os\obj\amd64fre\minkernel\crts\ucrt\src\appcrt\dll\mt\..\..\string\mt\objfre\amd64\strlen.obj" /NOLOGO /OUT:"%objpath%\strlen.obj"
+lib "%ddkpath%\lib\x64\libcmt.lib" /EXTRACT:"d:\a01\_work\12\s\Intermediate\vctools\libcmt.nativeproj__851063217\objr\amd64\cpu_disp.obj" /NOLOGO /OUT:"%objpath%\cpu_disp.obj"
+copy /Y "%ddkpath%\lib\x64\libcmt.amd64.pdb" "%binpath%\libcmt.amd64.pdb"
+
 echo Compiling NoirVisor in Rust...
 set cflags=/GS-
 cargo build --target x86_64-pc-windows-msvc
 
 echo ============Start Linking============
-link "%objpath%\*.obj" "%objpath%\version.res" "..\target\x86_64-pc-windows-msvc\debug\nvcore.lib" /LIBPATH:"%libpath%\win7\km\x64" /NODEFAULTLIB "ntoskrnl.lib" "hal.lib" /NOLOGO /DEBUG /PDB:"%binpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
+link "%objpath%\*.obj" "%objpath%\version.res" "..\target\x86_64-pc-windows-msvc\debug\nvcore.lib" /LIBPATH:"%libpath%\win7\km\x64" /NODEFAULTLIB "ntoskrnl.lib" "hal.lib" /NOLOGO /DEBUG /PDB:"%binpath%\NoirVisor.pdb" /OUT:"%binpath%\NoirVisor.sys" /OPT:REF /SUBSYSTEM:NATIVE /Driver /ENTRY:"NoirDriverEntry" /Machine:X64 /ERRORREPORT:QUEUE
 
 echo ============Start Signing============
 signtool sign /v /fd SHA1 /f .\ztnxtest.pfx  %binpath%\NoirVisor.sys
 
+set path=%oldpath%
 if "%~1"=="/s" (echo Completed!) else (pause)

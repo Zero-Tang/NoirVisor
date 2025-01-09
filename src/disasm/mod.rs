@@ -49,7 +49,7 @@ macro_rules! build_disasm_fn
 			#[allow(non_snake_case)]
 			#[no_mangle] unsafe extern "C" fn [<NoirGetInstructionLength $bitness>](Code:*const u8,CodeLength:usize)->u8
 			{
-				let code_slice=slice::from_raw_parts(Code,CodeLength);
+				let code_slice=slice::from_raw_parts(Code,if CodeLength==0 {15} else {CodeLength});
 				let mut decoder=Decoder::new(16,code_slice,DecoderOptions::NONE);
 				let ins_info=decoder.decode();
 				ins_info.len() as u8

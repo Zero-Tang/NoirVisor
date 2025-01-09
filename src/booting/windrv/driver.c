@@ -333,12 +333,22 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 	return st;
 }
 
+void static NoirInitializeWithExpandedStackCallout(IN PVOID Paramater OPTIONAL)
+{
+	// The iced-x86 crate costs lots of stack resources.
+	NoirInitializeDisassembler();
+}
+
 void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Context OPTIONAL,IN ULONG Count)
 {
 	NoirPrintCompilerVersion();
-	NoirInitializeDisassembler();
+	NoirConfigureInternalDebugger();
+	NTSTATUS st=KeExpandKernelStackAndCallout(NoirInitializeWithExpandedStackCallout,NULL,MAXIMUM_EXPANSION_SIZE-PAGE_SIZE);
+	NoirDebugPrint("Initializer with Expanded Stack returned 0x%X\n",st);
 	NoirInitializeCodeIntegrity(DriverObject->DriverStart);
+	NoirDebugPrint("CI is initialized!\n");
 	NoirLocatePsLoadedModule(DriverObject);
+	NoirDebugPrint("PsLoadedModuleList is located!\n");
 	orig_system_call=(ULONG_PTR)__readmsr(0xC0000082);
 	NoirGetNtOpenProcessIndex();
 	NoirSaveImageInfo(DriverObject);
@@ -347,7 +357,6 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	NoirBuildProtectedFile();
 	NoirInitializePowerStateCallback();
 	NoirSubvertSystemOnDriverLoad(&SubvertOnDriverLoad);
-	NoirConfigureInternalDebugger();
 	NoirAcpiInitialize();
 	if(SubvertOnDriverLoad)
 		if(NoirQueryVirtualizationSupportability())
@@ -360,6 +369,7 @@ NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING Regis
 	NTSTATUS st=STATUS_DEVICE_CONFIGURATION_ERROR;
 	UNICODE_STRING uniDevName=RTL_CONSTANT_STRING(DEVICE_NAME);
 	UNICODE_STRING uniLinkName=RTL_CONSTANT_STRING(LINK_NAME);
+	__isa_available_init();
 	// Setup Dispatch Routines
 	DriverObject->MajorFunction[IRP_MJ_CREATE]=NoirDispatchCreate;
 	DriverObject->MajorFunction[IRP_MJ_CLOSE]=NoirDispatchClose;
