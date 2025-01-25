@@ -13,7 +13,7 @@
 ifdef _amd64
 
 ktrap_frame_size		equ 190h
-mach_frame_size			equ 28h
+mach_frame_size			equ 30h
 gpr_stack_size			equ 80h
 volatile_gpr_stack_size	equ 40h
 
@@ -75,20 +75,36 @@ endm
 pushaq_fast macro rsp_offset
 	
 	mov qword ptr [rsp+rsp_offset+00h],rax
+	.pushreg rax
 	mov qword ptr [rsp+rsp_offset+08h],rcx
+	.pushreg rcx
 	mov qword ptr [rsp+rsp_offset+10h],rdx
+	.pushreg rdx
 	mov qword ptr [rsp+rsp_offset+18h],rbx
+	.pushreg rbx
+	.allocstack 8
 	mov qword ptr [rsp+rsp_offset+28h],rbp
+	.pushreg rbp
 	mov qword ptr [rsp+rsp_offset+30h],rsi
+	.pushreg rsi
 	mov qword ptr [rsp+rsp_offset+38h],rdi
+	.pushreg rdi
 	mov qword ptr [rsp+rsp_offset+40h],r8
+	.pushreg r8
 	mov qword ptr [rsp+rsp_offset+48h],r9
+	.pushreg r9
 	mov qword ptr [rsp+rsp_offset+50h],r10
+	.pushreg r10
 	mov qword ptr [rsp+rsp_offset+58h],r11
+	.pushreg r11
 	mov qword ptr [rsp+rsp_offset+60h],r12
+	.pushreg r12
 	mov qword ptr [rsp+rsp_offset+68h],r13
+	.pushreg r13
 	mov qword ptr [rsp+rsp_offset+70h],r14
+	.pushreg r14
 	mov qword ptr [rsp+rsp_offset+78h],r15
+	.pushreg r15
 	
 endm
 
@@ -132,6 +148,7 @@ endm
 pushax macro
 
 	sub rsp,100h
+	.allocstack 100h
 	movaps xmmword ptr [rsp+00h],xmm0
 	movaps xmmword ptr [rsp+10h],xmm1
 	movaps xmmword ptr [rsp+20h],xmm2
@@ -178,6 +195,7 @@ endm
 pushax_volatile macro
 
 	sub rsp,60h
+	.allocstack 60h
 	movaps xmmword ptr [rsp+00h],xmm0
 	movaps xmmword ptr [rsp+10h],xmm1
 	movaps xmmword ptr [rsp+20h],xmm2

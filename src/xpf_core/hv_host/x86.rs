@@ -91,8 +91,7 @@ impl Default for HostPaging
 				{
 					unsafe
 					{
-						let pdpte_v=HugePdpte::new(true,true,true,false,false,page_1gb_mult(i) as u64);
-						if i==0 || i==1 {println!("PDPTE Pointer: {:p}, PDPTE value 0x{:016X}",pdpte_p,pdpte_v.0);}
+						let pdpte_v=HugePdpte::new(true,true,false,false,false,page_1gb_mult(i) as u64);
 						pdpte_p.add(i).write(pdpte_v);
 					}
 				}
@@ -102,9 +101,11 @@ impl Default for HostPaging
 		let pml4e_p=r.cr3.virt as *mut Pml4e;
 		unsafe
 		{
-			let scr3_virt=noir_find_virt_by_phys(read_cr3());
+			let scr3_phys=read_cr3();
+			let scr3_virt=noir_find_virt_by_phys(scr3_phys);
+			println!("System CR3 Virt: {scr3_virt:p}, Phys: 0x{scr3_phys:016X}");
 			noir_copy_memory(r.cr3.virt,scr3_virt,PAGE_SIZE);
-			let pml4e_v=Pml4e::new(true,true,true,false,false,r.pdpt.phys);
+			let pml4e_v=Pml4e::new(true,true,false,false,false,r.pdpt.phys);
 			println!("PML4E Pointer: {:p}, PML4E value 0x{:016X}",pml4e_p,pml4e_v.0);
 			pml4e_p.write(pml4e_v);
 		}
@@ -377,9 +378,10 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 #[no_mangle] pub unsafe extern "C" fn noir_page_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
 	let cr2=read_cr2();
+	let err_code=PageFaultErrorCode::from_u32((*exception_frame).error_code);
 	print!("Dumping Exception Frame:\n{}",*exception_frame);
 	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Page Fault happened! Virtual-Address: 0x{:016X}",cr2);
+	panic!("Page Fault happened! Virtual-Address: 0x{:016X}, Error Reason: {}",cr2,err_code);
 }
 
 /// ## Vector 16 #MF - x87 Floating-Point Exception-Pending Fault

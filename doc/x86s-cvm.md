@@ -1,6 +1,8 @@
 # NoirVisor CVM Support for x86-S Architecture
 In April 2023, Intel released a [proposal of x86-S architecture](https://www.intel.com/content/www/us/en/developer/articles/technical/envisioning-future-simplified-architecture.html) that will dispose compatibility support for legacy systems. This document serves as the draft of making NoirVisor CVM emulate a legacy x86 processor in future x86-S processor.
 
+**Important Update: Intel announced termination of the x86-S ISA initiative in Dec 2024. This draft *will not be deleted* in the hope that x86-S ISA may be re-launched in future.**
+
 ## Changes in x86-S ISA
 According to Intel's proposal, following changes are made:
 

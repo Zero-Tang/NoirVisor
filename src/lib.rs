@@ -25,7 +25,7 @@ pub mod disasm;
 use alloc::boxed::Box;
 use core::str;
 
-use xpf_core::{asm::cpuid::cpuid2, dlalloc::set_alloc_checker, nvstatus::*, x86::cpuid::CPUID_EXT_BRAND_STRING_P1};
+use xpf_core::{asm::cpuid::cpuid2, dlalloc::set_alloc_checker, nvstatus::*, x86::cpuid::*};
 pub use xpf_core::debug::*;
 use svm_core::SvmHypervisor;
 
@@ -52,20 +52,15 @@ pub enum ProcessorManufacturer
 {
 	let (_,b,c,d)=cpuid2(0,0);
 	*vstr.cast()=b;
-	*vstr.byte_add(4).cast()=c;
-	*vstr.byte_add(8).cast()=d;
+	*vstr.byte_add(4).cast()=d;
+	*vstr.byte_add(8).cast()=c;
 }
 
-#[no_mangle] unsafe extern "C" fn noir_get_processor_name(pstr:*mut u8)
+#[no_mangle] unsafe extern "C" fn noir_get_processor_name(pstr:*mut u32)
 {
-	for i in 0..3
-	{
-		let (a,b,c,d)=cpuid2(CPUID_EXT_BRAND_STRING_P1+i,0);
-		*pstr.byte_add((i<<4) as usize).cast()=a;
-		*pstr.byte_add((i<<4) as usize+0x4).cast()=b;
-		*pstr.byte_add((i<<4) as usize+0x8).cast()=c;
-		*pstr.byte_add((i<<4) as usize+0x10).cast()=d;
-	}
+	(*pstr.add(0x0),*pstr.add(0x1),*pstr.add(0x2),*pstr.add(0x3))=cpuid2(CPUID_EXT_BRAND_STRING_P1,0);
+	(*pstr.add(0x4),*pstr.add(0x5),*pstr.add(0x6),*pstr.add(0x7))=cpuid2(CPUID_EXT_BRAND_STRING_P2,0);
+	(*pstr.add(0x8),*pstr.add(0x9),*pstr.add(0xA),*pstr.add(0xB))=cpuid2(CPUID_EXT_BRAND_STRING_P3,0);
 }
 
 impl ProcessorManufacturer

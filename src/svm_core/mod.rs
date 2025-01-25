@@ -182,6 +182,8 @@ impl SvmVcpu
 			vmwrite(self.vmcb.virt,GUEST_CR2,state.cr2);
 			vmwrite(self.vmcb.virt,GUEST_CR3,state.cr3);
 			vmwrite(self.vmcb.virt,GUEST_CR4,state.cr4);
+			// Save Task Priority Register (CR8)
+			vmwrite(self.vmcb.virt,AVIC_CONTROL,state.cr8&0xF);
 			// Save Debug Registers.
 			vmwrite(self.vmcb.virt,GUEST_DR6,state.dr6);
 			vmwrite(self.vmcb.virt,GUEST_DR7,state.dr7);
@@ -190,7 +192,7 @@ impl SvmVcpu
 			vmwrite(self.vmcb.virt,GUEST_RSP,gsp);
 			vmwrite(self.vmcb.virt,GUEST_RIP,nvc_svm_guest_start as usize as u64);
 			// Save Processor Hidden State.
-			vmsave(self.vmcb.phys);
+			vmsave(self.hvmcb.phys);
 			// Save Model-Specific Registers.
 			vmwrite(self.vmcb.virt,GUEST_PAT,state.pat);
 			vmwrite(self.vmcb.virt,GUEST_EFER,state.efer);
@@ -214,7 +216,7 @@ impl SvmVcpu
 			// Load Guest State.
 			vmload(self.vmcb.phys);
 		}
-		println!("Processor {} Completed setting up VMCB!",self.vcpu_id);
+		println!("Processor {} Completed setting up VMCB! (0x{:X})",self.vcpu_id,self.vmcb.phys);
 		// "Return" puts the VMCB on rax register.
 		self.vmcb.phys
 	}
@@ -239,6 +241,7 @@ impl SvmVcpu
 		unsafe
 		{
 			let stack:*mut SvmStackTop=self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()) as *mut SvmStackTop;
+			println!("Stack-Top of vCPU {}: {stack:p}",self.vcpu_id);
 			(*stack).guest_vmcb_pa=self.vmcb.phys;
 			(*stack).host_vmcb_pa=self.hvmcb.phys;
 			(*stack).vcpu=self as *mut Self;

@@ -59,27 +59,7 @@ Real-Time CI is now implemented by AMD Nested Paging.
 If NoirVisor is loaded as a Type-I hypervisor, it is responsible to handle APIC-related accesses.
 
 ## Nested Paging
-Upon system subversion, NoirVisor would set interception of writes to the APIC Page.
-
-### Nested Page-Fault Handler
-When write to the APIC Page is intercepted, NoirVisor would check do the following:
-
-1. Check the offset of APIC Page Access.
-2. If the access is on the Interrupt Control Register (Low), redirect the access to the shadowed page so that when single-stepping, NoirVisor can inspect the value being written to the ICR.
-3. Single-step the guest.
-
-### Debug Exception Handler
-In that the Step 3 specifies single-stepping the guest, the `#DB` exception will be generated. On interception of `#DB` exception:
-
-1. Inspect the value being written if the access is targetting ICR. The value being written is stored in the shadow page.
-2. If the access is writing the ICR and the message is SIPI:
-	1. discard the message if target processor is not in Wait-for-SIPI state.
-	2. send the message otherwise by marking the spin-lock is released.
-3. If the access is writing the ICR but the message is INIT:
-	1. discard the message if target processor is already in Wait-for-SIPI state.
-	2. send the message otherwise by forwarding this write to the APIC page.
-4. If the access is writing the ICR but the message is elsewise, forward this write to the APIC page.
-5. Stop single-stepping.
+Upon system subversion, NoirVisor would set interception of writes to the APIC Page and use the I/O filtering mechanism to help virtualize APIC accesses.
 
 ## Security Exception Handler
 According to AMD-V, the INIT signal will be held pending if `VM_CR.R_INIT` is not set. Therefore, this bit must be set. To intercept INIT signal with this bit set, NoirVisor should intercept `#SX` exception. \
@@ -370,7 +350,7 @@ Only vCPU states not saved into VMCB should be saved for Guest and loaded for Ho
 To migrate a vCPU to another logical processor, it is required to clear the VMCB clean bits before actually scheduling it onto the vCPU.
 
 ## vCPU Relocation
-For large-scale systems, Non-Uniform Memory Architecture (NUMA) is very common. Memory affinity can significantly affect performance. Current implementation of NoirVisor, however, does not support relocating the vCPU to a different node. Nevertheless, support of relocation is in plan. It is recommended to set the host thread affinity of the vCPU so that the vCPU won't be scheduled onto a distant physical core.
+For large-scale systems, Non-Uniform Memory Architecture (NUMA) is very common. Memory affinity can significantly affect performance. Current design of NoirVisor, however, does not support enforcing the vCPU to the same node. It is user hypervisor's duty to restrict the thread's affinity to certain nodes.
 
 ## Emulation of MTF
 The `Monitor Trap Flag (MTF)` feature on Intel VT-x is a very powerful feature to emulate per-instruction. However, AMD-V lacks this feature, so this feature must be emulated. \

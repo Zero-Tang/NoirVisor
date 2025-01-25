@@ -84,7 +84,8 @@ impl SvmVcpu
 		let mut fault_pa:Option<u64>=None;
 		if let Err(e)=read_virtual_address(rip,self,buff,&mut fault_pa)
 		{
-			panic!("Page-Fault is triggered by software while fetching instruction! Code: 0x{:08X}",e.0);
+			let cr3=self.get_cr3();
+			panic!("Page-Fault is triggered by software while fetching instruction! Code: 0x{:08X}, vmcb=0x{:X} rip=0x{rip:016X}, cr3=0x{cr3:016X}",e.0,self.vmcb.phys);
 		}
 	}
 

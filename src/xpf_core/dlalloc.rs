@@ -378,6 +378,7 @@ pub fn enum_allocated_large_pages(callback_rt:PhysicalRangeCallback,context:*mut
 
 #[no_mangle] unsafe extern "C" fn custom_munmap(ptr:*mut c_void,length:usize)->i32
 {
+	println!("[munmap] ptr: {ptr:p}, size: 0x{length:X}");
 	for i in (0..length).step_by(PAGE_2MB_SIZE)
 	{
 		free_2mb_page(ptr.byte_add(i));

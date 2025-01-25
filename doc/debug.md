@@ -14,7 +14,18 @@ Therefore, NoirVisor must have a special primitive for debugger.
 Currently, NoirVisor supports debugging over serial connections or QEMU's ISA Debug Console.
 
 ### Serial Connection
-This method is supposed to support serial connections. However, due to unknown reasons, serial connection is not available on Windows in VMware machines. Serial connection is lost once OS is loaded. Direct I/O will be refused by the serial device.
+This method is supposed to support serial connections. However, due to unknown reasons, serial connection is not available on Windows in VMware machines. Serial connection is lost once OS is loaded. Direct I/O will be refused by the serial device. Although you can't use serial connection in VMware, you may instead use it in Hyper-V.
+
+### Serial Connection for Hyper-V VMs
+There are two generations of VM in Hyper-V.
+- For Gen 1 VMs, you may directly modify serial port settings in the settings page. 
+- For Gen 2 VMs, you should use PowerShell to set the COM Ports.
+	```PowerShell
+	Set-VMComPort -VM <VMName> -Number <Index> -Path <Pipe Name>
+	```
+	- The `VMName` is the name of your VM.
+	- The `Index` is the number of your COM Port. It should be either 1 or 2.
+	- The `Pipe Name` is the name of the named pipe.
 
 ### QEMU ISA Debug Console
 This method utilizes QEMU's ISA Debug Console so that NoirVisor can run inside QEMU with Linux KVM host. This method can be used in any processor context. However, only QEMU with Linux KVM is available since this is the only option to enable nested virtualization.

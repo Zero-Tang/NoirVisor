@@ -234,6 +234,11 @@ pub const PAGE_TABLE_ENTRIES:usize=if cfg!(target_arch="x86_64") {PAGE_TABLE_ENT
 pub const PAGE_TABLE_ENTRIES64:usize=512;
 pub const PAGE_TABLE_ENTRIES32:usize=1024;
 
+#[inline] pub fn phys_addr_mask(addr:u64)->u64
+{
+	addr&((1<<52)-1)
+}
+
 #[inline] pub fn page_entry_index(addr:usize)->usize
 {
 	addr&(PAGE_TABLE_ENTRIES-1)

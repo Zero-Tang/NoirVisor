@@ -121,6 +121,11 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoAddressSpace<T>
 	/// This is an internal method which uses binary search to dispatch I/O.
 	fn try_dispatch(&self,addr:T)->Option<&IoRegion<T>>
 	{
+		// If it is empty, no need to perform binary search.
+		if self.regions.is_empty()
+		{
+			return None;
+		}
 		// Use binary search.
 		let mut lo:isize=0;
 		let mut hi:isize=self.regions.len() as isize;

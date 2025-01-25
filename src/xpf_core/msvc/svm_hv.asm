@@ -53,30 +53,33 @@ nvc_svm_return endp
 nvc_svm_exit_handler_a proc frame
 
 	; At this moment, VM-Exit occured.
+	; Add a trap frame so WinDbg may display stack trace in Guest.
 	; To add a debug-break, enter following command to WinDbg.
 	; ed NoirVisor!nvc_svm_exit_handler_a ccdc010f
 	nop dword ptr [rax+20h]		; This is a purposeful four-byte nop instruction.
-	; Add a trap frame so WinDbg may display stack trace in Guest.
-	.pushframe
-	sub rsp,ktrap_frame_size+gpr_stack_size+20h
-	.allocstack ktrap_frame_size-mach_frame_size+100h
-	; Save all GPRs, and pass to Exit Handler
+	sub rsp,mach_frame_size+gpr_stack_size+20h
+	; Save stack trace.
+	.pushframe code
+	; Save all GPRs, and pass to Exit Handler.
 	pushaq_fast 20h
+	.allocstack 20h
 	; Save processor's hidden state for Guest.
 	vmsave rax
 	; Load processor's hidden state for Host.
-	mov rax,qword ptr[rsp+ktrap_frame_size+gpr_stack_size+28h]
+	mov rax,qword ptr[rsp+mach_frame_size+gpr_stack_size+28h]
 	vmload rax
 	lea rcx,[rsp+20h]		; First Parameter - Guest GPRs
+	lea r8,[rsp+gpr_stack_size+20h]	; Third Parameter - Guest Stack
 	; Second Parameter - vCPU
-	mov rdx,qword ptr[rsp+ktrap_frame_size+gpr_stack_size+30h]
+	mov rdx,qword ptr[rsp+mach_frame_size+gpr_stack_size+30h]
 	; End of Prologue...
-	.endprolog
 	; Call Exit Handler
 	pushax_volatile
-	sub rsp,28h
+	sub rsp,20h
+	.allocstack 20h
+	.endprolog
 	call nvc_svm_exit_handler
-	add rsp,28h
+	add rsp,20h
 	popax_volatile
 	; Restore all the GPRs.
 	; Certain context should be revised by VMM.
@@ -84,7 +87,7 @@ nvc_svm_exit_handler_a proc frame
 	; After popaq, rax stores the physical
 	; address of VMCB again.
 	; Don't forget to pop the frame on the stack.
-	add rsp,ktrap_frame_size+gpr_stack_size+20h
+	add rsp,mach_frame_size+gpr_stack_size+20h
 	vmload rax
 	vmrun rax
 	; VM-Exit occured again, jump back.
@@ -92,18 +95,21 @@ nvc_svm_exit_handler_a proc frame
 
 nvc_svm_exit_handler_a endp
 
-nvc_svm_subvert_processor_a proc
+nvc_svm_subvert_processor_a proc frame
 
 	clgi		; Enter Atomic Execution State.
 	pushfq
+	.allocstack 8h
 	pushaq
 	mov rdx,rsp
 	push rcx
+	.pushreg rcx
 	mov rcx,qword ptr[rcx+10h]
 	sub rsp,20h
+	.allocstack 20h
 	; First parameter is in rcx - vcpu
 	; Second parameter is in rdx - guest rsp
-	; Third parameter is in r8 - guest rip
+	.endprolog
 	call nvc_svm_subvert_processor_i
 	; Now, rax stores the physical address of VMCB.
 	; Switch stack pointer to host stack now.
@@ -118,8 +124,10 @@ nvc_svm_subvert_processor_a proc
 
 nvc_svm_subvert_processor_a endp
 
-nvc_svm_guest_start proc
+nvc_svm_guest_start proc frame
 
+	.allocstack 0A8h
+	.endprolog
 	; At this moment, Guest is successfully launched.
 	; Host rsp is saved and Guest rsp is switched
 	; automatically by vmrun instruction.

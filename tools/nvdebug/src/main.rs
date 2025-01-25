@@ -41,7 +41,8 @@ struct ImageInfo
 	target:*mut Target,
 	images:*const ImageInfo,
 	count:usize,
-	fpo:IMAGE_RUNTIME_FUNCTION_ENTRY
+	fpo:IMAGE_RUNTIME_FUNCTION_ENTRY,
+	use_rbp:bool
 }
 
 impl PartialEq for ImageInfo
@@ -362,11 +363,31 @@ fn main()
 											target:&raw mut target,
 											images:r.as_ptr(),
 											count:r.len(),
-											fpo:IMAGE_RUNTIME_FUNCTION_ENTRY::default()
+											fpo:IMAGE_RUNTIME_FUNCTION_ENTRY::default(),
+											use_rbp:false
 										};
 										while unsafe{StackWalkEx(IMAGE_FILE_MACHINE_AMD64.0.into(),HANDLE(&raw mut handle as *mut c_void),None,&raw mut stk_f,&raw mut ctxt as *mut c_void,Some(sym_read_memory_rt),Some(sym_func_table_access_rt),Some(sym_get_module_base_rt),None,0)}.as_bool()
 										{
 											// println!("Stack Info: {stk_f:X?}");
+											if handle.use_rbp
+											{
+												println!("Using rbp (0x{:016X}) to trace back...",ctxt.Rbp);
+												match target.read_memory(ctxt.Rbp,16)
+												{
+													Ok(v)=>
+													{
+														unsafe
+														{
+															let next_rsp=*v.as_ptr().cast::<u64>();
+															let next_rip=*v.as_ptr().cast::<u64>().add(1);
+															println!("[From RBP] Next-Rsp=0x{next_rsp:016X}, Next-Rip=0x{next_rip:016X}");
+															stk_f.AddrPC.Offset=next_rip;
+															stk_f.AddrStack.Offset=next_rsp;
+														}
+													}
+													Err(e)=>println!("Failed to read rbp! Reason: {e:?}")
+												}
+											}
 											let target_address=stk_f.AddrPC.Offset;
 											match locate_module_from_ptr(&r,target_address)
 											{
@@ -389,13 +410,16 @@ fn main()
 												_=>println!("[Test] Failed to locate!")
 											}
 											// Move to next stack frame.
-											let pc=stk_f.AddrReturn;
-											let sp=stk_f.AddrFrame;
-											stk_f=STACKFRAME_EX::default();
-											stk_f.AddrPC=pc;
-											stk_f.AddrStack=sp;
-											stk_f.AddrStack.Offset=sp.Offset.wrapping_add(0x10);
-											stk_f.StackFrameSize=size_of::<STACKFRAME_EX>() as u32;
+											if !handle.use_rbp
+											{
+												let pc=stk_f.AddrReturn;
+												let sp=stk_f.AddrFrame;
+												stk_f=STACKFRAME_EX::default();
+												stk_f.AddrPC=pc;
+												stk_f.AddrStack=sp;
+												stk_f.AddrStack.Offset=sp.Offset.wrapping_add(0x10);
+												stk_f.StackFrameSize=size_of::<STACKFRAME_EX>() as u32;
+											}
 											// println!("New Stack Info: {stk_f:X?}");
 										}
 									}
@@ -458,11 +482,13 @@ unsafe extern "system" fn sym_func_table_access_rt(process:HANDLE,addr_base:u64)
 						Some(fpo)=>
 						{
 							handle.fpo=fpo;
+							handle.use_rbp=false;
 							&raw mut handle.fpo as *mut c_void
 						}
 						None=>
 						{
 							println!("Failed to locate FPO for 0x{addr_base:016X}!");
+							handle.use_rbp=true;
 							null_mut()
 						}
 					}
@@ -472,8 +498,8 @@ unsafe extern "system" fn sym_func_table_access_rt(process:HANDLE,addr_base:u64)
 		}
 		None=>
 		{
-			panic!("Failed to locate image info!");
-			// null_mut()
+			println!("Failed to locate image info for address 0x{addr_base:016X}!");
+			null_mut()
 		}
 	}
 }
@@ -490,7 +516,7 @@ unsafe extern "system" fn sym_get_module_base_rt(process:HANDLE,address:u64)->u6
 		}
 		None=>
 		{
-			println!("Failed to locate image info!");
+			println!("Failed to locate image info for address 0x{address:016X}!");
 			0
 		}
 	}

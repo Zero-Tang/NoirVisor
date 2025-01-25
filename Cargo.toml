@@ -24,8 +24,7 @@ members = ["tools/nvdebug"]
 paste = "1.0.15"
 
 [dependencies.portable-dlmalloc]
-version = "1.1.0"
-features = []
+version = "1.2.0"
 
 [dependencies.iced-x86]
 version = "1.21.0"

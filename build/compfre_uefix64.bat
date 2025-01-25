@@ -46,7 +46,7 @@ echo Compiling NoirVisor Core in Rust...
 rem Wrapping lib into ar is required since Cargo cc does not know UEFI uses MSVC!
 set ar=python %cd%\ar-lib.py
 set cc=cl
-set cflags=/GS- /Zi
+set cflags=/GS-
 cargo build --target x86_64-unknown-uefi --release
 
 echo ============Start Linking============

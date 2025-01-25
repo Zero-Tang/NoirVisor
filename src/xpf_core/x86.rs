@@ -12,7 +12,7 @@
 
 pub mod paging
 {
-	use core::ffi::c_void;	
+	use core::{ffi::c_void, fmt::{self,Display,Formatter}};	
 	use paste::paste;
 	use crate::{svm_core::amd64::msr::MSR_EFER_LMA, xpf_core::{nvbdk::*, x86::crdr::*}};
 
@@ -222,6 +222,22 @@ pub mod paging
 		build_page_fault_bit_checker!(shadow_stack);
 	}
 
+	impl Display for PageFaultErrorCode
+	{
+		fn fmt(&self, f: &mut Formatter) -> fmt::Result
+		{
+			write!(f,"Code={:X}. ",self.0)?;
+			// Exhaust all bit definitions.
+			write!(f,"Page is {}",if self.is_present() {"present"} else {"absent"})?;
+			write!(f,", access is {}",if self.is_write() {"write"} else {"not write"})?;
+			write!(f,", {}",if self.is_user() {"user"} else {"supervisor"})?;
+			write!(f,", {} instruction fetch",if self.is_execute() {"is"} else {"is not"})?;
+			write!(f,", {} shadow stack",if self.is_shadow_stack() {"is"} else {"is not"})?;
+			write!(f,", reserved bits {} set",if self.is_reserved() {"are"} else {"are not"})?;
+			Ok(())
+		}
+	}
+
 	/// ## `PageTranslator` trait
 	/// This trait is intended to help translating the virtual addresses to physical addresses on vCPU.
 	/// Implement this trait on vCPU objects.
@@ -291,7 +307,7 @@ pub mod paging
 			{
 				let offset_mask:u64=(1<<shift_amount)-1;
 				let base:u64=(pml_e>>shift_amount)<<shift_amount;
-				let pa=(va&offset_mask)|base;
+				let pa=(va&offset_mask)|phys_addr_mask(base);
 				Ok(pa)
 			}
 		}

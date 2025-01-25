@@ -59,8 +59,10 @@ pub fn is_ci_phys_page(phys:u64)->bool
 	let ci=&raw mut CI_PAGES;
 	for i in 0..page_num
 	{
-		let phys=noir_get_physical_address(base)+page_mult(i) as u64;
+		let virt=((base as usize)+page_mult(i)) as *mut c_void;
+		let phys=noir_get_physical_address(virt) as u64;
 		// Add this page to CI.
+		println!("[CI] Virt: {virt:p}, Phys: 0x{phys:016X}");
 		(*ci).push(phys);
 	}
 	true
