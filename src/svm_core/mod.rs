@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 #[cfg(target_os="uefi")]
 use exit::svm_apic_output_handler;
 use npt::SvmNptManager;
-use xpf_core::{bitmap::set_bitmap, hv_host::x86::*, ioflt::{IoAddressSpace, IoRegion}};
+use xpf_core::{bitmap::set_bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}};
 
 use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*,crdr::*,seg::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*,dlalloc::*},*};
 use amd64::{cpuid::*,msr::*};
@@ -231,7 +231,7 @@ impl SvmVcpu
 		// Intel blocks A20M in vmxon, why not we do this as well?
 		// Redirecting INIT signal to #SX exception will allow us to
 		// intercept INIT signal without leaving it pending.
-		let vmcr=rdmsr(MSR_VMCR)|MSR_VMCR_R_INIT&!MSR_VMCR_DISA20M;
+		let vmcr=rdmsr(MSR_VMCR)|MSR_VMCR_R_INIT|MSR_VMCR_DISA20M;
 		wrmsr(MSR_VMCR,vmcr);
 		// Set the HSAVE Area.
 		wrmsr(MSR_HSAVE_PA,self.hsave.phys);
@@ -252,6 +252,21 @@ impl SvmVcpu
 			nvc_svm_subvert_processor_a(stack);
 		}
 		println!("Processor {} completed subversion!",self.vcpu_id);
+	}
+
+	fn restore(&mut self)
+	{
+		// Leave Guest Mode by vmmcall.
+		vmmcall(NOIR_HYPERCALL_CODE_CALLEXIT,self as *mut Self as usize);
+		// Clear EFER.SVME bit.
+		let efer=rdmsr(MSR_EFER)&!MSR_EFER_SVME;
+		wrmsr(MSR_EFER,efer);
+		// Unblock and Enable A20M.
+		// Intel unblocks A20M in vmxoff, so why not we do this as well?
+		// Also stop redirecting INIT signals.
+		let vmcr=rdmsr(MSR_VMCR)&!(MSR_VMCR_DISA20M|MSR_VMCR_R_INIT);
+		wrmsr(MSR_VMCR,vmcr);
+		println!("Processor {} completed restoration!",self.vcpu_id);
 	}
 }
 
@@ -450,8 +465,12 @@ impl HypervisorEssentials for SvmHypervisor
 
 	fn restore_system(&mut self)->Status
 	{
-		println!("System restoration for AMD-V is not yet implemented!");
-		NOIR_NOT_IMPLEMENTED
+		unsafe
+		{
+			noir_generic_call(nvc_svm_restore_processor_thunk,self as *mut Self as *mut c_void);
+		}
+		println!("System restoration completed!");
+		NOIR_SUCCESS
 	}
 }
 
@@ -463,6 +482,18 @@ impl HypervisorEssentials for SvmHypervisor
 	match vp
 	{
 		Some(vcpu)=>vcpu.subvert(),
+		None=>panic!("WTF? Processor ID out of bounds!\n")
+	}
+}
+
+#[no_mangle] extern "C" fn nvc_svm_restore_processor_thunk(context:*mut c_void,processor_id:u32)
+{
+	let hv=context as *mut SvmHypervisor;
+	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};
+	println!("Processor {processor_id} entered restoration routine...");
+	match vp
+	{
+		Some(vcpu)=>vcpu.restore(),
 		None=>panic!("WTF? Processor ID out of bounds!\n")
 	}
 }

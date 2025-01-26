@@ -159,3 +159,4 @@ PVOID NoirHostArrayIDT=NULL;
 LONG volatile NoirAllocatedNonPagedPools=0;
 LONG volatile NoirAllocatedPagedPools=0;
 LONG volatile NoirAllocatedContiguousMemoryCount=0;
+LONG volatile NoirAllocatedLargePageCount=0;

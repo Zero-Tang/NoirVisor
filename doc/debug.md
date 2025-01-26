@@ -58,3 +58,19 @@ In `tools/nvdebug` directory, execute:
 cargo run qemu:://[kvmhost]:[port]
 ```
 You should be able to see a stack trace.
+
+## WinDbg EXDI
+Use this option when you are debugging NoirVisor as a Windows Driver running inside a target which can be debugged via WinDbg eXDI (eXtensible Debugging Interface). Note that this option doesn't work great with NoirVisor as UEFI Runtime Driver since WinDbg currently can't enumerate images in UEFI. \
+Install [WinDbg Preview](https://apps.microsoft.com/detail/9pgjgd53tn86). Choose `File` -> `Start Debugging` -> `Attach to Kernel` -> `EXDI`. Then select the options that fit your scenario. \
+Once NoirVisor is loaded, you may break the target and type `.reload /i NoirVisor.sys` in order to load the symbol of NoirVisor. \
+Note that WinDbg EXDI won't be able to receive debug messages. Use the text-mode debugging techniques (e.g.: ISA-DebugCon from QEMU) instead.
+
+### Debug NoirVisor in QEMU/KVM
+To debug NoirVisor in QEMU/KVM, you have to enable GDB in QEMU:
+
+- Append `-s` argument before you launch QEMU. QEMU will listen on TCP port 1234.
+- Append `-gdb tcp:[ip]:[port]` argument before you launch QEMU. QEMU will listen on `[ip]:[port]`.
+- Use QEMU Monitor to dynamically enable GDB stub server in QEMU. If you use the SPICE protocol to operate QEMU VM from remote, append `-monitor` argument to use QEMU Monitor from remote.
+
+After Windows is booted, you may attach WinDbg to QEMU. In WinDbg Preview, select `QEMU` as target type, `X64` as target architecture, `Windows` as target OS, `0xFFFE - NT` as image scanning heuristic size and finally type the server address of your QEMU instance. \
+Note that, in QEMU, the only supported MSR is `EFER`. Other MSRs (e.g.: `LSTAR`) are not accessible.

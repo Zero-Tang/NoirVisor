@@ -146,6 +146,7 @@ BOOLEAN noir_initialize_ci(BOOLEAN soft_ci,BOOLEAN hard_ci);
 BOOLEAN noir_add_section_to_ci(PVOID base,ULONG32 size,BOOLEAN enable_scan);
 BOOLEAN noir_activate_ci();
 void noir_finalize_ci();
+void nvc_free_all_large_pages();
 
 GUID EfiNoirVisorVendorGuid={0x2B1F2A1E,0xDBDF,0x44AC,0xDA,0xBC,0xC7,0xA1,0x30,0xE2,0xE7,0x1E};
 

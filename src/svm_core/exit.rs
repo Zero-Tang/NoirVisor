@@ -17,10 +17,15 @@ use iced_x86::*;
 
 use decode::dispatch_decoder;
 use npt::NptFaultCode;
-use xpf_core::{ci::is_ci_phys_page, x86::interrupts::*};
+use xpf_core::{ci::is_ci_phys_page, x86::{descriptors::DescriptorTable, interrupts::*}};
 
 use super::*;
 use crate::mshv_core::cpuid::*;
+
+extern "C"
+{
+	fn nvc_svm_return(stack:*const GprState)->!;
+}
 
 pub(super) fn svm_apic_output_handler(_region:&IoRegion<u64>,address:u64,size:u64,value:*const c_void,_context:*mut c_void)
 {
@@ -58,13 +63,10 @@ impl SvmVcpu
 		{
 			// This is Hypervisor's CPUID.
 			let leaf_func=(ia&0x3FFFFFFF) as usize;
-			if leaf_func>=MSHV_CPUID_HANDLERS_COUNT
+			match MSHV_CPUID_HANDLERS.get(leaf_func)
 			{
-				(0,0,0,0)
-			}
-			else
-			{
-				MSHV_CPUID_HANDLERS[leaf_func](ia,ic)
+				Some(f)=>f(ia,ic),
+				None=>(0,0,0,0)
 			}
 		}
 		else
@@ -76,21 +78,15 @@ impl SvmVcpu
 			{
 				CPUID_STD_PROCESSOR_FEATURE=>c|=CPUID_UNDER_HYPERVISOR,
 				// NoirVisor currently does not support nested virtualization.
-				CPUID_EXT_PROCESSOR_FEATURE=>b&=!CPUID_SVM,
-				CPUID_EXT_SECURE_VIRTUAL_MACHINE_FEATURE=>
-				{
-					a=0;
-					b=0;
-					c=0;
-					d=0;
-				}
-				_=>{}
-			}
+				CPUID_EXT_PROCESSOR_FEATURE=>c&=!CPUID_SVM,
+				CPUID_EXT_SECURE_VIRTUAL_MACHINE_FEATURE=>(a,b,c,d)=(0,0,0,0),
+				_=>()
+			};
 			(a,b,c,d)
 		};
 		unsafe
 		{
-			// Write the results back to eax, ebx, ecx and edx.
+			// Write the results back to eax, ebx, ecx and edx, but preserve the higher 32 bits.
 			(&raw mut gpr_state.rax).cast::<u32>().write(a);
 			(&raw mut gpr_state.rbx).cast::<u32>().write(b);
 			(&raw mut gpr_state.rcx).cast::<u32>().write(c);
@@ -287,7 +283,70 @@ impl SvmVcpu
 
 	fn handle_vmmcall(&mut self,gpr_state:&mut GprState)
 	{
-		panic!("Hypercall is unsupported! Code: 0x{:08X}",gpr_state.rax as u32);
+		let vmmcall_func=gpr_state.rcx as u32;
+		let gcr3:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR3)};
+		match vmmcall_func
+		{
+			NOIR_HYPERCALL_CODE_CALLEXIT=>
+			{
+				// FIXME: Validate the caller to prevent malicious unloading request.
+				let nrip:u64=unsafe{vmread(self.vmcb.virt,NEXT_RIP)};
+				let gflags:u64=unsafe{vmread(self.vmcb.virt,GUEST_RFLAGS)};
+				let saved_state:GprState=GprState
+				{
+					rax:nrip,
+					rcx:gflags,
+					rdx:gpr_state.rsp,
+					rbx:gpr_state.rbx,
+					rsp:gpr_state.rsp,
+					rbp:gpr_state.rbp,
+					rsi:gpr_state.rsi,
+					rdi:gpr_state.rdi,
+					r8:gpr_state.r8,
+					r9:gpr_state.r9,
+					r10:gpr_state.r10,
+					r11:gpr_state.r11,
+					r12:gpr_state.r12,
+					r13:gpr_state.r13,
+					r14:gpr_state.r14,
+					r15:gpr_state.r15,
+				};
+				// Switch to Restored Control Registers.
+				let gcr4:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR4)};
+				write_cr3(gcr3);
+				write_cr4(gcr4);
+				// Restore the processor's hidden state.
+				vmload(self.vmcb.phys);
+				unsafe
+				{
+					// Switch to Restored IDT.
+					let gidtr:DescriptorTable=DescriptorTable
+					{
+						limit:vmread(self.vmcb.virt,GUEST_IDTR_LIMIT),
+						base:vmread(self.vmcb.virt,GUEST_IDTR_BASE)
+					};
+					write_idtr(&raw const gidtr);
+					// Switch to Restored GDT.
+					let ggdtr:DescriptorTable=DescriptorTable
+					{
+						limit:vmread(self.vmcb.virt,GUEST_GDTR_LIMIT),
+						base:vmread(self.vmcb.virt,GUEST_GDTR_BASE)
+					};
+					write_gdtr(&raw const ggdtr);
+					// Note that TSS is switched in previous vmload.
+					
+				}
+				// Set the GIF. Otherwise the host will never be interrupted.
+				stgi();
+				// Return to the caller in Host Mode.
+				unsafe
+				{
+					nvc_svm_return(&raw const saved_state);
+				}
+				// Never reaches here!
+			}
+			_=>panic!("Unknown Hypercall Code 0x{vmmcall_func:X} is called!")
+		}
 	}
 
 	fn handle_vmload(&mut self,gpr_state:&mut GprState)
@@ -419,8 +478,10 @@ impl SvmVcpu
 		if (*vcpu).vmcb_clean {vmwrite::<u32>((*vcpu).vmcb.virt,VMCB_CLEAN_BITS,0xFFFFFFFF)};
 		// Handle the VM-Exit!
 		gpr.rax=vmread(cur_vmcb,GUEST_RAX);
+		gpr.rsp=vmread(cur_vmcb,GUEST_RSP);
 		decoder(vp);
 		handler(vp,gpr);
+		vmwrite((*vcpu).vmcb.virt,GUEST_RAX,gpr.rax);
 		// The rax in GPR state should be the physical address of VMCB
 		// in order to execute the vmrun instruction properly.
 		// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.

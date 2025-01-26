@@ -138,7 +138,8 @@ void NoirReportMemoryIntrospectionCounter()
 	NoirDebugPrint("Unreleased NonPaged Pools: %d\n",NoirAllocatedNonPagedPools);
 	NoirDebugPrint("Unreleased Paged Pools: %d\n",NoirAllocatedPagedPools);
 	NoirDebugPrint("Unreleased Contiguous Memory Count: %d\n",NoirAllocatedContiguousMemoryCount);
-	if(NoirAllocatedNonPagedPools || NoirAllocatedPagedPools || NoirAllocatedContiguousMemoryCount)
+	NoirDebugPrint("Unreleased Large Parge Count: %d\n",NoirAllocatedLargePageCount);
+	if(NoirAllocatedNonPagedPools || NoirAllocatedPagedPools || NoirAllocatedContiguousMemoryCount || NoirAllocatedLargePageCount)
 		NoirDebugPrint("Memory Leak is detected!\n");
 	else
 		NoirDebugPrint("No Memory Leaks...\n");
@@ -561,12 +562,17 @@ void* noir_alloc_2mb_page()
 	PHYSICAL_ADDRESS H={0xFFFFFFFFFFFFFFFF};
 	PHYSICAL_ADDRESS B={0x200000};
 	PVOID p=MmAllocateContiguousMemorySpecifyCache(0x200000,L,H,B,MmCached);
-	if(p)RtlZeroMemory(p,0x200000);
+	if(p)
+	{
+		RtlZeroMemory(p,0x200000);
+		InterlockedIncrement(&NoirAllocatedLargePageCount);
+	}
 	return p;
 }
 
 void noir_free_2mb_page(void* virtual_address)
 {
+	InterlockedDecrement(&NoirAllocatedLargePageCount);
 	MmFreeContiguousMemorySpecifyCache(virtual_address,0x200000,MmCached);
 }
 

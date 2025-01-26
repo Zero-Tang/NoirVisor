@@ -541,6 +541,11 @@ void NoirFinalizeCodeIntegrity()
 	noir_finalize_ci();
 }
 
+void NoirFreeAllAllocatedPages()
+{
+	nvc_free_all_large_pages();
+}
+
 void static NoirPowerStateCallback(IN PVOID CallbackContext,IN PVOID Argument1,IN PVOID Argument2)
 {
 	if(Argument1==(PVOID)PO_CB_SYSTEM_STATE_LOCK)

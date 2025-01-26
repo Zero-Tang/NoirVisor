@@ -366,6 +366,19 @@ pub mod svm
 {
 	use core::arch::asm;
 
+	#[inline] pub fn vmmcall(index:u32,context:usize)
+	{
+		unsafe
+		{
+			asm!
+			(
+				"vmmcall",
+				in("ecx") index,
+				in("rdx") context
+			);
+		}
+	}
+
 	#[inline] pub fn vmload(vmcb_phys:u64)
 	{
 		unsafe

@@ -27,8 +27,9 @@ __chkstk endp
 
 ifdef _amd64
 
-noir_hbreak proc
+noir_hbreak proc frame
 
+	.endprolog
 	; Manually set hardware breakpoints here.
 	ret
 

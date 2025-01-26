@@ -191,6 +191,7 @@ void NoirSetProtectedPID(IN ULONG NewPID);
 void NoirBuildHookedPages();
 void NoirTeardownHookedPages();
 NTSTATUS NoirSubvertSystemOnDriverLoad(OUT PBOOLEAN Subvert);
+void NoirFreeAllAllocatedPages();
 void __cdecl NoirDebugPrint(const char* Format,...);
 
 void __isa_available_init();

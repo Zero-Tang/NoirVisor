@@ -215,6 +215,24 @@ pub struct PageAllocationManager
 	count:usize
 }
 
+#[no_mangle] unsafe extern "C" fn nvc_free_all_large_pages()
+{
+	let pa_mgr=&raw mut PAGE_ALLOC_MANAGER;
+	for entry in &mut (*pa_mgr).list
+	{
+		match entry.alloc_type
+		{
+			PageAllocationType::Blank(_)|PageAllocationType::Full=>
+			{
+				println!("Freeing {:p} from page allocation manager...",entry.virt);
+				noir_free_2mb_page(entry.virt);
+			}
+			_=>()
+		}
+	}
+	*pa_mgr=PageAllocationManager::empty();
+}
+
 macro_rules! build_alloc_manager
 {
 	($name:tt) =>

@@ -61,6 +61,7 @@ void NoirDriverUnload(IN PDRIVER_OBJECT DriverObject)
 	NoirFinalizeCodeIntegrity();
 	NoirFinalizePowerStateCallback();
 	NoirAcpiFinalize();
+	NoirFreeAllAllocatedPages();
 	NoirReportMemoryIntrospectionCounter();
 	IoDeleteSymbolicLink(&uniLinkName);
 	IoDeleteDevice(NoirDeviceObject);
