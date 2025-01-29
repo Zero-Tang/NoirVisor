@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 #[cfg(target_os="uefi")]
 use exit::svm_apic_output_handler;
 use npt::SvmNptManager;
-use xpf_core::{bitmap::set_bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}};
+use xpf_core::{bitmap::set_bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
 
 use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*,crdr::*,seg::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*,dlalloc::*},*};
 use amd64::{cpuid::*,msr::*};
@@ -159,6 +159,8 @@ impl SvmVcpu
 			write_gdtr(&raw const gdtr);
 			write_tr(self.host_cpu.tr_sel);
 			write_cr3((*hv).host.paging.cr3.phys);
+			// The FXSR and XSAVE features must be required for CVM features.
+			write_cr4(state.cr4 as u64|CR4_OSFXSR|CR4_OSXSAVE);
 			// Setup APIC ID.
 			let (_,xid,c,_)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
 			let (_,_,_,x2id)=cpuid2(CPUID_STD_EXTENDED_TOPOLOGY_INFORMATION,0);
@@ -251,7 +253,7 @@ impl SvmVcpu
 			(*stack).reserved=0;
 			nvc_svm_subvert_processor_a(stack);
 		}
-		println!("Processor {} completed subversion!",self.vcpu_id);
+		sysdprintln!("Processor {} completed subversion!",self.vcpu_id);
 	}
 
 	fn restore(&mut self)
@@ -266,7 +268,7 @@ impl SvmVcpu
 		// Also stop redirecting INIT signals.
 		let vmcr=rdmsr(MSR_VMCR)&!(MSR_VMCR_DISA20M|MSR_VMCR_R_INIT);
 		wrmsr(MSR_VMCR,vmcr);
-		println!("Processor {} completed restoration!",self.vcpu_id);
+		sysdprintln!("Processor {} completed restoration!",self.vcpu_id);
 	}
 }
 
@@ -279,6 +281,8 @@ impl SvmVcpu
 	pub host:HostSystem,
 	pub pio_space:IoAddressSpace<u16>,
 	pub mmio_space:IoAddressSpace<u64>,
+	pub image_base:*mut c_void,
+	pub image_size:u32
 }
 
 impl Default for SvmHypervisor
@@ -293,7 +297,9 @@ impl Default for SvmHypervisor
 			nptm:SvmNptManager::default(),
 			host:HostSystem::build(),
 			pio_space:IoAddressSpace{regions:Vec::new()},
-			mmio_space:IoAddressSpace{regions:Vec::new()}
+			mmio_space:IoAddressSpace{regions:Vec::new()},
+			image_base:null_mut(),
+			image_size:0
 		}
 	}
 }
@@ -457,9 +463,10 @@ impl HypervisorEssentials for SvmHypervisor
 		self.nptm.protect_ci();
 		unsafe
 		{
+			nvc_store_image_info(&raw mut self.image_base,&raw mut self.image_size);
 			noir_generic_call(nvc_svm_subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
-		println!("System subversion completed!");
+		sysdprintln!("System subversion completed!");
 		NOIR_SUCCESS
 	}
 
@@ -469,7 +476,7 @@ impl HypervisorEssentials for SvmHypervisor
 		{
 			noir_generic_call(nvc_svm_restore_processor_thunk,self as *mut Self as *mut c_void);
 		}
-		println!("System restoration completed!");
+		sysdprintln!("System restoration completed!");
 		NOIR_SUCCESS
 	}
 }
@@ -478,7 +485,7 @@ impl HypervisorEssentials for SvmHypervisor
 {
 	let hv=context as *mut SvmHypervisor;
 	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};
-	println!("Subverting processor {} with AMD-V...",processor_id);
+	sysdprintln!("Subverting processor {} with AMD-V...",processor_id);
 	match vp
 	{
 		Some(vcpu)=>vcpu.subvert(),
@@ -490,7 +497,7 @@ impl HypervisorEssentials for SvmHypervisor
 {
 	let hv=context as *mut SvmHypervisor;
 	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};
-	println!("Processor {processor_id} entered restoration routine...");
+	sysdprintln!("Processor {processor_id} entered restoration routine...");
 	match vp
 	{
 		Some(vcpu)=>vcpu.restore(),

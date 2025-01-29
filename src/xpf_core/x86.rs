@@ -374,7 +374,7 @@ pub mod paging
 		{
 			Ok(pa)=>
 			{
-				noir_copy_memory(buffer.cast(),pa as *const c_void,copy_size);
+				memcpy(buffer.cast(),pa as *const c_void,copy_size);
 				Ok(())
 			}
 			Err(e)=>

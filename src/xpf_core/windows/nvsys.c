@@ -34,102 +34,9 @@ void __cdecl NoirDebugPrint(const char* Format,...)
 	va_end(arg_list);
 }
 
-void __cdecl nvci_tracef(const char* format,...)
+void noir_system_debugger_write(IN PSTR String,IN SIZE_T MaximumLength)
 {
-	LARGE_INTEGER SystemTime,LocalTime;
-	TIME_FIELDS Time;
-	char Buffer[512];
-	PSTR LogBuffer;
-	SIZE_T LogSize;
-	va_list arg_list;
-	va_start(arg_list,format);
-	KeQuerySystemTime(&SystemTime);
-	ExSystemTimeToLocalTime(&SystemTime,&LocalTime);
-	RtlTimeToTimeFields(&LocalTime,&Time);
-	RtlStringCbPrintfExA(Buffer,sizeof(Buffer),&LogBuffer,&LogSize,STRSAFE_FILL_BEHIND_NULL,"[NoirVisor - CI Log]\t| %04d-%02d-%02d %02d:%02d:%02d.%03d | ",Time.Year,Time.Month,Time.Day,Time.Hour,Time.Minute,Time.Second,Time.Milliseconds);
-	RtlStringCbVPrintfA(LogBuffer,LogSize,format,arg_list);
-	DbgPrintEx(DPFLTR_IHVDRIVER_ID,DPFLTR_TRACE_LEVEL,Buffer);
-	va_end(arg_list);
-}
-
-void __cdecl nvci_panicf(const char* format,...)
-{
-	LARGE_INTEGER SystemTime,LocalTime;
-	TIME_FIELDS Time;
-	char Buffer[512];
-	PSTR LogBuffer;
-	SIZE_T LogSize;
-	va_list arg_list;
-	va_start(arg_list,format);
-	KeQuerySystemTime(&SystemTime);
-	ExSystemTimeToLocalTime(&SystemTime,&LocalTime);
-	RtlTimeToTimeFields(&LocalTime,&Time);
-	RtlStringCbPrintfExA(Buffer,sizeof(Buffer),&LogBuffer,&LogSize,STRSAFE_FILL_BEHIND_NULL,"[NoirVisor - CI Panic]\t| %04d-%02d-%02d %02d:%02d:%02d.%03d | ",Time.Year,Time.Month,Time.Day,Time.Hour,Time.Minute,Time.Second,Time.Milliseconds);
-	RtlStringCbVPrintfA(LogBuffer,LogSize,format,arg_list);
-	DbgPrintEx(DPFLTR_IHVDRIVER_ID,DPFLTR_ERROR_LEVEL,Buffer);
-	va_end(arg_list);
-}
-
-void __cdecl nv_dprintf2(IN BOOL DateTime,IN BOOL ProcessorNumber,IN PCSTR FunctionName,IN PCSTR Format,...)
-{
-	CHAR Buffer[512];
-	PSTR ContentBuffer,TimeBuffer;
-	SIZE_T ContentSize,TimeSize;
-	va_list ArgList;
-	if(ProcessorNumber)
-		RtlStringCbPrintfExA(Buffer,sizeof(Buffer),&TimeBuffer,&TimeSize,STRSAFE_FILL_BEHIND_NULL,"[NoirVisor - Core %03u] ",KeGetCurrentProcessorNumber());
-	else
-		RtlStringCbCopyExA(Buffer,sizeof(Buffer),"[NoirVisor] ",&TimeBuffer,&TimeSize,STRSAFE_FILL_BEHIND_NULL);
-	if(DateTime)
-	{
-		LARGE_INTEGER SystemTime,LocalTime;
-		TIME_FIELDS Time;
-		KeQuerySystemTime(&SystemTime);
-		ExSystemTimeToLocalTime(&SystemTime,&LocalTime);
-		RtlTimeToTimeFields(&LocalTime,&Time);
-		RtlStringCbPrintfExA(TimeBuffer,TimeSize,&ContentBuffer,&ContentSize,STRSAFE_FILL_BEHIND_NULL,"%04d-%02d-%02d %02d:%02d:%02d.%03d | ",Time.Year,Time.Month,Time.Day,Time.Hour,Time.Minute,Time.Second,Time.Milliseconds);
-	}
-	else
-	{
-		ContentBuffer=TimeBuffer;
-		ContentSize=TimeSize;
-	}
-	va_start(ArgList,Format);
-	RtlStringCbVPrintfA(ContentBuffer,ContentSize,Format,ArgList);
-	va_end(ArgList);
-	DbgPrintEx(DPFLTR_IHVDRIVER_ID,DPFLTR_ERROR_LEVEL,Buffer);
-}
-
-void __cdecl nv_dprintf_unprefixed(const char* format,...)
-{
-	va_list arg_list;
-	va_start(arg_list,format);
-	vDbgPrintEx(DPFLTR_IHVDRIVER_ID,DPFLTR_INFO_LEVEL,format,arg_list);
-	va_end(arg_list);
-}
-
-void __cdecl nv_dprintf(const char* format,...)
-{
-	va_list arg_list;
-	va_start(arg_list,format);
-	vDbgPrintExWithPrefix("[NoirVisor] ",DPFLTR_IHVDRIVER_ID,DPFLTR_INFO_LEVEL,format,arg_list);
-	va_end(arg_list);
-}
-
-void __cdecl nv_tracef(const char* format,...)
-{
-	va_list arg_list;
-	va_start(arg_list,format);
-	vDbgPrintExWithPrefix("[NoirVisor - Trace] ",DPFLTR_IHVDRIVER_ID,DPFLTR_TRACE_LEVEL,format,arg_list);
-	va_end(arg_list);
-}
-
-void __cdecl nv_panicf(const char* format,...)
-{
-	va_list arg_list;
-	va_start(arg_list,format);
-	vDbgPrintExWithPrefix("[NoirVisor - Panic] ",DPFLTR_IHVDRIVER_ID,DPFLTR_ERROR_LEVEL,format,arg_list);
-	va_end(arg_list);
+	DbgPrintEx(DPFLTR_IHVDRIVER_ID,DPFLTR_INFO_LEVEL,"[NoirVisor] %.*s",MaximumLength,String);
 }
 
 void NoirReportMemoryIntrospectionCounter()
@@ -144,21 +51,6 @@ void NoirReportMemoryIntrospectionCounter()
 	else
 		NoirDebugPrint("No Memory Leaks...\n");
 	NoirDebugPrint("=============NoirVisor Memory Introspection Report End=============\n");
-}
-
-// Asynchronous Debug-Printer Implementation...
-// In the context of VM-Exit, debug-printing is not permitted.
-// FIXME: Some debug log messages are missing.
-
-PVOID NoirAllocateLoggerBuffer(IN ULONG Size)
-{
-#if _MSC_FULL_VER>192930140
-	return ExAllocatePool2(POOL_FLAG_NON_PAGED,Size,'gLvN');
-#else
-	PVOID p=ExAllocatePoolWithTag(NonPagedPool,Size,'gLvN');
-	if(p)RtlZeroMemory(p,Size);
-	return p;
-#endif
 }
 
 PVOID NoirAllocateContiguousMemory(IN SIZE_T Length)
@@ -391,47 +283,6 @@ void* noir_locate_acpi_rsdt(size_t *length)
 	return Rsdt;
 }
 
-void* noir_alloc_contd_memory(size_t length)
-{
-	PHYSICAL_ADDRESS L={0};
-	PHYSICAL_ADDRESS H={0xFFFFFFFFFFFFFFFF};
-	PHYSICAL_ADDRESS B={0};
-	PVOID p=MmAllocateContiguousMemorySpecifyCacheNode(length,L,H,B,MmCached,MM_ANY_NODE_OK);
-	// PVOID p=MmAllocateContiguousMemory(length,H);
-	if(p)
-	{
-		RtlZeroMemory(p,length);
-		InterlockedIncrement(&NoirAllocatedContiguousMemoryCount);
-	}
-	return p;
-}
-
-void* noir_alloc_nonpg_memory(size_t length)
-{
-	return NoirAllocateNonPagedMemory(length);
-}
-
-void* noir_alloc_paged_memory(size_t length)
-{
-	return NoirAllocatePagedMemory(length);
-}
-
-void noir_free_contd_memory(void* virtual_address,size_t length)
-{
-	MmFreeContiguousMemorySpecifyCache(virtual_address,length,MmCached);
-	InterlockedDecrement(&NoirAllocatedContiguousMemoryCount);
-}
-
-void noir_free_nonpg_memory(void* virtual_address)
-{
-	NoirFreeNonPagedMemory(virtual_address);
-}
-
-void noir_free_paged_memory(void* virtual_address)
-{
-	NoirFreePagedMemory(virtual_address);
-}
-
 void noir_get_locked_range(PMDL Mdl,void** virt,PULONG bytes)
 {
 	*virt=MmGetMdlVirtualAddress(Mdl);
@@ -514,11 +365,6 @@ BOOL noir_query_page_attributes(IN PVOID virtual_address,OUT PBOOLEAN valid,OUT 
 		return TRUE;
 	}
 	return FALSE;
-}
-
-void noir_copy_memory(void* dest,void* src,size_t cch)
-{
-	RtlCopyMemory(dest,src,cch);
 }
 
 // We might need to map physical memory for ACPI-accesses.
@@ -797,10 +643,4 @@ void noir_release_pushlock_shared(IN PEX_PUSH_LOCK PushLock)
 {
 	ExfReleasePushLockShared(PushLock);
 	KeLeaveCriticalRegion();
-}
-
-// Standard I/O
-void noir_qsort(IN PVOID base,IN ULONG num,IN ULONG width,IN noir_sorting_comparator comparator)
-{
-	qsort(base,num,width,comparator);
 }

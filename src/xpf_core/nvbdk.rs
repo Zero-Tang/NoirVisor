@@ -162,14 +162,14 @@ extern "C"
 	pub fn noir_save_processor_state(state:*mut ProcessorState);
 	pub fn noir_generic_call(worker:BroadcastWorker,context:*mut c_void);
 	// Memory Facility
-	pub fn noir_alloc_contd_memory(length:usize)->*mut c_void;
-	pub fn noir_free_contd_memory(virtual_address:*mut c_void,length:usize);
 	pub fn noir_enum_physical_memory_ranges(callback_rt:PhysicalRangeCallback,context:*mut c_void);
 	pub fn noir_get_physical_address(virtual_address:*mut c_void)->u64;
 	pub fn noir_alloc_2mb_page()->*mut c_void;
 	pub fn noir_free_2mb_page(virtual_address:*mut c_void);
 	pub fn noir_find_virt_by_phys(physical_address:u64)->*mut c_void;
-	pub fn noir_copy_memory(dest:*mut c_void,src:*const c_void,cch:usize);
+	pub fn memcpy(dest:*mut c_void,src:*const c_void,cch:usize);
+	// Image Facility
+	pub fn nvc_store_image_info(base:*mut *mut c_void,size:*mut u32);
 	// String Facility
 	pub fn strlen(ptr:*const u8)->usize;
 }

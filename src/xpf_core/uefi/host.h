@@ -17,22 +17,6 @@
 #include <Pi/PiMultiPhase.h>
 #include <Protocol/MpService.h>
 
-#define MSR_SYSENTER_CS		0x174
-#define MSR_SYSENTER_ESP	0x175
-#define MSR_SYSENTER_EIP	0x176
-#define MSR_DEBUG_CONTROL	0x1D9
-#define MSR_PAT				0x277
-#define MSR_EFER			0xC0000080
-#define MSR_STAR			0xC0000081
-#define MSR_LSTAR			0xC0000082
-#define MSR_CSTAR			0xC0000083
-#define MSR_SFMASK			0xC0000084
-#define MSR_FSBASE			0xC0000100
-#define MSR_GSBASE			0xC0000101
-#define MSR_GSSWAP			0xC0000102
-
-#define GDT_SELECTOR_MASK		0xFFF8
-
 typedef void (*NOIR_PHYSICAL_MEMORY_RANGE_CALLBACK)
 (
 	IN UINT64 Start,
@@ -46,54 +30,6 @@ typedef struct _MEMORY_RANGE
 	UINT64 RangeSize;
 }MEMORY_RANGE,*PMEMORY_RANGE;
 
-typedef struct _SEGMENT_REGISTER
-{
-	UINT16 Selector;
-	UINT16 Attributes;
-	UINT32 Limit;
-	UINT64 Base;
-}SEGMENT_REGISTER,*PSEGMENT_REGISTER;
-
-typedef struct _NOIR_PROCESSOR_STATE
-{
-	SEGMENT_REGISTER Cs;
-	SEGMENT_REGISTER Ds;
-	SEGMENT_REGISTER Es;
-	SEGMENT_REGISTER Fs;
-	SEGMENT_REGISTER Gs;
-	SEGMENT_REGISTER Ss;
-	SEGMENT_REGISTER Tr;
-	SEGMENT_REGISTER Gdtr;
-	SEGMENT_REGISTER Idtr;
-	SEGMENT_REGISTER Ldtr;
-	UINTN Cr0;
-	UINTN Cr2;
-	UINTN Cr3;
-	UINTN Cr4;
-#if defined(MDE_CPU_X64)
-	UINT64 Cr8;
-#endif
-	UINTN Dr0;
-	UINTN Dr1;
-	UINTN Dr2;
-	UINTN Dr3;
-	UINTN Dr6;
-	UINTN Dr7;
-	UINT64 SysEnter_Cs;
-	UINT64 SysEnter_Esp;
-	UINT64 SysEnter_Eip;
-	UINT64 DebugControl;
-	UINT64 Pat;
-	UINT64 Efer;
-	UINT64 Star;
-	UINT64 LStar;
-	UINT64 CStar;
-	UINT64 SfMask;
-	UINT64 FsBase;
-	UINT64 GsBase;
-	UINT64 GsSwap;
-}NOIR_PROCESSOR_STATE,*PNOIR_PROCESSOR_STATE;
-
 typedef void(*noir_broadcast_worker)(void* context,UINT32 ProcessorNumber);
 
 typedef struct _NV_MP_SERVICE_GENERIC_INFO
@@ -102,9 +38,6 @@ typedef struct _NV_MP_SERVICE_GENERIC_INFO
 	VOID* Context;
 }NV_MP_SERVICE_GENERIC_INFO,*PNV_MP_SERVICE_GENERIC_INFO;
 
-#define NoirSaveProcessorState		noir_save_processor_state
-#define NoirGetSegmentAttributes	noir_get_segment_attributes
-void noir_save_processor_state(OUT PNOIR_PROCESSOR_STATE State);
 void noir_debug_output(IN CHAR8 *buffer,IN UINTN length);
 
 extern EFI_MP_SERVICES_PROTOCOL *MpServices;

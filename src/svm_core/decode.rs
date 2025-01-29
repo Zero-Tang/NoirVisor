@@ -53,7 +53,7 @@ impl PageTranslationHelper for SvmVcpu
 	{
 		unsafe
 		{
-			noir_copy_memory(buffer.as_mut_ptr().cast(),pa as *const c_void,buffer.len());
+			memcpy(buffer.as_mut_ptr().cast(),pa as *const c_void,buffer.len());
 		}
 		buffer.len()
 	}
@@ -62,7 +62,7 @@ impl PageTranslationHelper for SvmVcpu
 	{
 		unsafe
 		{
-			noir_copy_memory(pa as *mut c_void,buffer.as_ptr().cast(),buffer.len());
+			memcpy(pa as *mut c_void,buffer.as_ptr().cast(),buffer.len());
 		}
 		buffer.len()
 	}

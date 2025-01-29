@@ -34,6 +34,19 @@ void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...)
 	noir_debug_output(Buffer,Size);
 }
 
+void noir_system_debugger_write(IN CHAR8* String,IN UINTN MaximumLength)
+{
+	// Implicit CR in every LF since the VGA console won't do that for us.
+	CHAR8 Buffer[512];
+	UINTN j=0;
+	for(UINTN i=0;i<MaximumLength && j<sizeof(Buffer);i++)
+	{
+		if(String[i]=='\n')Buffer[j++]='\r';
+		Buffer[j++]=String[i];
+	}
+	Print(L"%.*a",j,Buffer);
+}
+
 VOID* noir_alloc_2mb_page()
 {
 	VOID* p=AllocateAlignedRuntimePages(512,SIZE_2MB);
@@ -71,11 +84,6 @@ VOID* noir_map_uncached_memory(IN UINT64 PhysicalAddress,IN UINTN Length)
 void noir_unmap_physical_memory(IN VOID* VirtualAddress,IN UINTN Length)
 {
 	__nop();
-}
-
-void noir_copy_memory(IN VOID* Destination,IN VOID* Source,IN UINT32 Length)
-{
-	CopyMem(Destination,Source,Length);
 }
 
 void static NoirGenericCallRT(IN VOID* ProcedureArgument)

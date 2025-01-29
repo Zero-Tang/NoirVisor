@@ -65,6 +65,8 @@ cd build
 .\compchk_win7x64.bat /s
 ```
 
+**Note that the `cargo build` command only builds the NoirVisor Core instead of the whole NoirVisor project!**
+
 ## NoirVisor Core
 NoirVisor Core is written in Rust. See [documentation for NoirVisor in Rust](./doc/rust.md).
 
@@ -74,7 +76,7 @@ The toolchain is up to you. It is recommended to use the `stable` toolchain. But
 Please note that `cargo build` command only builds the NoirVisor Core. It is a static library, not an executable. \
 You should execute the batch script to build a full executable!
 
-Currently, NoirVisor Core in Rust can subvert the system with AMD-V in UEFI.
+Currently, NoirVisor Core in Rust can subvert the system with AMD-V in UEFI and Windows.
 
 ## Windows Driver
 To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 11 (Visual Studio Build Tools 16.11.10 and 17.8.6) ISO file to T: and V: drives. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. \
@@ -89,6 +91,14 @@ For Rust, you must install `x86_64-pc-windows-msvc` target host. This should be 
 ```
 rustup target add x86_64-pc-windows-msvc
 ```
+To build NoirVisor for Windows without optimization, run the following command in `build` directory:
+```
+compchk_win7x64 /s
+```
+To build NoirVisor for Windows with optimization, run the following command in `build` directory:
+```
+compfre_win7x64 /s
+```
 
 ## EFI Application and Runtime Driver
 Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. \
@@ -100,6 +110,15 @@ NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit
 For Rust, you must install `x86_64-unknown-uefi` target host. This is not installed by default, so you may install it by:
 ```
 rustup target add x86_64-unknown-uefi
+```
+
+To build NoirVisor for UEFI without optimization, run the following command in `build` directory:
+```
+compchk_uefix64 /s
+```
+To build NoirVisor for UEFI with optimization, run the following command in `build` directory:
+```
+compfre_uefix64 /s
 ```
 
 ## Disassembler

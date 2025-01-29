@@ -51,7 +51,7 @@ impl SvmVcpu
 	{
 		let vmcb=self.vmcb.virt;
 		let intercept_code:i64=unsafe{vmread(vmcb,EXIT_CODE)};
-		println!("Unknown VM-Exit is intercepted! Code: 0x{:016X}",intercept_code);
+		panic!("Unknown VM-Exit is intercepted! Code: 0x{:016X}",intercept_code);
 	}
 
 	fn handle_cpuid(&mut self,gpr_state:&mut GprState)
@@ -289,89 +289,110 @@ impl SvmVcpu
 		{
 			NOIR_HYPERCALL_CODE_CALLEXIT=>
 			{
-				// FIXME: Validate the caller to prevent malicious unloading request.
-				let nrip:u64=unsafe{vmread(self.vmcb.virt,NEXT_RIP)};
-				let gflags:u64=unsafe{vmread(self.vmcb.virt,GUEST_RFLAGS)};
-				let saved_state:GprState=GprState
+				let grip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
+				let hv=self.hypervisor as *mut SvmHypervisor;
+				let start=unsafe{(*hv).image_base} as u64;
+				let end=start+unsafe{(*hv).image_size} as u64;
+				if (start..end).contains(&grip)
 				{
-					rax:nrip,
-					rcx:gflags,
-					rdx:gpr_state.rsp,
-					rbx:gpr_state.rbx,
-					rsp:gpr_state.rsp,
-					rbp:gpr_state.rbp,
-					rsi:gpr_state.rsi,
-					rdi:gpr_state.rdi,
-					r8:gpr_state.r8,
-					r9:gpr_state.r9,
-					r10:gpr_state.r10,
-					r11:gpr_state.r11,
-					r12:gpr_state.r12,
-					r13:gpr_state.r13,
-					r14:gpr_state.r14,
-					r15:gpr_state.r15,
-				};
-				// Switch to Restored Control Registers.
-				let gcr4:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR4)};
-				write_cr3(gcr3);
-				write_cr4(gcr4);
-				// Restore the processor's hidden state.
-				vmload(self.vmcb.phys);
-				unsafe
-				{
-					// Switch to Restored IDT.
-					let gidtr:DescriptorTable=DescriptorTable
+					// FIXME: Validate the caller to prevent malicious unloading request.
+					let nrip:u64=unsafe{vmread(self.vmcb.virt,NEXT_RIP)};
+					let gflags:u64=unsafe{vmread(self.vmcb.virt,GUEST_RFLAGS)};
+					let saved_state:GprState=GprState
 					{
-						limit:vmread(self.vmcb.virt,GUEST_IDTR_LIMIT),
-						base:vmread(self.vmcb.virt,GUEST_IDTR_BASE)
+						rax:nrip,
+						rcx:gflags,
+						rdx:gpr_state.rsp,
+						rbx:gpr_state.rbx,
+						rsp:gpr_state.rsp,
+						rbp:gpr_state.rbp,
+						rsi:gpr_state.rsi,
+						rdi:gpr_state.rdi,
+						r8:gpr_state.r8,
+						r9:gpr_state.r9,
+						r10:gpr_state.r10,
+						r11:gpr_state.r11,
+						r12:gpr_state.r12,
+						r13:gpr_state.r13,
+						r14:gpr_state.r14,
+						r15:gpr_state.r15,
 					};
-					write_idtr(&raw const gidtr);
-					// Switch to Restored GDT.
-					let ggdtr:DescriptorTable=DescriptorTable
+					// Switch to Restored Control Registers.
+					let gcr4:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR4)};
+					write_cr3(gcr3);
+					write_cr4(gcr4);
+					// Restore the processor's hidden state.
+					vmload(self.vmcb.phys);
+					unsafe
 					{
-						limit:vmread(self.vmcb.virt,GUEST_GDTR_LIMIT),
-						base:vmread(self.vmcb.virt,GUEST_GDTR_BASE)
-					};
-					write_gdtr(&raw const ggdtr);
-					// Note that TSS is switched in previous vmload.
-					
+						// Switch to Restored IDT.
+						let gidtr:DescriptorTable=DescriptorTable
+						{
+							limit:vmread(self.vmcb.virt,GUEST_IDTR_LIMIT),
+							base:vmread(self.vmcb.virt,GUEST_IDTR_BASE)
+						};
+						write_idtr(&raw const gidtr);
+						// Switch to Restored GDT.
+						let ggdtr:DescriptorTable=DescriptorTable
+						{
+							limit:vmread(self.vmcb.virt,GUEST_GDTR_LIMIT),
+							base:vmread(self.vmcb.virt,GUEST_GDTR_BASE)
+						};
+						write_gdtr(&raw const ggdtr);
+						// Note that TSS is switched in previous vmload.
+						
+					}
+					// Set the GIF. Otherwise the host will never be interrupted.
+					stgi();
+					// Return to the caller in Host Mode.
+					unsafe
+					{
+						nvc_svm_return(&raw const saved_state);
+					}
+					// Never reaches here!
 				}
-				// Set the GIF. Otherwise the host will never be interrupted.
-				stgi();
-				// Return to the caller in Host Mode.
-				unsafe
+				else
 				{
-					nvc_svm_return(&raw const saved_state);
+					println!("Invalid Call to restore system! rip=0x{grip:016X}");
+					unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 				}
-				// Never reaches here!
 			}
-			_=>panic!("Unknown Hypercall Code 0x{vmmcall_func:X} is called!")
+			_=>
+			{
+				println!("Unknown Hypercall Code 0x{vmmcall_func:X} is called!");
+				unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
+			}
 		}
 	}
 
 	fn handle_vmload(&mut self,gpr_state:&mut GprState)
 	{
-		panic!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",gpr_state.rax);
+		println!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",gpr_state.rax);
+		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
 	fn handle_vmsave(&mut self,gpr_state:&mut GprState)
 	{
-		panic!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",gpr_state.rax);
+		println!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",gpr_state.rax);
+		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
 	fn handle_stgi(&mut self,_gpr_state:&mut GprState)
 	{
-		panic!("Nested virtualization is unsupported!");
+		println!("Nested virtualization is unsupported!");
+		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
 	fn handle_clgi(&mut self,_gpr_state:&mut GprState)
 	{
-		panic!("Nested virtualization is unsupported!");
+		println!("Nested virtualization is unsupported!");
+		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
 	fn handle_skinit(&mut self,_gpr_state:&mut GprState)
 	{
-		panic!("Nested virtualization is unsupported!");
+		println!("Nested virtualization is unsupported!");
+		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
 	fn handle_npf(&mut self,gpr_state:&mut GprState)

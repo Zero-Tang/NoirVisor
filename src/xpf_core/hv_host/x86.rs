@@ -104,7 +104,7 @@ impl Default for HostPaging
 			let scr3_phys=read_cr3();
 			let scr3_virt=noir_find_virt_by_phys(scr3_phys);
 			println!("System CR3 Virt: {scr3_virt:p}, Phys: 0x{scr3_phys:016X}");
-			noir_copy_memory(r.cr3.virt,scr3_virt,PAGE_SIZE);
+			memcpy(r.cr3.virt,scr3_virt,PAGE_SIZE);
 			let pml4e_v=Pml4e::new(true,true,false,false,false,r.pdpt.phys);
 			println!("PML4E Pointer: {:p}, PML4E value 0x{:016X}",pml4e_p,pml4e_v.0);
 			pml4e_p.write(pml4e_v);
@@ -141,7 +141,7 @@ impl Default for HostGDT
 		{
 			// Copy from current system.
 			let l=if gdtr.limit<r.raw.len() as u16 {gdtr.limit as usize} else {r.raw.len()};
-			noir_copy_memory(r.raw.as_mut_ptr().cast(),gdtr.base as *mut c_void,l);
+			memcpy(r.raw.as_mut_ptr().cast(),gdtr.base as *mut c_void,l);
 		}
 		r.allocated=gdtr.limit+1;
 		r
@@ -156,7 +156,7 @@ impl HostGDT
 		{
 			let d=self.raw.as_mut_ptr().byte_add(selector as usize) as *mut c_void;
 			let s=&raw const segment as *const c_void;
-			noir_copy_memory(d,s,size_of::<UserSegmentDescriptor>());
+			memcpy(d,s,size_of::<UserSegmentDescriptor>());
 		}
 	}
 
@@ -166,7 +166,7 @@ impl HostGDT
 		{
 			let d=self.raw.as_mut_ptr().byte_add(selector as usize) as *mut c_void;
 			let s=&raw const segment as *const c_void;
-			noir_copy_memory(d,s,size_of::<SystemSegmentDescriptor>());
+			memcpy(d,s,size_of::<SystemSegmentDescriptor>());
 		}
 	}
 

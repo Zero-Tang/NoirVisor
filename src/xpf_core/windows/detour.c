@@ -19,7 +19,7 @@
 
 ULONG GetPatchSize(IN PVOID Code,IN ULONG HookLength)
 {
-	ULONG s=0,l=0;
+	ULONG s=0;
 	while(s<HookLength)
 	{
 		PVOID p=(PVOID)((ULONG_PTR)Code+s);

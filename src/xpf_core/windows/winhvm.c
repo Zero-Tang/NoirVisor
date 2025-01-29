@@ -487,7 +487,8 @@ BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase)
 			PIMAGE_SECTION_HEADER SectionHeaders=(PIMAGE_SECTION_HEADER)((ULONG_PTR)NtHead+sizeof(IMAGE_NT_HEADERS));
 			USHORT NumberOfSections=NtHead->FileHeader.NumberOfSections;
 			USHORT i=0;
-			if(noir_initialize_ci(TRUE,TRUE)==FALSE)
+			// After we remastered NoirVisor with Rust, software CI is being deprecated in NoirVisor Core.
+			if(noir_initialize_ci(FALSE,TRUE)==FALSE)
 			{
 				NoirDebugPrint("Failed to initialize Code-Integrity!\n");
 				return FALSE;

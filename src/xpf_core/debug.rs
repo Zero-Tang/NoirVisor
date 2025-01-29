@@ -23,6 +23,18 @@ mod qemu_debugcon;
 #[allow(dead_code)] mod serial;
 mod unknown;
 
+extern "C"
+{
+	/// ## `noir_system_debugger_write` Function
+	/// This function will use the system's debugger to log outputs. \
+	/// However, not all circumstances will allow usage of this debug output.
+	/// 
+	/// ## Safety
+	/// The `maximum_length` specifies the maximum size of the `string`. \
+	/// If the `string` contains a null-terminator `\0`, the output will stop there.
+	fn noir_system_debugger_write(string:*const u8,maximum_length:usize);
+}
+
 // We need to implement a formatter without alloc!
 pub struct FormatBuffer
 {
@@ -120,7 +132,7 @@ unsafe fn debug_write(debugger:&mut impl DebuggerBackend,buffer:*const u8,length
 	b
 }
 
-pub fn dbg_print(args: core::fmt::Arguments)
+pub fn dbg_print(args: fmt::Arguments)
 {
 	let mut w=FormatBuffer::default();
 	let r=fmt::write(&mut w, args);
@@ -129,6 +141,19 @@ pub fn dbg_print(args: core::fmt::Arguments)
 		unsafe
 		{
 			noir_debug_output(w.buffer.as_ptr(),w.used);
+		}
+	}
+}
+
+pub fn system_print(args: fmt::Arguments)
+{
+	let mut w=FormatBuffer::default();
+	let r=fmt::write(&mut w,args);
+	if r.is_ok()
+	{
+		unsafe 
+		{
+			noir_system_debugger_write(w.buffer.as_ptr(),w.used);
 		}
 	}
 }
@@ -175,6 +200,26 @@ pub fn dbg_print(args: core::fmt::Arguments)
 	{
 		print!("{}\n",format_args!($($arg)*))
 	};
+}
+
+#[macro_export] macro_rules! sysdprint
+{
+	($($arg:tt)*) =>
+	{
+		(system_print(format_args!($($arg)*)))
+	};
+}
+
+#[macro_export] macro_rules! sysdprintln
+{
+	() =>
+	{
+		sysdprint("\n");
+	};
+	($($arg:tt)*) =>
+	{
+		sysdprint!("{}\n",format_args!($($arg)*))
+	}
 }
 
 #[no_mangle] pub extern "C" fn noir_configure_serial_port_debugger(_port_number:u8,port_base:u16,baud_rate:u32)->Status
