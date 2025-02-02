@@ -433,6 +433,432 @@ pub mod svm
 	}
 }
 
+pub mod vt
+{
+	use core::{arch::asm,fmt::*};
+	const VM_INSTRUCTION_ERROR:usize=0x4400;
+
+	pub struct EmptyUnit(pub ());
+
+	impl Display for EmptyUnit
+	{
+		fn fmt(&self, _f: &mut Formatter<'_>) -> Result
+		{
+			Ok(())
+		}
+	}
+
+	macro_rules! dispatch_vmx_result
+	{
+		($e:tt,$v:expr) =>
+		{
+			match $e
+			{
+				0=>VmxResult::Ok($v),
+				1=>VmxResult::Err(vmread32(VM_INSTRUCTION_ERROR).unwrap()),
+				2=>VmxResult::NoVmcs,
+				_=>panic!("Unexpected VMX Fail Flag: {}!",$e)
+			}
+		};
+	}
+
+	/// ## Safety
+	/// The `context` is in fact a raw pointer. Make sure it's valid.
+	#[inline] pub unsafe fn vmcall(index:u32,context:usize)->VmxResult<EmptyUnit>
+	{
+		let vmx_err:u8;
+		asm!
+		(
+			"vmcall",
+			"setc {cf}",
+			"setz {zf}",
+			"adc {cf},{zf}",
+			in("ecx") index,
+			in("rdx") context,
+			zf=out(reg_byte) _,
+			cf=out(reg_byte) vmx_err
+		);
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+	}
+
+	/// ## Safety
+	/// The `vmxon_region_phys` is a raw pointer to a physical address.
+	#[inline] pub unsafe fn vmxon(vmxon_region_phys:*const u64)->VmxResult<EmptyUnit>
+	{
+		let vmx_err:u8;
+		asm!
+		(
+			"vmxon qword ptr [{vmxon_phys}]",
+			"setc {cf}",
+			"setz {zf}",
+			"adc {cf},{zf}",
+			vmxon_phys=in(reg) vmxon_region_phys,
+			zf=out(reg_byte) _,
+			cf=out(reg_byte) vmx_err
+		);
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+	}
+
+	/// ## Safety
+	/// Just understand what `vmxoff` implies.
+	#[inline] pub unsafe fn vmxoff()->VmxResult<EmptyUnit>
+	{
+		let vmx_err:u8;
+		asm!
+		(
+			"vmxoff",
+			"setc {cf}",
+			"setz {zf}",
+			"adc {cf},{zf}",
+			zf=out(reg_byte) _,
+			cf=out(reg_byte) vmx_err
+		);
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+	}
+
+	/// ## Safety
+	/// The `vmcs_phys` is a raw pointer to the physical address of VMCS.
+	#[inline] pub unsafe fn vmclear(vmcs_phys:*const u64)->VmxResult<EmptyUnit>
+	{
+		let vmx_err:u8;
+		asm!
+		(
+			"vmclear qword ptr [{vmcs_phys}]",
+			"setc {cf}",
+			"setz {zf}",
+			"adc {cf},{zf}",
+			vmcs_phys=in(reg) vmcs_phys,
+			zf=out(reg_byte) _,
+			cf=out(reg_byte) vmx_err
+		);
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+	}
+
+	/// ## Safety
+	/// The `vmcs_phys` is a raw pointer to the physical address of VMCS.
+	#[inline] pub unsafe fn vmptrld(vmcs_phys:*const u64)->VmxResult<EmptyUnit>
+	{
+		let vmx_err:u8;
+		asm!
+		(
+			"vmptrld qword ptr [{vmcs_phys}]",
+			"setc {cf}",
+			"setz {zf}",
+			"adc {cf},{zf}",
+			vmcs_phys=in(reg) vmcs_phys,
+			zf=out(reg_byte) _,
+			cf=out(reg_byte) vmx_err
+		);
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+	}
+
+	/// ## Safety
+	/// This function returns the physical address of current VMCS as a result.
+	#[inline] pub unsafe fn vmptrst()->VmxResult<u64>
+	{
+		let vmx_err:u8;
+		let mut vmcs_phys:u64=0;
+		asm!
+		(
+			"vmptrld qword ptr [{vmcs_phys}]",
+			"setc {cf}",
+			"setz {zf}",
+			"adc {cf},{zf}",
+			vmcs_phys=in(reg) &raw mut vmcs_phys,
+			zf=out(reg_byte) _,
+			cf=out(reg_byte) vmx_err
+		);
+		dispatch_vmx_result!(vmx_err,vmcs_phys)
+	}
+
+	/// ## Safety
+	/// This function drastically changes the processor state!
+	#[inline] pub unsafe fn vmlaunch()->VmxResult<EmptyUnit>
+	{
+		let vmx_err:u8;
+		asm!
+		(
+			"vmlaunch",
+			"setc {cf}",
+			"setz {zf}",
+			"adc {cf},{zf}",
+			zf=out(reg_byte) _,
+			cf=out(reg_byte) vmx_err
+		);
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+	}
+
+	/// ## Safety
+	/// The `vmcs_phys` is a raw pointer to the physical address of VMCS.
+	#[inline] unsafe fn vmread(field:usize,value:*mut usize)->u8
+	{
+		let vmx_err:u8;
+		asm!
+		(
+			"vmread [{value}],{field}",
+			"setc {cf}",
+			"setz {zf}",
+			"adc {cf},{zf}",
+			field=in(reg) field,
+			value=in(reg) value,
+			zf=out(reg_byte) _,
+			cf=out(reg_byte) vmx_err
+		);
+		vmx_err
+	}
+
+	#[inline] unsafe fn vmwrite(field:usize,value:*const usize)->u8
+	{
+		let vmx_err:u8;
+		asm!
+		(
+			"vmwrite {field},[{value}]",
+			"setc {cf}",
+			"setz {zf}",
+			"adc {cf},{zf}",
+			field=in(reg) field,
+			value=in(reg) value,
+			zf=out(reg_byte) _,
+			cf=out(reg_byte) vmx_err
+		);
+		vmx_err
+	}
+
+	const INVEPT_SINGLE:usize=1;
+	const INVEPT_GLOBAL:usize=2;
+
+	pub enum InveptContext
+	{
+		Single(u64),
+		Global
+	}
+
+	impl InveptContext
+	{
+		fn as_operands(&self)->(usize,InveptDescriptor)
+		{
+			match self
+			{
+				InveptContext::Single(v)=>(INVEPT_SINGLE,InveptDescriptor{eptp:*v,reserved:0}),
+				InveptContext::Global=>(INVEPT_GLOBAL,InveptDescriptor{eptp:0,reserved:0})
+			}
+		}
+	}
+
+	#[repr(C)] struct InveptDescriptor
+	{
+		eptp:u64,
+		reserved:u64
+	}
+
+	/// ## Safety
+	/// This function invalidates TLB of EPT. Understand what it implies if you use this instruction.
+	#[inline] pub unsafe fn invept(context:&InveptContext)->VmxResult<EmptyUnit>
+	{
+		let vmx_err:u8;
+		let (inv_type,descriptor)=context.as_operands();
+		asm!
+		(
+			"invept xmmword ptr [{descriptor}],{inv_type}",
+			"setc {cf}",
+			"setz {zf}",
+			"adc {cf},{zf}",
+			inv_type=in(reg) inv_type,
+			descriptor=in(reg) &raw const descriptor,
+			zf=out(reg_byte) _,
+			cf=out(reg_byte) vmx_err
+		);
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+	}
+
+	const INVVPID_INDIVIDUAL_ADDRESS:usize=0;
+	const INVVPID_SINGLE_CONTEXT:usize=1;
+	const INVVPID_GLOBAL_CONTEXT:usize=2;
+	const INVVPID_RETAIN_GLOBAL:usize=3;
+
+	pub enum InvvpidContext
+	{
+		LinearAddress(u16,u64),
+		Single(u16),
+		Global,
+		RetainGlobal(u16)
+	}
+
+	impl InvvpidContext
+	{
+		fn as_operands(&self)->(usize,InvvpidDescriptor)
+		{
+			match self
+			{
+				InvvpidContext::LinearAddress(vpid,la)=>(INVVPID_INDIVIDUAL_ADDRESS,InvvpidDescriptor{vpid:*vpid,reserved0:0,reserved1:0,linear_address:*la}),
+				InvvpidContext::Single(vpid)=>(INVVPID_SINGLE_CONTEXT,InvvpidDescriptor{vpid:*vpid,reserved0:0,reserved1:0,linear_address:0}),
+				InvvpidContext::Global=>(INVVPID_GLOBAL_CONTEXT,InvvpidDescriptor{vpid:0,reserved0:0,reserved1:0,linear_address:0}),
+				InvvpidContext::RetainGlobal(vpid)=>(INVVPID_RETAIN_GLOBAL,InvvpidDescriptor{vpid:*vpid,reserved0:0,reserved1:0,linear_address:0})
+			}
+		}
+	}
+
+	#[repr(C)] struct InvvpidDescriptor
+	{
+		vpid:u16,
+		reserved0:u16,
+		reserved1:u32,
+		linear_address:u64
+	}
+
+	/// ## Safety
+	/// This function invalidates TLB of the Guest. Understand what it implies if you use this instruction.
+	#[inline] pub unsafe fn invvpid(context:&InvvpidContext)->VmxResult<EmptyUnit>
+	{
+		let vmx_err:u8;
+		let (inv_type,descriptor)=context.as_operands();
+		asm!
+		(
+			"invvpid xmmword ptr [{descriptor}],{inv_type}",
+			"setc {cf}",
+			"setz {zf}",
+			"adc {cf},{zf}",
+			inv_type=in(reg) inv_type,
+			descriptor=in(reg) &raw const descriptor,
+			zf=out(reg_byte) _,
+			cf=out(reg_byte) vmx_err
+		);
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+	}
+	
+	// Unfortunately, we won't be able to abuse generics to read/write VMCS...
+	pub enum VmxResult<T>
+	{
+		Ok(T),
+		Err(u32),
+		NoVmcs
+	}
+	
+	impl<T> VmxResult<T>
+	{
+		pub fn unwrap(self)->T
+		{
+			match self
+			{
+				VmxResult::Ok(v)=>v,
+				_=>panic!("Unwrapping Unsuccessful VMX Instruction Result!")
+			}
+		}
+	}
+	
+	macro_rules! vmread_proc
+	{
+		($f:tt,$t:ty) =>
+		{
+			{
+				let mut v:usize=0;
+				let r=vmread($f,&raw mut v);
+				dispatch_vmx_result!(r,(v as $t))
+			}
+		};
+	}
+	
+	macro_rules! vmwrite_proc
+	{
+		($f:tt,$v:tt) =>
+		{
+			{
+				let v=$v as usize;
+				let r=vmwrite($f,&raw const v);
+				dispatch_vmx_result!(r,EmptyUnit(()))
+			}
+		};
+	}
+	
+	/// ## Safety
+	/// Understand what this field means.
+	#[inline] pub unsafe fn vmread16(field:usize)->VmxResult<u16>
+	{
+		vmread_proc!(field,u16)
+	}
+	
+	/// ## Safety
+	/// Understand what this field means.
+	#[inline] pub unsafe fn vmread32(field:usize)->VmxResult<u32>
+	{
+		vmread_proc!(field,u32)
+	}
+	
+	/// ## Safety
+	/// Understand what this field means.
+	#[inline] pub unsafe fn vmreadptr(field:usize)->VmxResult<usize>
+	{
+		vmread_proc!(field,usize)
+	}
+	
+	/// ## Safety
+	/// Understand what this field means.
+	#[inline] pub unsafe fn vmread64(field:usize)->VmxResult<u64>
+	{
+		if cfg!(target_arch="x86_64")
+		{
+			vmread_proc!(field,u64)
+		}
+		else
+		{
+			match vmread32(field)
+			{
+				VmxResult::Ok(v1)=>
+				{
+					match vmread32(field+1)
+					{
+						VmxResult::Ok(v2)=>VmxResult::Ok((v1 as u64)|((v2 as u64)<<32)),
+						VmxResult::Err(e)=>VmxResult::Err(e),
+						VmxResult::NoVmcs=>VmxResult::NoVmcs
+					}
+				}
+				VmxResult::Err(e)=>VmxResult::Err(e),
+				VmxResult::NoVmcs=>VmxResult::NoVmcs
+			}
+		}
+	}
+	
+	/// ## Safety
+	/// Understand what this field means.
+	#[inline] pub unsafe fn vmwrite16(field:usize,value:u16)->VmxResult<EmptyUnit>
+	{
+		vmwrite_proc!(field,value)
+	}
+	
+	/// ## Safety
+	/// Understand what this field means.
+	#[inline] pub unsafe fn vmwrite32(field:usize,value:u32)->VmxResult<EmptyUnit>
+	{
+		vmwrite_proc!(field,value)
+	}
+	
+	/// ## Safety
+	/// Understand what this field means.
+	#[inline] pub unsafe fn vmwriteptr(field:usize,value:usize)->VmxResult<EmptyUnit>
+	{
+		vmwrite_proc!(field,value)
+	}
+	
+	/// ## Safety
+	/// Understand what this field means.
+	#[inline] pub unsafe fn vmwrite64(field:usize,value:u64)->VmxResult<EmptyUnit>
+	{
+		if cfg!(target_arch="x86_64")
+		{
+			vmwrite_proc!(field,value)
+		}
+		else
+		{
+			match vmwrite32(field,(value&0xffffffff) as u32)
+			{
+				VmxResult::Ok(EmptyUnit(()))=>vmwrite32(field+1,(value>>32) as u32),
+				VmxResult::Err(e)=>VmxResult::Err(e),
+				VmxResult::NoVmcs=>VmxResult::NoVmcs
+			}
+		}
+	}
+}
+
 pub mod misc
 {
 	use core::arch::asm;

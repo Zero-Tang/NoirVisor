@@ -29,6 +29,8 @@ for %%1 in (..\src\xpf_core\uefi\*.c) do (cl %%1 /I"%mdepath%\Include" /I"%mdepa
 
 ml64 /X /Zi /D"_amd64" /D"_msvc" /D"_efi" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\svm_hv.obj" /c ..\src\xpf_core\msvc\svm_hv.asm
 
+ml64 /X /Zi /D"_amd64" /D"_msvc" /D"_efi" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\vt_hv.obj" /c ..\src\xpf_core\msvc\vt_hv.asm
+
 ml64 /X /Zi /D"_amd64" /D"_msvc" /D"_efi" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\interrupt.obj" /c ..\src\xpf_core\msvc\interrupt.asm
 
 ml64 /X /Zi /D"_amd64" /D"_msvc" /D"_efi" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\kpcr.obj" /c ..\src\xpf_core\msvc\kpcr.asm

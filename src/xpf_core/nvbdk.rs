@@ -49,7 +49,7 @@ impl MemoryDescriptor
 	}
 }
 
-#[repr(C)] #[derive(Default)] pub struct SegmentRegister
+#[repr(C)] #[derive(Default,Debug)] pub struct SegmentRegister
 {
 	pub selector:u16,
 	pub attrib:u16,
@@ -242,4 +242,64 @@ pub const PAGE_TABLE_ENTRIES32:usize=1024;
 #[inline] pub fn page_entry_index(addr:usize)->usize
 {
 	addr&(PAGE_TABLE_ENTRIES-1)
+}
+
+#[macro_export] macro_rules! build_bit_get_method
+{
+	($name:tt,$pos:literal) =>
+	{
+		paste!
+		{
+			#[inline] pub fn [<get_ $name:lower>](&self)->bool
+			{
+				self.0&(1<<$pos)==(1<<$pos)
+			}
+		}
+	};
+}
+
+#[macro_export] macro_rules! build_bit_mut_method
+{
+	($name:tt,$pos:literal) =>
+	{
+		build_bit_get_method!($name,$pos);
+		paste!
+		{
+			#[inline] pub fn [<set_ $name:lower>](&mut self,val:bool)
+			{
+				self.0|=(if val {1} else {0}<<$pos);
+			}
+		}
+	};
+}
+
+#[macro_export] macro_rules! build_int_get_method
+{
+	($name:tt,$pos:literal,$len:literal,$type:ty) =>
+	{
+		paste!
+		{
+			#[inline] pub fn [<get_ $name:lower>](&self)->$type
+			{
+				((self.0>>$pos)&((1<<$len)-1)) as $type
+			}
+		}
+	};
+}
+
+#[macro_export] macro_rules! build_int_mut_method
+{
+	($name:tt,$pos:literal,$len:literal,$type:ty) =>
+	{
+		build_int_get_method!($name,$pos,$len,$type);
+		paste!
+		{
+			#[inline] pub fn [<set_ $name:lower>](&mut self,value:$type)
+			{
+				let mask:$type=((1<<$len)-1)<<$pos;
+				self.0&=!mask;
+				self.0|=(value<<$pos);
+			}
+		}
+	};
 }

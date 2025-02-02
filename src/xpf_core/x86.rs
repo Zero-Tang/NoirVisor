@@ -416,6 +416,8 @@ pub mod descriptors
 	use core::fmt::{self,Display};
 	use crate::xpf_core::{hv_host::x86::AsmInterruptHandler, nvbdk::PAGE_SHIFT};
 
+	pub const SELECTOR_RPLTI_MASK:u16=0xFFF8;
+
 	// Descriptor Table register forbids any paddings.
 	#[repr(C,packed)] pub struct DescriptorTable
 	{

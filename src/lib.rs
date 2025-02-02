@@ -23,11 +23,16 @@ pub mod mshv_core;
 pub mod disasm;
 
 use alloc::boxed::Box;
+use vt_core::VtHypervisor;
 use core::str;
 
-use xpf_core::{asm::cpuid::cpuid2, dlalloc::set_alloc_checker, nvstatus::*, x86::cpuid::*};
+use xpf_core::{asm::cpuid::cpuid2, dlalloc::set_alloc_checker, nvstatus::*, x86::cpuid::*, nvbdk::PAGE_SIZE};
 pub use xpf_core::debug::*;
 use svm_core::SvmHypervisor;
+
+// Limit stack size to 64KiB. Should be enough for most circumstances.
+// FIXME: Implement runtime stack overflow detector.
+pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*16;
 
 pub enum ProcessorManufacturer
 {
@@ -134,7 +139,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 	let cpu_manuf=ProcessorManufacturer::query(&mut vstr_raw);
 	match cpu_manuf
 	{
-		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>0,
+		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>VtHypervisor::check_support(),
 		ProcessorManufacturer::AMD|ProcessorManufacturer::Hygon=>SvmHypervisor::check_support(),
 		_=>0
 	}
@@ -146,7 +151,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 	let cpu_manuf=ProcessorManufacturer::query(&mut vstr_raw);
 	match cpu_manuf
 	{
-		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>false,
+		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>VtHypervisor::check_enabled(),
 		ProcessorManufacturer::AMD|ProcessorManufacturer::Hygon=>SvmHypervisor::check_enabled(),
 		_=>false
 	}
@@ -174,7 +179,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>
 		{
 			// Use Intel VT-x.
-			unimplemented!("Intel VT-x is not supported yet!");
+			Some(Box::<VtHypervisor>::new(VtHypervisor::default()))
 		}
 		ProcessorManufacturer::AMD|ProcessorManufacturer::Hygon=>
 		{

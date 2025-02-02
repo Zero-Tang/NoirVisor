@@ -28,10 +28,6 @@ pub mod amd64;
 #[allow(dead_code)] mod exit;
 #[allow(dead_code)] mod npt;
 
-// Limit stack size to 64KiB. Should be enough for most circumstances.
-// FIXME: Implement runtime stack overflow detector.
-pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*16;
-
 #[repr(C)] pub struct SvmStackTop
 {
 	pub guest_vmcb_pa:u64,
@@ -115,7 +111,7 @@ extern "C"
 /// # Safety
 /// This function is unsafe because it's called from assembly.
 /// DO NOT CALL THIS FUNCTION FROM RUST!
-#[no_mangle] pub unsafe extern "C" fn nvc_svm_subvert_processor_i(vcpu:*mut SvmVcpu,gsp:u64)->u64
+#[no_mangle] unsafe extern "C" fn nvc_svm_subvert_processor_i(vcpu:*mut SvmVcpu,gsp:u64)->u64
 {
 	(*vcpu).subvert_i(gsp)
 }
@@ -304,14 +300,6 @@ impl Default for SvmHypervisor
 	}
 }
 
-impl SvmHypervisor
-{
-	fn cleanup(&mut self)
-	{
-		unimplemented!("Cleaning up...")
-	}
-}
-
 impl HypervisorCapabilities for SvmHypervisor
 {
 	fn check_support()->u32
@@ -329,6 +317,8 @@ impl HypervisorCapabilities for SvmHypervisor
 				let mut ret:u32=1;
 				// Nested Paging
 				ret|=if (d&CPUID_SVM_NPT)==CPUID_SVM_NPT {2} else {0};
+				// Accelerated Nested Virtualization
+				ret|=if (d&(CPUID_SVM_NESTED_VMLOAD_VMSAVE|CPUID_SVM_VGIF))==(CPUID_SVM_NESTED_VMLOAD_VMSAVE|CPUID_SVM_VGIF) {4} else {0};
 				return ret;
 			}
 		}
@@ -353,7 +343,6 @@ impl HypervisorEssentials for SvmHypervisor
 			{
 				{
 					print!("{}\n",format_args!($($arg)*));
-					self.cleanup();
 					return NOIR_INSUFFICIENT_RESOURCES;
 				}
 			};

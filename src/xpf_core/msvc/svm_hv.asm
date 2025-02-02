@@ -19,14 +19,6 @@ include noirhv.inc
 
 .code
 
-; A simple implementation for vmmcall instruction.
-noir_svm_vmmcall proc
-
-	vmmcall
-	ret
-
-noir_svm_vmmcall endp
-
 hvtext segment readonly align(4096) read execute nopage
 
 extern nvc_svm_subvert_processor_i:proc
