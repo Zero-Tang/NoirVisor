@@ -36,13 +36,14 @@ ml64 /X /Zi /D"_amd64" /D"_msvc" /D"_efi" /nologo /I"..\src\xpf_core\msvc" /Fo"%
 ml64 /X /Zi /D"_amd64" /D"_msvc" /D"_efi" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\driver\kpcr.obj" /c ..\src\xpf_core\msvc\kpcr.asm
 
 echo Compiling and Extracting Microsoft-Optimized CRT...
-ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\driver\memcpy.obj" /c /nologo "%crtpath%\memcpy.asm"
-ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\driver\memcmp.obj" /c /nologo "%crtpath%\memcmp.asm"
-ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\driver\memset.obj" /c /nologo "%crtpath%\memset.asm"
+rem The source code of Microsoft CRT is read-only, so build them once only.
+if not exist "%objpath%\driver\memcpy.obj" ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\driver\memcpy.obj" /c /nologo "%crtpath%\memcpy.asm"
+if not exist "%objpath%\driver\memcmp.obj" ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\driver\memcmp.obj" /c /nologo "%crtpath%\memcmp.asm"
+if not exist "%objpath%\driver\memset.obj" ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\driver\memset.obj" /c /nologo "%crtpath%\memset.asm"
 
-lib "%wdlpath%\ucrt\x64\libucrt.lib" /EXTRACT:"d:\os\obj\amd64fre\minkernel\crts\ucrt\src\appcrt\dll\mt\..\..\string\mt\objfre\amd64\strlen.obj" /NOLOGO /OUT:"%objpath%\driver\strlen.obj"
-lib "%ddkpath%\lib\x64\libcmt.lib" /EXTRACT:"D:\a\_work\1\s\Intermediate\crt\vcstartup\build\mt\libcmt_kernel32\libcmt_kernel32.nativeproj\objr\amd64\cpu_disp.obj" /NOLOGO /OUT:"%objpath%\driver\cpu_disp.obj"
-copy /Y "%ddkpath%\lib\x64\libcmt.amd64.pdb" "%binpath%\libcmt.amd64.pdb"
+if not exist "%objpath%\driver\strlen.obj" lib "%wdlpath%\ucrt\x64\libucrt.lib" /EXTRACT:"d:\os\obj\amd64fre\minkernel\crts\ucrt\src\appcrt\dll\mt\..\..\string\mt\objfre\amd64\strlen.obj" /NOLOGO /OUT:"%objpath%\driver\strlen.obj"
+if not exist "%objpath%\driver\cpu_disp.obj" lib "%ddkpath%\lib\x64\libcmt.lib" /EXTRACT:"D:\a\_work\1\s\Intermediate\crt\vcstartup\build\mt\libcmt_kernel32\libcmt_kernel32.nativeproj\objr\amd64\cpu_disp.obj" /NOLOGO /OUT:"%objpath%\driver\cpu_disp.obj"
+if not exist "%binpath%\libcmt.amd64.pdb" copy /Y "%ddkpath%\lib\x64\libcmt.amd64.pdb" "%binpath%\libcmt.amd64.pdb"
 
 echo Compiling NoirVisor Core in Rust...
 rem Wrapping lib into ar is required since Cargo cc does not know UEFI uses MSVC!

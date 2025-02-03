@@ -26,6 +26,8 @@ pub mod msr
 
 	pub const MSR_FEATURE_CONTROL:u32=0x3A;
 	pub const MSR_BIOS_UPDATE_TRIGGER:u32=0x79;
+	pub const MSR_SMRR_PHYS_BASE:u32=0x1F2;
+	pub const MSR_SMRR_PHYS_MASK:u32=0x1F3;
 
 	pub const MSR_VMX_BASIC:u32=0x480;
 	pub const MSR_VMX_PIN_BASED_CTLS:u32=0x481;

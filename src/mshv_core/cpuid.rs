@@ -32,7 +32,7 @@ fn nvc_mshv_cpuid_hypervisor_feature_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u
 
 type TlfsCpuidHandler=fn(u32,u32)->(u32,u32,u32,u32);
 
-pub const MSHV_CPUID_HANDLERS_COUNT:usize=2;
+const MSHV_CPUID_HANDLERS_COUNT:usize=2;
 pub const MSHV_CPUID_HANDLERS:[TlfsCpuidHandler;MSHV_CPUID_HANDLERS_COUNT]=
 [
 	nvc_mshv_cpuid_hypervisor_system_id_handler,

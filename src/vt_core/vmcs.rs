@@ -486,3 +486,118 @@ impl VmxIdtVectoringInformation
 	build_bit_mut_method!(error_code_valid,11);
 	build_bit_mut_method!(valid,31);
 }
+
+macro_rules! derive_qualification_reader
+{
+	() =>
+	{
+		#[inline] pub fn read()->Self
+		{
+			unsafe
+			{
+				Self(vmreadptr(VMEXIT_QUALIFICATION).unwrap())
+			}
+		}
+	};
+}
+
+pub struct DebugExceptionQualification(pub usize);
+impl DebugExceptionQualification
+{
+	derive_qualification_reader!();
+	build_bit_mut_method!(b0,0);
+	build_bit_mut_method!(b1,1);
+	build_bit_mut_method!(b2,2);
+	build_bit_mut_method!(b3,3);
+	build_bit_mut_method!(bd,13);
+	build_bit_mut_method!(bs,14);
+	build_bit_mut_method!(rtm,16);
+}
+
+pub struct TaskSwitchQualification(pub usize);
+impl TaskSwitchQualification
+{
+	derive_qualification_reader!();
+	build_int_mut_method!(tss_selector,0,16,usize);
+	build_int_mut_method!(source,30,2,usize);
+
+	pub const CALL_INSTRUCTION:usize=0;
+	pub const IRET_INSTRUCTION:usize=1;
+	pub const JMP_INSTRUCTION:usize=2;
+	pub const TASK_GATE:usize=3;
+}
+
+pub struct ControlRegisterQualification(pub usize);
+impl ControlRegisterQualification
+{
+	derive_qualification_reader!();
+	build_int_mut_method!(cr_index,0,4,usize);
+	build_int_mut_method!(access_type,4,2,usize);
+	build_bit_mut_method!(is_lmsw_memory_op,6);
+	build_int_mut_method!(gpr_index,8,4,usize);
+	build_int_mut_method!(lmsw_data,16,16,usize);
+
+	pub const WRITE_CR:usize=0;
+	pub const READ_CR:usize=1;
+	pub const CLTS_OP:usize=2;
+	pub const LMSW_OP:usize=3;
+}
+
+pub struct DebugRegisterQualification(pub usize);
+impl DebugRegisterQualification
+{
+	derive_qualification_reader!();
+	build_int_mut_method!(dr_index,0,3,usize);
+	build_bit_mut_method!(is_read,4);
+	build_int_mut_method!(gpr_index,8,4,usize);
+}
+
+pub struct IoQualification(pub usize);
+impl IoQualification
+{
+	derive_qualification_reader!();
+	build_int_mut_method!(access_size,0,3,usize);
+	build_bit_mut_method!(is_input,3);
+	build_bit_mut_method!(is_string,4);
+	build_bit_mut_method!(is_repeat,5);
+	build_bit_mut_method!(is_immediate,6);
+	build_int_mut_method!(port_number,16,16,usize);
+}
+
+pub struct ApicAccessQualification(pub usize);
+impl ApicAccessQualification
+{
+	derive_qualification_reader!();
+	build_int_mut_method!(apic_offset,0,12,usize);
+	build_int_mut_method!(access_type,12,4,usize);
+	build_bit_mut_method!(async_op,16);
+
+	pub const LINEAR_READ:usize=0;
+	pub const LINEAR_WRITE:usize=1;
+	pub const LINEAR_EXECUTE:usize=2;
+	pub const LINEAR_ACCESS_DURING_EVENT_DELIVERY:usize=3;
+	pub const LINEAR_ACCESS_FOR_MONITORING:usize=4;
+	pub const GUEST_PHYSICAL_ACCESS_DURING_EVENT_DELIVERY:usize=10;
+	pub const GUEST_PHYSICAL_ACCESS_FOR_MONITORING:usize=11;
+	pub const GUEST_PHYSICAL_EXECUTE:usize=15;
+}
+
+pub struct EptViolationQualification(pub usize);
+impl EptViolationQualification
+{
+	derive_qualification_reader!();
+	build_bit_mut_method!(is_read,0);
+	build_bit_mut_method!(is_write,1);
+	build_bit_mut_method!(is_execute,2);
+	build_bit_mut_method!(is_readable,3);
+	build_bit_mut_method!(is_writable,4);
+	build_bit_mut_method!(is_executable,5);
+	build_bit_mut_method!(is_user_executable,6);
+	build_bit_mut_method!(linear_address_valid,7);
+	build_bit_mut_method!(caused_by_gpa_to_hpa,8);
+	build_bit_mut_method!(linear_address_is_user,9);
+	build_bit_mut_method!(linear_address_is_writable,10);
+	build_bit_mut_method!(linear_address_is_no_execute,11);
+	build_bit_mut_method!(nmi_unblocking_due_to_iret,12);
+	build_bit_mut_method!(is_shadow_stack,13);
+}

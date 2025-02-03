@@ -267,7 +267,14 @@ pub const PAGE_TABLE_ENTRIES32:usize=1024;
 		{
 			#[inline] pub fn [<set_ $name:lower>](&mut self,val:bool)
 			{
-				self.0|=(if val {1} else {0}<<$pos);
+				if val
+				{
+					self.0|=1<<$pos;
+				}
+				else
+				{
+					self.0&=!(1<<$pos);
+				}
 			}
 		}
 	};
@@ -275,7 +282,7 @@ pub const PAGE_TABLE_ENTRIES32:usize=1024;
 
 #[macro_export] macro_rules! build_int_get_method
 {
-	($name:tt,$pos:literal,$len:literal,$type:ty) =>
+	($name:tt,$pos:literal,$len:expr,$type:ty) =>
 	{
 		paste!
 		{
@@ -289,7 +296,7 @@ pub const PAGE_TABLE_ENTRIES32:usize=1024;
 
 #[macro_export] macro_rules! build_int_mut_method
 {
-	($name:tt,$pos:literal,$len:literal,$type:ty) =>
+	($name:tt,$pos:literal,$len:expr,$type:ty) =>
 	{
 		build_int_get_method!($name,$pos,$len,$type);
 		paste!

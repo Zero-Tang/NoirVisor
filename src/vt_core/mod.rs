@@ -11,15 +11,17 @@
  */
 
 use alloc::vec::Vec;
+use ept::VtEptManager;
 use core::{ffi::c_void, ptr::null_mut};
 
 use ia32::{cpuid::CPUID_VMX, msr::*};
 use vmcs::*;
-use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::x86::{HostProcessor, HostSystem}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{crdr::*, descriptors::SELECTOR_RPLTI_MASK}}, HypervisorEssentials, *};
+use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::x86::{HostProcessor, HostSystem}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK}}, HypervisorEssentials, *};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
 #[allow(dead_code)] mod exit;
+#[allow(dead_code)] mod ept;
 
 #[repr(C)] pub struct VtStackTop
 {
@@ -175,7 +177,6 @@ impl VtVcpu
 			};
 			vmwrite32(GUEST_TR_ACCESS_RIGHTS,tr_ar);
 			vmwriteptr(GUEST_TR_BASE,state.tr.base as usize);
-			println!("Guest GDTR State: {:X?}",state.gdtr);
 			// Guest State Area - LDTR Segment
 			vmwrite16(GUEST_LDTR_SELECTOR,state.ldtr.selector);
 			vmwrite32(GUEST_LDTR_LIMIT,state.ldtr.limit);
@@ -237,10 +238,10 @@ impl VtVcpu
 		proc_ctrl.0&=proc_ctrl_msr.get_allowed1().0;
 		// Setup Secondary Processor-Based VM-Execution Controls
 		let mut proc_ctrl2=VmxSecondaryProcessorControls(0);
-		// proc_ctrl2.set_enable_ept(true);
+		proc_ctrl2.set_enable_ept(true);
 		proc_ctrl2.set_enable_rdtscp(true);
-		// proc_ctrl2.set_enable_vpid(true);
-		// proc_ctrl2.set_unrestricted_guest(true);
+		proc_ctrl2.set_enable_vpid(true);
+		proc_ctrl2.set_unrestricted_guest(true);
 		proc_ctrl2.set_enable_invpcid(true);
 		proc_ctrl2.set_enable_xsaves_xrstors(true);
 		proc_ctrl2.set_enable_umwait(true);
@@ -292,6 +293,21 @@ impl VtVcpu
 		}
 	}
 
+	fn setup_memory_virtualization(&self)
+	{
+		let mut eptp=VmxEptPointer(0);
+		eptp.set_page_walk_length(3);
+		eptp.set_ept_memory_type(MEMORY_TYPE_WB as u64);
+		eptp.set_enable_ad_flags(true);
+		unsafe
+		{
+			let hv:*const VtHypervisor=self.hypervisor.cast();
+			eptp.set_eptp_pa((*hv).eptm.pml4e.phys>>PAGE_4KB_SHIFT);
+			vmwrite16(GUEST_VPID,1);
+			vmwrite64(EPT_POINTER,eptp.0);
+		}
+	}
+
 	fn setup_control_area(&self)
 	{
 		let true_msr=VmxBasicMsr::read().get_use_true_msr();
@@ -299,6 +315,7 @@ impl VtVcpu
 		self.setup_procbased_controls(true_msr);
 		self.setup_vmexit_controls(true_msr);
 		self.setup_vmentry_controls(true_msr);
+		self.setup_memory_virtualization();
 		unsafe
 		{
 			let hv:*const VtHypervisor=self.hypervisor.cast();
@@ -381,6 +398,7 @@ impl VtVcpu
 	pub msr_bitmap:MemoryDescriptor,
 	pub io_bitmap_a:MemoryDescriptor,
 	pub io_bitmap_b:MemoryDescriptor,
+	pub eptm:VtEptManager,
 	pub host:HostSystem,
 	pub pio_space:IoAddressSpace<u16>,
 	pub mmio_space:IoAddressSpace<u64>,
@@ -398,6 +416,7 @@ impl Default for VtHypervisor
 			msr_bitmap:MemoryDescriptor::null(),
 			io_bitmap_a:MemoryDescriptor::null(),
 			io_bitmap_b:MemoryDescriptor::null(),
+			eptm:VtEptManager::default(),
 			host:HostSystem::build(),
 			pio_space:IoAddressSpace{regions:Vec::new()},
 			mmio_space:IoAddressSpace{regions:Vec::new()},
@@ -538,6 +557,8 @@ impl HypervisorEssentials for VtHypervisor
 			vcpu.vcpu_id=i;
 			self.vcpus.push(vcpu);
 		}
+		// Initialize EPT.
+		self.eptm.build_identity_map();
 		unsafe
 		{
 			nvc_store_image_info(&raw mut self.image_base,&raw mut self.image_size);

@@ -10,18 +10,14 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use crate::xpf_core::{asm::{vt::*,cpuid::cpuid2}, nvbdk::GprState, x86::{interrupts::InterruptStackFrameWithErrorCode,cpuid::*}};
+use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, vt::*}, nvbdk::GprState, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode}},*};
 use super::{ia32::cpuid::CPUID_VMX, vmcs::*, VtVcpu};
 
 impl VtVcpu
 {
-	fn handle_exception(&mut self,_gpr_state:&mut GprState)
+	fn handle_triple_fault(&mut self,_gpr_state:&mut GprState)
 	{
-		let int_info=VmxExitInterruptionInformation(unsafe{vmread32(VMEXIT_INTERRUPTION_INFORMATION).unwrap()});
-		let err_code=unsafe{vmread32(VMEXIT_INTERRUPTION_ERROR_CODE).unwrap()};
-		let rip=unsafe{vmreadptr(GUEST_RIP).unwrap()};
-		let q=unsafe{vmreadptr(VMEXIT_QUALIFICATION).unwrap()};
-		panic!("Exception is intercepted! Interrupt: 0x{:X}, Error Code: 0x{err_code:X}, rip: 0x{rip:X}, Qualification: 0x{q:X}",int_info.0);
+		panic!("Triple-Fault occured!");
 	}
 
 	fn handle_cpuid(&mut self,gpr_state:&mut GprState)
@@ -31,7 +27,12 @@ impl VtVcpu
 		let (a,b,c,d)=
 		if (ia&0x40000000)==0x40000000
 		{
-			panic!("Microsoft Hypervisor CPUID is not supported yet!");
+			let leaf_func=(ia&0x3FFFFFFF) as usize;
+			match MSHV_CPUID_HANDLERS.get(leaf_func)
+			{
+				Some(f)=>f(ia,ic),
+				None=>(0,0,0,0)
+			}
 		}
 		else
 		{
@@ -45,7 +46,7 @@ impl VtVcpu
 				CPUID_STD_PROCESSOR_FEATURE=>
 				{
 					c|=CPUID_UNDER_HYPERVISOR;
-					c&=CPUID_VMX;
+					c&=!CPUID_VMX;
 				}
 				_=>()
 			};
@@ -63,9 +64,21 @@ impl VtVcpu
 		}
 	}
 
-	fn handle_triple_fault(&mut self,_gpr_state:&mut GprState)
+	fn handle_cr_access(&mut self,gpr_state:&mut GprState)
 	{
-		panic!("Triple-Fault occured!");
+		let q=ControlRegisterQualification::read();
+		println!("CR Index: {}, GPR Index: {}, Access: {}",q.get_cr_index(),q.get_access_type(),q.get_gpr_index());
+		match q.get_access_type()
+		{
+			ControlRegisterQualification::WRITE_CR=>
+			{
+				let gpr_array:*const u64=(gpr_state as *mut GprState).cast();
+				gpr_state.rsp=unsafe{vmread64(GUEST_RSP)}.unwrap();
+				println!("New Value: 0x{:X}",unsafe{gpr_array.add(q.get_gpr_index()).read()});
+			}
+			_=>println!("Unrecognized Access: {}",q.get_access_type())
+		}
+		panic!("CR-Access Exit is not implemented!");
 	}
 
 	fn handle_invalid(&mut self,_gpr_state:&mut GprState)
@@ -91,7 +104,7 @@ impl VtVcpu
 
 #[no_mangle] unsafe extern "C" fn nvc_vt_resume_failure(_gpr_state:*mut GprState,_vcpu:*mut VtVcpu,_vmx_status:u8)
 {
-
+	panic!("VM-Entry failed on resume!");
 }
 
 pub const INTERCEPTED_EXCEPTION_NMI:u32=0;
@@ -179,9 +192,9 @@ type VtExitHandler=fn(&mut VtVcpu,&mut GprState);
 const VT_EXIT_HANDLERS:[VtExitHandler;VT_MAXIMUM_CODE]=
 {
 	let mut array:[VtExitHandler;VT_MAXIMUM_CODE]=[VtVcpu::handle_unknown;VT_MAXIMUM_CODE];
-	array[INTERCEPTED_EXCEPTION_NMI as usize]=VtVcpu::handle_exception;
 	array[INTERCEPTED_TRIPLE_FAULT as usize]=VtVcpu::handle_triple_fault;
 	array[INTERCEPTED_CPUID as usize]=VtVcpu::handle_cpuid;
+	array[INTERCEPTED_CR_ACCESS as usize]=VtVcpu::handle_cr_access;
 	array[INVALID_GUEST_STATE as usize]=VtVcpu::handle_invalid;
 	array
 };

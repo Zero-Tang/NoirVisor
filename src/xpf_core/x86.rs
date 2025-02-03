@@ -10,6 +10,88 @@
  * or fitness for a particular purpose, etc.).
  */
 
+pub mod caching
+{
+    use crate::{xpf_core::{asm::msr::rdmsr, nvbdk::page_4kb_mult}, *};
+    use super::msr::*;
+
+	use paste::paste;
+
+	pub const MEMORY_TYPE_UC:u8=0;
+	pub const MEMORY_TYPE_WC:u8=1;
+	pub const MEMORY_TYPE_WT:u8=4;
+	pub const MEMORY_TYPE_WP:u8=5;
+	pub const MEMORY_TYPE_WB:u8=6;
+
+	pub struct MtrrCapMsr(pub u64);
+	impl MtrrCapMsr
+	{
+		build_int_get_method!(var_mtrr_count,0,8,usize);
+		build_bit_get_method!(support_fixed,8);
+		build_bit_get_method!(support_wc,10);
+		build_bit_get_method!(support_smrr,11);
+
+		#[inline] pub fn read()->Self
+		{
+			Self(rdmsr(MSR_MTRR_CAP))
+		}
+	}
+
+	pub struct MtrrDefTypeMsr(pub u64);
+	impl MtrrDefTypeMsr
+	{
+		build_int_mut_method!(type,0,8,u64);
+		build_bit_mut_method!(fixed_enabled,10);
+		build_bit_mut_method!(enabled,11);
+
+		#[inline] pub fn read()->Self
+		{
+			Self(rdmsr(MSR_MTRR_DEF_TYPE))
+		}
+	}
+
+	#[derive(Clone, Copy)]
+	pub struct MtrrVariableRangeBaseMsr(pub u64);
+	impl MtrrVariableRangeBaseMsr
+	{
+		build_int_mut_method!(type,0,8,u64);
+		build_int_mut_method!(phys_base,12,52,u64);
+
+		#[inline] pub fn read(index:u32)->Self
+		{
+			Self(rdmsr(index))
+		}
+	}
+
+	#[derive(Clone, Copy)]
+	pub struct MtrrVariableRangeMaskMsr(pub u64);
+	impl MtrrVariableRangeMaskMsr
+	{
+		build_bit_mut_method!(valid,11);
+		build_int_mut_method!(phys_mask,12,52,u64);
+
+		#[inline] pub fn read(index:u32)->Self
+		{
+			Self(rdmsr(index))
+		}
+	}
+
+	pub fn calculate_mtrr_range(base:MtrrVariableRangeBaseMsr,mask:MtrrVariableRangeMaskMsr,pa_width:u64)->Option<(u64,u64,u8)>
+	{
+		if mask.get_valid()
+		{
+			let mtrr_base=page_4kb_mult(base.get_phys_base() as usize) as u64;
+			let mtrr_mask=page_4kb_mult(mask.get_phys_mask() as usize) as u64;
+			let mtrr_type=base.get_type() as u8;
+			Some((mtrr_base,(1<<pa_width)-mtrr_mask,mtrr_type))
+		}
+		else
+		{
+			None
+		}
+	}
+}
+
 pub mod paging
 {
 	use core::{ffi::c_void, fmt::{self,Display,Formatter}};	

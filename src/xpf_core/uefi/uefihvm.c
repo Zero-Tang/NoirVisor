@@ -47,9 +47,7 @@ void NoirTestCpuid()
 
 UINT32 NoirBuildHypervisor()
 {
-	DisableInterrupts();
 	UINT32 st=nvc_build_hypervisor();
-	EnableInterrupts();
 	NoirTestCpuid();
 	return st;
 }
