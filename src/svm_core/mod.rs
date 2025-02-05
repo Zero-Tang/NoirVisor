@@ -132,18 +132,22 @@ impl SvmVcpu
 			let mut state=ProcessorState::default();
 			noir_save_processor_state(&raw mut state);
 			// Setup Control Area.
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR1,INTERCEPT_VECTOR1_CPUID);
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR1,INTERCEPT_VECTOR1_INVLPGA);
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR1,INTERCEPT_VECTOR1_IO);
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR1,INTERCEPT_VECTOR1_MSR);
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR1,INTERCEPT_VECTOR1_SHUTDOWN);
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_VMRUN);
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_VMMCALL);
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_VMLOAD);
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_VMSAVE);
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_STGI);
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_CLGI);
-			vmcb_or(self.vmcb.virt,INTERCEPT_VECTOR2,INTERCEPT_VECTOR2_SKINIT);
+			let mut iv1=InterceptVector1(0);
+			iv1.set_cpuid(true);
+			iv1.set_invlpga(true);
+			iv1.set_io(true);
+			iv1.set_msr(true);
+			iv1.set_shutdown(true);
+			iv1.write(self.vmcb.virt);
+			let mut iv2=InterceptVector2(0);
+			iv2.set_vmrun(true);
+			iv2.set_vmmcall(true);
+			iv2.set_vmload(true);
+			iv2.set_vmsave(true);
+			iv2.set_stgi(true);
+			iv2.set_clgi(true);
+			iv2.set_skinit(true);
+			iv2.write(self.vmcb.virt);
 			// Setup Host State.
 			let mut ist:[*mut c_void;8]=self.ist;
 			ist[1]=self.ist[1].byte_add(HYPERVISOR_STACK_SIZE);
@@ -208,7 +212,9 @@ impl SvmVcpu
 			vmwrite(self.vmcb.virt,MSRPM_PHYSICAL_ADDRESS,(*hv).msrpm.phys);
 			// Setup NPT.
 			vmwrite(self.vmcb.virt,NPT_CR3,(*hv).nptm.pml4e.phys);
-			vmwrite(self.vmcb.virt,NPT_CONTROL,NPT_CONTROL_ENABLE);
+			let mut npt_ctrl=NptControl(0);
+			npt_ctrl.set_enable_npt(true);
+			vmwrite(self.vmcb.virt,NPT_CONTROL,npt_ctrl);
 			// ASID is required in AMD-V.
 			vmwrite(self.vmcb.virt,GUEST_ASID,1u32);
 			// Load Guest State.

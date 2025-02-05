@@ -15,132 +15,93 @@ use alloc::vec::Vec;
 
 use paste::paste;
 
-use crate::{print,println,dbg_print,xpf_core::{nvbdk::*,dlalloc::*}};
+use crate::*;
 
-use super::xpf_core::{ci::enum_ci_phys_page, ioflt::IoAddressSpace};
+use xpf_core::{ci::enum_ci_phys_page, ioflt::IoAddressSpace, nvbdk::*,dlalloc::*};
 
-// Use a macro to reduce effort making bit definitions for nested page table entries.
-macro_rules! build_npt_entry_bit_def
-{
-	($name:tt,$pos:literal) =>
-	{
-		paste!
-		{
-			pub const [<NPT_ENTRY_ $name:upper>]:u64=$pos;
-			pub const [<NPT_ENTRY_ $name:upper _BIT>]:u64=1<<$pos;
-		}		
-	};
-}
-
-build_npt_entry_bit_def!(PRESENT,0);
-build_npt_entry_bit_def!(WRITE,1);
-build_npt_entry_bit_def!(USER,2);
-build_npt_entry_bit_def!(PWT,3);
-build_npt_entry_bit_def!(PCD,4);
-build_npt_entry_bit_def!(ACCESSED,5);
-build_npt_entry_bit_def!(DIRTY,6);
-build_npt_entry_bit_def!(PAGE_SIZE,7);
-build_npt_entry_bit_def!(PAT,7);
-build_npt_entry_bit_def!(GLOBAL,8);
-build_npt_entry_bit_def!(PAT_HI,12);
-build_npt_entry_bit_def!(NO_EXECUTE,63);
-
-macro_rules! build_npt_entry_get_set_bit
-{
-	($field:tt) =>
-	{
-		paste!
-		{
-			#[inline] fn [<get_ $field:lower>](&self)->bool
-			{
-				(self.get_raw()&[<NPT_ENTRY_ $field:upper _BIT>])!=0
-			}
-
-			#[inline] fn [<set_ $field:lower>](&mut self,val:bool)
-			{
-				let old=self.get_raw();
-				self.set_raw(if val {old|[<NPT_ENTRY_ $field:upper _BIT>]} else {old&![<NPT_ENTRY_ $field:upper _BIT>]});
-			}
-		}
-	};
-}
-
-/// # Trait `NptField`
-/// This trait defines methods for fields on NPT entries. \
-/// Do not implement the optional trait methods!
-trait NptField
-{
-	/// # `get_raw` trait method
-	/// Use this method only when you are modifying page table entry.
-	fn get_raw(&self)->u64;
-
-	/// # `set_raw` trait method
-	/// Use this method only when you are modifying page table entry.
-	fn set_raw(&mut self,val:u64);
-
-	/// # `get_next_level_base` trait method
-	/// This method can act in ambiguous way:
-	/// - If this entry is PTE, large PDE or huge PDPTE, this method returns the page base.
-	/// - Otherwise, this method returns the base of next level.
-	fn get_next_level_base(&self)->u64;
-
-	/// # `set_next_level_base` trait method
-	/// This method can act in ambiguous way:
-	/// - If this entry is PTE, large PDE or huge PDPTE, this method sets the page base.
-	/// - Otherwise, this method sets the base of next level.
-	fn set_next_level_base(&mut self,val:u64);
-
-	/// # `get_pat` trait method
-	/// This method gets the `pat` bit. Implement this trait only if this entry defines `pat` (e.g.: PTE).
-	/// - If this entry does not define `pat` (e.g.: PML4E), return None.
-	/// - Otherwise, return Some<bool>.
-	fn get_pat(&self)->Option<bool>
-	{
-		None
-	}
-
-	/// # `set_pat` trait method
-	/// This method sets the `pat` bit. Implement this trait only if this entry defines `pat` (e.g.: PTE).
-	/// - If this entry does not define `pat` (e.g.: PML4E), return None.
-	/// - Otherwise, return Some<bool>.
-	fn set_pat(&self,_val:bool) {}
-
-	build_npt_entry_get_set_bit!(present);
-	build_npt_entry_get_set_bit!(write);
-	build_npt_entry_get_set_bit!(user);
-	build_npt_entry_get_set_bit!(pwt);
-	build_npt_entry_get_set_bit!(pcd);
-	build_npt_entry_get_set_bit!(accessed);
-
-	/// # `is_dirty` trait method
-	/// This method checks if this entry is dirty. Implement this trait only if this entry defines dirty bit (e.g.: PTE).
-	/// - If this entry does not define dirty bit (e.g.: PML4E), return None.
-	/// - Otherwise, return Some<bool>.
-	#[inline] fn is_dirty(&self)->Option<bool>
-	{
-		None
-	}
-
-	build_npt_entry_get_set_bit!(no_execute);
-}
-
-trait NptSizeField:NptField
-{
-	build_npt_entry_get_set_bit!(page_size);
-}
-
-macro_rules! derive_npt_field
+macro_rules! derive_npt_common_fields
 {
 	() =>
 	{
-		#[inline] fn get_raw(&self)->u64
-		{
-			self.0
-		}
+		build_bit_mut_method!(present,0);
+		build_bit_mut_method!(write,1);
+		build_bit_mut_method!(user,2);
+		build_bit_mut_method!(pwt,3);
+		build_bit_mut_method!(pcd,4);
+		build_bit_mut_method!(acceseed,5);
+		build_int_mut_method!(avl,9,3,u64);
+		build_bit_mut_method!(nx,63);
+	};
+}
 
-		#[inline] fn set_raw(&mut self,val:u64)
+macro_rules! derive_intermediate_new_method
+{
+	($field_name:tt) =>
+	{
+		paste!
 		{
-			self.0=val;
+			build_int_mut_method!($field_name,12,40,u64);
+			#[inline] pub fn new(present:bool,write:bool,user:bool,$field_name:u64,nx:bool)->Self
+			{
+				let mut s=Self(0);
+				s.set_present(present);
+				s.set_write(write);
+				s.set_user(user);
+				s.[<set_ $field_name>](page_4kb_count($field_name as usize) as u64);
+				s.set_nx(nx);
+				s
+			}
+		}
+	};
+}
+
+macro_rules! derive_last_entry_fields
+{
+	($pat_bit:literal) =>
+	{
+		build_bit_mut_method!(pat,$pat_bit);
+	};
+	($pat_bit:literal,$ps_bit:literal) =>
+	{
+		derive_last_entry_fields!($pat_bit);
+		build_bit_mut_method!(page_size,7);
+		build_int_mut_method!(page_base,$ps_bit,(52-$ps_bit),u64);
+	};
+}
+
+macro_rules! derive_last_new_method
+{
+	() =>
+	{
+		paste!
+		{
+			build_int_mut_method!(page_base,12,40,u64);
+			#[inline] pub fn new(present:bool,write:bool,user:bool,page_base:u64,nx:bool)->Self
+			{
+				let mut s=Self(1<<7);
+				s.set_present(present);
+				s.set_write(write);
+				s.set_user(user);
+				s.set_page_base(page_4kb_count(page_base as usize) as u64);
+				s.set_nx(nx);
+				s
+			}
+		}
+	};
+	($page_size:tt,$adj:tt) =>
+	{
+		paste!
+		{
+			#[inline] pub fn [<new_ $adj>](present:bool,write:bool,user:bool,page_base:u64,nx:bool)->Self
+			{
+				let mut s=Self(1<<7);
+				s.set_present(present);
+				s.set_write(write);
+				s.set_user(user);
+				s.set_page_base([<page_ $page_size _count>](page_base as usize) as u64);
+				s.set_nx(nx);
+				s
+			}
 		}
 	};
 }
@@ -148,185 +109,42 @@ macro_rules! derive_npt_field
 // Page-Map-Level-4 Entry (Bits 39-47)
 #[repr(C)] pub struct NptPml4e(pub u64);
 
-impl NptField for NptPml4e
-{
-	derive_npt_field!();
-	
-	fn get_next_level_base(&self)->u64
-	{
-		phys_page_4kb_base(self.0 as usize) as u64
-	}
-	
-	fn set_next_level_base(&mut self,val:u64) 
-	{
-		self.0&=0xFFF0000000000FFF;
-		self.0|=page_4kb_base(val as usize) as u64;
-	}
-}
-
 impl NptPml4e
 {
-	pub fn new(present:bool,write:bool,user:bool,pdpte:u64,nx:bool)->Self
-	{
-		let val:u64=(present as u64)<<NPT_ENTRY_PRESENT |
-					(write as u64)<<NPT_ENTRY_WRITE |
-					(user as u64)<<NPT_ENTRY_USER |
-					page_4kb_base(pdpte as usize) as u64 |
-					(nx as u64)<<NPT_ENTRY_NO_EXECUTE;
-		Self(val)
-	}
+	derive_npt_common_fields!();
+	derive_intermediate_new_method!(pdpte);
 }
 
 // Page-Directory-Pointer-Table Entry (Bits 30-38)
 #[repr(C)] pub struct NptPdpte(pub u64);
 
-impl NptSizeField for NptPdpte {}
-
-impl NptField for NptPdpte
-{
-	derive_npt_field!();
-	
-	fn get_next_level_base(&self)->u64
-	{
-		if self.get_page_size()
-		{
-			phys_page_1gb_base(self.0 as usize) as u64
-		}
-		else
-		{
-			phys_page_4kb_base(self.0 as usize) as u64
-		}
-	}
-	
-	fn set_next_level_base(&mut self,val:u64)
-	{
-		if self.get_page_size()
-		{
-			self.0&=PHYS_PAGE_1GB_MASK;
-			self.0|=phys_page_1gb_base(val as usize) as u64;
-		}
-		else
-		{
-			self.0&=PHYS_PAGE_4KB_MASK;
-			self.0|=phys_page_4kb_base(val as usize) as u64;
-		}
-	}
-}
-
 impl NptPdpte
 {
-	pub fn new(present:bool,write:bool,user:bool,pde:u64,nx:bool)->Self
-	{
-		let val:u64=(present as u64)<<NPT_ENTRY_PRESENT |
-					(write as u64)<<NPT_ENTRY_WRITE |
-					(user as u64)<<NPT_ENTRY_USER |
-					page_4kb_base(pde as usize) as u64 |
-					(nx as u64)<<NPT_ENTRY_NO_EXECUTE;
-		Self(val)
-	}
-
-	pub fn new_huge(present:bool,write:bool,user:bool,page_base:u64,nx:bool)->Self
-	{
-		let val:u64=(present as u64)<<NPT_ENTRY_PRESENT |
-					(write as u64)<<NPT_ENTRY_WRITE |
-					(user as u64)<<NPT_ENTRY_USER |
-					NPT_ENTRY_PAGE_SIZE_BIT |
-					page_1gb_base(page_base as usize) as u64 |
-					(nx as u64)<<NPT_ENTRY_NO_EXECUTE;
-		Self(val)
-	}
+	derive_npt_common_fields!();
+	derive_last_entry_fields!(12,30);
+	derive_intermediate_new_method!(pde);
+	derive_last_new_method!(1gb,huge);
 }
 
 // Page-Directory Entry (Bits 21-29)
 #[repr(C)] pub struct NptPde(pub u64);
 
-impl NptSizeField for NptPde {}
-
-impl NptField for NptPde
-{
-	derive_npt_field!();
-	
-	fn get_next_level_base(&self)->u64
-	{
-		if self.get_page_size()
-		{
-			phys_page_2mb_base(self.0 as usize) as u64
-		}
-		else
-		{
-			phys_page_4kb_base(self.0 as usize) as u64
-		}
-	}
-	
-	fn set_next_level_base(&mut self,val:u64)
-	{
-		if self.get_page_size()
-		{
-			self.0&=PHYS_PAGE_2MB_MASK;
-			self.0|=phys_page_2mb_base(val as usize) as u64;
-		}
-		else
-		{
-			self.0&=PHYS_PAGE_4KB_MASK;
-			self.0|=phys_page_4kb_base(val as usize) as u64;
-		}
-	}
-}
-
 impl NptPde
 {
-	pub fn new(present:bool,write:bool,user:bool,pte:u64,nx:bool)->Self
-	{
-		let val:u64=(present as u64)<<NPT_ENTRY_PRESENT |
-					(write as u64)<<NPT_ENTRY_WRITE |
-					(user as u64)<<NPT_ENTRY_USER |
-					page_4kb_base(pte as usize) as u64 |
-					(nx as u64)<<NPT_ENTRY_NO_EXECUTE;
-		Self(val)
-	}
-
-	pub fn new_large(present:bool,write:bool,user:bool,page_base:u64,nx:bool)->Self
-	{
-		let val:u64=(present as u64)<<NPT_ENTRY_PRESENT |
-					(write as u64)<<NPT_ENTRY_WRITE |
-					(user as u64)<<NPT_ENTRY_USER |
-					NPT_ENTRY_PAGE_SIZE_BIT |
-					page_2mb_base(page_base as usize) as u64 |
-					(nx as u64)<<NPT_ENTRY_NO_EXECUTE;
-		Self(val)
-	}
+	derive_npt_common_fields!();
+	derive_last_entry_fields!(12,21);
+	derive_intermediate_new_method!(pte);
+	derive_last_new_method!(2mb,large);
 }
 
 // Page-Table Entry (Bits 12-20)
 #[repr(C)] pub struct NptPte(pub u64);
 
-impl NptField for NptPte
-{
-	derive_npt_field!();
-	
-	fn get_next_level_base(&self)->u64
-	{
-		phys_page_4kb_base(self.0 as usize) as u64
-	}
-	
-	fn set_next_level_base(&mut self,val:u64)
-	{
-		self.0&=PHYS_PAGE_4KB_MASK;
-		self.0|=phys_page_4kb_base(val as usize) as u64;
-	}
-}
-
 impl NptPte
 {
-	pub fn new(present:bool,write:bool,user:bool,page_base:u64,nx:bool)->Self
-	{
-		let val:u64=(present as u64)<<NPT_ENTRY_PRESENT |
-					(write as u64)<<NPT_ENTRY_WRITE |
-					(user as u64)<<NPT_ENTRY_USER |
-					page_4kb_base(page_base as usize) as u64 |
-					(nx as u64)<<NPT_ENTRY_NO_EXECUTE;
-		Self(val)
-	}
+	derive_npt_common_fields!();
+	derive_last_entry_fields!(7);
+	derive_last_new_method!();
 }
 
 pub struct SvmNptPageTableDescriptor
@@ -412,7 +230,7 @@ impl SvmNptManager
 	pub fn update_pdpte(&mut self,gpa:u64,hpa:u64,r:bool,w:bool,x:bool,h:bool)
 	{
 		let pdpte_p=self.locate_pdpte_mut(gpa);
-		*pdpte_p=if h {NptPdpte::new_huge(r,w,true,hpa,!x)} else {NptPdpte::new(r,w,true,pdpte_p.get_next_level_base(),!x)};
+		*pdpte_p=if h {NptPdpte::new_huge(r,w,true,hpa,!x)} else {NptPdpte::new(r,w,true,page_mult(pdpte_p.get_pde() as usize) as u64,!x)};
 	}
 
 	fn locate_pdpte_mut(&mut self,gpa:u64)->&mut NptPdpte
@@ -448,13 +266,13 @@ impl SvmNptManager
 					{
 						unsafe 
 						{
-							let new_pde=NptPde::new_large(pdpte_p.get_present(),pdpte_p.get_write(),pdpte_p.get_user(),gpa_start+page_2mb_mult(i) as u64,pdpte_p.get_no_execute());
+							let new_pde=NptPde::new_large(pdpte_p.get_present(),pdpte_p.get_write(),pdpte_p.get_user(),gpa_start+page_2mb_mult(i) as u64,pdpte_p.get_nx());
 							pde_array.add(i).write(new_pde);
 						}
 					}
 					println!("Splitted PDPTE Entry: {:p} for GPA 0x{:016X}",pdpte_p,gpa);
 					pdpte_p.set_page_size(false);
-					pdpte_p.set_next_level_base(md.phys);
+					pdpte_p.set_pde(page_count(md.phys as usize) as u64);
 					self.pde.push(pde_d);
 				}
 				None=>panic!("Failed to split PDPTE while allocating PDE!")
@@ -485,7 +303,7 @@ impl SvmNptManager
 				unsafe 
 				{
 					let pde_p=&mut *pde_array.add(index);
-					let pde_v=if l {NptPde::new_large(r,w,true,hpa,!x)} else {NptPde::new(r,w,true,pde_p.get_next_level_base(),!x)};
+					let pde_v=if l {NptPde::new_large(r,w,true,hpa,!x)} else {NptPde::new(r,w,true,page_mult(pde_p.get_pte() as usize) as u64,!x)};
 					*pde_p=pde_v;
 				}
 			}
@@ -523,7 +341,7 @@ impl SvmNptManager
 						{
 							unsafe
 							{
-								let new_pte=NptPte::new((*pde_p).get_present(),(*pde_p).get_write(),(*pde_p).get_user(),pte_d.gpa_start+page_4kb_mult(i) as u64,(*pde_p).get_no_execute());
+								let new_pte=NptPte::new((*pde_p).get_present(),(*pde_p).get_write(),(*pde_p).get_user(),pte_d.gpa_start+page_4kb_mult(i) as u64,(*pde_p).get_nx());
 								pte_array.add(i).write(new_pte);
 							}
 						}
@@ -531,7 +349,7 @@ impl SvmNptManager
 						unsafe
 						{
 							(*pde_p).set_page_size(false);
-							(*pde_p).set_next_level_base(md.phys);
+							(*pde_p).set_pte(page_count(md.phys as usize) as u64);
 						}
 						self.pte.push(pte_d);
 					}
@@ -638,46 +456,7 @@ impl SvmNptManager
 	}
 }
 
-// Page Fault Code
-// Use a macro to reduce effort in defining fault codes.
-macro_rules! build_fault_code_bit_def
-{
-	($field:tt,$pos:literal) =>
-	{
-		paste!
-		{
-			const [<NPT_FAULT_IS_ $field:upper>]:u64=$pos;
-			const [<NPT_FAULT_IS_ $field:upper _BIT>]:u64=1<<$pos;
-		}
-	};
-}
-
-build_fault_code_bit_def!(PRESENT,0);
-build_fault_code_bit_def!(WRITE,1);
-build_fault_code_bit_def!(USER,2);
-build_fault_code_bit_def!(RESERVED,3);
-build_fault_code_bit_def!(CODE_READ,4);
-build_fault_code_bit_def!(SHADOW_STACK,6);
-build_fault_code_bit_def!(TRANSLATE_FINAL_HPA,32);
-build_fault_code_bit_def!(TRANSLATE_PAGE_TABLE,33);
-build_fault_code_bit_def!(SUPERVISOR_SHADOW_STACK,37);
-
 pub struct NptFaultCode(pub u64);
-
-// Use macro to reduce effort in making fault checker.
-macro_rules! build_fault_code_checker
-{
-	($field:tt) =>
-	{
-		paste!
-		{
-			#[inline] pub fn [<is_ $field:lower>](&self)->bool
-			{
-				(self.0 & [<NPT_FAULT_IS_ $field:upper _BIT>])==[<NPT_FAULT_IS_ $field:upper _BIT>]
-			}
-		}
-	};
-}
 
 impl NptFaultCode
 {
@@ -686,15 +465,15 @@ impl NptFaultCode
 		Self(v)
 	}
 
-	build_fault_code_checker!(present);
-	build_fault_code_checker!(write);
-	build_fault_code_checker!(user);
-	build_fault_code_checker!(reserved);
-	build_fault_code_checker!(code_read);
-	build_fault_code_checker!(shadow_stack);
-	build_fault_code_checker!(translate_final_hpa);
-	build_fault_code_checker!(translate_page_table);
-	build_fault_code_checker!(supervisor_shadow_stack);
+	build_bit_mut_method!(present,0);
+	build_bit_mut_method!(write,1);
+	build_bit_mut_method!(user,2);
+	build_bit_mut_method!(reserved,3);
+	build_bit_mut_method!(code_read,4);
+	build_bit_mut_method!(shadow_stack,6);
+	build_bit_mut_method!(translate_final_hpa,32);
+	build_bit_mut_method!(translate_page_table,33);
+	build_bit_mut_method!(supervisor_shadow_stack,37);
 }
 
 impl Display for NptFaultCode
@@ -703,14 +482,14 @@ impl Display for NptFaultCode
 	{
 		write!(f,"Code={:X}. ",self.0)?;
 		// Exhaust all bit definitions.
-		write!(f,"Page is {}",if self.is_present() {"present"} else {"absent"})?;
-		write!(f,", access is {}",if self.is_write() {"write"} else {"not write"})?;
-		write!(f,", {}",if self.is_user() {"user"} else {"supervisor"})?;
-		write!(f,", {} instruction fetch",if self.is_code_read() {"is"} else {"is not"})?;
-		write!(f,", {} shadow stack",if self.is_shadow_stack() {"is"} else {"is not"})?;
-		write!(f,", reserved bits {} set",if self.is_reserved() {"are"} else {"are not"})?;
-		write!(f,", translating Final HPA {}",if self.is_translate_final_hpa() {"failed"} else {"succeeded"})?;
-		write!(f,", translating page table {}",if self.is_translate_page_table() {"failed"} else {"succeeded"})?;
-		write!(f,", page {} supervisor shadow stack.",if self.is_supervisor_shadow_stack() {"is"} else {"is not"})
+		write!(f,"Page is {}",if self.get_present() {"present"} else {"absent"})?;
+		write!(f,", access is {}",if self.get_write() {"write"} else {"not write"})?;
+		write!(f,", {}",if self.get_user() {"user"} else {"supervisor"})?;
+		write!(f,", {} instruction fetch",if self.get_code_read() {"is"} else {"is not"})?;
+		write!(f,", {} shadow stack",if self.get_shadow_stack() {"is"} else {"is not"})?;
+		write!(f,", reserved bits {} set",if self.get_reserved() {"are"} else {"are not"})?;
+		write!(f,", translating Final HPA {}",if self.get_translate_final_hpa() {"failed"} else {"succeeded"})?;
+		write!(f,", translating page table {}",if self.get_translate_page_table() {"failed"} else {"succeeded"})?;
+		write!(f,", page {} supervisor shadow stack.",if self.get_supervisor_shadow_stack() {"is"} else {"is not"})
 	}
 }

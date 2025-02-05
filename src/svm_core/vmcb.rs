@@ -13,7 +13,8 @@
 use core::{arch::asm, ffi::c_void, ops::{BitAndAssign, BitOrAssign, BitXorAssign}};
 use paste::paste;
 
-use super::{xpf_core::x86::{interrupts::*, rflags::*}, SegmentRegister};
+use crate::*;
+use xpf_core::{x86::{interrupts::*, rflags::*}, nvbdk::SegmentRegister};
 
 #[inline] pub fn svm_attrib(attrib:u16)->u16
 {
@@ -231,6 +232,11 @@ pub const AVIC_PHYSICAL_TABLE_POINTER:usize=0xF8;
 pub const VMSA_POINTER:usize=0x108;
 pub const VMGEXIT_RAX:usize=0x110;
 pub const VMGEXIT_CPL:usize=0x118;
+pub const BUSLOCK_THRESHOLD_COUNTER:usize=0x120;
+pub const UPDATE_IRR:usize=0x134;
+pub const ALLOWED_SEV_FEATURES:usize=0x138;
+pub const GUEST_SEV_FEATURES:usize=0x140;
+pub const REQUESTED_IRR:usize=0x150;
 // Following offset definitions would be available only if Microsoft Enlightenments are enabled.
 pub const ENLIGHTENMENTS_CONTROL:usize=0x3E0;
 pub const VP_ID:usize=0x3E4;
@@ -279,6 +285,18 @@ pub const GUEST_TR_LIMIT:usize=0x494;
 pub const GUEST_TR_BASE:usize=0x498;
 pub const GUEST_CPL:usize=0x4CB;
 pub const GUEST_EFER:usize=0x4D0;
+pub const GUEST_PERF_CTL0:usize=0x4E0;
+pub const GUEST_PERF_CTR0:usize=0x4E8;
+pub const GUEST_PERF_CTL1:usize=0x4F0;
+pub const GUEST_PERF_CTR1:usize=0x4F8;
+pub const GUEST_PERF_CTL2:usize=0x500;
+pub const GUEST_PERF_CTR2:usize=0x508;
+pub const GUEST_PERF_CTL3:usize=0x510;
+pub const GUEST_PERF_CTR3:usize=0x518;
+pub const GUEST_PERF_CTL4:usize=0x520;
+pub const GUEST_PERF_CTR4:usize=0x528;
+pub const GUEST_PERF_CTL5:usize=0x530;
+pub const GUEST_PERF_CTR5:usize=0x538;
 pub const GUEST_CR4:usize=0x548;
 pub const GUEST_CR3:usize=0x550;
 pub const GUEST_CR0:usize=0x558;
@@ -286,6 +304,9 @@ pub const GUEST_DR7:usize=0x560;
 pub const GUEST_DR6:usize=0x568;
 pub const GUEST_RFLAGS:usize=0x570;
 pub const GUEST_RIP:usize=0x578;
+pub const INSTRUCTION_RETIRED_COUNTER:usize=0x5C0;
+pub const PERF_CTR_GLOBAL_STS:usize=0x5C8;
+pub const PERF_CTR_GLOBAL_CTR:usize=0x5D0;
 pub const GUEST_RSP:usize=0x5D8;
 pub const GUEST_S_CET:usize=0x5E0;
 pub const GUEST_SSP:usize=0x5E8;
@@ -306,7 +327,7 @@ pub const GUEST_LAST_BRANCH_FROM:usize=0x678;
 pub const GUEST_LAST_BRANCH_TO:usize=0x680;
 pub const GUEST_LAST_EXCEPTION_FROM:usize=0x688;
 pub const GUEST_LAST_EXCEPTION_TO:usize=0x690;
-pub const GUEST_DEBUG_EXTENED_CONFIG:usize=0x698;
+pub const GUEST_DEBUG_EXTENED_CONTROL:usize=0x698;
 pub const GUEST_SPEC_CTRL:usize=0x6E0;
 pub const GUEST_LBR_STACK_FROM:usize=0xA70;
 pub const GUEST_LBR_STACK_TO:usize=0xAF0;
@@ -322,64 +343,97 @@ pub const GUEST_IBS_DC_LINEAR_ADDRESS:usize=0xBB0;
 pub const GUEST_BP_IBSTGT_RIP:usize=0xBB8;
 pub const GUEST_IC_IBS_EXTD_CTRL:usize=0xBC0;
 
+macro_rules! derive_rw_method
+{
+	($offset:expr) =>
+	{
+		#[inline] pub unsafe fn read(vmcb:*mut c_void)->Self
+		{
+			Self(vmread(vmcb,$offset))
+		}
+
+		#[inline] pub unsafe fn write(&self,vmcb:*mut c_void)
+		{
+			vmwrite(vmcb,$offset,self.0);
+		}
+	};
+}
+
 // Vector 1 of Control Area
-pub const INTERCEPT_VECTOR1_INTR:u32=0x00000001;
-pub const INTERCEPT_VECTOR1_NMI:u32=0x00000002;
-pub const INTERCEPT_VECTOR1_SMI:u32=0x00000004;
-pub const INTERCEPT_VECTOR1_INIT:u32=0x00000008;
-pub const INTERCEPT_VECTOR1_VINT:u32=0x00000010;
-pub const INTERCEPT_VECTOR1_CR0_TSMP:u32=0x00000020;
-pub const INTERCEPT_VECTOR1_SIDT:u32=0x00000040;
-pub const INTERCEPT_VECTOR1_SGDT:u32=0x00000080;
-pub const INTERCEPT_VECTOR1_SLDT:u32=0x00000100;
-pub const INTERCEPT_VECTOR1_STR:u32=0x00000200;
-pub const INTERCEPT_VECTOR1_LIDT:u32=0x00000400;
-pub const INTERCEPT_VECTOR1_LGDT:u32=0x00000800;
-pub const INTERCEPT_VECTOR1_LLDT:u32=0x00001000;
-pub const INTERCEPT_VECTOR1_LTR:u32=0x00002000;
-pub const INTERCEPT_VECTOR1_RDTSC:u32=0x00004000;
-pub const INTERCEPT_VECTOR1_RDPMC:u32=0x00008000;
-pub const INTERCEPT_VECTOR1_PUSHF:u32=0x00010000;
-pub const INTERCEPT_VECTOR1_POPF:u32=0x00020000;
-pub const INTERCEPT_VECTOR1_CPUID:u32=0x00040000;
-pub const INTERCEPT_VECTOR1_RSM:u32=0x00080000;
-pub const INTERCEPT_VECTOR1_IRET:u32=0x00100000;
-pub const INTERCEPT_VECTOR1_INT:u32=0x00200000;
-pub const INTERCEPT_VECTOR1_INVD:u32=0x00400000;
-pub const INTERCEPT_VECTOR1_PAUSE:u32=0x00800000;
-pub const INTERCEPT_VECTOR1_HLT:u32=0x01000000;
-pub const INTERCEPT_VECTOR1_INVLPG:u32=0x02000000;
-pub const INTERCEPT_VECTOR1_INVLPGA:u32=0x04000000;
-pub const INTERCEPT_VECTOR1_IO:u32=0x08000000;
-pub const INTERCEPT_VECTOR1_MSR:u32=0x10000000;
-pub const INTERCEPT_VECTOR1_TS:u32=0x20000000;
-pub const INTERCEPT_VECTOR1_FF:u32=0x40000000;
-pub const INTERCEPT_VECTOR1_SHUTDOWN:u32=0x80000000;
+pub struct InterceptVector1(pub u32);
+impl InterceptVector1
+{
+	derive_rw_method!(INTERCEPT_VECTOR1);
+	build_bit_mut_method!(intr,0);
+	build_bit_mut_method!(nmi,1);
+	build_bit_mut_method!(smi,2);
+	build_bit_mut_method!(init,3);
+	build_bit_mut_method!(vintr,4);
+	build_bit_mut_method!(cr0_non_ts_mp,5);
+	build_bit_mut_method!(sidt,6);
+	build_bit_mut_method!(sgdt,7);
+	build_bit_mut_method!(sldt,8);
+	build_bit_mut_method!(str,9);
+	build_bit_mut_method!(lidt,10);
+	build_bit_mut_method!(lgdt,11);
+	build_bit_mut_method!(lldt,12);
+	build_bit_mut_method!(ltr,13);
+	build_bit_mut_method!(rdtsc,14);
+	build_bit_mut_method!(rdpmc,15);
+	build_bit_mut_method!(pushf,16);
+	build_bit_mut_method!(popf,17);
+	build_bit_mut_method!(cpuid,18);
+	build_bit_mut_method!(rsm,19);
+	build_bit_mut_method!(iret,20);
+	build_bit_mut_method!(int,21);
+	build_bit_mut_method!(invd,22);
+	build_bit_mut_method!(pause,23);
+	build_bit_mut_method!(hlt,24);
+	build_bit_mut_method!(invlpg,25);
+	build_bit_mut_method!(invlpga,26);
+	build_bit_mut_method!(io,27);
+	build_bit_mut_method!(msr,28);
+	build_bit_mut_method!(task_switch,29);
+	build_bit_mut_method!(ferr_freeze,30);
+	build_bit_mut_method!(shutdown,31);
+}
 
 // Vector 2 of Control Area
-pub const INTERCEPT_VECTOR2_VMRUN:u32=0x00000001;
-pub const INTERCEPT_VECTOR2_VMMCALL:u32=0x00000002;
-pub const INTERCEPT_VECTOR2_VMLOAD:u32=0x00000004;
-pub const INTERCEPT_VECTOR2_VMSAVE:u32=0x00000008;
-pub const INTERCEPT_VECTOR2_STGI:u32=0x00000010;
-pub const INTERCEPT_VECTOR2_CLGI:u32=0x00000020;
-pub const INTERCEPT_VECTOR2_SKINIT:u32=0x00000040;
-pub const INTERCEPT_VECTOR2_RDTSCP:u32=0x00000080;
-pub const INTERCEPT_VECTOR2_ICEBP:u32=0x00000100;
-pub const INTERCEPT_VECTOR2_WBINVD:u32=0x00000200;
-pub const INTERCEPT_VECTOR2_MONITOR:u32=0x00000400;
-pub const INTERCEPT_VECTOR2_MWAIT:u32=0x00000800;
-pub const INTERCEPT_VECTOR2_MWAIT_C:u32=0x00001000;
-pub const INTERCEPT_VECTOR2_XSETBV:u32=0x00002000;
-pub const INTERCEPT_VECTOR2_RDPRU:u32=0x00004000;
-pub const INTERCEPT_VECTOR2_EFER_PW:u32=0x00008000;
+pub struct InterceptVector2(pub u32);
+impl InterceptVector2
+{
+	derive_rw_method!(INTERCEPT_VECTOR2);
+	build_bit_mut_method!(vmrun,0);
+	build_bit_mut_method!(vmmcall,1);
+	build_bit_mut_method!(vmload,2);
+	build_bit_mut_method!(vmsave,3);
+	build_bit_mut_method!(stgi,4);
+	build_bit_mut_method!(clgi,5);
+	build_bit_mut_method!(skinit,6);
+	build_bit_mut_method!(rdtscp,7);
+	build_bit_mut_method!(icebp,8);
+	build_bit_mut_method!(wbinvd,9);
+	build_bit_mut_method!(monitor,10);
+	build_bit_mut_method!(mwait,11);
+	build_bit_mut_method!(mwait_armed,12);
+	build_bit_mut_method!(xsetbv,13);
+	build_bit_mut_method!(rdpru,14);
+	build_bit_mut_method!(post_efer_write,15);
+}
 
 // Vector 3 of Control Area
-pub const INTERCEPT_VECTOR3_INVLPGB:u32=0x00000001;
-pub const INTERCEPT_VECTOR3_ILLEGAL_INVLPGB:u32=0x00000002;
-pub const INTERCEPT_VECTOR3_INVPCID:u32=0x00000004;
-pub const INTERCEPT_VECTOR3_MCOMMIT:u32=0x00000008;
-pub const INTERCEPT_VECTOR3_TLBSYNC:u32=0x00000010;
+pub struct InterceptVector3(pub u32);
+impl InterceptVector3
+{
+	derive_rw_method!(INTERCEPT_VECTOR3);
+	build_bit_mut_method!(invlpgb,0);
+	build_bit_mut_method!(illegal_invlpgb,1);
+	build_bit_mut_method!(invpcid,2);
+	build_bit_mut_method!(mcommit,3);
+	build_bit_mut_method!(tlbsync,4);
+	build_bit_mut_method!(buslock,5);
+	build_bit_mut_method!(hlt_not_pending_vintr,6);
+}
 
 // TLB Control
 pub const TLB_CONTROL_DO_NOTHING:u8=0;
@@ -387,184 +441,80 @@ pub const TLB_CONTROL_FLUSH_ENTIRE_TLB:u8=1;
 pub const TLB_CONTROL_FLUSH_GUEST_TLB:u8=3;
 pub const TLB_CONTROL_FLUSH_GUEST_NON_GLOBAL_TLB:u8=7;
 
-// Use a macro to save bit operation effort.
-macro_rules! build_bit_get_set
-{
-	($pfield:tt,$field:tt) =>
-	{
-		paste!
-		{
-			#[inline] pub fn [<get_ $field:lower>](&self)->bool
-			{
-				(self.0&[<$pfield:upper _ $field:upper>])==[<$pfield:upper _ $field:upper>]
-			}
-
-			#[inline] pub fn [<set_ $field:lower>](&mut self,val:bool)
-			{
-				if val
-				{
-					self.0|=[<$pfield:upper _ $field:upper>];
-				}
-				else
-				{
-					self.0&=![<$pfield:upper _ $field:upper>];
-				}
-			}
-		}
-	};
-}
-
-macro_rules! build_int_get_set
-{
-	($pfield:tt,$field:tt,$type:ty,$ptype:ty) =>
-	{
-		paste!
-		{
-			#[inline] pub fn [<get_ $field:lower>](&self)->$type
-			{
-				((self.0&[<$pfield:upper _ $field:upper _MASK>])>>[<$pfield:upper _ $field:upper _BIT_START>]) as $type
-			}
-	
-			#[allow(arithmetic_overflow)]
-			#[inline] pub fn[<set_ $field:lower>](&mut self,val:$type)
-			{
-				// Clear via logical and.
-				self.0&=[<$pfield:upper _ $field:upper _MASK>];
-				// Set via logical or.
-				self.0|=(val<<[<$pfield:upper _ $field:upper _BIT_START>]) as $ptype;
-			}
-		}
-	};
-}
-
 // Offset 0x060: AVIC Control
 #[derive(Default)]
-#[repr(C)] pub struct AvicControl(u64);
-
-pub const AVIC_CONTROL_V_TPR_BIT_START:u64=0;
-pub const AVIC_CONTROL_V_TPR_MASK:u64=!0xFF;
-pub const AVIC_CONTROL_V_IRQ:u64=1<<8;
-pub const AVIC_CONTROL_V_GIF:u64=1<<9;
-pub const AVIC_CONTROL_V_NMI:u64=1<<11;
-pub const AVIC_CONTROL_V_NMI_MASK:u64=1<<12;
-pub const AVIC_CONTROL_V_INTR_PRIO_BIT_START:u64=16;
-pub const AVIC_CONTROL_V_INTR_PRIO_MASK:u64=!0xF0000;
-pub const AVIC_CONTROL_V_IGN_TPR:u64=1<<20;
-pub const AVIC_CONTROL_V_INTR_MASKING:u64=1<<24;
-pub const AVIC_CONTROL_V_GIF_ENABLE:u64=1<<25;
-pub const AVIC_CONTROL_V_NMI_ENABLE:u64=1<<26;
-pub const AVIC_CONTROL_X2AVIC_ENABLE:u64=1<<30;
-pub const AVIC_CONTROL_AVIC_ENABLE:u64=1<<31;
-pub const AVIC_CONTROL_V_INTR_VECTOR_BIT_START:u64=32;
-pub const AVIC_CONTROL_V_INTR_VECTOR_MASK:u64=!0xFF00000000;
-
+pub struct AvicControl(pub u64);
 impl AvicControl
 {
-	build_int_get_set!(AVIC_CONTROL,V_TPR,u8,u64);
-	build_bit_get_set!(AVIC_CONTROL,V_IRQ);
-	build_bit_get_set!(AVIC_CONTROL,V_GIF);
-	build_bit_get_set!(AVIC_CONTROL,V_NMI);
-	build_bit_get_set!(AVIC_CONTROL,V_NMI_MASK);
-	build_int_get_set!(AVIC_CONTROL,V_INTR_PRIO,u8,u64);
-	build_bit_get_set!(AVIC_CONTROL,V_IGN_TPR);
-	build_bit_get_set!(AVIC_CONTROL,V_INTR_MASKING);
-	build_bit_get_set!(AVIC_CONTROL,V_GIF_ENABLE);
-	build_bit_get_set!(AVIC_CONTROL,V_NMI_ENABLE);
-	build_bit_get_set!(AVIC_CONTROL,X2AVIC_ENABLE);
-	build_bit_get_set!(AVIC_CONTROL,AVIC_ENABLE);
-	build_int_get_set!(AVIC_CONTROL,V_INTR_VECTOR,u8,u64);
+	build_int_mut_method!(v_tpr,0,8,u64);
+	build_bit_mut_method!(v_irq,8);
+	build_bit_mut_method!(v_gif,9);
+	build_bit_mut_method!(v_nmi,11);
+	build_bit_mut_method!(v_nmi_mask,12);
+	build_int_mut_method!(v_intr_priority,16,4,u64);
+	build_bit_mut_method!(v_ignore_tpr,20);
+	build_bit_mut_method!(v_intr_mask,24);
+	build_bit_mut_method!(v_gif_enable,25);
+	build_bit_mut_method!(v_nmi_enable,26);
+	build_bit_mut_method!(x2avic_enable,30);
+	build_bit_mut_method!(avic_enable,31);
 }
 
 // Offset 0x068: Interrupt Control
 #[derive(Default)]
-#[repr(C)] pub struct InterruptControl(u64);
-
-pub const INTERRUPT_CONTROL_SHADOW:u64=1<<0;
-pub const INTERRUPT_CONTROL_GUEST_RFLAGS_IF:u64=1<<1;
-
+pub struct InterruptControl(pub u64);
 impl InterruptControl
 {
-	pub fn new()->Self
-	{
-		Self(0)
-	}
-
-	build_bit_get_set!(INTERRUPT_CONTROL,SHADOW);
-	build_bit_get_set!(INTERRUPT_CONTROL,GUEST_RFLAGS_IF);
+	build_bit_mut_method!(interrupt_shadow,0);
+	build_bit_mut_method!(sev_es_interrupt_mask,1);
 }
 
 // Offset 0x090: Nested Paing
 #[derive(Default)]
-#[repr(C)] pub struct NptControl(u64);
-
-pub const NPT_CONTROL_ENABLE:u64=1<<0;
-pub const NPT_CONTROL_SEV_ENABLE:u64=1<<1;
-pub const NPT_CONTROL_SEV_ES_ENABLE:u64=1<<2;
-pub const NPT_CONTROL_GMET_ENABLE:u64=1<<3;
-pub const NPT_CONTROL_SSS_CHECK_ENABLE:u64=1<<4;
-pub const NPT_CONTROL_VTE_ENABLE:u64=1<<5;
-pub const NPT_CONTROL_RO_GPT_ENABLE:u64=1<<6;
-pub const NPT_CONTROL_INVLPGB_ENABLE:u64=1<<7;
-
+pub struct NptControl(pub u64);
 impl NptControl
 {
-	build_bit_get_set!(NPT_CONTROL,ENABLE);
-	build_bit_get_set!(NPT_CONTROL,SEV_ENABLE);
-	build_bit_get_set!(NPT_CONTROL,SEV_ES_ENABLE);
-	build_bit_get_set!(NPT_CONTROL,GMET_ENABLE);
-	build_bit_get_set!(NPT_CONTROL,SSS_CHECK_ENABLE);
-	build_bit_get_set!(NPT_CONTROL,VTE_ENABLE);
-	build_bit_get_set!(NPT_CONTROL,RO_GPT_ENABLE);
-	build_bit_get_set!(NPT_CONTROL,INVLPGB_ENABLE);
+	build_bit_mut_method!(enable_npt,0);
+	build_bit_mut_method!(enable_sev,1);
+	build_bit_mut_method!(enable_sev_es,2);
+	build_bit_mut_method!(enable_gmet,3);
+	build_bit_mut_method!(enable_sss_check,4);
+	build_bit_mut_method!(enable_vte,5);
+	build_bit_mut_method!(enable_rogpt,6);
+	build_bit_mut_method!(enable_invlpgb,7);
 }
 
 // Offset 0x0A8: Event Injection
 #[derive(Default)]
-#[repr(C)] pub struct EventInjection(u64);
-
-pub const EVENT_INJECTION_VECTOR_BIT_START:u64=0;
-pub const EVENT_INJECTION_VECTOR_MASK:u64=!0xFF;
-pub const EVENT_INJECTION_TYPE_BIT_START:u64=8;
-pub const EVENT_INJECTION_TYPE_MASK:u64=!0x700;
-pub const EVENT_INJECTION_ERROR_CODE_VALID_BIT:u64=11;
-pub const EVENT_INJECTION_ERROR_CODE_VALID:u64=1<<EVENT_INJECTION_ERROR_CODE_VALID_BIT;
-pub const EVENT_INJECTION_VALID_BIT:u64=31;
-pub const EVENT_INJECTION_VALID:u64=1<<EVENT_INJECTION_VALID_BIT;
-pub const EVENT_INJECTION_ERROR_CODE_BIT_START:u64=32;
-pub const EVENT_INJECTION_ERROR_CODE_MASK:u64=!0xFFFFFFFF00000000;
-
+#[repr(C)] pub struct EventInjection(pub u64);
 impl EventInjection
 {
 	#[inline] pub fn new(vector:u8,event_type:EventType,has_error_code:bool,valid:bool,error_code:u32)->Self
 	{
-		let code=	vector as u64 |
-					((event_type as u64)<<EVENT_INJECTION_TYPE_BIT_START) |
-					((has_error_code as u64)<<EVENT_INJECTION_ERROR_CODE_VALID_BIT) |
-					((valid as u64)<<EVENT_INJECTION_VALID_BIT) |
-					((error_code as u64)<<EVENT_INJECTION_ERROR_CODE_BIT_START);
-		Self(code)
+		let mut v=Self(0);
+		v.set_vector(vector as u64);
+		v.set_type(event_type as u64);
+		v.set_error_code_valid(has_error_code);
+		v.set_valid(valid);
+		v.set_error_code(error_code as u64);
+		v
 	}
 
-	build_int_get_set!(EVENT_INJECTION,VECTOR,u8,u64);
-	build_int_get_set!(EVENT_INJECTION,TYPE,u8,u64);
-	build_bit_get_set!(EVENT_INJECTION,ERROR_CODE_VALID);
-	build_bit_get_set!(EVENT_INJECTION,VALID);
-	build_int_get_set!(EVENT_INJECTION,ERROR_CODE,u32,u64);
+	build_int_mut_method!(vector,0,8,u64);
+	build_int_mut_method!(type,8,3,u64);
+	build_bit_mut_method!(error_code_valid,11);
+	build_bit_mut_method!(valid,31);
+	build_int_mut_method!(error_code,32,32,u64);
 }
 
 // Offset 0x0B8: LBR Virtualization
 #[derive(Default)]
-#[repr(C)] pub struct LbrVirtualization(u64);
-
-pub const LBR_VIRT_ENABLE:u64=1<<0;
-pub const LBR_VIRT_VMLS_ENABLE:u64=1<<1;
-pub const LBR_VIRT_IBS_ENABLE:u64=1<<2;
-
+#[repr(C)] pub struct LbrVirtualization(pub u64);
 impl LbrVirtualization
 {
-	build_bit_get_set!(LBR_VIRT,ENABLE);
-	build_bit_get_set!(LBR_VIRT,VMLS_ENABLE);
-	build_bit_get_set!(LBR_VIRT,IBS_ENABLE);
+	build_bit_mut_method!(enable_lbr_virt,0);
+	build_bit_mut_method!(eanble_vmls_virt,1);
+	build_bit_mut_method!(enable_ibs_virt,2);
 }
 
 // Offset 0x0C0: VMCB Clean Bits

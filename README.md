@@ -111,6 +111,7 @@ For Rust, you must install `x86_64-unknown-uefi` target host. This is not instal
 ```
 rustup target add x86_64-unknown-uefi
 ```
+NoirVisor uses a simple python script to wrap the `ar` command called by `cc` crate. Therefore, you must install Python.
 
 To build NoirVisor for UEFI without optimization, run the following command in `build` directory:
 ```

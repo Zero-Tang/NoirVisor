@@ -15,8 +15,11 @@ echo Project: NoirVisor
 echo Platform: Unified Extensible Firmware Interface
 echo Preset: Debug/Checked Build
 echo Powered by zero.tangptr@gmail.com
-echo Copyright (c) 2018-2024, zero.tangptr@gmail.com. All Rights Reserved.
+echo Copyright (c) 2018-2025, zero.tangptr@gmail.com. All Rights Reserved.
 if "%~1"=="/s" (echo DO-NOT-PAUSE is activated!) else (pause)
+
+if not exist %objpath%\efiapp mkdir %objpath%\efiapp
+if not exist %objpath%\driver mkdir %objpath%\driver
 
 echo ============Start Compiling============
 echo Compiling UEFI Booting Facility...

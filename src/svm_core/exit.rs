@@ -407,7 +407,7 @@ impl SvmVcpu
 			println!("Intercepted #NPF for GPA=0x{gpa:016X}! rip=0x{rip:016X} rsp=0x{:016X}, Fault-Reason: {fault}",unsafe{vmread::<u64>(vmcb,GUEST_RSP)});
 			panic!("CI-fault is intercepted!");
 		}
-		else if !fault.is_code_read()
+		else if !fault.get_code_read()
 		{
 			let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
 			// This could be MMIO Filter.
@@ -438,7 +438,7 @@ impl SvmVcpu
 				Mnemonic::Mov=>
 				{
 					// Decode the operand.
-					if fault.is_write()
+					if fault.get_write()
 					{
 						let data=match ins_info.op1_kind()
 						{

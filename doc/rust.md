@@ -37,6 +37,7 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 		This means short statements are not allowed to merge into the same line, even if they are super short. For example, the following is not allowed:
 		```Rust
 		a=b;c=d;e=f;g=h;
+		j();k();l();
 		```
 		You must separate it into different lines:
 		```Rust
@@ -44,6 +45,16 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 		c=d;
 		e=f;
 		g=h;
+		j();
+		k();
+		l();
+		```
+		Or if viable, merge into tuple assignments:
+		```Rust
+		(a,c,e,g)=(b,d,f,h);
+		j();
+		k();
+		l();
 		```
 	- Brace marks (i.e.:`{}`) should go to the new line unless the block has at most one line. For example:
 		```Rust
@@ -78,7 +89,7 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 	 * Line 5
 	 */
 	```
-- Functions that are callable in C must begin with `#[no_mangle] pub extern "C" (unsafe) fn`.
+- Functions that are callable in C must begin with `#[no_mangle] pub extern "C" (unsafe) fn`. The `pub` keyword is not required.
 - Naming convention is the same to the [Rust default](https://doc.rust-lang.org/1.0.0/style/style/naming/README.html), with following additions:
 	- Architecture/Hardware-specific names must begin with its name ID as prefix.
 	- Method names must be concise, preferably a verb with optional nouns and/or adverbs.

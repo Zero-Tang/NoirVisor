@@ -281,7 +281,7 @@ impl SvmVcpu
 			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
 			// We will have to emulate this on our own.
 			let fault_code=NptFaultCode::from_u64(unsafe{vmread(self.vmcb.virt,EXIT_INFO1)});
-			if !fault_code.is_code_read()
+			if !fault_code.get_code_read()
 			{
 				// Fetching instruction is only needed if the operation is not instruction fetch!
 				self.fetch_instruction();

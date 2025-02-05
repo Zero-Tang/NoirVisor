@@ -11,8 +11,10 @@ echo Project: NoirVisor
 echo Platform: 64-Bit Windows
 echo Preset: Release/Free Build
 echo Powered by zero.tangptr@gmail.com
-echo Copyright (c) 2018-2023, zero.tangptr@gmail.com. All Rights Reserved.
+echo Copyright (c) 2018-2025, zero.tangptr@gmail.com. All Rights Reserved.
 if "%~1"=="/s" (echo DO-NOT-PAUSE is activated!) else (pause)
+
+if not exist %objpath% mkdir %objpath%
 
 echo ============Start Compiling============
 echo Compiling Windows Driver Framework...
@@ -25,20 +27,23 @@ for %%1 in (..\src\xpf_core\windows\*.c) do (cl %%1 /I"%incpath%\km\crt" /I"%inc
 
 ml64 /W3 /WX /D"_amd64" /Zf /Zd /Fo"%objpath%\msrhook.obj" /c /nologo ..\src\xpf_core\windows\msrhook.asm
 
-ml64 /X /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\svm_hv.obj" /c ..\src\xpf_core\msvc\svm_hv.asm
+ml64 /X /Zi /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\svm_hv.obj" /c ..\src\xpf_core\msvc\svm_hv.asm
 
-ml64 /X /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\interrupt.obj" /c ..\src\xpf_core\msvc\interrupt.asm
+ml64 /X /Zi /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\vt_hv.obj" /c ..\src\xpf_core\msvc\vt_hv.asm
 
-ml64 /X /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\kpcr.obj" /c ..\src\xpf_core\msvc\kpcr.asm
+ml64 /X /Zi /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\interrupt.obj" /c ..\src\xpf_core\msvc\interrupt.asm
+
+ml64 /X /Zi /D"_amd64" /D"_msvc" /nologo /I"..\src\xpf_core\msvc" /Fo"%objpath%\kpcr.obj" /c ..\src\xpf_core\msvc\kpcr.asm
 
 echo Compiling and Extracting Microsoft-Optimized CRT...
-ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\memcpy.obj" /c /nologo "%crtpath%\memcpy.asm"
-ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\memcmp.obj" /c /nologo "%crtpath%\memcmp.asm"
-ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\memset.obj" /c /nologo "%crtpath%\memset.asm"
+rem The source code of Microsoft CRT is read-only, so build them once only.
+if not exist "%objpath%\memcpy.obj" ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\memcpy.obj" /c /nologo "%crtpath%\memcpy.asm"
+if not exist "%objpath%\memcmp.obj" ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\memcmp.obj" /c /nologo "%crtpath%\memcmp.asm"
+if not exist "%objpath%\memset.obj" ml64 /I"%incpath%\shared" /W3 /WX /Zf /Zd /Zi /Fo"%objpath%\memset.obj" /c /nologo "%crtpath%\memset.asm"
 
-lib "%libpath%\10.0.22000.0\ucrt\x64\libucrt.lib" /EXTRACT:"d:\os\obj\amd64fre\minkernel\crts\ucrt\src\appcrt\dll\mt\..\..\string\mt\objfre\amd64\strlen.obj" /NOLOGO /OUT:"%objpath%\strlen.obj"
-lib "%ddkpath%\lib\x64\libcmt.lib" /EXTRACT:"d:\a01\_work\12\s\Intermediate\vctools\libcmt.nativeproj__851063217\objr\amd64\cpu_disp.obj" /NOLOGO /OUT:"%objpath%\cpu_disp.obj"
-copy /Y "%ddkpath%\lib\x64\libcmt.amd64.pdb" "%binpath%\libcmt.amd64.pdb"
+if not exist "%objpath%\strlen.obj" lib "%libpath%\10.0.22000.0\ucrt\x64\libucrt.lib" /EXTRACT:"d:\os\obj\amd64fre\minkernel\crts\ucrt\src\appcrt\dll\mt\..\..\string\mt\objfre\amd64\strlen.obj" /NOLOGO /OUT:"%objpath%\strlen.obj"
+if not exist "%objpath%\cpu_disp.obj" lib "%ddkpath%\lib\x64\libcmt.lib" /EXTRACT:"d:\a01\_work\12\s\Intermediate\vctools\libcmt.nativeproj__851063217\objr\amd64\cpu_disp.obj" /NOLOGO /OUT:"%objpath%\cpu_disp.obj"
+if not exist "%binpath%\libcmt.amd64.pdb" copy /Y "%ddkpath%\lib\x64\libcmt.amd64.pdb" "%binpath%\libcmt.amd64.pdb"
 
 echo Compiling NoirVisor in Rust...
 set cflags=/GS-
