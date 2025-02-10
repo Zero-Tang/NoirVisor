@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::c_void, ptr::null_mut, fmt::Display};
+use core::{ffi::c_void, ptr::null_mut, fmt::Display, ops::*, convert::From};
 use paste::paste;
 
 #[derive(Copy,Clone)] #[repr(C)] pub struct MemoryDescriptor
@@ -128,25 +128,27 @@ impl Display for GprState
 
 impl GprState
 {
-	pub fn read(&self,index:u64)->Option<u64>
+	pub fn read<T:Into<usize>>(&self,index:T)->Option<u64>
 	{
-		if index>=16
+		let i:usize=index.into();
+		if i>=16
 		{
 			None
 		}
 		else
 		{
 			let array=self as *const Self as *const u64;
-			Some(unsafe{array.add(index as usize).read()})
+			Some(unsafe{array.add(i).read()})
 		}
 	}
 
-	pub fn write(&mut self,index:u64,value:u64)
+	pub fn write<T:Into<usize>>(&mut self,index:T,value:u64)
 	{
-		if index<16
+		let i:usize=index.into();
+		if i<16
 		{
 			let array=self as *mut Self as *mut u64;
-			unsafe{array.add(index as usize).write(value);}
+			unsafe{array.add(i).write(value);}
 		}
 	}
 }
@@ -182,38 +184,50 @@ macro_rules! build_page_def
 	{
 		paste!
 		{
-			pub const [<PAGE $size:upper SHIFT>]:usize=$shift;
+			pub const [<PAGE $size:upper SHIFT>]:u8=$shift;
 			pub const [<PAGE $size:upper SIZE>]:usize=1<<[<PAGE $size:upper SHIFT>];
-			pub const [<PHYS_PAGE $size:upper MASK>]:u64=0xFFF0000000000000|(([<PAGE $size:upper SIZE>] as u64)-1);
+			pub const [<PHYS_PAGE $size:upper MASK>]:usize=0xFFF0000000000000|([<PAGE $size:upper SIZE>]-1);
 			
-			#[inline] pub fn [<page $size:lower offset>](addr:usize)->usize
+			#[inline] pub fn [<page $size:lower offset>]<T:BitAnd<Output=T>+TryFrom<usize>>(addr:T)->T
 			{
-				addr&([<PAGE $size:upper SIZE>]-1)
+				match T::try_from(([<PAGE $size:upper SIZE>]-1))
+				{
+					Ok(mask)=>addr&mask,
+					Err(_)=>panic!("Cannot calculate page offset into this generic type!")
+				}
 			}
 
-			#[inline] pub fn [<page $size:lower count>](addr:usize)->usize
+			#[inline] pub fn [<page $size:lower count>]<T:Shr<Output=T>+From<u8>>(addr:T)->T
 			{
-				addr>>[<PAGE $size:upper SHIFT>]
+				addr>>T::from([<PAGE $size:upper SHIFT>])
 			}
 
-			#[inline] pub fn [<page $size:lower mult>](addr:usize)->usize
+			#[inline] pub fn [<page $size:lower mult>]<T:Shl<Output=T>+From<u8>>(addr:T)->T
 			{
-				addr<<[<PAGE $size:upper SHIFT>]
+				addr<<T::from([<PAGE $size:upper SHIFT>])
 			}
 			
-			#[inline] pub fn [<page $size:lower base>](addr:usize)->usize
+			#[inline] pub fn [<page $size:lower base>]<T:BitAnd<Output=T>+TryFrom<usize>>(addr:T)->T
 			{
-				addr&(!([<PAGE $size:upper SIZE>]-1))
+				match T::try_from((!([<PAGE $size:upper SIZE>]-1)))
+				{
+					Ok(mask)=>addr&mask,
+					Err(_)=>panic!("Cannot calculate page base into this generic type!")
+				}
 			}
 			
-			#[inline] pub fn [<phys_page $size:lower base>](addr:usize)->usize
+			#[inline] pub fn [<phys_page $size:lower base>]<T:BitAnd<Output=T>+TryFrom<usize>>(addr:T)->T
 			{
-				[<page $size:lower base>](addr)&0xFFFFFFFFFF000
+				match T::try_from(0xFFFFFFFFFF000)
+				{
+					Ok(mask)=>[<page $size:lower base>](addr)&mask,
+					Err(_)=>panic!("Cannot calculate physical page base into this generic type!")
+				}
 			}
 
-			#[inline] pub fn [<bytes_to $size:lower pages>](len:usize)->usize
+			#[inline] pub fn [<bytes_to $size:lower pages>]<T:Copy+BitAnd<Output=T>+Shr<Output=T>+Add<Output=T>+TryFrom<usize>+From<u8>+PartialEq>(len:T)->T
 			{
-				[<page $size:lower count>](len)+(if [<page $size:lower offset>](len)!=0 {1} else {0})
+				[<page $size:lower count>](len)+T::from(if [<page $size:lower offset>](len)!=T::from(0) {1} else {0})
 			}
 		}
 	};

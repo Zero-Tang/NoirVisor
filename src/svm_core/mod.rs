@@ -449,7 +449,7 @@ impl HypervisorEssentials for SvmHypervisor
 		#[cfg(target_os="uefi")]
 		{
 			let apic_bar=rdmsr(MSR_APIC_BASE);
-			self.mmio_space.add_region(IoRegion::new("lapic",None,svm_apic_output_handler,page_4kb_base(apic_bar as usize) as u64,PAGE_SIZE as u64));
+			self.mmio_space.add_region(IoRegion::new("lapic",None,svm_apic_output_handler,page_4kb_base(apic_bar),PAGE_SIZE as u64));
 		}
 		// Initialize NPT.
 		self.nptm.build_identity_map();

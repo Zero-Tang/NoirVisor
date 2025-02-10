@@ -80,8 +80,8 @@ pub mod caching
 	{
 		if mask.get_valid()
 		{
-			let mtrr_base=page_4kb_mult(base.get_phys_base() as usize) as u64;
-			let mtrr_mask=page_4kb_mult(mask.get_phys_mask() as usize) as u64;
+			let mtrr_base=page_4kb_mult(base.get_phys_base());
+			let mtrr_mask=page_4kb_mult(mask.get_phys_mask());
 			let mtrr_type=base.get_type() as u8;
 			Some((mtrr_base,(1<<pa_width)-mtrr_mask,mtrr_type))
 		}
@@ -169,7 +169,7 @@ pub mod paging
 						let w:u64=(write as u64)<<X86_PAGING_WRITE_BIT;
 						let u:u64=(user as u64)<<X86_PAGING_USER_BIT;
 						let g:u64=(global as u64)<<X86_PAGING_GLOBAL_BIT;
-						let b:u64=phys_page_4kb_base(next_phys as usize) as u64;
+						let b:u64=phys_page_4kb_base(next_phys);
 						let ps:u64=($ps_bit as u64)<<X86_PAGING_PAGE_SIZE_BIT;
 						let nx:u64=(no_execute as u64)<<X86_PAGING_NX_BIT;
 						Self(p|w|u|ps|g|b|nx)
@@ -186,13 +186,13 @@ pub mod paging
 
 					#[inline] fn get_next_level_base(&self)->u64
 					{
-						phys_page_4kb_base(self.0 as usize) as u64
+						phys_page_4kb_base(self.0)
 					}
 
 					#[inline] fn set_next_level_base(&mut self,v:u64)
 					{
-						self.0&=[<PHYS_PAGE_ $page_size:upper _MASK>];
-						self.0|=[<phys_page_ $page_size:lower _base>](v as usize) as u64;
+						self.0&=[<PHYS_PAGE_ $page_size:upper _MASK>] as u64;
+						self.0|=[<phys_page_ $page_size:lower _base>](v);
 					}
 
 					#[inline] fn is_last_level(&self)->bool
@@ -396,7 +396,7 @@ pub mod paging
 		else
 		{
 			// This is the intermediate level!
-			let next_pt_base=phys_page_4kb_base(pml_e as usize) as u64;
+			let next_pt_base=phys_page_4kb_base(pml_e);
 			translate_64bit_va_routine(va,vcpu,next_pt_base,level-1,w,x,ss)
 		}
 	}
@@ -473,7 +473,7 @@ pub mod paging
 		let end_va=va+buffer.len() as u64;
 		while cur_va<end_va
 		{
-			let end_len=(PAGE_SIZE-page_offset(va as usize)) as u64;
+			let end_len=PAGE_SIZE as u64-page_offset(va);
 			let rem_len=end_va-cur_va;
 			let copy_size=if end_len<rem_len {end_len} else {rem_len};
 			let r=unsafe
@@ -495,8 +495,10 @@ pub mod paging
 
 pub mod descriptors
 {
+	use paste::paste;
 	use core::fmt::{self,Display};
-	use crate::xpf_core::{hv_host::x86::AsmInterruptHandler, nvbdk::PAGE_SHIFT};
+	use crate::*;
+	use xpf_core::{hv_host::x86::AsmInterruptHandler, nvbdk::PAGE_SHIFT};
 
 	pub const SELECTOR_RPLTI_MASK:u16=0xFFF8;
 
@@ -513,6 +515,40 @@ pub mod descriptors
 		{
 			write!(f,"Limit: 0x{:04X}, Base: 0x{:016X}",{self.limit},{self.base})
 		}
+	}
+
+	#[derive(Default, Clone, Copy)]
+	pub struct SegmentFlags(pub u16);
+	impl SegmentFlags
+	{
+		build_int_mut_method!(segment_type,0,4,u16);
+		build_bit_mut_method!(accessed,0);
+		build_bit_mut_method!(data_writable,1);
+		build_bit_mut_method!(code_readable,1);
+		build_bit_mut_method!(data_expand_down,2);
+		build_bit_mut_method!(code_conforming,3);
+		build_bit_mut_method!(code_segment,3);
+		build_bit_mut_method!(system_segment,4);
+		build_int_mut_method!(dpl,5,2,u16);
+		build_bit_mut_method!(present,7);
+		build_int_mut_method!(limit_hi,8,4,u16);
+		build_bit_mut_method!(avl,12);
+		build_bit_mut_method!(long_mode,13);
+		build_bit_mut_method!(default_big,14);
+		build_bit_mut_method!(granularity,15);
+
+		pub const AVAILABLE_TSS_16BIT:u16=0x1;
+		pub const LDT:u16=0x2;
+		pub const BUSY_TSS_16BIT:u16=0x3;
+		pub const CALL_GATE_16BIT:u16=0x4;
+		pub const TASK_GATE:u16=0x5;
+		pub const INTERRUPT_GATE_16BIT:u16=0x6;
+		pub const TRAP_GATE_16BIT:u16=0x7;
+		pub const AVAILABLE_TSS:u16=0x9;
+		pub const BUSY_TSS:u16=0xB;
+		pub const CALL_GATE:u16=0xC;
+		pub const INTERRUPT_GATE:u16=0xE;
+		pub const TRAP_GATE:u16=0xF;
 	}
 
 	#[repr(C,packed)] pub struct UserSegmentDescriptor
@@ -555,23 +591,12 @@ pub mod descriptors
 		}
 	}
 
-	pub const GATE_DESCRIPTOR_LDT:u16=0x2;
-	pub const GATE_DESCRIPTOR_AVAILABLE_TSS:u16=0x9;
-	pub const GATE_DESCRIPTOR_BUSY_TSS:u16=0xB;
-	pub const GATE_DESCRIPTOR_CALL_GATE:u16=0xC;
-	pub const GATE_DESCRIPTOR_INTERRUPT_GATE:u16=0xE;
-	pub const GATE_DESCRIPTOR_TRAP_GATE:u16=0xF;
-
-	pub const GATE_DESCRIPTOR_TYPE_BIT:u16=8;
-	pub const GATE_DESCRIPTOR_DPL_BIT:u16=13;
-	pub const GATE_DESCRIPTOR_PRESENT_BIT:u16=15;
-
 	#[derive(Default,Clone,Copy)]
 	#[repr(C,packed)] pub struct GateDescriptor
 	{
 		pub offset_lo:u16,
 		pub selector:u16,
-		pub flags:u16,
+		pub flags:SegmentFlags,
 		pub offset_mid:u16,
 		pub offset_hi:u32,
 		pub reserved:u32
@@ -592,7 +617,10 @@ pub mod descriptors
 			let offset_lo=(target_handler as usize & 0xFFFF) as u16;
 			let offset_mid=((target_handler as usize >> 16) & 0xFFFF) as u16;
 			let offset_hi=(target_handler as usize >> 32) as u32;
-			let flags=ist|(GATE_DESCRIPTOR_INTERRUPT_GATE<<GATE_DESCRIPTOR_TYPE_BIT)|(dpl<<GATE_DESCRIPTOR_DPL_BIT)|(1<<GATE_DESCRIPTOR_PRESENT_BIT);
+			// let flags=ist|(GATE_DESCRIPTOR_INTERRUPT_GATE<<GATE_DESCRIPTOR_TYPE_BIT)|(dpl<<GATE_DESCRIPTOR_DPL_BIT)|(1<<GATE_DESCRIPTOR_PRESENT_BIT);
+			let mut flags=SegmentFlags(0);
+			flags.set_present(true);
+			flags.set_segment_type(SegmentFlags::INTERRUPT_GATE);
 			Some
 			(
 				Self
@@ -632,6 +660,7 @@ pub mod descriptors
 pub mod crdr
 {
 	use paste::paste;
+	use crate::*;
 
 	#[macro_export] macro_rules! define_bit
 	{
@@ -685,9 +714,40 @@ pub mod crdr
 	define_bit!(DR6_B1,1);
 	define_bit!(DR6_B2,2);
 	define_bit!(DR6_B3,3);
+	define_bit!(DR6_BUSLOCK_DETECTED,11);
 	define_bit!(DR6_BD,13);
 	define_bit!(DR6_BS,14);
 	define_bit!(DR6_BT,15);
+
+	pub struct Dr7(pub u64);
+	impl Dr7
+	{
+		build_bit_mut_method!(L0,0);
+		build_bit_mut_method!(G0,1);
+		build_bit_mut_method!(L1,2);
+		build_bit_mut_method!(G1,3);
+		build_bit_mut_method!(L2,4);
+		build_bit_mut_method!(G2,5);
+		build_bit_mut_method!(L3,6);
+		build_bit_mut_method!(G3,7);
+		build_bit_mut_method!(LE,8);
+		build_bit_mut_method!(GE,9);
+		build_bit_mut_method!(GD,13);
+		build_int_mut_method!(RW0,16,2,u64);
+		build_int_mut_method!(LEN0,18,2,u64);
+		build_int_mut_method!(RW1,20,2,u64);
+		build_int_mut_method!(LEN1,22,2,u64);
+		build_int_mut_method!(RW2,24,2,u64);
+		build_int_mut_method!(LEN2,26,2,u64);
+		build_int_mut_method!(RW3,28,2,u64);
+		build_int_mut_method!(LEN3,30,2,u64);
+
+		pub const LENGTH_CONVERTER:[u64;4]=[1,2,8,4];
+		pub const INSTRUCTION_EXECUTION:u64=0;
+		pub const DATA_WRITE:u64=1;
+		pub const IO_BREAK:u64=2;
+		pub const DATA_READWRITE:u64=3;
+	}
 }
 
 pub mod cpuid

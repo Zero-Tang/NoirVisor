@@ -13,7 +13,7 @@
 use core::{arch::asm, ffi::c_void, ops::{BitAndAssign, BitOrAssign, BitXorAssign}};
 use paste::paste;
 
-use crate::*;
+use crate::{xpf_core::x86::crdr::DR6_BS_BIT, *};
 use xpf_core::{x86::{interrupts::*, rflags::*}, nvbdk::SegmentRegister};
 
 #[inline] pub fn svm_attrib(attrib:u16)->u16
@@ -64,15 +64,15 @@ use xpf_core::{x86::{interrupts::*, rflags::*}, nvbdk::SegmentRegister};
 #[inline] pub unsafe fn advance_rip(vmcb:*mut c_void)
 {
 	vmwrite(vmcb,GUEST_RIP,vmread::<u64>(vmcb,NEXT_RIP));
-	// FIXME: Inject #DB if single-stepping.
 	if vmcb_bt32(vmcb,GUEST_RFLAGS,RFLAGS_TF_BIT)
 	{
 		// In case the guest is single-step debugging, we should inject debug trace trap so that
 		// the next instruction won't be skipped in debugger, confusing the debugging personnel.
 		// If guest is single-step debugging, slight penalty due to branch predictor is acceptable.
 		inject_event(vmcb,DEBUG_FAULT_OR_TRAP,EventType::HardwareException,None,true);
+		vmcb_bts32(vmcb,GUEST_DR6,DR6_BS_BIT as u32);
+		vmcb_clean_dr(vmcb);
 	}
-	// FIXME: Check Debug Registers. If rip matches one of DR0-DR3, inject #DB exception.
 }
 
 /// # Safety

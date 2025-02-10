@@ -86,11 +86,11 @@ impl SvmVcpu
 		};
 		unsafe
 		{
-			// Write the results back to eax, ebx, ecx and edx, but preserve the higher 32 bits.
-			(&raw mut gpr_state.rax).cast::<u32>().write(a);
-			(&raw mut gpr_state.rbx).cast::<u32>().write(b);
-			(&raw mut gpr_state.rcx).cast::<u32>().write(c);
-			(&raw mut gpr_state.rdx).cast::<u32>().write(d);
+			// Write the results back to eax, ebx, ecx and edx and clear the higher 32 bits.
+			gpr_state.rax=a as u64;
+			gpr_state.rbx=b as u64;
+			gpr_state.rcx=c as u64;
+			gpr_state.rdx=d as u64;
 			// Advance the rip.
 			advance_rip(self.vmcb.virt);
 		}
@@ -217,7 +217,7 @@ impl SvmVcpu
 			MSR_HSAVE_PA=>
 			{
 				// HSAVE must be aligned on page-boundary.
-				if page_4kb_offset(value as usize)!=0
+				if page_4kb_offset(value)!=0
 				{
 					unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
 					false

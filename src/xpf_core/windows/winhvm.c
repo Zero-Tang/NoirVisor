@@ -416,12 +416,20 @@ NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength)
 	return st;
 }
 
+void NoirBuildHypervisorExpendedStackCallRT(IN PVOID Parameter OPTIONAL)
+{
+	// Rust codes really cost lots of stack, especially if you did not enable optimization...
+	*(PULONG)Parameter=nvc_build_hypervisor();
+}
+
 ULONG NoirBuildHypervisor()
 {
 	if(NoirHypervisorStarted==FALSE)
 	{
-		ULONG r=nvc_build_hypervisor();
-		if(r==0)
+		
+		ULONG r=0xFFFFFFFF;
+		NTSTATUS st=KeExpandKernelStackAndCallout(NoirBuildHypervisorExpendedStackCallRT,&r,MAXIMUM_EXPANSION_SIZE-PAGE_SIZE);
+		if(st==STATUS_SUCCESS && r==0)
 		{
 			NoirHypervisorStarted=TRUE;
 			NoirDebugPrint("NoirVisor CVM Initialization Status: 0x%X\n",NoirInitializeCvmModule());

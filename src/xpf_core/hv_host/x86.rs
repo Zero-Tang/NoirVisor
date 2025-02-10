@@ -12,7 +12,7 @@
 
 use core::ffi::c_void;
 
-use crate::xpf_core::{asm::{crdr::*, seg::*, misc::get_rsp}, nvbdk::*, dlalloc::{alloc_contd_pages, free_contd_pages}, x86::{descriptors::*, interrupts::*, paging::*}};
+use crate::xpf_core::{asm::{crdr::*, seg::*}, nvbdk::*, dlalloc::{alloc_contd_pages, free_contd_pages}, x86::{descriptors::*, interrupts::*, paging::*}};
 use crate::*;
 
 pub struct HostSystem
@@ -54,7 +54,7 @@ impl HostProcessor
 		self.tss.ist5=ist[5] as u64;
 		self.tss.ist6=ist[6] as u64;
 		self.tss.ist7=ist[7] as u64;
-		let tss_d=SystemSegmentDescriptor::new(size_of::<TaskSegmentState64>() as u32 -1,&self.tss as *const TaskSegmentState64 as u64,GATE_DESCRIPTOR_AVAILABLE_TSS,3,true);
+		let tss_d=SystemSegmentDescriptor::new(size_of::<TaskSegmentState64>() as u32 -1,&self.tss as *const TaskSegmentState64 as u64,SegmentFlags::AVAILABLE_TSS,3,true);
 		let tr_sel=self.gdt.allocated;
 		self.gdt.allocated+=16;
 		self.gdt.write_sys_seg(tr_sel,tss_d);
@@ -300,7 +300,6 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	print!("Dumping Exception Frame:\n{}",*exception_frame);
 	print!("Dumping GPR State:\n{}",*gpr_state);
-	println!("Current rsp: 0x{:016X}",get_rsp());
 	panic!("Invalid-Opcode Fault happened!");
 }
 
@@ -367,7 +366,6 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	print!("Dumping Exception Frame:\n{}",*exception_frame);
 	print!("Dumping GPR State:\n{}",*gpr_state);
-	println!("Current rsp: 0x{:016X}",get_rsp());
 	panic!("General-Protection Fault happened!");
 }
 

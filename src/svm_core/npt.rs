@@ -47,7 +47,7 @@ macro_rules! derive_intermediate_new_method
 				s.set_present(present);
 				s.set_write(write);
 				s.set_user(user);
-				s.[<set_ $field_name>](page_4kb_count($field_name as usize) as u64);
+				s.[<set_ $field_name>](page_4kb_count($field_name));
 				s.set_nx(nx);
 				s
 			}
@@ -82,7 +82,7 @@ macro_rules! derive_last_new_method
 				s.set_present(present);
 				s.set_write(write);
 				s.set_user(user);
-				s.set_page_base(page_4kb_count(page_base as usize) as u64);
+				s.set_page_base(page_4kb_count(page_base));
 				s.set_nx(nx);
 				s
 			}
@@ -98,7 +98,7 @@ macro_rules! derive_last_new_method
 				s.set_present(present);
 				s.set_write(write);
 				s.set_user(user);
-				s.set_page_base([<page_ $page_size _count>](page_base as usize) as u64);
+				s.set_page_base([<page_ $page_size _count>](page_base));
 				s.set_nx(nx);
 				s
 			}
@@ -230,7 +230,7 @@ impl SvmNptManager
 	pub fn update_pdpte(&mut self,gpa:u64,hpa:u64,r:bool,w:bool,x:bool,h:bool)
 	{
 		let pdpte_p=self.locate_pdpte_mut(gpa);
-		*pdpte_p=if h {NptPdpte::new_huge(r,w,true,hpa,!x)} else {NptPdpte::new(r,w,true,page_mult(pdpte_p.get_pde() as usize) as u64,!x)};
+		*pdpte_p=if h {NptPdpte::new_huge(r,w,true,hpa,!x)} else {NptPdpte::new(r,w,true,page_mult(pdpte_p.get_pde()),!x)};
 	}
 
 	fn locate_pdpte_mut(&mut self,gpa:u64)->&mut NptPdpte
@@ -254,7 +254,7 @@ impl SvmNptManager
 			{
 				Some(md)=>
 				{
-					let gpa_start=page_1gb_base(gpa as usize) as u64;
+					let gpa_start=page_1gb_base(gpa);
 					let pde_array=md.virt as *mut NptPde;
 					let pde_d=SvmNptPageTableDescriptor
 					{
@@ -272,7 +272,7 @@ impl SvmNptManager
 					}
 					println!("Splitted PDPTE Entry: {:p} for GPA 0x{:016X}",pdpte_p,gpa);
 					pdpte_p.set_page_size(false);
-					pdpte_p.set_pde(page_count(md.phys as usize) as u64);
+					pdpte_p.set_pde(page_count(md.phys));
 					self.pde.push(pde_d);
 				}
 				None=>panic!("Failed to split PDPTE while allocating PDE!")
@@ -303,7 +303,7 @@ impl SvmNptManager
 				unsafe 
 				{
 					let pde_p=&mut *pde_array.add(index);
-					let pde_v=if l {NptPde::new_large(r,w,true,hpa,!x)} else {NptPde::new(r,w,true,page_mult(pde_p.get_pte() as usize) as u64,!x)};
+					let pde_v=if l {NptPde::new_large(r,w,true,hpa,!x)} else {NptPde::new(r,w,true,page_mult(pde_p.get_pte()),!x)};
 					*pde_p=pde_v;
 				}
 			}
@@ -333,7 +333,7 @@ impl SvmNptManager
 						let pde_p=unsafe{pde_d.table.virt.byte_add(pde_index<<3)} as *mut NptPde;
 						let pte_d=SvmNptPageTableDescriptor
 						{
-							gpa_start:page_2mb_base(gpa as usize) as u64,
+							gpa_start:page_2mb_base(gpa),
 							table:md
 						};
 						let pte_array=md.virt as *mut NptPte;
@@ -349,7 +349,7 @@ impl SvmNptManager
 						unsafe
 						{
 							(*pde_p).set_page_size(false);
-							(*pde_p).set_pte(page_count(md.phys as usize) as u64);
+							(*pde_p).set_pte(page_count(md.phys));
 						}
 						self.pte.push(pte_d);
 					}
@@ -426,26 +426,26 @@ impl SvmNptManager
 			while p<end
 			{
 				let remainder=end-p;
-				let increment:u64=if page_1gb_offset(remainder as usize)==0 && page_1gb_offset(p as usize)==0
+				let increment=if page_1gb_offset(remainder)==0 && page_1gb_offset(p)==0
 				{
-					PAGE_1GB_SIZE as u64
+					PAGE_1GB_SIZE
 				}
-				else if page_2mb_offset(remainder as usize)==0 && page_2mb_offset(p as usize)==0
+				else if page_2mb_offset(remainder)==0 && page_2mb_offset(p)==0
 				{
-					PAGE_2MB_SIZE as u64
+					PAGE_2MB_SIZE
 				}
 				else
 				{
-					PAGE_4KB_SIZE as u64
+					PAGE_4KB_SIZE
 				};
-				match increment as usize
+				match increment
 				{
 					PAGE_1GB_SIZE=>self.update_pdpte(p,0,r.input_handler.is_none(),false,false,true),
 					PAGE_2MB_SIZE=>self.update_pde(p,0,r.input_handler.is_none(),false,false,true),
 					PAGE_4KB_SIZE=>self.update_pte(p,0,r.input_handler.is_none(),false,false),
 					_=>panic!("Unknown increment size: 0x{:X}!",increment)
 				}
-				p+=increment;
+				p+=increment as u64;
 			}
 		}
 	}

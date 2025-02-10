@@ -32,6 +32,15 @@ This method utilizes QEMU's ISA Debug Console so that NoirVisor can run inside Q
 
 QEMU ISA Debug Console can only be written. Any reads from it will return 0xE9. So this connection can only be used in text-mode debugging. Interactive debugging is infeasible.
 
+To enable QEMU ISA Debug Console, you need to add an `isa-debugcon` device and connect it to a `chardev`. For example:
+```
+qemu-system-x86_64 \
+ -chardev socket,port=23456,host=0.0.0.0,server=on,telnet=on,id=debugger \
+ -device isa-debugcon,iobase=0x402,chardev=debugger \
+ ...
+```
+The `socket` option allows the remote debug console. If you don't need it, just use `stdio` option instead.
+
 ## Text-Mode Debugging
 For this debugging mode, the connection is considered a console. The remote host will be receiving texts only. So programs like PuTTY should do the job well in terms of a serial console.
 

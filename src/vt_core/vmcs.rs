@@ -10,10 +10,10 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::fmt::{self,Display};
+use core::{arch::x86_64::_bittest, fmt::{self,Display}};
 use paste::paste;
 
-use crate::{xpf_core::asm::vt::*,*};
+use crate::{xpf_core::{asm::vt::*, x86::{crdr::DR6_BS, rflags::RFLAGS_TF_BIT}},*};
 
 // 16-Bit Control Fields
 pub const GUEST_VPID:usize=0x0;
@@ -214,15 +214,34 @@ pub const HOST_MSR_IA32_INTERRUPT_SSP_TABLE_ADDR:usize=0x6C1C;
 
 #[inline] pub fn vt_attrib(selector:u16,attrib:u16)->u32
 {
-	(attrib as u32)|if selector==0 {0x10000} else {0}
+	let mut ar=SegmentAccessRights(attrib as u32);
+	ar.set_unusable(selector==0);
+	ar.0
 }
 
 #[inline] pub unsafe fn advance_rip()
 {
 	let mut gip=vmreadptr(GUEST_RIP).unwrap();
 	let ins_len=vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap();
-	// FIXME: Single-Stepping & rip overflow.
+	let rflags=vmread32(GUEST_RFLAGS).unwrap() as i32;
+	if _bittest(&raw const rflags,RFLAGS_TF_BIT as i32)!=0
+	{
+		// Single-Stepping is enabled! Inject #DB exception...
+		let pending_de=vmreadptr(GUEST_PENDING_DEBUG_EXCEPTIONS).unwrap();
+		vmwriteptr(GUEST_PENDING_DEBUG_EXCEPTIONS,pending_de|DR6_BS as usize);
+		// Remove the interrupt shadowing.
+		let mut interruptibility=InterruptibilityState(vmread32(GUEST_INTERRUPTIBILITY_STATE).unwrap());
+		interruptibility.set_blocking_by_sti(false);
+		interruptibility.set_blocking_by_mov_ss(false);
+		vmwrite32(GUEST_INTERRUPTIBILITY_STATE,interruptibility.0);
+	}
 	gip=gip.wrapping_add(ins_len as usize);
+	let cs_ar=SegmentAccessRights(vmread32(GUEST_CS_ACCESS_RIGHTS).unwrap());
+	if !cs_ar.get_long_mode()
+	{
+		// The rip might overflow if the guest is not in long mode.
+		gip&=0xFFFFFFFF;
+	}
 	vmwriteptr(GUEST_RIP,gip);
 }
 
@@ -302,6 +321,30 @@ impl VmxMsrAutoItem
 			data
 		}
 	}
+}
+
+pub struct SegmentAccessRights(pub u32);
+impl SegmentAccessRights
+{
+	build_int_mut_method!(segment_type,0,4,u32);
+	build_bit_mut_method!(descriptor_type,4);
+	build_int_mut_method!(dpl,5,2,u32);
+	build_bit_mut_method!(present,7);
+	build_bit_mut_method!(avl,12);
+	build_bit_mut_method!(long_mode,13);
+	build_bit_mut_method!(default_size,14);
+	build_bit_mut_method!(granularity,15);
+	build_bit_mut_method!(unusable,16);
+}
+
+pub struct InterruptibilityState(pub u32);
+impl InterruptibilityState
+{
+	build_bit_mut_method!(blocking_by_sti,0);
+	build_bit_mut_method!(blocking_by_mov_ss,1);
+	build_bit_mut_method!(blocking_by_smi,2);
+	build_bit_mut_method!(blocking_by_nmi,3);
+	build_bit_mut_method!(enclave_interruption,4);
 }
 
 pub struct VmxPinBasedControls(pub u32);

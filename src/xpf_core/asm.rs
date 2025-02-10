@@ -252,71 +252,21 @@ pub mod crdr
 
 pub mod cpuid
 {
-	use core::arch::asm;
+	use core::arch::x86_64::*;
 	
 	#[inline] pub fn cpuid(ia:u32,ic:u32,a:Option<&mut u32>,b:Option<&mut u32>,c:Option<&mut u32>,d:Option<&mut u32>)
 	{
-		let ca:u32;
-		let cb:u32;
-		let cc:u32;
-		let cd:u32;
-		unsafe
-		{
-			asm!
-			(
-				"push rbx",
-				"cpuid",
-				"mov r8,rbx",
-				"pop rbx",
-				in("eax") ia,
-				in("ecx") ic,
-				lateout("eax") ca,
-				out("r8d") cb,
-				lateout("ecx") cc,
-				out("edx") cd
-			);
-		}
-		if let Some(ra)=a
-		{
-			*ra=ca;
-		}
-		if let Some(rb)=b
-		{
-			*rb=cb;
-		}
-		if let Some(rc)=c
-		{
-			*rc=cc;
-		}
-		if let Some(rd)=d
-		{
-			*rd=cd;
-		}
+		let r=unsafe{__cpuid_count(ia,ic)};
+		if let Some(a)=a {*a=r.eax};
+		if let Some(b)=b {*b=r.ebx};
+		if let Some(c)=c {*c=r.ecx};
+		if let Some(d)=d {*d=r.edx};
 	}
 
 	#[inline] pub fn cpuid2(ia:u32,ic:u32)->(u32,u32,u32,u32)
 	{
-		let ca:u32;
-		let cb:u32;
-		let cc:u32;
-		let cd:u32;
-		unsafe
-		{
-			asm!
-			(
-				"push rbx",
-				"cpuid",
-				"mov r8,rbx",
-				"pop rbx",
-				in("eax") ia,
-				in("ecx") ic,
-				lateout("eax") ca,
-				out("r8d") cb,
-				lateout("ecx") cc,
-				out("edx") cd
-			);
-		}
-		(ca,cb,cc,cd)
+		let r=unsafe{__cpuid_count(ia,ic)};
+		(r.eax,r.ebx,r.ecx,r.edx)
 	}
 }
 
@@ -876,20 +826,6 @@ pub mod misc
 		unsafe
 		{
 			asm!("int 3");
-		}
-	}
-
-	#[inline] pub fn get_rsp()->u64
-	{
-		unsafe
-		{
-			let rsp:u64;
-			asm!
-			(
-				"mov {s},rsp",
-				s=out(reg) rsp
-			);
-			rsp
 		}
 	}
 }

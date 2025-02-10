@@ -64,7 +64,7 @@ macro_rules! derive_intermediate_new_method
 				s.set_read(r);
 				s.set_write(w);
 				s.set_execute(x);
-				s.[<set_ $field_name>](page_4kb_count($field_name as usize) as u64);
+				s.[<set_ $field_name>](page_4kb_count($field_name));
 				s
 			}
 		}
@@ -84,7 +84,7 @@ macro_rules! derive_last_new_method
 				s.set_write(w);
 				s.set_execute(x);
 				s.set_memory_type(memory_type);
-				s.set_page_base([<page_ $page_size _count>](page_base as usize) as u64);
+				s.set_page_base([<page_ $page_size _count>](page_base));
 				s
 			}
 		}
@@ -233,7 +233,7 @@ impl VtEptManager
 					let d=VtEptPageTableDescriptor
 					{
 						table:md,
-						gpa_start:page_1gb_base(gpa as usize) as u64
+						gpa_start:page_1gb_base(gpa)
 					};
 					// Initialize PDE Page.
 					let pde_p:*mut EptLargePde=md.virt.cast();
@@ -249,7 +249,7 @@ impl VtEptManager
 						(*pdpte_v).set_memory_type(0);
 						(*pdpte_v).set_page_size(false);
 						let pdpte_p:*mut EptPdpte=pdpte_v.cast();
-						(*pdpte_p).set_pde_entry(page_4kb_count(md.phys as usize) as u64);
+						(*pdpte_p).set_pde_entry(page_4kb_count(md.phys));
 					}
 					// Insert to EPT Manager.
 					self.pde.insert(i,d);
@@ -290,7 +290,7 @@ impl VtEptManager
 					let d=VtEptPageTableDescriptor
 					{
 						table:md,
-						gpa_start:page_2mb_base(gpa as usize) as u64
+						gpa_start:page_2mb_base(gpa)
 					};
 					// Initialize PTE page.
 					let pte_p:*mut EptPte=md.virt.cast();
@@ -306,7 +306,7 @@ impl VtEptManager
 						(*pde_v).set_memory_type(0);
 						(*pde_v).set_page_size(false);
 						let pde_p:*mut EptPde=pde_v.cast();
-						(*pde_p).set_pte_entry(page_4kb_count(md.phys as usize) as u64);
+						(*pde_p).set_pte_entry(page_4kb_count(md.phys));
 					}
 					// Insert to EPT Manager.
 					self.pte.insert(i,d);

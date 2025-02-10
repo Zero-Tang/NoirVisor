@@ -40,25 +40,20 @@ impl VtVcpu
 			// Execute the original CPUID and filter stuff.
 			#[allow(unused_mut)]
 			let (mut a,mut b,mut c,mut d)=cpuid2(ia,ic);
-			#[allow(clippy::single_match)]
-			match ia
+			if ia==CPUID_STD_PROCESSOR_FEATURE
 			{
-				CPUID_STD_PROCESSOR_FEATURE=>
-				{
-					c|=CPUID_UNDER_HYPERVISOR;
-					c&=!CPUID_VMX;
-				}
-				_=>()
-			};
+				c|=CPUID_UNDER_HYPERVISOR;
+				c&=!CPUID_VMX;
+			}
 			(a,b,c,d)
 		};
 		unsafe
 		{
-			// Write the results back to eax, ebx, ecx and edx, but preserve the higher 32 bits.
-			(&raw mut gpr_state.rax).cast::<u32>().write(a);
-			(&raw mut gpr_state.rbx).cast::<u32>().write(b);
-			(&raw mut gpr_state.rcx).cast::<u32>().write(c);
-			(&raw mut gpr_state.rdx).cast::<u32>().write(d);
+			// Write the results back to eax, ebx, ecx and edx and clear the higher 32 bits.
+			gpr_state.rax=a as u64;
+			gpr_state.rbx=b as u64;
+			gpr_state.rcx=c as u64;
+			gpr_state.rdx=d as u64;
 			// Advance the rip.
 			advance_rip();
 		}
@@ -72,9 +67,8 @@ impl VtVcpu
 		{
 			ControlRegisterQualification::WRITE_CR=>
 			{
-				let gpr_array:*const u64=(gpr_state as *mut GprState).cast();
 				gpr_state.rsp=unsafe{vmread64(GUEST_RSP)}.unwrap();
-				println!("New Value: 0x{:X}",unsafe{gpr_array.add(q.get_gpr_index()).read()});
+				println!("New Value: 0x{:X}",gpr_state.read(q.get_gpr_index()).unwrap());
 			}
 			_=>println!("Unrecognized Access: {}",q.get_access_type())
 		}
