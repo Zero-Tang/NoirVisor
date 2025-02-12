@@ -96,7 +96,7 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 	{
 		case IOCTL_Subvert:
 		{
-			NoirSetProtectedPID((ULONG)PsGetCurrentProcessId());
+			NoirSetProtectedPID((ULONG)(ULONG_PTR)PsGetCurrentProcessId());
 			SubversionProcess=PsGetCurrentProcess();
 			NoirBuildHypervisor();
 			NoirReportWindowsVersion();

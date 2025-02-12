@@ -1,0 +1,30 @@
+{
+	"instructions":
+	{
+		"memcpy":
+		{
+			"cmd":["ml64"],
+			"var":{"src":"{crtpath}\\memcpy.asm"}
+		},
+		"memcmp":
+		{
+			"cmd":["ml64"],
+			"var":{"src":"{crtpath}\\memcmp.asm"}
+		},
+		"memset":
+		{
+			"cmd":["ml64"],
+			"var":{"src":"{crtpath}\\memset.asm"}
+		},
+		"archive":
+		{
+			"cmd":["lib","{objpath}\\memcpy.obj","{objpath}\\memcmp.obj","{objpath}\\memset.obj","{objpath}\\strlen.obj","{objpath}\\cpu_disp.obj"],
+			"dependencies":["memcpy","memcmp","memset"]
+		}
+	},
+	"common_flags":
+	{
+		"ml64":["/W3","/WX","/Zf","/Zd","/Zi","/I{incpath}\\shared","/Fo{objpath}\\{instruction}.obj","/c","/nologo","{src}"],
+		"lib":["/NOLOGO","/OUT:.\\bin\\{outdir}\\msvcrt-static.lib","/MACHINE:X64","/ERRORREPORT:QUEUE"]
+	}
+}

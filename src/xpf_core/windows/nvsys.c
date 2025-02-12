@@ -67,33 +67,23 @@ PVOID NoirAllocateContiguousMemory(IN SIZE_T Length)
 
 PVOID NoirAllocateNonPagedMemory(IN SIZE_T Length)
 {
-#if _MSC_FULL_VER>192930140
-	PVOID p=ExAllocatePool2(POOL_FLAG_NON_PAGED_EXECUTE,Length,'pNvN');
-	if(p)InterlockedIncrement(&NoirAllocatedNonPagedPools);
-#else
 	PVOID p=ExAllocatePoolWithTag(NonPagedPool,Length,'pNvN');
 	if(p)
 	{
 		RtlZeroMemory(p,Length);
 		InterlockedIncrement(&NoirAllocatedNonPagedPools);
 	}
-#endif
 	return p;
 }
 
 PVOID NoirAllocatePagedMemory(IN SIZE_T Length)
 {
-#if _MSC_FULL_VER>192930140
-	PVOID p=ExAllocatePool2(POOL_FLAG_PAGED,Length,'gPvN');
-	if(p)InterlockedIncrement(&NoirAllocatedPagedPools);
-#else
 	PVOID p=ExAllocatePoolWithTag(PagedPool,Length,'gPvN');
 	if(p)
 	{
 		RtlZeroMemory(p,Length);
 		InterlockedIncrement(&NoirAllocatedPagedPools);
 	}
-#endif
 	return p;
 }
 
@@ -113,31 +103,14 @@ void NoirFreeContiguousMemory(PVOID VirtualAddress)
 
 void NoirFreeNonPagedMemory(IN PVOID VirtualAddress)
 {
-#if _MSC_FULL_VER>192930140
-	ExFreePool2(VirtualAddress,'pNvN',NULL,0);
-#else
 	ExFreePoolWithTag(VirtualAddress,'pNvN');
-#endif
 	InterlockedDecrement(&NoirAllocatedNonPagedPools);
 }
 
 void NoirFreePagedMemory(IN PVOID VirtualAddress)
 {
-#if _MSC_FULL_VER>192930140
-	ExFreePool2(VirtualAddress,'gPvN',NULL,0);
-#else
 	ExFreePoolWithTag(VirtualAddress,'gPvN');
-#endif
 	InterlockedDecrement(&NoirAllocatedPagedPools);
-}
-
-void NoirFreeLoggerBuffer(IN PVOID Buffer)
-{
-#if _MSC_FULL_VER>192930140
-	ExFreePool2(Buffer,'gLvN',NULL,0);
-#else
-	ExFreePoolWithTag(Buffer,'gLvN');
-#endif
 }
 
 ULONG32 noir_get_processor_count()

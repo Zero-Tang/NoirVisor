@@ -63,4 +63,7 @@ dkms.conf
 # Rust outputs
 target/
 
+# Python cache
+__pycache__/
+
 bin/

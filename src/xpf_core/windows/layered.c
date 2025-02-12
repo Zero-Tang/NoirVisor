@@ -487,7 +487,7 @@ void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessI
 				HANDLE Pid=NoirGetVirtualMachineProcessIdByPointer(VirtualMachine);
 				if(Pid==ProcessId)
 				{
-					NoirCvmTracePrint("[Handle Recycle] Terminated PID=%u has created CVM Handle=%llu! Terminating VM...\n",(ULONG)Pid,Handle);
+					NoirCvmTracePrint("[Handle Recycle] Terminated PID=%u has created CVM Handle=%llu! Terminating VM...\n",(ULONG_PTR)Pid,Handle);
 					nvc_release_vm(VirtualMachine);
 					NoirCvmHandleTable.HandleCount--;
 					NoirDeleteHandleUnsafe(Handle,NoirCvmHandleTable.TableCode);

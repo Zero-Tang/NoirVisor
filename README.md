@@ -129,27 +129,22 @@ Project NoirVisor chooses iced-x86 as NoirVisor's disassembler engine. It will b
 Since the adoption of the Rust programming language, NoirVisor will include an internal memory allocator: [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc). This allocator will enable NoirVisor to gather its allocated memories together so that they can be protected by nested paging. If using system-provided memory allocator, NoirVisor's memories do not exclusively own the pages, and thus can't be protected by nested paging, leaving NoirVisor vulnerable to attacks from guest. In addition, the memory allocator may enable NoirVisor to allocate memory even in host mode.
 
 ## Python script
-Since January 2024, NoirVisor can be built using Python script. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, building NoirVisor through Python script in Windows 7 is not supported. There is no `pip` package requirements for compilation. \
-First of all, in the root directory of this repository, execute the following command to compile the third-party libraries:
+NoirVisor can be built using Python script. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, building NoirVisor through Python script in Windows 7 is not supported. There is no `pip` package requirements for compilation. \
+First of all, launch a Visual Studio prompt. Both Visual Studio and Enterprise Windows Driver Kits contain them. \
+If you installed Visual Studio, you may launch it via `x64 Native Tools Command Prompt for VS2022`. VS2019 should be fine as well. \
+If you mounted Enterprise Windows Driver Kits, you may launch it with command (Assume you mounted EWDK to V: drive):
 ```
-make /target disassembler /j
-make /target snprintf /j
+V:\LaunchBuildEnv.cmd amd64 amd64
 ```
-The first command will build the `zydis` disassembler engine. \
-The second command will build the `snprintf` library.
 
 Then you can compile NoirVisor itself:
 ```
-make /j
+make
 ```
 
 Python-based compilation is parallel. It will achieve a great performance in building NoirVisor.
 
-Current implementation only supports building NoirVisor as Windows Driver.
-
 See [documentation](./doc/make.md) for more information using python script to build NoirVisor.
-
-Currently, the Python script does not support building NoirVisor Core in Rust.
 
 # Test
 
