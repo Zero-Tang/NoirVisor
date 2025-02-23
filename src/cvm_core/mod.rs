@@ -10,9 +10,5 @@
  * or fitness for a particular purpose, etc.).
  */
 
-#[allow(non_upper_case_globals)] mod ffi;
-
-#[repr(C)] pub struct CvmExitContext
-{
-	
-}
+mod ffi;
+#[cfg(target_arch="x86_64")] pub mod x86;

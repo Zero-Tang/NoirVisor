@@ -609,7 +609,7 @@ pub mod vt
 		let (inv_type,descriptor)=context.as_operands();
 		asm!
 		(
-			"invept xmmword ptr [{descriptor}],{inv_type}",
+			"invept {inv_type},xmmword ptr [{descriptor}]",
 			"setc {cf}",
 			"setz {zf}",
 			"adc {cf},{zf}",
@@ -664,7 +664,7 @@ pub mod vt
 		let (inv_type,descriptor)=context.as_operands();
 		asm!
 		(
-			"invvpid xmmword ptr [{descriptor}],{inv_type}",
+			"invvpid {inv_type},xmmword ptr [{descriptor}]",
 			"setc {cf}",
 			"setz {zf}",
 			"adc {cf},{zf}",
@@ -826,6 +826,14 @@ pub mod misc
 		unsafe
 		{
 			asm!("int 3");
+		}
+	}
+
+	#[inline] pub fn wbinvd()
+	{
+		unsafe
+		{
+			asm!("wbinvd");
 		}
 	}
 }

@@ -303,7 +303,8 @@ pub const VMX_INSTRUCTION_ERROR_MESSAGE:[&str;0x20]=
 	"Invalid Error, Number=31!"										// Error=31
 ];
 
-#[repr(C)] pub struct VmxMsrAutoItem
+#[derive(Default, Clone, Copy)]
+#[repr(C,align(16))] pub struct VmxMsrAutoItem
 {
 	pub index:u32,
 	reserved:u32,
@@ -643,4 +644,13 @@ impl EptViolationQualification
 	build_bit_mut_method!(linear_address_is_no_execute,11);
 	build_bit_mut_method!(nmi_unblocking_due_to_iret,12);
 	build_bit_mut_method!(is_shadow_stack,13);
+}
+
+pub struct ActivityState(pub u32);
+impl ActivityState
+{
+	pub const ACTIVE:u32=0;
+	pub const HLT:u32=1;
+	pub const SHUTDOWN:u32=2;
+	pub const WAIT_FOR_SIPI:u32=3;
 }

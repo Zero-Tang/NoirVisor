@@ -10,14 +10,67 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, vt::*}, nvbdk::GprState, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode}},*};
-use super::{ia32::cpuid::CPUID_VMX, vmcs::*, VtVcpu};
+use core::arch::x86_64::_xsetbv;
+
+use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, nvbdk::GprState, x86::{cpuid::*, crdr::*, interrupts::InterruptStackFrameWithErrorCode}},*};
+use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu};
 
 impl VtVcpu
 {
 	fn handle_triple_fault(&mut self,_gpr_state:&mut GprState)
 	{
 		panic!("Triple-Fault occured!");
+	}
+
+	fn handle_init(&mut self,gpr_state:&mut GprState)
+	{
+		unsafe 
+		{
+			// General-Purpose Registers
+			for i in 0..16usize
+			{
+				gpr_state.write(i,0);
+			}
+			gpr_state.rdx=self.cpuid_fms as u64;
+			vmwriteptr(GUEST_RSP,0);
+			vmwriteptr(GUEST_RIP,0xFFF0);
+			vmwriteptr(GUEST_RFLAGS,2);
+			// Control Registers
+			let mut cr0=vmreadptr(GUEST_CR0).unwrap();
+			cr0&=(CR0_CD|CR0_NW) as usize;	// CR0.CD and CR0.NW are unchanged during INIT. Other bits except CR0.ET should be cleared.
+			cr0|=CR0_ET as usize;			// CR0.ET is always set during INIT.
+			cr0|=rdmsr(MSR_VMX_CR0_FIXED1) as usize;
+			cr0&=rdmsr(MSR_VMX_CR0_FIXED0) as usize;
+			vmwriteptr(GUEST_CR0,cr0);
+			write_cr2(0);
+			vmwriteptr(GUEST_CR3,0);
+			let mut cr4=vmreadptr(GUEST_CR4).unwrap();
+			cr4|=rdmsr(MSR_VMX_CR4_FIXED0) as usize;
+			cr4&=rdmsr(MSR_VMX_CR4_FIXED1) as usize;
+			vmwriteptr(GUEST_CR4,cr4);
+			vmwriteptr(GUEST_MSR_IA32_EFER,0);
+			// Debug Registers
+			write_dr0(0);
+			write_dr1(0);
+			write_dr2(0);
+			write_dr3(0);
+			write_dr6(0xffff0ff0);
+			vmwriteptr(GUEST_DR7,0x400);
+			// IDTR & GDTR
+			vmwriteptr(GUEST_GDTR_BASE,0);
+			vmwriteptr(GUEST_IDTR_BASE,0);
+			vmwrite32(GUEST_GDTR_LIMIT,0xFFFF);
+			vmwrite32(GUEST_IDTR_LIMIT,0xFFFF);
+			// VM-Entry Controls: Guest is definitely not in IA-32e mode.
+			let mut entry_ctrl=VmxEntryControls(vmread32(VMENTRY_CONTROLS).unwrap());
+			entry_ctrl.set_ia32e_mode_guest(false);
+			vmwrite32(VMENTRY_CONTROLS,entry_ctrl.0);
+			// Invalid TLB since paging is switched off.
+			let ivc=InvvpidContext::Single(vmread16(GUEST_VPID).unwrap());
+			invvpid(&ivc);
+			// Upon INIT, vCPU enters inactive state to wait for Startup-IPI.
+			vmwrite32(GUEST_ACTIVITY_STATE,ActivityState::WAIT_FOR_SIPI);
+		}
 	}
 
 	fn handle_cpuid(&mut self,gpr_state:&mut GprState)
@@ -59,6 +112,20 @@ impl VtVcpu
 		}
 	}
 
+	fn handle_getsec(&mut self,_gpr_state:&mut GprState)
+	{
+		println!("SMX Virtualization is not supported!");
+		unsafe{advance_rip()};
+	}
+
+	fn handle_invd(&mut self,_gpr_state:&mut GprState)
+	{
+		println!("The invd instruction is executed!");
+		// In Hyper-V, it invoked wbinvd at invd exit.
+		wbinvd();
+		unsafe{advance_rip()};
+	}
+
 	fn handle_cr_access(&mut self,gpr_state:&mut GprState)
 	{
 		let q=ControlRegisterQualification::read();
@@ -68,16 +135,79 @@ impl VtVcpu
 			ControlRegisterQualification::WRITE_CR=>
 			{
 				gpr_state.rsp=unsafe{vmread64(GUEST_RSP)}.unwrap();
-				println!("New Value: 0x{:X}",gpr_state.read(q.get_gpr_index()).unwrap());
+				let new_value=gpr_state.read(q.get_gpr_index()).unwrap() as usize;
+				println!("New Value: 0x{new_value:X}");
+				unsafe
+				{
+					match q.get_cr_index()
+					{
+						4=>vmwriteptr(GUEST_CR4,new_value|CR4_VMXE as usize),
+						x=>panic!("Interception to CR{x} is unsupported!")
+					};
+				}
 			}
 			_=>println!("Unrecognized Access: {}",q.get_access_type())
 		}
 		panic!("CR-Access Exit is not implemented!");
 	}
 
-	fn handle_invalid(&mut self,_gpr_state:&mut GprState)
+	fn handle_rdmsr(&mut self,gpr_state:&mut GprState)
+	{
+		let index:u32=gpr_state.rcx as u32;
+		if index==MSR_BIOS_UPDATE_TRIGGER
+		{
+			// Prevent the Guest from updating microcode.
+			// Returning u64::MAX should prevent the guest from loading microcodes,
+			// unless they ignore the current version of microcode.
+			gpr_state.rax=u32::MAX as u64;
+			gpr_state.rdx=u32::MAX as u64;
+		}
+		unsafe{advance_rip()};
+	}
+
+	fn handle_wrmsr(&mut self,gpr_state:&mut GprState)
+	{
+		let index:u32=gpr_state.rcx as u32;
+		if index==MSR_BIOS_UPDATE_TRIGGER
+		{
+			// Prevent the Guest from updating microcode.
+			// Do so by ignoring the update request.
+		}
+		unsafe{advance_rip()};
+	}
+
+	fn handle_invalid_state(&mut self,_gpr_state:&mut GprState)
 	{
 		panic!("Invalid Guest State!");
+	}
+
+	fn handle_invalid_auto_msr(&mut self,_gpr_state:&mut GprState)
+	{
+		panic!("Invalid Auto-MSR List!");
+	}
+
+	fn handle_ept_violation(&mut self,_gpr_state:&mut GprState)
+	{
+		let gpa=unsafe{vmread64(GUEST_PHYSICAL_ADDRESS)}.unwrap();
+		println!("EPT Violation happened! GPA=0x{gpa:X}");
+	}
+
+	fn handle_ept_misconfig(&mut self,_gpr_state:&mut GprState)
+	{
+		let gpa=unsafe{vmread64(GUEST_PHYSICAL_ADDRESS)}.unwrap();
+		println!("EPT Misconfiguration happened! GPA=0x{gpa:X}");
+	}
+
+	fn handle_xsetbv(&mut self,gpr_state:&mut GprState)
+	{
+		let index=(gpr_state.rcx&0xFFFFFFFF) as u32;
+		let value=(gpr_state.rax&0xFFFFFFFF)|(gpr_state.rdx&0xFFFFFFFF00000000);
+		println!("The xsetbv instruction is intercepted! Index={index}, Value=0x{value:16X}");
+		unsafe
+		{
+			_xsetbv(index,value);
+			advance_rip();
+		}
 	}
 
 	fn handle_unknown(&mut self,_gpr_state:&mut GprState)
@@ -187,9 +317,18 @@ const VT_EXIT_HANDLERS:[VtExitHandler;VT_MAXIMUM_CODE]=
 {
 	let mut array:[VtExitHandler;VT_MAXIMUM_CODE]=[VtVcpu::handle_unknown;VT_MAXIMUM_CODE];
 	array[INTERCEPTED_TRIPLE_FAULT as usize]=VtVcpu::handle_triple_fault;
+	array[INTERCEPTED_INIT_SIGNAL as usize]=VtVcpu::handle_init;
 	array[INTERCEPTED_CPUID as usize]=VtVcpu::handle_cpuid;
+	array[INTERCEPTED_GETSEC as usize]=VtVcpu::handle_getsec;
+	array[INTERCEPTED_INVD as usize]=VtVcpu::handle_invd;
 	array[INTERCEPTED_CR_ACCESS as usize]=VtVcpu::handle_cr_access;
-	array[INVALID_GUEST_STATE as usize]=VtVcpu::handle_invalid;
+	array[INTERCEPTED_RDMSR as usize]=VtVcpu::handle_rdmsr;
+	array[INTERCEPTED_WRMSR as usize]=VtVcpu::handle_wrmsr;
+	array[INVALID_GUEST_STATE as usize]=VtVcpu::handle_invalid_state;
+	array[MSR_LOADING_FAILURE as usize]=VtVcpu::handle_invalid_auto_msr;
+	array[EPT_VIOLATION as usize]=VtVcpu::handle_ept_violation;
+	array[EPT_MISCONFIGURATION as usize]=VtVcpu::handle_ept_misconfig;
+	array[INTERCEPTED_XSETBV as usize]=VtVcpu::handle_xsetbv;
 	array
 };
 

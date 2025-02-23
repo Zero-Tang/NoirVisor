@@ -96,7 +96,9 @@ pub mod paging
 {
 	use core::{ffi::c_void, fmt::{self,Display,Formatter}};	
 	use paste::paste;
-	use crate::{svm_core::amd64::msr::MSR_EFER_LMA, xpf_core::{nvbdk::*, x86::crdr::*}};
+	use crate::*;
+	use svm_core::amd64::msr::MSR_EFER_LMA;
+	use xpf_core::{nvbdk::*, x86::crdr::*};
 
 	macro_rules! build_paging_def
 	{
@@ -106,27 +108,6 @@ pub mod paging
 			{
 				pub const [<$prefix:upper _PAGING_ $def:upper _BIT>]:u64=$shift;
 				pub const [<$prefix:upper _PAGING_ $def:upper>]:u64=1<<$shift;
-			}
-		};
-	}
-
-	/// ## `build_paging_bit_impl!` macro
-	/// This macro is intended to reduce the effort of implementing common fields.
-	#[macro_export] macro_rules! build_paging_bit_impl
-	{
-		($prefix:tt,$def:tt) =>
-		{
-			paste!
-			{
-				#[inline] fn [<get_ $def:lower>](&self)->bool
-				{
-					self.0&[<$prefix:upper _PAGING_ $def:upper>]==[<$prefix:upper _PAGING_ $def:upper>]
-				}
-				
-				#[inline] fn [<set_ $def:lower>](&mut self,v:bool)
-				{
-					self.0|=(v as u64)<<[<$prefix:upper _PAGING_ $def:upper _BIT>];
-				}
 			}
 		};
 	}
@@ -178,11 +159,11 @@ pub mod paging
 
 				impl X86PageTableEntryOps for $type_name
 				{
-					build_paging_bit_impl!(x86,present);
-					build_paging_bit_impl!(x86,write);
-					build_paging_bit_impl!(x86,user);
-					build_paging_bit_impl!(x86,accessed);
-					build_paging_bit_impl!(x86,nx);
+					build_bit_mut_method!(present,0,false);
+					build_bit_mut_method!(write,1,false);
+					build_bit_mut_method!(user,2,false);
+					build_bit_mut_method!(accessed,5,false);
+					build_bit_mut_method!(nx,63,false);
 
 					#[inline] fn get_next_level_base(&self)->u64
 					{
@@ -281,12 +262,12 @@ pub mod paging
 			Self
 			(
 				(p as u32)|
-				(w as u32)<<1|
-				(u as u32)<<2|
-				(r as u32)<<3|
-				(x as u32)<<4|
-				(pk as u32)<<5|
-				(ss as u32)<<6
+				((w as u32)<<1)|
+				((u as u32)<<2)|
+				((r as u32)<<3)|
+				((x as u32)<<4)|
+				((pk as u32)<<5)|
+				((ss as u32)<<6)
 			)
 		}
 

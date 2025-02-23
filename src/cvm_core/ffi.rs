@@ -12,10 +12,15 @@
 
 use core::{ffi::c_void,ptr::null_mut};
 
-use super::CvmExitContext;
 use crate::xpf_core::nvstatus::*;
 
-#[no_mangle] pub static noir_cvm_exit_context_size:usize=size_of::<CvmExitContext>();
+#[repr(C)] pub struct CvmFfiExitContext
+{
+	
+}
+
+#[allow(non_upper_case_globals)] 
+#[no_mangle] pub static noir_cvm_exit_context_size:usize=size_of::<CvmFfiExitContext>();
 
 #[no_mangle] pub extern "C" fn nvc_query_hypervisor_status(_status_type:u64,_result:*mut c_void)->Status
 {

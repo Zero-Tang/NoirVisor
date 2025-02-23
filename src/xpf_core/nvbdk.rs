@@ -49,7 +49,7 @@ impl MemoryDescriptor
 	}
 }
 
-#[repr(C)] #[derive(Default,Debug)] pub struct SegmentRegister
+#[repr(C)] #[derive(Default,Debug,Clone,Copy)] pub struct SegmentRegister
 {
 	pub selector:u16,
 	pub attrib:u16,
@@ -151,6 +151,60 @@ impl GprState
 			unsafe{array.add(i).write(value);}
 		}
 	}
+}
+
+#[repr(C)] pub struct SegmentState
+{
+	pub es:SegmentRegister,
+	pub cs:SegmentRegister,
+	pub ss:SegmentRegister,
+	pub ds:SegmentRegister,
+	pub fs:SegmentRegister,
+	pub gs:SegmentRegister,
+	pub tr:SegmentRegister,
+	pub gdtr:SegmentRegister,
+	pub idtr:SegmentRegister,
+	pub ldtr:SegmentRegister
+}
+
+#[repr(C)] pub struct CrState
+{
+	pub cr0:u64,
+	pub cr2:u64,
+	pub cr3:u64,
+	pub cr4:u64,
+	pub cr8:u64
+}
+
+#[repr(C)] pub struct DrState
+{
+	pub dr0:u64,
+	pub dr1:u64,
+	pub dr2:u64,
+	pub dr3:u64,
+	pub dr6:u64,
+	pub dr7:u64
+}
+
+#[repr(C)] pub struct MsrState
+{
+	pub sysenter_cs:u64,
+	pub sysenter_esp:u64,
+	pub sysenter_eip:u64,
+	pub pat:u64,
+	pub efer:u64,
+	pub star:u64,
+	pub lstar:u64,
+	pub cstar:u64,
+	pub sfmask:u64,
+	pub ststar:u64,
+	pub gsswap:u64,
+	pub debug_ctrl:u64
+}
+
+#[repr(C)] pub struct XcrState
+{
+	pub xcr0:u64
 }
 
 pub type BroadcastWorker=extern "C" fn(context:*mut c_void,processor_id:u32);
@@ -270,6 +324,16 @@ pub const PAGE_TABLE_ENTRIES32:usize=1024;
 			}
 		}
 	};
+	($name:tt,$pos:literal,$pub:tt) =>
+	{
+		paste!
+		{
+			#[inline] fn [<get_ $name:lower>](&self)->bool
+			{
+				self.0&(1<<$pos)==(1<<$pos)
+			}
+		}
+	};
 }
 
 #[macro_export] macro_rules! build_bit_mut_method
@@ -280,6 +344,24 @@ pub const PAGE_TABLE_ENTRIES32:usize=1024;
 		paste!
 		{
 			#[inline] pub fn [<set_ $name:lower>](&mut self,val:bool)
+			{
+				if val
+				{
+					self.0|=1<<$pos;
+				}
+				else
+				{
+					self.0&=!(1<<$pos);
+				}
+			}
+		}
+	};
+	($name:tt,$pos:literal,$pub:tt) =>
+	{
+		build_bit_get_method!($name,$pos,$pub);
+		paste!
+		{
+			#[inline] fn [<set_ $name:lower>](&mut self,val:bool)
 			{
 				if val
 				{

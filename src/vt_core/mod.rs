@@ -16,7 +16,7 @@ use core::{ffi::c_void, ptr::null_mut};
 
 use ia32::{cpuid::CPUID_VMX, msr::*};
 use vmcs::*;
-use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::x86::{HostProcessor, HostSystem}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK}}, HypervisorEssentials, *};
+use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::x86::{HostProcessor, HostSystem}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}}, HypervisorEssentials, *};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
@@ -46,6 +46,8 @@ use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, 
 	pub apic_id:u8,
 	pub x2apic_id:u32,
 	pub host_cpu:HostProcessor,
+	pub msr_auto_host:[VmxMsrAutoItem;5],
+	pub msr_auto_guest:[VmxMsrAutoItem;5],
 }
 
 impl Default for VtVcpu
@@ -64,7 +66,9 @@ impl Default for VtVcpu
 			under_hvm:false,
 			apic_id:0,
 			x2apic_id:0,
-			host_cpu:HostProcessor::default()
+			host_cpu:HostProcessor::default(),
+			msr_auto_host:[VmxMsrAutoItem::default();5],
+			msr_auto_guest:[VmxMsrAutoItem::default();5]
 		}
 	}
 }
@@ -83,6 +87,29 @@ extern "C"
 
 impl VtVcpu
 {
+	fn setup_msr_auto_list(&mut self,state:&ProcessorState)
+	{
+		self.msr_auto_guest[0]=VmxMsrAutoItem::new(MSR_STAR,state.star);
+		self.msr_auto_guest[1]=VmxMsrAutoItem::new(MSR_LSTAR,state.lstar);
+		self.msr_auto_guest[2]=VmxMsrAutoItem::new(MSR_CSTAR,state.cstar);
+		self.msr_auto_guest[3]=VmxMsrAutoItem::new(MSR_SFMASK,state.sfmask);
+		self.msr_auto_guest[4]=VmxMsrAutoItem::new(MSR_KERNEL_GS_BASE,state.gsswap);
+		self.msr_auto_host[0]=VmxMsrAutoItem::new(MSR_STAR,state.star);
+		self.msr_auto_host[1]=VmxMsrAutoItem::new(MSR_LSTAR,state.lstar);
+		self.msr_auto_host[2]=VmxMsrAutoItem::new(MSR_CSTAR,state.cstar);
+		self.msr_auto_host[3]=VmxMsrAutoItem::new(MSR_SFMASK,state.sfmask);
+		self.msr_auto_host[4]=VmxMsrAutoItem::new(MSR_KERNEL_GS_BASE,state.gsswap);
+		unsafe
+		{
+			vmwrite32(VMENTRY_MSR_LOAD_COUNT,self.msr_auto_guest.len() as u32);
+			vmwrite64(VMENTRY_MSR_LOAD_ADDRESS,noir_get_physical_address(self.msr_auto_guest.as_mut_ptr().cast()));
+			vmwrite32(VMEXIT_MSR_STORE_COUNT,self.msr_auto_guest.len() as u32);
+			vmwrite64(VMEXIT_MSR_STORE_ADDRESS,noir_get_physical_address(self.msr_auto_guest.as_mut_ptr().cast()));
+			vmwrite32(VMEXIT_MSR_LOAD_COUNT,self.msr_auto_host.len() as u32);
+			vmwrite64(VMEXIT_MSR_LOAD_ADDRESS,noir_get_physical_address(self.msr_auto_host.as_mut_ptr().cast()));
+		}
+	}
+
 	fn setup_host_state_area(&mut self,state:&ProcessorState)
 	{
 		unsafe
@@ -332,6 +359,7 @@ impl VtVcpu
 		let mut state=ProcessorState::default();
 		unsafe{noir_save_processor_state(&raw mut state)};
 		self.setup_guest_state_area(&state,gsp);
+		self.setup_msr_auto_list(&state);
 		self.setup_host_state_area(&state);
 		self.setup_control_area();
 		println!("Processor {} completed setting up VMCS!",self.vcpu_id);
@@ -511,6 +539,7 @@ impl HypervisorEssentials for VtHypervisor
 							else {panic!("MSR (0x{index:X}) can't be intercepted via bitmap!")} as usize;
 						set_bitmap(bmp,0x400,i);
 					};
+					set_interception(MSR_BIOS_UPDATE_TRIGGER,false);
 					set_interception(MSR_BIOS_UPDATE_TRIGGER,true);
 				}
 			}
