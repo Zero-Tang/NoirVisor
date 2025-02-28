@@ -241,203 +241,257 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function handles `#DE` (Divide-by-Zero Error) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_divide_error_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_divide_error_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Divide-Error Fault happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Divide-Error Fault happened!");
+	}
 }
 
 /// ## Vector 1 #DB - Debug Fault or Trap
 /// This function handles `#DB` (Debug) fault/trap.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_debug_fault_trap_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_debug_fault_trap_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Debug Fault/Trap happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Debug Fault/Trap happened!");
+	}
 }
 
 /// ## Vector 3 #BP - Breakpoint Trap
 /// This function handles `#BP` (Breakpoint) trap.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_breakpoint_trap_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_breakpoint_trap_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Breakpoint Trap happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Breakpoint Trap happened!");
+	}
 }
 
 /// ## Vector 4 #OF - Overflow Trap
 /// This function handles `#OF` (Overflow) trap.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_overflow_trap_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_overflow_trap_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Overflow Trap happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Overflow Trap happened!");
+	}
 }
 
 /// Vector 5 #BR - Bound-Range Fault
 /// This function handles `#BR` (Bound-Range Exceeded) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_bound_range_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_bound_range_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Bound-Range Fault happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Bound-Range Fault happened!");
+	}
 }
 
 /// ## Vector 6 #UD - Invalid-Opcode Fault
 /// This function handles `#UD` (Invalid-Opcode) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_invalid_opcode_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_invalid_opcode_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Invalid-Opcode Fault happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Invalid-Opcode Fault happened!");
+	}
 }
 
 /// ## Vector 7 #NM - Device-Not-Available Fault
 /// This function handles `#NM` (Device-Not-Available) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_device_not_available_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_device_not_available_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Device-Not-Available Fault happened!\n{}Dumping GPR State...\n{}",*exception_frame,*gpr_state);
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Device-Not-Available Fault happened!\n{}Dumping GPR State...\n{}",*exception_frame,*gpr_state);
+	}
 }
 
 /// ## Vector 8 #DF - Double-Fault Abort
 /// This function handles `#DF` (Double-Fault) abort.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_double_fault_abort_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_double_fault_abort_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Double-Fault Abort happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Double-Fault Abort happened!");
+	}
 }
 
 /// ## Vector 10 #TS - Invalid TSS Fault
 /// This function handles `#TS` (Invalid-TSS) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_invalid_tss_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_invalid_tss_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Invalid-TSS Fault happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Invalid-TSS Fault happened!");
+	}
 }
 
 /// ## Vector 11 #NP - Segment-Not-Present Fault
 /// This function handles `#NP` (Segment-Not-Present) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_segment_not_present_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_segment_not_present_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Segment-Not-Present Fault happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Segment-Not-Present Fault happened!");
+	}
 }
 
 /// ## Vector 12 #SS - Stack Fault
 /// This function handles `#SS` (Stack) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_stack_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_stack_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Stack Fault happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Stack Fault happened!");
+	}
 }
 
 /// ## Vector 13 #GP - General-Protection Fault
 /// This function handles `#GP` (General-Protection) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_general_protection_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_general_protection_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("General-Protection Fault happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("General-Protection Fault happened!");
+	}
 }
 
 /// ## Vector 14 #PF - Page Fault
 /// This function handles `#PF` (Page) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_page_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_page_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	let cr2=read_cr2();
-	let err_code=PageFaultErrorCode::from_u32((*exception_frame).error_code);
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Page Fault happened! Virtual-Address: 0x{:016X}, Error Reason: {}",cr2,err_code);
+	unsafe
+	{
+		let cr2=read_cr2();
+		let err_code=PageFaultErrorCode::from_u32((*exception_frame).error_code);
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Page Fault happened! Virtual-Address: 0x{:016X}, Error Reason: {}",cr2,err_code);
+	}
 }
 
 /// ## Vector 16 #MF - x87 Floating-Point Exception-Pending Fault
 /// This function handles `#MF` (x87 Floating-Point Exception-Pending) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_x87_floating_point_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_x87_floating_point_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("x87 Floating-Point Exception-Pending Fault happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("x87 Floating-Point Exception-Pending Fault happened!");
+	}
 }
 
 /// ## Vector 17 #AM - Alignment-Check Fault
 /// This function handles `#AM` (Alignment-Check) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_alignment_check_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_alignment_check_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Alignment-Check Fault happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Alignment-Check Fault happened!");
+	}
 }
 
 /// ## Vector 18 #MC - Machine-Check Abort
 /// This function handles `#MC` (Machine-Check) abort.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_machine_check_abort_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_machine_check_abort_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Machine-Check Abort happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Machine-Check Abort happened!");
+	}
 }
 
 /// ## Vector 19 #XF - SIMD Floating-Point Fault
 /// This function handles `#XF` (SIMD Floating-Point) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_simd_floating_point_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_simd_floating_point_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("SIMD Floating-Point Fault happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("SIMD Floating-Point Fault happened!");
+	}
 }
 
 /// ## Vector 21 #CP - Control-Protection Fault
 /// This function handles `#CP` (Control-Protection) fault.
 /// # Safety
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
-#[no_mangle] pub unsafe extern "C" fn noir_control_protection_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_control_protection_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	print!("Dumping Exception Frame:\n{}",*exception_frame);
-	print!("Dumping GPR State:\n{}",*gpr_state);
-	panic!("Control-Protection Fault happened!");
+	unsafe
+	{
+		print!("Dumping Exception Frame:\n{}",*exception_frame);
+		print!("Dumping GPR State:\n{}",*gpr_state);
+		panic!("Control-Protection Fault happened!");
+	}
 }
 
-extern "C"
+unsafe extern "C"
 {
 	fn noir_divide_error_fault_handler_a()->!;
 	fn noir_debug_fault_trap_handler_a()->!;

@@ -73,16 +73,19 @@ impl Default for VtVcpu
 	}
 }
 
-extern "C"
+unsafe extern "C"
 {
 	fn nvc_vt_subvert_processor_a(stack:*mut VtVcpu);
 	fn nvc_vt_exit_handler_a();
 	fn nvc_vt_guest_start();
 }
 
-#[no_mangle] unsafe extern "C" fn nvc_vt_subvert_processor_i(vcpu:*mut VtVcpu,gsp:usize)
+#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_subvert_processor_i(vcpu:*mut VtVcpu,gsp:usize)
 {
-	(*vcpu).subvert_i(gsp)
+	unsafe
+	{
+		(*vcpu).subvert_i(gsp)
+	}
 }
 
 impl VtVcpu
@@ -604,7 +607,7 @@ impl HypervisorEssentials for VtHypervisor
 	}
 }
 
-#[no_mangle] extern "C" fn nvc_vt_subvert_processor_thunk(context:*mut c_void,processor_id:u32)
+#[unsafe(no_mangle)] extern "C" fn nvc_vt_subvert_processor_thunk(context:*mut c_void,processor_id:u32)
 {
 	let hv=context as *mut VtHypervisor;
 	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};

@@ -12,12 +12,12 @@
 
 use crate::xpf_core::nvstatus::*;
 
-#[no_mangle] pub extern "C" fn nvc_acpi_initialize()->Status
+#[unsafe(no_mangle)] extern "C" fn nvc_acpi_initialize()->Status
 {
 	NOIR_NOT_IMPLEMENTED
 }
 
-#[no_mangle] pub extern "C" fn nvc_acpi_finalize()
+#[unsafe(no_mangle)] extern "C" fn nvc_acpi_finalize()
 {
 	
 }

@@ -40,7 +40,10 @@ impl DebuggerBackend for SerialPort
 	{
 		for i in 0..length
 		{
-			buffer.add(i).write(self.read_byte());
+			unsafe
+			{
+				buffer.add(i).write(self.read_byte());
+			}
 		}
 		true
 	}
@@ -49,7 +52,10 @@ impl DebuggerBackend for SerialPort
 	{
 		for i in 0..length
 		{
-			self.write_byte(buffer.add(i).read());
+			unsafe
+			{
+				self.write_byte(buffer.add(i).read());
+			}
 		}
 		true
 	}

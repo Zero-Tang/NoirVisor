@@ -53,19 +53,25 @@ pub enum ProcessorManufacturer
 	Unknown
 }
 
-#[no_mangle] unsafe extern "C" fn noir_get_vendor_string(vstr:*mut u8)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_get_vendor_string(vstr:*mut u8)
 {
 	let (_,b,c,d)=cpuid2(0,0);
-	*vstr.cast()=b;
-	*vstr.byte_add(4).cast()=d;
-	*vstr.byte_add(8).cast()=c;
+	unsafe
+	{
+		*vstr.cast()=b;
+		*vstr.byte_add(4).cast()=d;
+		*vstr.byte_add(8).cast()=c;
+	}
 }
 
-#[no_mangle] unsafe extern "C" fn noir_get_processor_name(pstr:*mut u32)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_get_processor_name(pstr:*mut u32)
 {
-	(*pstr.add(0x0),*pstr.add(0x1),*pstr.add(0x2),*pstr.add(0x3))=cpuid2(CPUID_EXT_BRAND_STRING_P1,0);
-	(*pstr.add(0x4),*pstr.add(0x5),*pstr.add(0x6),*pstr.add(0x7))=cpuid2(CPUID_EXT_BRAND_STRING_P2,0);
-	(*pstr.add(0x8),*pstr.add(0x9),*pstr.add(0xA),*pstr.add(0xB))=cpuid2(CPUID_EXT_BRAND_STRING_P3,0);
+	unsafe
+	{
+		(*pstr.add(0x0),*pstr.add(0x1),*pstr.add(0x2),*pstr.add(0x3))=cpuid2(CPUID_EXT_BRAND_STRING_P1,0);
+		(*pstr.add(0x4),*pstr.add(0x5),*pstr.add(0x6),*pstr.add(0x7))=cpuid2(CPUID_EXT_BRAND_STRING_P2,0);
+		(*pstr.add(0x8),*pstr.add(0x9),*pstr.add(0xA),*pstr.add(0xB))=cpuid2(CPUID_EXT_BRAND_STRING_P3,0);
+	}
 }
 
 impl ProcessorManufacturer
@@ -133,7 +139,7 @@ pub trait VirtualCpu
 
 static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 
-#[no_mangle] pub extern "C" fn noir_get_virtualization_supportability()->u32
+#[unsafe(no_mangle)] extern "C" fn noir_get_virtualization_supportability()->u32
 {
 	let mut vstr_raw:[u8;12]=[0;12];
 	let cpu_manuf=ProcessorManufacturer::query(&mut vstr_raw);
@@ -145,7 +151,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 	}
 }
 
-#[no_mangle] pub extern "C" fn noir_is_virtualization_enabled()->bool
+#[unsafe(no_mangle)] extern "C" fn noir_is_virtualization_enabled()->bool
 {
 	let mut vstr_raw:[u8;12]=[0;12];
 	let cpu_manuf=ProcessorManufacturer::query(&mut vstr_raw);
@@ -157,7 +163,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 	}
 }
 
-#[no_mangle] pub extern "C" fn nvc_teardown_hypervisor()
+#[unsafe(no_mangle)] extern "C" fn nvc_teardown_hypervisor()
 {
 	unsafe
 	{
@@ -169,7 +175,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 	}
 }
 
-#[no_mangle] pub extern "C" fn nvc_build_hypervisor()->Status
+#[unsafe(no_mangle)] extern "C" fn nvc_build_hypervisor()->Status
 {
 	// Subvert the system.
 	println!("Subverting the system...");

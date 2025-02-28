@@ -21,8 +21,9 @@ Codes that will still be written in C:
 - Platform-specific Driver Framework
 - Cross-Platform Abstract Layer
 
-Rust codes will be managed with the Cargo package manager. They will be compiled into static library (`nvcore.lib`) and linked via linker. In other words, we will be calling the `cargo` command from the compiling script. \
-Note: it may be counter-intuitive that NoirVisor for UEFI also links to `x86_64-pc-windows-msvc` target, but it just works.
+Rust codes will be managed with the Cargo package manager. They will be compiled into static library (`nvcore.lib`) and linked via linker. In other words, we will be calling the `cargo` command from the compiling script.
+
+NoirVisor uses Rust 2024 standard.
 
 ## Allocator
 NoirVisor uses [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc) as the global allocator.
@@ -89,7 +90,7 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 	 * Line 5
 	 */
 	```
-- Functions that are callable in C must begin with `#[no_mangle] pub extern "C" (unsafe) fn`. The `pub` keyword is not required.
+- Functions that are callable in C must begin with `#[unsafe(no_mangle)] (pub) (unsafe) extern "C" fn`. The `pub` and `unsafe` keywords are not required.
 - Naming convention is the same to the [Rust default](https://doc.rust-lang.org/1.0.0/style/style/naming/README.html), with following additions:
 	- Architecture/Hardware-specific names must begin with its name ID as prefix.
 	- Method names must be concise, preferably a verb with optional nouns and/or adverbs.

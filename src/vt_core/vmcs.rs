@@ -221,28 +221,31 @@ pub const HOST_MSR_IA32_INTERRUPT_SSP_TABLE_ADDR:usize=0x6C1C;
 
 #[inline] pub unsafe fn advance_rip()
 {
-	let mut gip=vmreadptr(GUEST_RIP).unwrap();
-	let ins_len=vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap();
-	let rflags=vmread32(GUEST_RFLAGS).unwrap() as i32;
-	if _bittest(&raw const rflags,RFLAGS_TF_BIT as i32)!=0
+	unsafe
 	{
-		// Single-Stepping is enabled! Inject #DB exception...
-		let pending_de=vmreadptr(GUEST_PENDING_DEBUG_EXCEPTIONS).unwrap();
-		vmwriteptr(GUEST_PENDING_DEBUG_EXCEPTIONS,pending_de|DR6_BS as usize);
-		// Remove the interrupt shadowing.
-		let mut interruptibility=InterruptibilityState(vmread32(GUEST_INTERRUPTIBILITY_STATE).unwrap());
-		interruptibility.set_blocking_by_sti(false);
-		interruptibility.set_blocking_by_mov_ss(false);
-		vmwrite32(GUEST_INTERRUPTIBILITY_STATE,interruptibility.0);
+		let mut gip=vmreadptr(GUEST_RIP).unwrap();
+		let ins_len=vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap();
+		let rflags=vmread32(GUEST_RFLAGS).unwrap() as i32;
+		if _bittest(&raw const rflags,RFLAGS_TF_BIT as i32)!=0
+		{
+			// Single-Stepping is enabled! Inject #DB exception...
+			let pending_de=vmreadptr(GUEST_PENDING_DEBUG_EXCEPTIONS).unwrap();
+			vmwriteptr(GUEST_PENDING_DEBUG_EXCEPTIONS,pending_de|DR6_BS as usize);
+			// Remove the interrupt shadowing.
+			let mut interruptibility=InterruptibilityState(vmread32(GUEST_INTERRUPTIBILITY_STATE).unwrap());
+			interruptibility.set_blocking_by_sti(false);
+			interruptibility.set_blocking_by_mov_ss(false);
+			vmwrite32(GUEST_INTERRUPTIBILITY_STATE,interruptibility.0);
+		}
+		gip=gip.wrapping_add(ins_len as usize);
+		let cs_ar=SegmentAccessRights(vmread32(GUEST_CS_ACCESS_RIGHTS).unwrap());
+		if !cs_ar.get_long_mode()
+		{
+			// The rip might overflow if the guest is not in long mode.
+			gip&=0xFFFFFFFF;
+		}
+		vmwriteptr(GUEST_RIP,gip);
 	}
-	gip=gip.wrapping_add(ins_len as usize);
-	let cs_ar=SegmentAccessRights(vmread32(GUEST_CS_ACCESS_RIGHTS).unwrap());
-	if !cs_ar.get_long_mode()
-	{
-		// The rip might overflow if the guest is not in long mode.
-		gip&=0xFFFFFFFF;
-	}
-	vmwriteptr(GUEST_RIP,gip);
 }
 
 impl<T:Display> Display for VmxResult<T>

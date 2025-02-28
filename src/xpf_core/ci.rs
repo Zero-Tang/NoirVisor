@@ -53,30 +53,36 @@ pub fn is_ci_phys_page(phys:u64)->bool
 
 /// # Safety
 /// `noir_add_section_to_ci` must be called by C functions.
-#[no_mangle] pub unsafe extern "C" fn noir_add_section_to_ci(base:*mut c_void,size:usize,_enable_scan:bool)->bool
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_add_section_to_ci(base:*mut c_void,size:usize,_enable_scan:bool)->bool
 {
 	let page_num=bytes_to_pages(size);
 	let ci=&raw mut CI_PAGES;
 	for i in 0..page_num
 	{
 		let virt=((base as usize)+page_mult(i)) as *mut c_void;
-		let phys=noir_get_physical_address(virt) as u64;
-		(*ci).push(phys);
+		unsafe
+		{
+			let phys=noir_get_physical_address(virt) as u64;
+			(*ci).push(phys);
+		}
 	}
 	true
 }
 
 /// # Safety
 /// `noir_activate_ci` must be called by C functions.
-#[no_mangle] pub unsafe extern "C" fn noir_activate_ci()->bool
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_activate_ci()->bool
 {
 	let ci=&raw mut CI_PAGES;
-	// Sort the list since we will use binary search to confirm if a page belongs to CI.
-	(*ci).sort();
+	unsafe
+	{
+		// Sort the list since we will use binary search to confirm if a page belongs to CI.
+		(*ci).sort();
+	}
 	true
 }
 
-#[no_mangle] pub extern "C" fn noir_initialize_ci(soft_ci:bool,hard_ci:bool)->bool
+#[unsafe(no_mangle)] extern "C" fn noir_initialize_ci(soft_ci:bool,hard_ci:bool)->bool
 {
 	if soft_ci
 	{
@@ -94,7 +100,7 @@ pub fn is_ci_phys_page(phys:u64)->bool
 	}
 }
 
-#[no_mangle] pub extern "C" fn noir_finalize_ci()
+#[unsafe(no_mangle)] extern "C" fn noir_finalize_ci()
 {
 	// There is nothing to do in Rust when we finalize CI.
 }

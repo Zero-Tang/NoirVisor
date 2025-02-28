@@ -102,7 +102,7 @@ impl SvmVcpu
 	}
 }
 
-extern "C"
+unsafe extern "C"
 {
 	fn nvc_svm_subvert_processor_a(stack:*mut SvmStackTop);
 	fn nvc_svm_guest_start();
@@ -111,9 +111,12 @@ extern "C"
 /// # Safety
 /// This function is unsafe because it's called from assembly.
 /// DO NOT CALL THIS FUNCTION FROM RUST!
-#[no_mangle] unsafe extern "C" fn nvc_svm_subvert_processor_i(vcpu:*mut SvmVcpu,gsp:u64)->u64
+#[unsafe(no_mangle)] unsafe extern "C" fn nvc_svm_subvert_processor_i(vcpu:*mut SvmVcpu,gsp:u64)->u64
 {
-	(*vcpu).subvert_i(gsp)
+	unsafe
+	{
+		(*vcpu).subvert_i(gsp)
+	}
 }
 
 impl SvmVcpu
@@ -476,7 +479,7 @@ impl HypervisorEssentials for SvmHypervisor
 	}
 }
 
-#[no_mangle] extern "C" fn nvc_svm_subvert_processor_thunk(context:*mut c_void,processor_id:u32)
+#[unsafe(no_mangle)] extern "C" fn nvc_svm_subvert_processor_thunk(context:*mut c_void,processor_id:u32)
 {
 	let hv=context as *mut SvmHypervisor;
 	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};
@@ -488,7 +491,7 @@ impl HypervisorEssentials for SvmHypervisor
 	}
 }
 
-#[no_mangle] extern "C" fn nvc_svm_restore_processor_thunk(context:*mut c_void,processor_id:u32)
+#[unsafe(no_mangle)] extern "C" fn nvc_svm_restore_processor_thunk(context:*mut c_void,processor_id:u32)
 {
 	let hv=context as *mut SvmHypervisor;
 	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};

@@ -27,7 +27,7 @@ static EXAMPLE_CODE: &[u8] = &[
 // This routine is intended for eagerly initializing the iced-x86 crate
 // so that all `lazy_static` items are initialized.
 #[allow(non_snake_case)]
-#[no_mangle] extern "C" fn NoirInitializeDisassembler()
+#[unsafe(no_mangle)] extern "C" fn NoirInitializeDisassembler()
 {
 	let mut decoder=Decoder::with_ip(64,EXAMPLE_CODE,0x2000,0);
 	let mut fmter=MasmFormatter::new();
@@ -47,9 +47,9 @@ macro_rules! build_disasm_fn
 		paste!
 		{
 			#[allow(non_snake_case)]
-			#[no_mangle] unsafe extern "C" fn [<NoirGetInstructionLength $bitness>](Code:*const u8,CodeLength:usize)->u8
+			#[unsafe(no_mangle)] unsafe extern "C" fn [<NoirGetInstructionLength $bitness>](Code:*const u8,CodeLength:usize)->u8
 			{
-				let code_slice=slice::from_raw_parts(Code,if CodeLength==0 {15} else {CodeLength});
+				let code_slice=unsafe{slice::from_raw_parts(Code,if CodeLength==0 {15} else {CodeLength})};
 				let mut decoder=Decoder::new(16,code_slice,DecoderOptions::NONE);
 				let ins_info=decoder.decode();
 				ins_info.len() as u8

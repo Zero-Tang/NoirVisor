@@ -1,7 +1,7 @@
 [package]
 name = "nvcore"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 crate-type = ["staticlib"]
@@ -22,9 +22,7 @@ members = ["tools/nvdebug"]
 
 [dependencies]
 paste = "1.0.15"
-
-[dependencies.portable-dlmalloc]
-version = "1.2.0"
+portable-dlmalloc = "1.2.0"
 
 [dependencies.iced-x86]
 version = "1.21.0"

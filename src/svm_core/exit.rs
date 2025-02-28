@@ -22,7 +22,7 @@ use xpf_core::{ci::is_ci_phys_page, x86::{descriptors::DescriptorTable, interrup
 use super::*;
 use crate::mshv_core::cpuid::*;
 
-extern "C"
+unsafe extern "C"
 {
 	fn nvc_svm_return(stack:*const GprState)->!;
 }
@@ -478,36 +478,39 @@ impl SvmVcpu
 /// # Safety
 /// This function is unsafe is because it's called from assembly.
 /// DO NOT CALL THIS FUNCTION FROM RUST CODE!
-#[no_mangle] pub unsafe extern "C" fn nvc_svm_exit_handler(gpr_state:*mut GprState,vcpu:*mut SvmVcpu,guest_stack:*mut InterruptStackFrameWithErrorCode)
+#[unsafe(no_mangle)] unsafe extern "C" fn nvc_svm_exit_handler(gpr_state:*mut GprState,vcpu:*mut SvmVcpu,guest_stack:*mut InterruptStackFrameWithErrorCode)
 {
-	let vp=&mut (*vcpu);
-	let gpr=&mut (*gpr_state);
-	let stack:*mut SvmStackTop=(vp.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>())).cast();
-	if (*stack).guest_vmcb_pa==(*vcpu).vmcb.phys
+	unsafe
 	{
-		// This VM-Exit is intercepted from the subverted system.
-		let cur_vmcb=(*vcpu).vmcb.virt;
-		// Allow debugger to display the stack trace from the guest.
-		// Note: this stack trace is only meaningful from subverted host.
-		(*guest_stack).return_rip=vmread(cur_vmcb,GUEST_RIP);
-		(*guest_stack).return_rsp=vmread(cur_vmcb,GUEST_RSP);
-		// Intercept code is supposed to be 64-bit, but Linux KVM has a bug that treats the intercept code as 32-bit.
-		let intercept_code:i32=vmread(cur_vmcb,EXIT_CODE);
-		let decoder=dispatch_decoder(intercept_code as i64);
-		let handler=dispatch_handler(intercept_code as i64);
-		// If VMCB-Clean-Bits is supported, we may cache the VMCB fields.
-		if (*vcpu).vmcb_clean {vmwrite::<u32>((*vcpu).vmcb.virt,VMCB_CLEAN_BITS,0xFFFFFFFF)};
-		// Handle the VM-Exit!
-		gpr.rax=vmread(cur_vmcb,GUEST_RAX);
-		gpr.rsp=vmread(cur_vmcb,GUEST_RSP);
-		decoder(vp);
-		handler(vp,gpr);
-		vmwrite((*vcpu).vmcb.virt,GUEST_RAX,gpr.rax);
-		// The rax in GPR state should be the physical address of VMCB
-		// in order to execute the vmrun instruction properly.
-		// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.
+		let vp=&mut (*vcpu);
+		let gpr=&mut (*gpr_state);
+		let stack:*mut SvmStackTop=(vp.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>())).cast();
+		if (*stack).guest_vmcb_pa==(*vcpu).vmcb.phys
+		{
+			// This VM-Exit is intercepted from the subverted system.
+			let cur_vmcb=(*vcpu).vmcb.virt;
+			// Allow debugger to display the stack trace from the guest.
+			// Note: this stack trace is only meaningful from subverted host.
+			(*guest_stack).return_rip=vmread(cur_vmcb,GUEST_RIP);
+			(*guest_stack).return_rsp=vmread(cur_vmcb,GUEST_RSP);
+			// Intercept code is supposed to be 64-bit, but Linux KVM has a bug that treats the intercept code as 32-bit.
+			let intercept_code:i32=vmread(cur_vmcb,EXIT_CODE);
+			let decoder=dispatch_decoder(intercept_code as i64);
+			let handler=dispatch_handler(intercept_code as i64);
+			// If VMCB-Clean-Bits is supported, we may cache the VMCB fields.
+			if (*vcpu).vmcb_clean {vmwrite::<u32>((*vcpu).vmcb.virt,VMCB_CLEAN_BITS,0xFFFFFFFF)};
+			// Handle the VM-Exit!
+			gpr.rax=vmread(cur_vmcb,GUEST_RAX);
+			gpr.rsp=vmread(cur_vmcb,GUEST_RSP);
+			decoder(vp);
+			handler(vp,gpr);
+			vmwrite((*vcpu).vmcb.virt,GUEST_RAX,gpr.rax);
+			// The rax in GPR state should be the physical address of VMCB
+			// in order to execute the vmrun instruction properly.
+			// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.
+		}
+		gpr.rax=(*stack).guest_vmcb_pa;
 	}
-	gpr.rax=(*stack).guest_vmcb_pa;
 }
 
 pub const SVM_MAXIMUM_GROUPS:usize=2;

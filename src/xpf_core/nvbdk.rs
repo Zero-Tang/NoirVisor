@@ -210,7 +210,7 @@ impl GprState
 pub type BroadcastWorker=extern "C" fn(context:*mut c_void,processor_id:u32);
 pub type PhysicalRangeCallback=extern "C" fn(start:u64,length:u64,context:*mut c_void);
 
-extern "C"
+unsafe extern "C"
 {
 	// Processor State Facility
 	pub fn noir_get_processor_count()->u32;

@@ -23,7 +23,7 @@ mod qemu_debugcon;
 #[allow(dead_code)] mod serial;
 mod unknown;
 
-extern "C"
+unsafe extern "C"
 {
 	/// ## `noir_system_debugger_write` Function
 	/// This function will use the system's debugger to log outputs. \
@@ -119,7 +119,7 @@ static DEBUGGER_PTR:AtomicPtr<Debugger>=AtomicPtr::new(&raw mut DEBUGGER);
 unsafe fn debug_read(debugger:&mut impl DebuggerBackend,buffer:*mut u8,length:usize)->bool
 {
 	debugger.acquire();
-	let b=debugger.read(buffer,length);
+	let b=unsafe{debugger.read(buffer,length)};
 	debugger.release();
 	b
 }
@@ -127,7 +127,7 @@ unsafe fn debug_read(debugger:&mut impl DebuggerBackend,buffer:*mut u8,length:us
 unsafe fn debug_write(debugger:&mut impl DebuggerBackend,buffer:*const u8,length:usize)->bool
 {
 	debugger.acquire();
-	let b=debugger.write(buffer,length);
+	let b=unsafe{debugger.write(buffer,length)};
 	debugger.release();
 	b
 }
@@ -160,26 +160,32 @@ pub fn system_print(args: fmt::Arguments)
 
 /// # Safety
 /// Make sure `buffer` has the size of `length`.
-#[no_mangle] pub unsafe extern "C" fn noir_debug_output(buffer:*const u8,length:usize)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_debug_output(buffer:*const u8,length:usize)
 {
-	match &mut *DEBUGGER_PTR.load(Ordering::Relaxed)
+	unsafe
 	{
-		Debugger::QemuDebugCon(d)=>debug_write(d,buffer,length),
-		Debugger::Serial(d)=>debug_write(d,buffer,length),
-		Debugger::Unknown(d)=>debug_write(d,buffer,length)
-	};
+		match &mut *DEBUGGER_PTR.load(Ordering::Relaxed)
+		{
+			Debugger::QemuDebugCon(d)=>debug_write(d,buffer,length),
+			Debugger::Serial(d)=>debug_write(d,buffer,length),
+			Debugger::Unknown(d)=>debug_write(d,buffer,length)
+		};
+	}
 }
 
 /// # Safety
 /// Make sure `buffer` has the size of `length` and is mutable.
-#[no_mangle] pub unsafe extern "C" fn noir_debug_input(buffer:*mut u8,length:usize)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_debug_input(buffer:*mut u8,length:usize)
 {
-	match &mut *DEBUGGER_PTR.load(Ordering::Relaxed)
+	unsafe
 	{
-		Debugger::QemuDebugCon(d)=>debug_read(d,buffer,length),
-		Debugger::Serial(d)=>debug_write(d,buffer,length),
-		Debugger::Unknown(d)=>debug_read(d,buffer,length)
-	};
+		match &mut *DEBUGGER_PTR.load(Ordering::Relaxed)
+		{
+			Debugger::QemuDebugCon(d)=>debug_read(d,buffer,length),
+			Debugger::Serial(d)=>debug_write(d,buffer,length),
+			Debugger::Unknown(d)=>debug_read(d,buffer,length)
+		};
+	}
 }
 
 #[macro_export] macro_rules! print
@@ -222,7 +228,7 @@ pub fn system_print(args: fmt::Arguments)
 	}
 }
 
-#[no_mangle] pub extern "C" fn noir_configure_serial_port_debugger(_port_number:u8,port_base:u16,baud_rate:u32)->Status
+#[unsafe(no_mangle)] extern "C" fn noir_configure_serial_port_debugger(_port_number:u8,port_base:u16,baud_rate:u32)->Status
 {
 	unsafe
 	{
@@ -232,7 +238,7 @@ pub fn system_print(args: fmt::Arguments)
 	NOIR_SUCCESS
 }
 
-#[no_mangle] pub extern "C" fn noir_configure_qemu_debug_console(port:u16)->Status
+#[unsafe(no_mangle)] extern "C" fn noir_configure_qemu_debug_console(port:u16)->Status
 {
 	unsafe
 	{

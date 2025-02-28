@@ -29,12 +29,15 @@ pub mod io
 				#[inline] pub unsafe fn [<in _ $name>](port:u16)->$out_type
 				{
 					let v:$out_type;
-					asm!
-					(
-						concat!("in ",$reg,",dx"),
-						in("dx") port,
-						out($reg) v
-					);
+					unsafe
+					{
+						asm!
+						(
+							concat!("in ",$reg,",dx"),
+							in("dx") port,
+							out($reg) v
+						);
+					}
 					v
 				}
 			}
@@ -51,12 +54,15 @@ pub mod io
 				/// I/O operations are not guaranteed to be safe.
 				#[inline] pub unsafe fn [<out _ $name>](port:u16,val:$in_type)
 				{
-					asm!
-					(
-						concat!("out dx,",$reg),
-						in("dx") port,
-						in($reg) val
-					);
+					unsafe
+					{
+						asm!
+						(
+							concat!("out dx,",$reg),
+							in("dx") port,
+							in($reg) val
+						);
+					}
 				}
 			}
 		};
@@ -172,11 +178,14 @@ pub mod seg
 				/// of modifying the descriptor table register!
 				#[inline] pub unsafe fn [<write_ $name:lower r>](reg:*const DescriptorTable)
 				{
-					asm!
-					(
-						concat!("l",stringify!($name)," [{p}]"),
-						p=in(reg) reg
-					);
+					unsafe
+					{
+						asm!
+						(
+							concat!("l",stringify!($name)," [{p}]"),
+							p=in(reg) reg
+						);
+					}
 				}
 			}
 		};
@@ -417,18 +426,21 @@ pub mod vt
 	#[inline] pub unsafe fn vmcall(index:u32,context:usize)->VmxResult<EmptyUnit>
 	{
 		let vmx_err:u8;
-		asm!
-		(
-			"vmcall",
-			"setc {cf}",
-			"setz {zf}",
-			"adc {cf},{zf}",
-			in("ecx") index,
-			in("rdx") context,
-			zf=out(reg_byte) _,
-			cf=out(reg_byte) vmx_err
-		);
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		unsafe
+		{
+			asm!
+			(
+				"vmcall",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				in("ecx") index,
+				in("rdx") context,
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		}
 	}
 
 	/// ## Safety
@@ -436,17 +448,20 @@ pub mod vt
 	#[inline] pub unsafe fn vmxon(vmxon_region_phys:*const u64)->VmxResult<EmptyUnit>
 	{
 		let vmx_err:u8;
-		asm!
-		(
-			"vmxon qword ptr [{vmxon_phys}]",
-			"setc {cf}",
-			"setz {zf}",
-			"adc {cf},{zf}",
-			vmxon_phys=in(reg) vmxon_region_phys,
-			zf=out(reg_byte) _,
-			cf=out(reg_byte) vmx_err
-		);
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		unsafe
+		{
+			asm!
+			(
+				"vmxon qword ptr [{vmxon_phys}]",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				vmxon_phys=in(reg) vmxon_region_phys,
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		}
 	}
 
 	/// ## Safety
@@ -454,16 +469,19 @@ pub mod vt
 	#[inline] pub unsafe fn vmxoff()->VmxResult<EmptyUnit>
 	{
 		let vmx_err:u8;
-		asm!
-		(
-			"vmxoff",
-			"setc {cf}",
-			"setz {zf}",
-			"adc {cf},{zf}",
-			zf=out(reg_byte) _,
-			cf=out(reg_byte) vmx_err
-		);
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		unsafe
+		{
+			asm!
+			(
+				"vmxoff",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		}
 	}
 
 	/// ## Safety
@@ -471,17 +489,20 @@ pub mod vt
 	#[inline] pub unsafe fn vmclear(vmcs_phys:*const u64)->VmxResult<EmptyUnit>
 	{
 		let vmx_err:u8;
-		asm!
-		(
-			"vmclear qword ptr [{vmcs_phys}]",
-			"setc {cf}",
-			"setz {zf}",
-			"adc {cf},{zf}",
-			vmcs_phys=in(reg) vmcs_phys,
-			zf=out(reg_byte) _,
-			cf=out(reg_byte) vmx_err
-		);
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		unsafe
+		{
+			asm!
+			(
+				"vmclear qword ptr [{vmcs_phys}]",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				vmcs_phys=in(reg) vmcs_phys,
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		}
 	}
 
 	/// ## Safety
@@ -489,17 +510,20 @@ pub mod vt
 	#[inline] pub unsafe fn vmptrld(vmcs_phys:*const u64)->VmxResult<EmptyUnit>
 	{
 		let vmx_err:u8;
-		asm!
-		(
-			"vmptrld qword ptr [{vmcs_phys}]",
-			"setc {cf}",
-			"setz {zf}",
-			"adc {cf},{zf}",
-			vmcs_phys=in(reg) vmcs_phys,
-			zf=out(reg_byte) _,
-			cf=out(reg_byte) vmx_err
-		);
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		unsafe
+		{
+			asm!
+			(
+				"vmptrld qword ptr [{vmcs_phys}]",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				vmcs_phys=in(reg) vmcs_phys,
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		}
 	}
 
 	/// ## Safety
@@ -508,17 +532,20 @@ pub mod vt
 	{
 		let vmx_err:u8;
 		let mut vmcs_phys:u64=0;
-		asm!
-		(
-			"vmptrld qword ptr [{vmcs_phys}]",
-			"setc {cf}",
-			"setz {zf}",
-			"adc {cf},{zf}",
-			vmcs_phys=in(reg) &raw mut vmcs_phys,
-			zf=out(reg_byte) _,
-			cf=out(reg_byte) vmx_err
-		);
-		dispatch_vmx_result!(vmx_err,vmcs_phys)
+		unsafe
+		{
+			asm!
+			(
+				"vmptrld qword ptr [{vmcs_phys}]",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				vmcs_phys=in(reg) &raw mut vmcs_phys,
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+			dispatch_vmx_result!(vmx_err,vmcs_phys)
+		}
 	}
 
 	/// ## Safety
@@ -526,16 +553,19 @@ pub mod vt
 	#[inline] pub unsafe fn vmlaunch()->VmxResult<EmptyUnit>
 	{
 		let vmx_err:u8;
-		asm!
-		(
-			"vmlaunch",
-			"setc {cf}",
-			"setz {zf}",
-			"adc {cf},{zf}",
-			zf=out(reg_byte) _,
-			cf=out(reg_byte) vmx_err
-		);
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		unsafe
+		{
+			asm!
+			(
+				"vmlaunch",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		}
 	}
 
 	/// ## Safety
@@ -543,35 +573,41 @@ pub mod vt
 	#[inline] unsafe fn vmread(field:usize,value:*mut usize)->u8
 	{
 		let vmx_err:u8;
-		asm!
-		(
-			"vmread [{value}],{field}",
-			"setc {cf}",
-			"setz {zf}",
-			"adc {cf},{zf}",
-			field=in(reg) field,
-			value=in(reg) value,
-			zf=out(reg_byte) _,
-			cf=out(reg_byte) vmx_err
-		);
-		vmx_err
+		unsafe
+		{
+			asm!
+			(
+				"vmread [{value}],{field}",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				field=in(reg) field,
+				value=in(reg) value,
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+			vmx_err
+		}
 	}
 
 	#[inline] unsafe fn vmwrite(field:usize,value:*const usize)->u8
 	{
 		let vmx_err:u8;
-		asm!
-		(
-			"vmwrite {field},[{value}]",
-			"setc {cf}",
-			"setz {zf}",
-			"adc {cf},{zf}",
-			field=in(reg) field,
-			value=in(reg) value,
-			zf=out(reg_byte) _,
-			cf=out(reg_byte) vmx_err
-		);
-		vmx_err
+		unsafe
+		{
+			asm!
+			(
+				"vmwrite {field},[{value}]",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				field=in(reg) field,
+				value=in(reg) value,
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+			vmx_err
+		}
 	}
 
 	const INVEPT_SINGLE:usize=1;
@@ -607,18 +643,21 @@ pub mod vt
 	{
 		let vmx_err:u8;
 		let (inv_type,descriptor)=context.as_operands();
-		asm!
-		(
-			"invept {inv_type},xmmword ptr [{descriptor}]",
-			"setc {cf}",
-			"setz {zf}",
-			"adc {cf},{zf}",
-			inv_type=in(reg) inv_type,
-			descriptor=in(reg) &raw const descriptor,
-			zf=out(reg_byte) _,
-			cf=out(reg_byte) vmx_err
-		);
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		unsafe
+		{
+			asm!
+			(
+				"invept {inv_type},xmmword ptr [{descriptor}]",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				inv_type=in(reg) inv_type,
+				descriptor=in(reg) &raw const descriptor,
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		}
 	}
 
 	const INVVPID_INDIVIDUAL_ADDRESS:usize=0;
@@ -662,18 +701,21 @@ pub mod vt
 	{
 		let vmx_err:u8;
 		let (inv_type,descriptor)=context.as_operands();
-		asm!
-		(
-			"invvpid {inv_type},xmmword ptr [{descriptor}]",
-			"setc {cf}",
-			"setz {zf}",
-			"adc {cf},{zf}",
-			inv_type=in(reg) inv_type,
-			descriptor=in(reg) &raw const descriptor,
-			zf=out(reg_byte) _,
-			cf=out(reg_byte) vmx_err
-		);
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		unsafe
+		{
+			asm!
+			(
+				"invvpid {inv_type},xmmword ptr [{descriptor}]",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				inv_type=in(reg) inv_type,
+				descriptor=in(reg) &raw const descriptor,
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		}
 	}
 	
 	// Unfortunately, we won't be able to abuse generics to read/write VMCS...
@@ -724,46 +766,58 @@ pub mod vt
 	/// Understand what this field means.
 	#[inline] pub unsafe fn vmread16(field:usize)->VmxResult<u16>
 	{
-		vmread_proc!(field,u16)
+		unsafe
+		{
+			vmread_proc!(field,u16)
+		}
 	}
 	
 	/// ## Safety
 	/// Understand what this field means.
 	#[inline] pub unsafe fn vmread32(field:usize)->VmxResult<u32>
 	{
-		vmread_proc!(field,u32)
+		unsafe
+		{
+			vmread_proc!(field,u32)
+		}
 	}
 	
 	/// ## Safety
 	/// Understand what this field means.
 	#[inline] pub unsafe fn vmreadptr(field:usize)->VmxResult<usize>
 	{
-		vmread_proc!(field,usize)
+		unsafe
+		{
+			vmread_proc!(field,usize)
+		}
 	}
 	
 	/// ## Safety
 	/// Understand what this field means.
 	#[inline] pub unsafe fn vmread64(field:usize)->VmxResult<u64>
 	{
-		if cfg!(target_arch="x86_64")
+		unsafe
 		{
-			vmread_proc!(field,u64)
-		}
-		else
-		{
-			match vmread32(field)
+			if cfg!(target_arch="x86_64")
 			{
-				VmxResult::Ok(v1)=>
+				vmread_proc!(field,u64)
+			}
+			else
+			{
+				match vmread32(field)
 				{
-					match vmread32(field+1)
+					VmxResult::Ok(v1)=>
 					{
-						VmxResult::Ok(v2)=>VmxResult::Ok((v1 as u64)|((v2 as u64)<<32)),
-						VmxResult::Err(e)=>VmxResult::Err(e),
-						VmxResult::NoVmcs=>VmxResult::NoVmcs
+						match vmread32(field+1)
+						{
+							VmxResult::Ok(v2)=>VmxResult::Ok((v1 as u64)|((v2 as u64)<<32)),
+							VmxResult::Err(e)=>VmxResult::Err(e),
+							VmxResult::NoVmcs=>VmxResult::NoVmcs
+						}
 					}
+					VmxResult::Err(e)=>VmxResult::Err(e),
+					VmxResult::NoVmcs=>VmxResult::NoVmcs
 				}
-				VmxResult::Err(e)=>VmxResult::Err(e),
-				VmxResult::NoVmcs=>VmxResult::NoVmcs
 			}
 		}
 	}
@@ -772,38 +826,50 @@ pub mod vt
 	/// Understand what this field means.
 	#[inline] pub unsafe fn vmwrite16(field:usize,value:u16)->VmxResult<EmptyUnit>
 	{
-		vmwrite_proc!(field,value)
+		unsafe
+		{
+			vmwrite_proc!(field,value)
+		}
 	}
 	
 	/// ## Safety
 	/// Understand what this field means.
 	#[inline] pub unsafe fn vmwrite32(field:usize,value:u32)->VmxResult<EmptyUnit>
 	{
-		vmwrite_proc!(field,value)
+		unsafe
+		{
+			vmwrite_proc!(field,value)
+		}
 	}
 	
 	/// ## Safety
 	/// Understand what this field means.
 	#[inline] pub unsafe fn vmwriteptr(field:usize,value:usize)->VmxResult<EmptyUnit>
 	{
-		vmwrite_proc!(field,value)
+		unsafe
+		{
+			vmwrite_proc!(field,value)
+		}
 	}
 	
 	/// ## Safety
 	/// Understand what this field means.
 	#[inline] pub unsafe fn vmwrite64(field:usize,value:u64)->VmxResult<EmptyUnit>
 	{
-		if cfg!(target_arch="x86_64")
+		unsafe
 		{
-			vmwrite_proc!(field,value)
-		}
-		else
-		{
-			match vmwrite32(field,(value&0xffffffff) as u32)
+			if cfg!(target_arch="x86_64")
 			{
-				VmxResult::Ok(EmptyUnit(()))=>vmwrite32(field+1,(value>>32) as u32),
-				VmxResult::Err(e)=>VmxResult::Err(e),
-				VmxResult::NoVmcs=>VmxResult::NoVmcs
+				vmwrite_proc!(field,value)
+			}
+			else
+			{
+				match vmwrite32(field,(value&0xffffffff) as u32)
+				{
+					VmxResult::Ok(EmptyUnit(()))=>vmwrite32(field+1,(value>>32) as u32),
+					VmxResult::Err(e)=>VmxResult::Err(e),
+					VmxResult::NoVmcs=>VmxResult::NoVmcs
+				}
 			}
 		}
 	}
@@ -818,7 +884,10 @@ pub mod misc
 	/// Use this function only to test panic handler of NoirVisor!
 	#[inline] pub unsafe fn ud2()
 	{
-		asm!("ud2");
+		unsafe
+		{
+			asm!("ud2");
+		}
 	}
 
 	#[inline] pub fn int3()

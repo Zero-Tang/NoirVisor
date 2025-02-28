@@ -56,22 +56,28 @@ use xpf_core::{x86::{interrupts::*, rflags::*}, nvbdk::SegmentRegister};
 		Some(ec)=>EventInjection::new(vector,event_type,true,valid,ec),
 		None=>EventInjection::new(vector,event_type,false,valid,0)
 	};
-	vmwrite(vmcb,EVENT_INJECTION,evt.0);
+	unsafe
+	{
+		vmwrite(vmcb,EVENT_INJECTION,evt.0);
+	}
 }
 
 /// # Safety
 /// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn advance_rip(vmcb:*mut c_void)
 {
-	vmwrite(vmcb,GUEST_RIP,vmread::<u64>(vmcb,NEXT_RIP));
-	if vmcb_bt32(vmcb,GUEST_RFLAGS,RFLAGS_TF_BIT)
+	unsafe
 	{
-		// In case the guest is single-step debugging, we should inject debug trace trap so that
-		// the next instruction won't be skipped in debugger, confusing the debugging personnel.
-		// If guest is single-step debugging, slight penalty due to branch predictor is acceptable.
-		inject_event(vmcb,DEBUG_FAULT_OR_TRAP,EventType::HardwareException,None,true);
-		vmcb_bts32(vmcb,GUEST_DR6,DR6_BS_BIT as u32);
-		vmcb_clean_dr(vmcb);
+		vmwrite(vmcb,GUEST_RIP,vmread::<u64>(vmcb,NEXT_RIP));
+		if vmcb_bt32(vmcb,GUEST_RFLAGS,RFLAGS_TF_BIT)
+		{
+			// In case the guest is single-step debugging, we should inject debug trace trap so that
+			// the next instruction won't be skipped in debugger, confusing the debugging personnel.
+			// If guest is single-step debugging, slight penalty due to branch predictor is acceptable.
+			inject_event(vmcb,DEBUG_FAULT_OR_TRAP,EventType::HardwareException,None,true);
+			vmcb_bts32(vmcb,GUEST_DR6,DR6_BS_BIT as u32);
+			vmcb_clean_dr(vmcb);
+		}
 	}
 }
 
@@ -79,20 +85,26 @@ use xpf_core::{x86::{interrupts::*, rflags::*}, nvbdk::SegmentRegister};
 /// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn advance_rip_manually(vmcb:*mut c_void,len:usize)
 {
-	vmwrite(vmcb,NEXT_RIP,vmread::<u64>(vmcb,GUEST_RIP)+(len as u64));
-	advance_rip(vmcb)
+	unsafe
+	{
+		vmwrite(vmcb,NEXT_RIP,vmread::<u64>(vmcb,GUEST_RIP)+(len as u64));
+		advance_rip(vmcb)
+	}
 }
 
 /// # Safety
 /// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmread_segment(vmcb:*mut c_void,offset:usize)->SegmentRegister
 {
-	SegmentRegister
+	unsafe
 	{
-		selector:vmread(vmcb,offset),
-		attrib:svm_attrib_inverse(vmread(vmcb,offset+2)),
-		limit:vmread(vmcb,offset+4),
-		base:vmread(vmcb,offset+8)
+		SegmentRegister
+		{
+			selector:vmread(vmcb,offset),
+			attrib:svm_attrib_inverse(vmread(vmcb,offset+2)),
+			limit:vmread(vmcb,offset+4),
+			base:vmread(vmcb,offset+8)
+		}
 	}
 }
 
@@ -100,10 +112,13 @@ use xpf_core::{x86::{interrupts::*, rflags::*}, nvbdk::SegmentRegister};
 /// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmwrite_segment(vmcb:*mut c_void,offset:usize,value:SegmentRegister)
 {
-	vmwrite(vmcb,offset,value.selector);
-	vmwrite(vmcb,offset+2,svm_attrib(value.attrib));
-	vmwrite(vmcb,offset+4,value.limit);
-	vmwrite(vmcb,offset+8,value.base);
+	unsafe
+	{
+		vmwrite(vmcb,offset,value.selector);
+		vmwrite(vmcb,offset+2,svm_attrib(value.attrib));
+		vmwrite(vmcb,offset+4,value.limit);
+		vmwrite(vmcb,offset+8,value.base);
+	}
 }
 
 // Let's abuse generics here!
@@ -112,42 +127,60 @@ use xpf_core::{x86::{interrupts::*, rflags::*}, nvbdk::SegmentRegister};
 /// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmread<T>(vmcb:*mut c_void,offset:usize)->T
 {
-	vmcb.byte_add(offset).cast::<T>().read()
+	unsafe
+	{
+		vmcb.byte_add(offset).cast::<T>().read()
+	}
 }
 
 /// # Safety
 /// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmwrite<T>(vmcb:*mut c_void,offset:usize,value:T)
 {
-	vmcb.byte_add(offset).cast::<T>().write(value)
+	unsafe
+	{
+		vmcb.byte_add(offset).cast::<T>().write(value)
+	}
 }
 
 /// # Safety
 /// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmcopy<T>(dest:*mut c_void,src:*mut c_void,offset:usize)
 {
-	vmwrite(dest,offset,vmread::<T>(src,offset))
+	unsafe
+	{
+		vmwrite(dest,offset,vmread::<T>(src,offset))
+	}
 }
 
 /// # Safety
 /// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmcb_and<T:BitAndAssign>(vmcb:*mut c_void,offset:usize,value:T)
 {
-	*vmcb.byte_add(offset).cast::<T>()&=value
+	unsafe
+	{
+		*vmcb.byte_add(offset).cast::<T>()&=value
+	}
 }
 
 /// # Safety
 /// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmcb_or<T:BitOrAssign>(vmcb:*mut c_void,offset:usize,value:T)
 {
-	*vmcb.byte_add(offset).cast::<T>()|=value
+	unsafe
+	{
+		*vmcb.byte_add(offset).cast::<T>()|=value
+	}
 }
 
 /// # Safety
 /// The `vmcb` argument is not guaranteed to be valid.
 #[inline] pub unsafe fn vmcb_xor<T:BitXorAssign>(vmcb:*mut c_void,offset:usize,value:T)
 {
-	*vmcb.byte_add(offset).cast::<T>()^=value
+	unsafe
+	{
+		*vmcb.byte_add(offset).cast::<T>()^=value
+	}
 }
 
 // It seems impossible to use generics to build bit-test operations on VMCB.
@@ -162,16 +195,19 @@ macro_rules! build_vmcb_bt
 			/// The `vmcb` argument is not guaranteed to be valid.
 			#[inline] pub unsafe fn [<vmcb_ $ins $bits>](vmcb:*mut c_void,offset:usize,pos:u32)->bool
 			{
-				let p=vmcb.byte_add(offset);
 				let flag:u8;
-				asm!
-				(
-					concat!(stringify!($ins)," ",$size," ptr [{p}],{b:e}"),
-					"setc {f}",
-					p=in(reg) p,
-					b=in(reg) pos,
-					f=out(reg_byte) flag
-				);
+				unsafe
+				{
+					let p=vmcb.byte_add(offset);
+					asm!
+					(
+						concat!(stringify!($ins)," ",$size," ptr [{p}],{b:e}"),
+						"setc {f}",
+						p=in(reg) p,
+						b=in(reg) pos,
+						f=out(reg_byte) flag
+					);
+				}
 				flag!=0
 			}
 		}
@@ -349,12 +385,18 @@ macro_rules! derive_rw_method
 	{
 		#[inline] pub unsafe fn read(vmcb:*mut c_void)->Self
 		{
-			Self(vmread(vmcb,$offset))
+			unsafe
+			{
+				Self(vmread(vmcb,$offset))
+			}
 		}
 
 		#[inline] pub unsafe fn write(&self,vmcb:*mut c_void)
 		{
-			vmwrite(vmcb,$offset,self.0);
+			unsafe
+			{
+				vmwrite(vmcb,$offset,self.0);
+			}
 		}
 	};
 }
@@ -540,7 +582,10 @@ macro_rules! build_clean_bit_fn
 		{
 			#[inline] pub unsafe fn [<vmcb_clean_ $name:lower>](vmcb:*mut c_void)
 			{
-				vmcb_btr32(vmcb,VMCB_CLEAN_BITS,[<CLEAN_ $name:upper _BIT>]);
+				unsafe
+				{
+					vmcb_btr32(vmcb,VMCB_CLEAN_BITS,[<CLEAN_ $name:upper _BIT>]);
+				}
 			}
 		}
 	};

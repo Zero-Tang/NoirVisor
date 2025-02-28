@@ -217,16 +217,19 @@ impl VtVcpu
 	}
 }
 
-#[no_mangle] unsafe extern "C" fn nvc_vt_exit_handler(gpr_state:*mut GprState,vcpu:*mut VtVcpu,_guest_state:*mut InterruptStackFrameWithErrorCode)
+#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_exit_handler(gpr_state:*mut GprState,vcpu:*mut VtVcpu,_guest_state:*mut InterruptStackFrameWithErrorCode)
 {
-	let exit_reason=vmread32(VMEXIT_REASON).unwrap();
-	let vp=&mut (*vcpu);
-	let gpr=&mut (*gpr_state);
-	let handler=dispatch_handler(exit_reason);
-	handler(vp,gpr);
+	unsafe
+	{
+		let exit_reason=vmread32(VMEXIT_REASON).unwrap();
+		let vp=&mut (*vcpu);
+		let gpr=&mut (*gpr_state);
+		let handler=dispatch_handler(exit_reason);
+		handler(vp,gpr);
+	}
 }
 
-#[no_mangle] unsafe extern "C" fn nvc_vt_resume_failure(_gpr_state:*mut GprState,_vcpu:*mut VtVcpu,_vmx_status:u8)
+#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_resume_failure(_gpr_state:*mut GprState,_vcpu:*mut VtVcpu,_vmx_status:u8)
 {
 	panic!("VM-Entry failed on resume!");
 }

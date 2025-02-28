@@ -29,7 +29,10 @@ impl DebuggerBackend for QemuDebugConDebugger
 		// It is actually meaningless to implement read.
 		for i in 0..length
 		{
-			*(buffer.add(i))=in_byte(self.port_base);
+			unsafe
+			{
+				*(buffer.add(i))=in_byte(self.port_base);
+			}
 		}
 		true
 	}
@@ -38,7 +41,10 @@ impl DebuggerBackend for QemuDebugConDebugger
 	{
 		for i in 0..length
 		{
-			out_byte(self.port_base,*(buffer.add(i)));
+			unsafe
+			{
+				out_byte(self.port_base,*(buffer.add(i)));
+			}
 		}
 		true
 	}

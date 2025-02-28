@@ -22,7 +22,7 @@ pub unsafe fn set_bitmap(bitmap:*mut c_void,limit:usize,bit_position:usize)
 	let bmp:*mut u32=bitmap.cast();
 	let i=bit_position>>5;
 	let j=bit_position&0x1F;
-	*bmp.add(i)|=1<<j;
+	unsafe{*bmp.add(i)|=1<<j;}
 }
 
 /// # `reset_bitmap` function
@@ -35,7 +35,7 @@ pub unsafe fn reset_bitmap(bitmap:*mut c_void,limit:usize,bit_position:usize)
 	let bmp:*mut u32=bitmap.cast();
 	let i=bit_position>>5;
 	let j=bit_position&0x1F;
-	*bmp.add(i)&=!(1<<j);
+	unsafe{*bmp.add(i)&=!(1<<j);}
 }
 
 /// # `test_bitmap` function
@@ -48,5 +48,5 @@ pub unsafe fn test_bitmap(bitmap:*const c_void,limit:usize,bit_position:usize)->
 	let bmp:*const u32=bitmap.cast();
 	let i=bit_position>>5;
 	let j=bit_position&0x1F;
-	bmp.add(i).read()&(1<<j)!=0
+	unsafe{bmp.add(i).read()&(1<<j)!=0}
 }
