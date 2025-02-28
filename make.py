@@ -15,11 +15,23 @@ def confirm_cargo()->bool:
 		if not stdout_text.startswith("cargo"):
 			print("This cargo doesn't seem right...")
 			return False
-		print("We are using {}".format(stdout_text),end='')
-		return True
+		cargo_ver=stdout_text[:-1]
 	except:
 		print("Cargo does not exist! Did you install rust-lang?")
 		return False
+	proc=subprocess.Popen(["rustc","--version"],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+	try:
+		stdout_bytes,stderr_bytes=proc.communicate()
+		stdout_text=stdout_bytes.decode()
+		if not stdout_text.startswith("rustc"):
+			print("This rustc doesn't seem right...")
+			return False
+		rustc_ver=stdout_text[:-1]
+	except:
+		print("rustc does not exist! Did you install rust-lang?")
+		return False
+	print("We are using {} and {}...".format(cargo_ver,rustc_ver))
+	return True
 
 def confirm_msvc()->bool:
 	try:
@@ -34,7 +46,7 @@ def confirm_msvc()->bool:
 		print("MSVC is not installed!")
 		return False
 	print("MSVC is installed at {}".format(msvc_path))
-	print("Windows SDK Version: {}".format(sdk_ver))
+	print("Windows SDK Version: {}".format(sdk_ver[:-1]))
 	print("Windows Kits is installed at {}".format(sdk_path))
 	inc_path=os.path.join(sdk_path,"Include",sdk_ver)
 	if os.path.exists(inc_path):

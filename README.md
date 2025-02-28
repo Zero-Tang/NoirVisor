@@ -55,96 +55,13 @@ If it is really is false positive, relevant suppression will be put.
 For your convenience, if `clippy` prompted too many errors and warnings, you may double click `clippy.bat` to restrict the output in one window.
 
 # Build
-To build NoirVisor, using batch is essential. \
-Note that you should execute the `build_prep.bat` to make directories for first-time compilation. \
-Once NoirVisor is updated, it is recommended to execute `cleanup.bat` script before building.
-
-If you use terminal, you may add `/s` option in order to bypass the `pause` command. For example:
-```
-cd build
-.\compchk_win7x64.bat /s
-```
-
-**Note that the `cargo build` command only builds the NoirVisor Core instead of the whole NoirVisor project!**
-
-## NoirVisor Core
-NoirVisor Core is written in Rust. See [documentation for NoirVisor in Rust](./doc/rust.md).
-
-Install [Rust](https://www.rust-lang.org/tools/install). \
-The toolchain is up to you. It is recommended to use the `stable` toolchain. But feel free to use `nightly` toolchain.
-
-Please note that `cargo build` command only builds the NoirVisor Core. It is a static library, not an executable. \
-You should execute the batch script to build a full executable!
-
-Currently, NoirVisor Core in Rust can subvert the system with AMD-V in UEFI and Windows.
-
-## Windows Driver
-To build a kernel-mode driver on Windows, you should download and mount Enterprise Windows Driver Kit 11 (Visual Studio Build Tools 16.11.10 and 17.8.6) ISO file to T: and V: drives. I recommend using [WinCDEmu](https://wincdemu.sysprogs.org/download/) to mount the ISO on system startup if you are looking for a free virtual ISO Drive. \
-Then run the provided batch file to build it. You might have to mount the ISO file manually everytime on your machine startup in that I failed to find a script that mount an ISO to a specific drive letter. If you use WinCDEmu, however, you may order the system to mount EWDK10 and specify its drive letter during startup. \
-You may download the EWDK11 (with VS Build Tools 16.11.10) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2019-New \
-You may download the EWDK11 (with VS Build Tools 17.8.6) from Microsoft: https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022 \
-Make sure you have downloaded the correct version. NoirVisor would continue updating. If not using correct version, you might fail to compile the latest version of NoirVisor. \
-Note that EWDK11 with VS Build Tools **newer than 16 has removed import library for Windows 7**. \
-Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
-
-For Rust, you must install `x86_64-pc-windows-msvc` target host. This should be installed by default, but if you didn't, you may install it by:
-```
-rustup target add x86_64-pc-windows-msvc
-```
-To build NoirVisor for Windows without optimization, run the following command in `build` directory:
-```
-compchk_win7x64 /s
-```
-To build NoirVisor for Windows with optimization, run the following command in `build` directory:
-```
-compfre_win7x64 /s
-```
-
-## EFI Application and Runtime Driver
-Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. \
-To build a EFI Runtime Driver and Application, you should install NASM and TianoCore EDK II. To install TianoCore EDK II, you may download latest release source code and extract to path `C:\UefiDKII`. Also, you should mount [EWDK11 with VS Build Tools 17.1.5](https://docs.microsoft.com/en-us/legal/windows/hardware/enterprise-wdk-license-2022) to V: drive. \
-You may download NASM from its official website: https://www.nasm.us/pub/nasm/stable/win64/. Make sure you have added the directory to the `PATH` environment variable. \
-You may download EDK II from GitHub: https://github.com/tianocore/edk2/releases. Download the source code. \
-NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) on GitHub in order to build them.
-
-For Rust, you must install `x86_64-unknown-uefi` target host. This is not installed by default, so you may install it by:
-```
-rustup target add x86_64-unknown-uefi
-```
-NoirVisor uses a simple python script to wrap the `ar` command called by `cc` crate. Therefore, you must install Python.
-
-To build NoirVisor for UEFI without optimization, run the following command in `build` directory:
-```
-compchk_uefix64 /s
-```
-To build NoirVisor for UEFI with optimization, run the following command in `build` directory:
-```
-compfre_uefix64 /s
-```
-
-## Disassembler
-Project NoirVisor chooses iced-x86 as NoirVisor's disassembler engine. It will be built by Cargo on the first-time compilation. Visit the [documents for disassembler](src/disasm/readme.md) for further details.
-
-## Memory Allocator
-Since the adoption of the Rust programming language, NoirVisor will include an internal memory allocator: [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc). This allocator will enable NoirVisor to gather its allocated memories together so that they can be protected by nested paging. If using system-provided memory allocator, NoirVisor's memories do not exclusively own the pages, and thus can't be protected by nested paging, leaving NoirVisor vulnerable to attacks from guest. In addition, the memory allocator may enable NoirVisor to allocate memory even in host mode.
-
-## Python script
-NoirVisor can be built using Python script. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, building NoirVisor through Python script in Windows 7 is not supported. There is no `pip` package requirements for compilation. \
-First of all, launch a Visual Studio prompt. Both Visual Studio and Enterprise Windows Driver Kits contain them. \
-If you installed Visual Studio, you may launch it via `x64 Native Tools Command Prompt for VS2022`. VS2019 should be fine as well. \
-If you mounted Enterprise Windows Driver Kits, you may launch it with command (Assume you mounted EWDK to V: drive):
-```
-V:\LaunchBuildEnv.cmd amd64 amd64
-```
-
-Then you can compile NoirVisor itself:
-```
-make
-```
+We use Python script to build NoirVisor. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, building NoirVisor through Python script in Windows 7 is not supported. There are no `pip` package requirements for compilation.
 
 Python-based compilation is parallel. It will achieve a great performance in building NoirVisor.
 
 See [documentation](./doc/make.md) for more information using python script to build NoirVisor.
+
+**Note that the `cargo build` command only builds the NoirVisor Core instead of the whole NoirVisor project!**
 
 # Test
 
@@ -254,8 +171,6 @@ Project NoirVisor has six future development plans:
 - Port NoirVisor to Linux.
 - Port NoirVisor to UEFI and corresponding layered hypervisor.
 
-For more information, check out the [NoirVisor 2020+](https://github.com/Zero-Tang/NoirVisor/projects/2) Project.
-
 # Publications
 Here lists some informal publications (blogs) regarding hypervisor development:
 
@@ -265,14 +180,9 @@ Here lists some informal publications (blogs) regarding hypervisor development:
 
 # Completed Features
 
+- Bluepill-like Hypervisor for both Intel VT-x /w EPT and AMD-V /w NPT.
 - Minimal Microsoft `Hv#1` Hypervisor Functionalities.
-- Stealth SSDT Hook (NtOpenProcess Hook) on 64-bit Windows, both Intel VT-x and AMD-V. (**Compatible** with the `KiErrata420Present` mitigation and KVA Shadow mechanism.)
-- Stealth Inline Hook (NtSetInformationFile Hook) on 64-bit Windows, both Intel VT-x/EPT and AMD-V/NPT.
-- Non-Privileged Instruction Execution Prevention (NPIEP) on AMD-V.
-- Customizable VM engine on AMD-V.
-- Tagged Translation Lookaside Buffer by ASID/VPID feature.
 - Critical Hypervisor Protection.
-- Software-Level Code Integrity Enforcement.
 - Hardware-Level Code Integrity Enforcement, both Intel EPT and AMD NPT.
 
 # License

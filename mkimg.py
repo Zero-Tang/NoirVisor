@@ -23,8 +23,8 @@ if __name__=="__main__":
 	if confirm_mtools():
 		# Parse arguments
 		i=1
-		image_size:int=1440*1024
-		img_size_str:str="1440K"
+		image_size:int=2880<<10
+		img_size_str:str="2880K"
 		output_file:str=None
 		mkdir_orders:list[str]=[]
 		copy_orders:dict[str,str]=dict()
@@ -65,7 +65,7 @@ if __name__=="__main__":
 			os.remove(output_file)
 		subprocess.call(["fsutil","file","createnew",output_file,str(image_size)])
 		# Format Disk Image.
-		subprocess.call(["mformat","-i",output_file,"-f",img_size_str,"::"])
+		subprocess.call(["mformat","-i",output_file,"-v","NoirVisor","-f",img_size_str,"::"])
 		# Make Directories.
 		for md in mkdir_orders:
 			subprocess.call(["mmd","-i",output_file,md])
