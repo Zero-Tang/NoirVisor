@@ -728,7 +728,7 @@ pub mod vt
 	
 	impl<T> VmxResult<T>
 	{
-		pub fn unwrap(self)->T
+		#[inline(always)] pub fn unwrap(self)->T
 		{
 			match self
 			{
@@ -887,14 +887,6 @@ pub mod misc
 		unsafe
 		{
 			asm!("ud2");
-		}
-	}
-
-	#[inline] pub fn int3()
-	{
-		unsafe
-		{
-			asm!("int 3");
 		}
 	}
 

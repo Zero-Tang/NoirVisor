@@ -12,7 +12,7 @@
 
 use core::arch::x86_64::_xsetbv;
 
-use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, nvbdk::GprState, x86::{cpuid::*, crdr::*, interrupts::InterruptStackFrameWithErrorCode}},*};
+use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, vt_core::nvc_vt_resume_without_entry, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::InterruptStackFrameWithErrorCode}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu};
 
 impl VtVcpu
@@ -126,6 +126,90 @@ impl VtVcpu
 		unsafe{advance_rip()};
 	}
 
+	fn handle_vmcall(&mut self,gpr_state:&mut GprState)
+	{
+		let vmcall_func=gpr_state.rcx as u32;
+		let gcr3=unsafe{vmreadptr(GUEST_CR3)}.unwrap() as u64;
+		println!("The vmcall instruction is intercepted! Hypercall Leaf: 0x{vmcall_func:X}");
+		match vmcall_func
+		{
+			NOIR_HYPERCALL_CODE_CALLEXIT=>
+			{
+				let grip=unsafe{vmreadptr(GUEST_RIP)}.unwrap();
+				let hv=self.hypervisor as *mut VtHypervisor;
+				let start=unsafe{(*hv).image_base} as usize;
+				let end=start+unsafe{(*hv).image_size} as usize;
+				if (start..end).contains(&grip)
+				{
+					let nrip=grip+unsafe{vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap() as usize};
+					let gflags=unsafe{vmreadptr(GUEST_RFLAGS)}.unwrap();
+					let saved_state:GprState=GprState
+					{
+						rax:nrip as u64,
+						rcx:gflags as u64,
+						rdx:gpr_state.rsp,
+						rbx:gpr_state.rbx,
+						rsp:gpr_state.rsp,
+						rbp:gpr_state.rbp,
+						rsi:gpr_state.rsi,
+						rdi:gpr_state.rdi,
+						r8:gpr_state.r8,
+						r9:gpr_state.r9,
+						r10:gpr_state.r10,
+						r11:gpr_state.r11,
+						r12:gpr_state.r12,
+						r13:gpr_state.r13,
+						r14:gpr_state.r14,
+						r15:gpr_state.r15,
+					};
+					// Switch to Restored Control Registers.
+					let gcr4=unsafe{vmreadptr(GUEST_CR4)}.unwrap() as u64;
+					write_cr3(gcr3);
+					write_cr4(gcr4);
+					unsafe
+					{
+						// Switch to Restored IDT.
+						let gidtr=DescriptorTable
+						{
+							limit:vmread32(GUEST_IDTR_LIMIT).unwrap() as u16,
+							base:vmreadptr(GUEST_IDTR_BASE).unwrap() as u64
+						};
+						write_idtr(&raw const gidtr);
+						// Switch to Restored GDT.
+						let ggdtr=DescriptorTable
+						{
+							limit:vmread32(GUEST_GDTR_LIMIT).unwrap() as u16,
+							base:vmreadptr(GUEST_GDTR_BASE).unwrap() as u64
+						};
+						write_gdtr(&raw const ggdtr);
+						// Switch to Restored TSS.
+						let tr_sel=vmread32(GUEST_TR_SELECTOR).unwrap() as u16;
+						// Before actually switching TSS, make it available.
+						let tss_entry=(ggdtr.base+(tr_sel as u64 & 0xFFF8)) as *mut SystemSegmentDescriptor;
+						(*tss_entry).flags=SegmentFlags::AVAILABLE_TSS;
+						((ggdtr.base+tr_sel as u64+0x5) as *mut u8).write(0x89);
+						// Switch it.
+						write_tr(tr_sel);
+					}
+					// Return to the caller in Host Mode.
+					unsafe
+					{
+						nvc_vt_resume_without_entry(&raw const saved_state);
+					}
+					// Never reaches here!
+				}
+				else
+				{
+					println!("Invalid Call to restore system! rip=0x{grip:016X}");
+				}
+			}
+			_=>
+			{
+				println!("Unknown Hypercall Code 0x{vmcall_func:X} is called!");
+			}
+		}
+	}
+
 	fn handle_cr_access(&mut self,gpr_state:&mut GprState)
 	{
 		let q=ControlRegisterQualification::read();
@@ -217,13 +301,16 @@ impl VtVcpu
 	}
 }
 
-#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_exit_handler(gpr_state:*mut GprState,vcpu:*mut VtVcpu,_guest_state:*mut InterruptStackFrameWithErrorCode)
+#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_exit_handler(gpr_state:*mut GprState,vcpu:*mut VtVcpu,guest_state:*mut InterruptStackFrameWithErrorCode)
 {
 	unsafe
 	{
+		(*guest_state).return_rsp=vmreadptr(GUEST_RSP).unwrap() as u64;
+		(*guest_state).return_rip=vmreadptr(GUEST_RIP).unwrap() as u64;
 		let exit_reason=vmread32(VMEXIT_REASON).unwrap();
 		let vp=&mut (*vcpu);
 		let gpr=&mut (*gpr_state);
+		gpr.rsp=(*guest_state).return_rsp;
 		let handler=dispatch_handler(exit_reason);
 		handler(vp,gpr);
 	}
@@ -324,6 +411,7 @@ const VT_EXIT_HANDLERS:[VtExitHandler;VT_MAXIMUM_CODE]=
 	array[INTERCEPTED_CPUID as usize]=VtVcpu::handle_cpuid;
 	array[INTERCEPTED_GETSEC as usize]=VtVcpu::handle_getsec;
 	array[INTERCEPTED_INVD as usize]=VtVcpu::handle_invd;
+	array[INTERCEPTED_VMCALL as usize]=VtVcpu::handle_vmcall;
 	array[INTERCEPTED_CR_ACCESS as usize]=VtVcpu::handle_cr_access;
 	array[INTERCEPTED_RDMSR as usize]=VtVcpu::handle_rdmsr;
 	array[INTERCEPTED_WRMSR as usize]=VtVcpu::handle_wrmsr;

@@ -47,24 +47,26 @@ nvc_vt_exit_handler_a proc frame
 	; eb NoirVisor!nvc_vt_exit_handler_a cc
 	nop			; Change to int 3 in order to debug-break.
 	; Add a trap frame so WinDbg may display stack trace in Guest.
-	.pushframe
-	sub rsp,ktrap_frame_size-mach_frame_size+gpr_stack_size+20h
-	.allocstack ktrap_frame_size-mach_frame_size+108h
+	.pushframe code
+	sub rsp,mach_frame_size+gpr_stack_size+20h
 	; Save all GPRs
 	pushaq_fast 20h
+	.allocstack 20h
 	; Load the Guest GPR State to the first parameter.
 	lea rcx,[rsp+20h]
 	; Load vcpu to second parameter.
-	mov rdx,qword ptr [rsp+ktrap_frame_size-mach_frame_size+gpr_stack_size+20h]
+	mov rdx,qword ptr [rsp+mach_frame_size+gpr_stack_size+20h]
+	; Load Guest stack frame to third parameter.
+	lea r8,qword ptr [rsp+gpr_stack_size+20h]
 	; End of Prologue...
 	.endprolog
 	call nvc_vt_exit_handler
 	; Restore GPR state.
 	popaq_fast 20h
 	; We don't have to increment stack here in
-	; that the host rsp is already set in VMCS.
+	; that the host rsp is always loaded from VMCS.
 	; Check if the VMCS is launched.
-	btr dword ptr [rsp+ktrap_frame_size-mach_frame_size+gpr_stack_size+20h+14h],0
+	btr dword ptr [rsp+mach_frame_size+gpr_stack_size+20h+1Ch],0
 	jc launch_initial_vmcs
 	vmresume
 	jmp vmentry_failure

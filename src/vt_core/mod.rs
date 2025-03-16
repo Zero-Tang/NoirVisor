@@ -16,7 +16,7 @@ use core::{ffi::c_void, ptr::null_mut};
 
 use ia32::{cpuid::CPUID_VMX, msr::*};
 use vmcs::*;
-use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::x86::{HostProcessor, HostSystem}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}}, HypervisorEssentials, *};
+use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}}, HypervisorEssentials, *};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
@@ -78,6 +78,7 @@ unsafe extern "C"
 	fn nvc_vt_subvert_processor_a(stack:*mut VtVcpu);
 	fn nvc_vt_exit_handler_a();
 	fn nvc_vt_guest_start();
+	fn nvc_vt_resume_without_entry(gpr_state:*const GprState)->!;
 }
 
 #[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_subvert_processor_i(vcpu:*mut VtVcpu,gsp:usize)
@@ -125,6 +126,12 @@ impl VtVcpu
 			HostProcessor::build(&mut self.host_cpu,&ist);
 			let idtr=(*hv).host.idt.get_reg();
 			let gdtr=self.host_cpu.gdt.get_reg();
+			// Setup Host Stack
+			(*stack).vcpu=self as *mut Self;
+			(*stack).custom_vcpu=null_mut();
+			(*stack).nested_vcpu=null_mut();
+			(*stack).proc_id=self.vcpu_id;
+			(*stack).flags=0;
 			// Load them into VMCS.
 			vmwriteptr(HOST_GDTR_BASE,gdtr.base as usize);
 			vmwriteptr(HOST_IDTR_BASE,idtr.base as usize);
@@ -421,6 +428,21 @@ impl VtVcpu
 			r=>panic!("Failed to execute VMXON! Reason: {r}")
 		}
 	}
+
+	fn restore(&mut self)
+	{
+		unsafe
+		{
+			// Leave VMX Non-Root Operation by vmcall.
+			vmcall(NOIR_HYPERCALL_CODE_CALLEXIT,self as *mut Self as usize);
+			// Turn off VMX.
+			vmxoff();
+			// Clear CR4.VMXE bit.
+			let cr4=read_cr4()&!CR4_VMXE;
+			write_cr4(cr4);
+			sysdprintln!("Processor {} completed restoration!",self.vcpu_id);
+		}
+	}
 }
 
 #[repr(C)] pub struct VtHypervisor
@@ -594,6 +616,7 @@ impl HypervisorEssentials for VtHypervisor
 		unsafe
 		{
 			nvc_store_image_info(&raw mut self.image_base,&raw mut self.image_size);
+			println!("Base: 0x{:p}, Size: 0x{:X}",self.image_base,self.image_size);
 			noir_generic_call(nvc_vt_subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
 		println!("System Subversion Completed!");
@@ -602,12 +625,16 @@ impl HypervisorEssentials for VtHypervisor
 
 	fn restore_system(&mut self)->Status
 	{
-		sysdprintln!("System restoration is not implemented!");
-		NOIR_NOT_IMPLEMENTED
+		unsafe
+		{
+			noir_generic_call(nvc_vt_restore_processor_thunk,self as *mut Self as *mut c_void);
+		}
+		println!("System Restoration Completed!");
+		NOIR_SUCCESS
 	}
 }
 
-#[unsafe(no_mangle)] extern "C" fn nvc_vt_subvert_processor_thunk(context:*mut c_void,processor_id:u32)
+extern "C" fn nvc_vt_subvert_processor_thunk(context:*mut c_void,processor_id:u32)
 {
 	let hv=context as *mut VtHypervisor;
 	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};
@@ -618,4 +645,16 @@ impl HypervisorEssentials for VtHypervisor
 		None=>panic!("WTF? Processor ID out of bounds!\n")
 	}
 
+}
+
+extern "C" fn nvc_vt_restore_processor_thunk(context:*mut c_void,processor_id:u32)
+{
+	let hv=context as *mut VtHypervisor;
+	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};
+	sysdprintln!("Processor {processor_id} entered restoration routine...");
+	match vp
+	{
+		Some(vcpu)=>vcpu.restore(),
+		None=>panic!("WTF? Processor ID out of bounds!\n")
+	}
 }

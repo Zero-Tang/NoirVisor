@@ -91,13 +91,16 @@ impl ProcessorManufacturer
 			{
 				// Let's hope Rust's string match has O(logn) or better performance...
 				// Otherwise, we will setup a pair of sorted lists and do binary search.
+				// Note: Zhaoxin CPUs might use three different CPUID vendor names.
+				// It can be one of Centaur, VIA and Zhaoxin.
+				// Note: Montage Jintide CPUs will use Intel's vendor name.
 				match s.trim_matches('\0')
 				{
 					"GenuineIntel"=>Self::Intel,
 					"AuthenticAMD"=>Self::AMD,
 					"AMDisbetter!"=>Self::AMD,
 					"VIA VIA VIA "=>Self::VIA,
-					" Shanghai "=>Self::ZhaoXin,
+					"  Shanghai  "=>Self::ZhaoXin,
 					"HygonGenuine"=>Self::Hygon,
 					"CentaurHauls"=>Self::Centaur,
 					"CyrixInstead"=>Self::Cyrix,
@@ -141,24 +144,26 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 
 #[unsafe(no_mangle)] extern "C" fn noir_get_virtualization_supportability()->u32
 {
+	use ProcessorManufacturer::*;
 	let mut vstr_raw:[u8;12]=[0;12];
 	let cpu_manuf=ProcessorManufacturer::query(&mut vstr_raw);
 	match cpu_manuf
 	{
-		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>VtHypervisor::check_support(),
-		ProcessorManufacturer::AMD|ProcessorManufacturer::Hygon=>SvmHypervisor::check_support(),
+		Intel|VIA|ZhaoXin|Centaur=>VtHypervisor::check_support(),
+		AMD|Hygon=>SvmHypervisor::check_support(),
 		_=>0
 	}
 }
 
 #[unsafe(no_mangle)] extern "C" fn noir_is_virtualization_enabled()->bool
 {
+	use ProcessorManufacturer::*;
 	let mut vstr_raw:[u8;12]=[0;12];
 	let cpu_manuf=ProcessorManufacturer::query(&mut vstr_raw);
 	match cpu_manuf
 	{
-		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>VtHypervisor::check_enabled(),
-		ProcessorManufacturer::AMD|ProcessorManufacturer::Hygon=>SvmHypervisor::check_enabled(),
+		Intel|VIA|ZhaoXin|Centaur=>VtHypervisor::check_enabled(),
+		AMD|Hygon=>SvmHypervisor::check_enabled(),
 		_=>false
 	}
 }

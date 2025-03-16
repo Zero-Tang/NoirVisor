@@ -36,7 +36,10 @@ def confirm_cargo()->bool:
 def confirm_msvc()->bool:
 	try:
 		sdk_path=os.environ["WindowsSdkDir"]
-		sdk_ver=os.environ["WindowsSDKVersion"]
+		if "WindowsSDKVersion" in os.environ:
+			sdk_ver=os.environ["WindowsSDKVersion"]
+		else:
+			sdk_ver=os.environ["WindowsTargetPlatformVersion"]
 	except:
 		print("Windows SDK is not installed!")
 		return False
@@ -86,9 +89,13 @@ def main():
 		i+=1
 	if confirm_cargo() and confirm_msvc():
 		sdk_path=os.environ["WindowsSdkDir"]
-		sdk_ver=os.environ["WindowsSDKVersion"]
+		if "WindowsSDKVersion" in os.environ:
+			sdk_ver=os.environ["WindowsSDKVersion"]
+		else:
+			sdk_ver=os.environ["WindowsTargetPlatformVersion"]
 		msvc_path=os.environ["VCToolsInstallDir"]
 		inc_path=os.path.join(sdk_path,"Include",sdk_ver)
+		print(inc_path)
 		lib_path=os.path.join(sdk_path,"Lib",sdk_ver)
 		pl=Pipeline(config,optimizer_enabled,extra_vars={"ddkpath":msvc_path,"incpath":inc_path,"libpath":lib_path})
 		pl.run()
