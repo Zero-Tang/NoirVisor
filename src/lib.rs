@@ -182,17 +182,18 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 
 #[unsafe(no_mangle)] extern "C" fn nvc_build_hypervisor()->Status
 {
+	use ProcessorManufacturer::*;
 	// Subvert the system.
 	println!("Subverting the system...");
 	let mut vstr_raw:[u8;12]=[0;12];
 	let hv:Option<Box<dyn HypervisorEssentials>>=match ProcessorManufacturer::query(&mut vstr_raw)
 	{
-		ProcessorManufacturer::Intel|ProcessorManufacturer::VIA|ProcessorManufacturer::ZhaoXin=>
+		Intel|VIA|ZhaoXin|Centaur=>
 		{
 			// Use Intel VT-x.
 			Some(Box::<VtHypervisor>::new(VtHypervisor::default()))
 		}
-		ProcessorManufacturer::AMD|ProcessorManufacturer::Hygon=>
+		AMD|Hygon=>
 		{
 			// Use AMD-V.
 			Some(Box::<SvmHypervisor>::new(SvmHypervisor::default()))

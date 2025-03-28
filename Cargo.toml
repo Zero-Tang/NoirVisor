@@ -18,11 +18,12 @@ lto = true
 opt-level = 3
 
 [workspace]
-members = ["tools/nvdebug"]
+members = ["crates/nvcvm","tools/nvdebug"]
 
 [dependencies]
 paste = "1.0.15"
 portable-dlmalloc = "1.2.0"
+nvcvm = {path = "crates/nvcvm"}
 
 [dependencies.iced-x86]
 version = "1.21.0"

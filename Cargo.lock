@@ -46,9 +46,14 @@ name = "nvcore"
 version = "0.1.0"
 dependencies = [
  "iced-x86",
+ "nvcvm",
  "paste",
  "portable-dlmalloc",
 ]
+
+[[package]]
+name = "nvcvm"
+version = "0.1.0"
 
 [[package]]
 name = "nvdebug"
