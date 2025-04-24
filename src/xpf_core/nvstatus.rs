@@ -15,7 +15,7 @@
 
 use core::fmt::Display;
 
-#[repr(C)] #[derive(PartialEq)] pub struct Status(pub u32);
+#[repr(C)] #[derive(PartialEq,Clone,Copy)] pub struct Status(pub u32);
 
 pub enum Severity
 {

@@ -5,6 +5,9 @@ The python script is intended for parallelizing the build progress. It utilizes 
 The minimal version of python required for building is 3.9 since the script is using typing syntax to help reading the codes. \
 Download [Python](https://www.python.org/downloads/windows/) from Python's official website.
 
+The minimal version of Rust compiler is 1.85.0 since NoirVisor uses Rust 2024 edition. \
+Download [Rust](https://www.rust-lang.org/tools/install) from Rust-lang's official website. Note that you must install the `nightly` toolchain.
+
 You must execute the python script inside a Visual Studio prompt environment. This means you don't have to mount EWDK image if you have already installed Visual Studio.
 
 ### NoirVisor Core

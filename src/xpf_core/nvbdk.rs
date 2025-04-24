@@ -153,6 +153,21 @@ impl GprState
 	}
 }
 
+/// Note: This structure only defines volatile state for MSVC ABI (i.e.: Windows, UEFI).
+/// Volatile state for other ABIs are not implemented yet.
+#[repr(C,align(16))] pub struct VolatileXmmState
+{
+	pub xmm0:[u8;16],
+	pub xmm1:[u8;16],
+	pub xmm2:[u8;16],
+	pub xmm3:[u8;16],
+	pub xmm4:[u8;16],
+	pub xmm5:[u8;16],
+	pub mxcsr:u32,
+	pub flags:u32,
+	pub xsave_ptr:*mut c_void
+}
+
 #[repr(C)] pub struct SegmentState
 {
 	pub es:SegmentRegister,

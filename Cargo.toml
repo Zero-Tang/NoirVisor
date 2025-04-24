@@ -18,12 +18,15 @@ lto = true
 opt-level = 3
 
 [workspace]
-members = ["crates/nvcvm","tools/nvdebug"]
+members = ["crates/nvcvm"]
 
 [dependencies]
 paste = "1.0.15"
-portable-dlmalloc = "1.2.0"
 nvcvm = {path = "crates/nvcvm"}
+
+[dependencies.portable-dlmalloc]
+version = "0.3.2"
+features = ["alt-alloc"]
 
 [dependencies.iced-x86]
 version = "1.21.0"

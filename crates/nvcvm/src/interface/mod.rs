@@ -28,11 +28,11 @@ impl InterceptCode
 #[repr(C)] pub struct ExitContext
 {
 	pub intercept_code:InterceptCode,
-	pub rip:u64,
 	pub next_rip:u64,
-	pub rflags:u64,
 	// Hint for instruction decoder.
 	pub vp_state:u64,
+	// Per-interception
+	pub context:ExitContextUnion
 }
 
 #[derive(Clone, Copy)]
@@ -57,9 +57,12 @@ impl InterceptCode
 }
 
 #[derive(Clone, Copy)]
+#[repr(C)] pub struct MemoryAccessContextAccess(pub u8);
+
+#[derive(Clone, Copy)]
 #[repr(C)] pub struct MemoryAccessContext
 {
-	pub access:u8,
+	pub access:MemoryAccessContextAccess,
 	pub instruction_bytes:[u8;15],
 	pub gpa:u64,
 	pub gva:u64,
@@ -112,7 +115,14 @@ pub union ExitContextUnion
 	dr3:u64,
 	dr6:u64,
 	dr7:u64,
-	efer:u64
+	ssp:u64,
+	efer:u64,
+	star:u64,
+	lstar:u64,
+	cstar:u64,
+	ststar:u64,
+	sfmask:u64,
+	kgsbase:u64,
 }
 
 /// # VPCB Structure
@@ -134,6 +144,8 @@ pub union ExitContextUnion
 	pub request_rescission:bool,
 	/// Bitmap for what registers should be synchronized.
 	pub sync_flags:u64,
+	/// Exit Context.
+	pub exit_context:ExitContext,
 	/// Raw data of registers to be synchronized.
 	pub sync_regs:X64SyncReg
 }

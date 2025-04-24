@@ -182,7 +182,7 @@ pub fn system_print(args: fmt::Arguments)
 		match &mut *DEBUGGER_PTR.load(Ordering::Relaxed)
 		{
 			Debugger::QemuDebugCon(d)=>debug_read(d,buffer,length),
-			Debugger::Serial(d)=>debug_write(d,buffer,length),
+			Debugger::Serial(d)=>debug_read(d,buffer,length),
 			Debugger::Unknown(d)=>debug_read(d,buffer,length)
 		};
 	}

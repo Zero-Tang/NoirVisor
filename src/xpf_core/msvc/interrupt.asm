@@ -81,329 +81,203 @@ nvc_svm_host_ready_nmi proc frame
 
 nvc_svm_host_ready_nmi endp
 
-noir_divide_error_fault_handler_a proc frame
+stacktop_offset_volatile_xmms equ 20h
+stacktop_offset_gpr_state equ 90h
+stacktop_offset_stack_frame equ 110h
+interrupt_stacktop_size equ 110h
+
+interrupt_handler_prologue_with_code macro
+
+	.pushframe code
+	sub rsp,interrupt_stacktop_size
+	pushaq_fast stacktop_offset_gpr_state
+	pushax_volatile_fast stacktop_offset_volatile_xmms
+	; Construct parameters for the exception handler.
+	lea rcx,[rsp+stacktop_offset_stack_frame]	; The first parameter stores the exception frame.
+	lea rdx,[rsp+stacktop_offset_gpr_state]		; The second parameter stores the GPR state.
+	.allocstack 20h
+	.endprolog
+	; Prologue is over. Call the handler.
+
+endm
+
+interrupt_handler_epilogue_with_code macro
+
+	popax_volatile_fast stacktop_offset_volatile_xmms
+	popaq_fast stacktop_offset_gpr_state
+	; This exception has an error code.
+	; It must be popped out before the exception returns.
+	add rsp,interrupt_stacktop_size+8
+	iretq
+
+endm
+
+interrupt_handler_prologue macro
 
 	.pushframe
-	pushaq
+	sub rsp,interrupt_stacktop_size+8
+	.allocstack 8
+	pushaq_fast stacktop_offset_gpr_state
+	pushax_volatile_fast stacktop_offset_volatile_xmms
 	; Construct parameters for the exception handler.
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler.
-	.allocstack 28h
-	sub rsp,28h
+	lea rcx,[rsp+stacktop_offset_stack_frame+8]	; The first parameter stores the exception frame.
+	lea rdx,[rsp+stacktop_offset_gpr_state]		; The second parameter stores the GPR state.
+	.allocstack 20h
 	.endprolog
-	call noir_divide_error_fault_handler
-	add rsp,28h
-	popaq
+	; Prologue is over. Call the handler.
+
+endm
+
+interrupt_handler_epilogue macro
+
+	popax_volatile_fast stacktop_offset_volatile_xmms
+	popaq_fast stacktop_offset_gpr_state
+	add rsp,interrupt_stacktop_size
 	iretq
+
+endm
+
+noir_divide_error_fault_handler_a proc frame
+
+	interrupt_handler_prologue
+	call noir_divide_error_fault_handler
+	interrupt_handler_epilogue
 
 noir_divide_error_fault_handler_a endp
 
 noir_debug_fault_trap_handler_a proc frame
 
-	.pushframe
-	pushaq
-	; Construct parameters for the exception handler.
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,28h
-	.endprolog
+	interrupt_handler_prologue
 	call noir_debug_fault_trap_handler
-	add rsp,28h
-	popaq
-	iretq
+	interrupt_handler_epilogue
 
 noir_debug_fault_trap_handler_a endp
 
 noir_breakpoint_trap_handler_a proc frame
 
-	.pushframe
-	pushaq
-	; Construct parameters for the exception handler.
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,28h
-	.endprolog
+	interrupt_handler_prologue
 	call noir_breakpoint_trap_handler
-	add rsp,28h
-	popaq
-	iretq
+	interrupt_handler_epilogue
 
 noir_breakpoint_trap_handler_a endp
 
 noir_overflow_trap_handler_a proc frame
 
-	.pushframe
-	pushaq
-	; Construct parameters for the exception handler.
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,28h
-	.endprolog
+	interrupt_handler_prologue
 	call noir_overflow_trap_handler
-	add rsp,28h
-	popaq
-	iretq
+	interrupt_handler_epilogue
 
 noir_overflow_trap_handler_a endp
 
 noir_bound_range_fault_handler_a proc frame
 
-	.pushframe
-	pushaq
-	; Construct parameters for the exception handler.
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,28h
-	.endprolog
+	interrupt_handler_prologue
 	call noir_bound_range_fault_handler
-	add rsp,28h
-	popaq
-	iretq
+	interrupt_handler_epilogue
 
 noir_bound_range_fault_handler_a endp
 
 noir_invalid_opcode_fault_handler_a proc frame
 
-	.pushframe
-	pushaq
-	; Construct parameters for the exception handler.
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	.allocstack 28h
-	sub rsp,28h
-	.endprolog
+	interrupt_handler_prologue
 	call noir_invalid_opcode_fault_handler
-	add rsp,28h
-	popaq
-	iretq
+	interrupt_handler_epilogue
 
 noir_invalid_opcode_fault_handler_a endp
 
 noir_device_not_available_fault_handler_a proc frame
 
-	.pushframe
-	pushaq
-	; Construct parameters for the exception handler.
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,28h
-	.endprolog
+	interrupt_handler_prologue
 	call noir_device_not_available_fault_handler
-	add rsp,28h
-	popaq
-	iretq
+	interrupt_handler_epilogue
 
 noir_device_not_available_fault_handler_a endp
 
 noir_double_fault_abort_handler_a proc frame
 
-	.pushframe code
-	pushaq
-	; Construct parameters for the exception handler.
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,30h
-	.endprolog
+	interrupt_handler_prologue_with_code
 	call noir_double_fault_abort_handler
-	add rsp,30h
-	popaq
-	; #DF has an error code. It must be popped out before the exception returns.
-	add rsp,8
-	iretq
+	interrupt_handler_epilogue_with_code
 
 noir_double_fault_abort_handler_a endp
 
 noir_invalid_tss_fault_handler_a proc frame
 
-	.pushframe code
-	pushaq
-	; Construct parameters for the exception handler
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,30h
-	.endprolog
+	interrupt_handler_prologue_with_code
 	call noir_invalid_tss_fault_handler
-	add rsp,30h
-	popaq
-	; #TS has an error code. It must be popped out before the exception returns.
-	add rsp,8
-	iretq
+	interrupt_handler_epilogue_with_code
 
 noir_invalid_tss_fault_handler_a endp
 
 noir_segment_not_present_fault_handler_a proc frame
 
-	.pushframe code
-	pushaq
-	; Construct parameters for the exception handler
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,30h
-	.endprolog
+	interrupt_handler_prologue_with_code
 	call noir_segment_not_present_fault_handler
-	add rsp,30h
-	popaq
-	; #NP has an error code. It must be popped out before the exception returns.
-	add rsp,8
-	iretq
+	interrupt_handler_epilogue_with_code
 
 noir_segment_not_present_fault_handler_a endp
 
 noir_stack_fault_handler_a proc frame
 
-	.pushframe code
-	pushaq
-	; Construct parameters for the exception handler
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,30h
-	.endprolog
+	interrupt_handler_prologue_with_code
 	call noir_stack_fault_handler
-	add rsp,30h
-	popaq
-	; #SS has an error code. It must be popped out before the exception returns.
-	add rsp,8
-	iretq
+	interrupt_handler_epilogue_with_code
 
 noir_stack_fault_handler_a endp
 
 noir_general_protection_fault_handler_a proc frame
 
-	.pushframe code
-	; #GP might occur when switching to invalid Guest state.
-	pushaq
-	; Construct parameters for the exception handler.
-	lea rcx,[rsp+gpr_stack_size]	; The first parameter stores the exception frame.
-	mov rdx,rsp						; The second parameter stores the GPR state.
-	; Call the handler.
-	sub rsp,30h
-	.endprolog
+	interrupt_handler_prologue_with_code
 	call noir_general_protection_fault_handler
-	add rsp,30h
-	popaq
-	; #GP has an error code. It must be popped out before the exception returns.
-	add rsp,8
-	iretq
+	interrupt_handler_epilogue_with_code
 
 noir_general_protection_fault_handler_a endp
 
 noir_page_fault_handler_a proc frame
 
-	.pushframe code
-	; #PF might occur when attempting to access guest memory.
-	pushaq	; Save Registers.
-	; Construct parameters for the exception handler.
-	lea rcx,[rsp+gpr_stack_size]	; The first parameter stores the exception frame.
-	mov rdx,rsp						; The second parameter stores the GPR state.
-	; Call the handler.
-	sub rsp,30h
-	.endprolog
+	interrupt_handler_prologue_with_code
 	call noir_page_fault_handler
-	add rsp,30h
-	popaq	; Restore Registers.
-	; #PF has an error code. It must be popped out before the exception returns.
-	add rsp,8
-	iretq
+	interrupt_handler_epilogue_with_code
 
 noir_page_fault_handler_a endp
 
 noir_x87_floating_point_fault_handler_a proc frame
 
-	.pushframe
-	pushaq
-	; Construct parameters for the exception handler
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,28h
-	.endprolog
+	interrupt_handler_prologue
 	call noir_x87_floating_point_fault_handler
-	add rsp,28h
-	popaq
-	iretq
+	interrupt_handler_epilogue
 
 noir_x87_floating_point_fault_handler_a endp
 
 noir_alignment_check_fault_handler_a proc frame
 
-	.pushframe code
-	pushaq
-	; Construct parameters for the exception handler
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,30h
-	.endprolog
+	interrupt_handler_prologue_with_code
 	call noir_alignment_check_fault_handler
-	add rsp,30h
-	popaq
-	; #AC has an error code. It must be popped out before the exception returns.
-	add rsp,8
-	iretq
+	interrupt_handler_epilogue_with_code
 
 noir_alignment_check_fault_handler_a endp
 
 noir_machine_check_abort_handler_a proc frame
 
-	.pushframe
-	pushaq
-	; Construct parameters for the exception handler
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,28h
-	.endprolog
+	interrupt_handler_prologue
 	call noir_machine_check_abort_handler
-	add rsp,28h
-	popaq
-	iretq
+	interrupt_handler_epilogue
 
 noir_machine_check_abort_handler_a endp
 
 noir_simd_floating_point_fault_handler_a proc frame
 
-	.pushframe
-	pushaq
-	; Construct parameters for the exception handler
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,28h
-	.endprolog
+	interrupt_handler_prologue
 	call noir_simd_floating_point_fault_handler
-	add rsp,28h
-	popaq
-	iretq
+	interrupt_handler_epilogue
 
 noir_simd_floating_point_fault_handler_a endp
 
 noir_control_protection_fault_handler_a proc frame
 
-	.pushframe code
-	pushaq
-	; Construct parameters for the exception handler
-	lea rcx,[rsp+gpr_stack_size]
-	mov rdx,rsp
-	; Call the handler
-	sub rsp,30h
-	.endprolog
+	interrupt_handler_prologue_with_code
 	call noir_control_protection_fault_handler
-	add rsp,30h
-	popaq
-	; #DF has an error code. It must be popped out before the exception returns.
-	add rsp,8
-	iretq
+	interrupt_handler_epilogue_with_code
 
 noir_control_protection_fault_handler_a endp
 

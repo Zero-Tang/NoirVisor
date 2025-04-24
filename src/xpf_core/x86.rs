@@ -573,11 +573,22 @@ pub mod descriptors
 	}
 
 	#[derive(Default,Clone,Copy)]
+	#[repr(C)] pub struct GateFlags(pub u16);
+
+	impl GateFlags
+	{
+		build_int_mut_method!(ist,0,3,u16);
+		build_int_mut_method!(gate_type,8,4,u16);
+		build_int_mut_method!(dpl,13,2,u16);
+		build_bit_mut_method!(present,15);
+	}
+
+	#[derive(Default,Clone,Copy)]
 	#[repr(C,packed)] pub struct GateDescriptor
 	{
 		pub offset_lo:u16,
 		pub selector:u16,
-		pub flags:SegmentFlags,
+		pub flags:GateFlags,
 		pub offset_mid:u16,
 		pub offset_hi:u32,
 		pub reserved:u32
@@ -599,9 +610,11 @@ pub mod descriptors
 			let offset_mid=((target_handler as usize >> 16) & 0xFFFF) as u16;
 			let offset_hi=(target_handler as usize >> 32) as u32;
 			// let flags=ist|(GATE_DESCRIPTOR_INTERRUPT_GATE<<GATE_DESCRIPTOR_TYPE_BIT)|(dpl<<GATE_DESCRIPTOR_DPL_BIT)|(1<<GATE_DESCRIPTOR_PRESENT_BIT);
-			let mut flags=SegmentFlags(0);
+			let mut flags=GateFlags(0);
 			flags.set_present(true);
-			flags.set_segment_type(SegmentFlags::INTERRUPT_GATE);
+			flags.set_gate_type(SegmentFlags::INTERRUPT_GATE);
+			flags.set_dpl(dpl);
+			flags.set_ist(ist);
 			Some
 			(
 				Self

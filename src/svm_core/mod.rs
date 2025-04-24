@@ -12,12 +12,13 @@
 
 use core::{ffi::c_void, ptr::*};
 use alloc::vec::Vec;
+use custom::SvmCustomVm;
 #[cfg(target_os="uefi")]
 use exit::svm_apic_output_handler;
 use npt::SvmNptManager;
 use xpf_core::{bitmap::set_bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
 
-use crate::{xpf_core::{asm::{cpuid::cpuid,msr::*,svm::*,crdr::*,seg::*},nvstatus::*,x86::{cpuid::*,msr::*},nvbdk::*,dlalloc::*},*};
+use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::*, seg::*, svm::*}, dlalloc::*, nvbdk::*, nvstatus::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}},*};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
@@ -27,9 +28,14 @@ pub mod amd64;
 #[allow(dead_code)] mod decode;
 #[allow(dead_code)] mod exit;
 #[allow(dead_code)] mod npt;
+#[allow(dead_code)] mod custom;
 
 #[repr(C)] pub struct SvmStackTop
 {
+	pub arg_home:[u64;4],
+	pub volatile_xmms:VolatileXmmState,
+	pub gpr_state:GprState,
+	pub guest_frame:InterruptStackFrameWithErrorCode,
 	pub guest_vmcb_pa:u64,
 	pub host_vmcb_pa:u64,
 	pub vcpu:*mut SvmVcpu,
@@ -158,6 +164,7 @@ impl SvmVcpu
 			vmsave(self.hvmcb.phys);
 			let idtr=(*hv).host.idt.get_reg();
 			write_idtr(&raw const idtr);
+			println!("Loaded IDT! Limit=0x{:04X}, Base=0x{:016X}!",{idtr.limit},{idtr.base});
 			let gdtr=self.host_cpu.gdt.get_reg();
 			write_gdtr(&raw const gdtr);
 			write_tr(self.host_cpu.tr_sel);
@@ -286,6 +293,7 @@ impl SvmVcpu
 	pub host:HostSystem,
 	pub pio_space:IoAddressSpace<u16>,
 	pub mmio_space:IoAddressSpace<u64>,
+	pub cvm_list:Vec<Option<Box<SvmCustomVm>>>,
 	pub image_base:*mut c_void,
 	pub image_size:u32
 }
@@ -303,6 +311,7 @@ impl Default for SvmHypervisor
 			host:HostSystem::build(),
 			pio_space:IoAddressSpace{regions:Vec::new()},
 			mmio_space:IoAddressSpace{regions:Vec::new()},
+			cvm_list:Vec::with_capacity(8),
 			image_base:null_mut(),
 			image_size:0
 		}

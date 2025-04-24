@@ -12,7 +12,7 @@
 
 use core::{alloc::*, arch::asm, ffi::c_void, fmt::{self,Display}, ptr::null_mut, sync::atomic::*, slice, str};
 
-use portable_dlmalloc::raw::*;
+use portable_dlmalloc::{raw::*, MspaceAlloc};
 use paste::paste;
 
 use super::{bitmap::{set_bitmap, reset_bitmap, test_bitmap}, nvbdk::*};
@@ -70,6 +70,8 @@ pub fn get_free()->usize
 		dlmallinfo().fordblks
 	}
 }
+
+pub static CVM_ALLOCATOR:MspaceAlloc=MspaceAlloc::new(0);
 
 #[derive(Clone, Copy)]
 enum PageAllocationType
@@ -368,7 +370,7 @@ pub fn free_2mb_page(ptr:*mut c_void)
 		let pa_mgr=&raw mut PAGE_ALLOC_MANAGER;
 		for i in 0..(*pa_mgr).count
 		{
-			if (*pa_mgr).list[i].virt==ptr
+			if core::ptr::eq((*pa_mgr).list[i].virt,ptr)
 			{
 				(*pa_mgr).list[i].alloc_type=PageAllocationType::Blank([0;8]);
 				break;

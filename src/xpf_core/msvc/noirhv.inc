@@ -217,6 +217,31 @@ popax_volatile macro
 
 endm
 
+pushax_volatile_fast macro rsp_offset
+
+	.allocstack 70h
+	movaps xmmword ptr [rsp+rsp_offset+00h],xmm0
+	movaps xmmword ptr [rsp+rsp_offset+10h],xmm1
+	movaps xmmword ptr [rsp+rsp_offset+20h],xmm2
+	movaps xmmword ptr [rsp+rsp_offset+30h],xmm3
+	movaps xmmword ptr [rsp+rsp_offset+40h],xmm4
+	movaps xmmword ptr [rsp+rsp_offset+50h],xmm5
+	stmxcsr dword ptr [rsp+rsp_offset+60h]
+
+endm
+
+popax_volatile_fast macro rsp_offset
+
+	movaps xmm0,xmmword ptr [rsp+rsp_offset+00h]
+	movaps xmm1,xmmword ptr [rsp+rsp_offset+10h]
+	movaps xmm2,xmmword ptr [rsp+rsp_offset+20h]
+	movaps xmm3,xmmword ptr [rsp+rsp_offset+30h]
+	movaps xmm4,xmmword ptr [rsp+rsp_offset+40h]
+	movaps xmm5,xmmword ptr [rsp+rsp_offset+50h]
+	ldmxcsr dword ptr [rsp+rsp_offset+60h]
+
+endm
+
 else
 
 ; Macro for pushing all XMM registers onto stack

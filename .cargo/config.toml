@@ -1,2 +1,7 @@
 [build]
-rustflags = ["-Cforce-unwind-tables"]
+# Note: AVX must be disabled because All AVX registers are volatile in MSVC ABI.
+# Disabling AVX will save us lots of efforts of saving processor state.
+# It will be insane to call xsaves instruction on all VM-Exits.
+# It would be desirable to disable SSE as well, but compiler will generate warnings for that,
+# because the floating-point operations would rely on those SSE instructions.
+rustflags = ["-Cforce-unwind-tables", "-Ctarget-feature=-avx"]

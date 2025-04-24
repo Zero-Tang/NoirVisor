@@ -47,35 +47,16 @@ For this debugging mode, the connection is considered a console. The remote host
 NoirVisor uses buffers with a size of 512 bytes. Therefore, any single print should not exceed this limit. Overflown parts will be discarded.
 
 ## Interactive Debugging
-The specification is unavailable yet. In future, the `nvdebug` tool might become the interactive debugger.
-
-## Tool: nvdebug
-This is a simple tool that parses the UEFI environment and the symbol. Currently, `nvdebug` can parse QEMU guest through GDB connection. \
-If you specified `-s` when you launch QEMU, the port number is 1234.
-
-### Obtain the Symbol Name of the Faulting Instruction Pointer
-When NoirVisor panicked due to an exception intercepted by IDT, you may use this feature to obtain the symbol name of the faulting rip. \
-In `tools/nvdebug` directory, execute:
-```
-cargo run qemu://[kvmhost]:[port] [fault-rip]
-```
-
-### Obtain the Stack Trace
-When NoirVisor panicked in runtime, you may use this feature to obtain a stack trace. \
-In `tools/nvdebug` directory, execute:
-```
-cargo run qemu:://[kvmhost]:[port]
-```
-You should be able to see a stack trace.
+The specification is unavailable yet. You may use GDB or WinDbg EXDI.
 
 ## WinDbg EXDI
-Use this option when you are debugging NoirVisor as a Windows Driver running inside a target which can be debugged via WinDbg eXDI (eXtensible Debugging Interface). Note that this option doesn't work great with NoirVisor as UEFI Runtime Driver since WinDbg currently can't enumerate images in UEFI. \
+Use this option when you are debugging NoirVisor running inside a target which can be debugged via WinDbg eXDI (eXtensible Debugging Interface). Note that this option doesn't work great with NoirVisor as UEFI Runtime Driver since WinDbg currently can't enumerate images in UEFI. \
 Install [WinDbg from Windows Store](https://apps.microsoft.com/detail/9pgjgd53tn86). Choose `File` -> `Start Debugging` -> `Attach to Kernel` -> `EXDI`. Then select the options that fit your scenario. \
 Once NoirVisor is loaded, you may break the target and type `.reload /i NoirVisor.sys` in order to load the symbol of NoirVisor. \
 Note that WinDbg EXDI won't be able to receive debug messages. Use the text-mode debugging techniques (e.g.: ISA-DebugCon from QEMU) instead.
 
 ### Debug NoirVisor in QEMU/KVM
-To debug NoirVisor in QEMU/KVM, you have to enable GDB in QEMU:
+To debug NoirVisor in QEMU/KVM, you have to enable GDB in QEMU. There are three ways to enable GDB in QEMU:
 
 - Append `-s` argument before you launch QEMU. QEMU will listen on TCP port 1234.
 - Append `-gdb tcp:[ip]:[port]` argument before you launch QEMU. QEMU will listen on `[ip]:[port]`.
@@ -100,3 +81,11 @@ To debug NoirVisor in VMware, you have to enable GDB in `.vmx` configuration fil
 
 After Windows is booted, you may attach WinDbg to VMware. In WinDbg, select `VMWare` as target type, `X64` as target architecture, `Windows` as target OS, `0xFFFE - NT` as image scanning heuristic size and finally type the IP address of your VMware host. \
 It seems that VMware does not support accessing MSRs from GDB at all. Reading any MSRs will just return zero.
+
+### Debug NoirVisor as UEFI Runtime Driver
+To debug NoirVisor as UEFI Runtime Driver, you need to manually load NoirVisor's symbol since WinDbg cannot enumerate UEFI modules. \
+NoirVisor displays its base address in the console, so you may simply use the [`.reload` command](https://learn.microsoft.com/en-us/windows-hardware/drivers/debuggercmds/-reload--reload-module-) to manually load the symbol.
+
+```
+.reload /i NoirVisor.efi=<NoirVisor's base address>
+```

@@ -26,6 +26,16 @@ extern nvc_svm_exit_handler:proc
 
 ifdef _amd64
 
+stacktop_offset_volatile_xmms equ 20h
+stacktop_offset_guest_gpr equ 090h
+stacktop_offset_guest_frame equ 110h
+stacktop_offset_gvmcb_pa equ 140h
+stacktop_offset_hvmcb_pa equ 148h
+stacktop_offset_vcpu_ptr equ 150h
+stacktop_offset_cvcpu_ptr equ 158h
+stacktop_offset_nvcpu_ptr equ 160h
+stacktop_offset_proc_id equ 168h
+
 nvc_svm_return proc
 
 	; Switch the stack where state is saved.
@@ -49,37 +59,34 @@ nvc_svm_exit_handler_a proc frame
 	; To add a debug-break, enter following command to WinDbg.
 	; ed NoirVisor!nvc_svm_exit_handler_a ccdc010f
 	nop dword ptr [rax+20h]		; This is a purposeful four-byte nop instruction.
-	sub rsp,mach_frame_size+gpr_stack_size+20h
+	; No need to subtract the stack pointer.
 	; Save stack trace.
 	.pushframe code
 	; Save all GPRs, and pass to Exit Handler.
-	pushaq_fast 20h
+	pushaq_fast stacktop_offset_guest_gpr
+	; Save XMM States.
+	pushax_volatile_fast stacktop_offset_volatile_xmms
 	.allocstack 20h
+	.endprolog
 	; Save processor's hidden state for Guest.
 	vmsave rax
 	; Load processor's hidden state for Host.
-	mov rax,qword ptr[rsp+mach_frame_size+gpr_stack_size+28h]
+	mov rax,qword ptr[rsp+stacktop_offset_hvmcb_pa]
 	vmload rax
-	lea rcx,[rsp+20h]		; First Parameter - Guest GPRs
-	lea r8,[rsp+gpr_stack_size+20h]	; Third Parameter - Guest Stack
+	lea rcx,[rsp+stacktop_offset_guest_gpr]		; First Parameter - Guest GPRs
+	lea r8,[rsp+stacktop_offset_guest_frame]	; Third Parameter - Guest Stack
 	; Second Parameter - vCPU
-	mov rdx,qword ptr[rsp+mach_frame_size+gpr_stack_size+30h]
+	mov rdx,qword ptr[rsp+stacktop_offset_vcpu_ptr]
 	; End of Prologue...
 	; Call Exit Handler
-	pushax_volatile
-	sub rsp,20h
-	.allocstack 20h
-	.endprolog
 	call nvc_svm_exit_handler
-	add rsp,20h
-	popax_volatile
+	; Restore all volatile XMMs.
+	popax_volatile_fast stacktop_offset_volatile_xmms
 	; Restore all the GPRs.
 	; Certain context should be revised by VMM.
-	popaq_fast 20h
+	popaq_fast stacktop_offset_guest_gpr
 	; After popaq, rax stores the physical
 	; address of VMCB again.
-	; Don't forget to pop the frame on the stack.
-	add rsp,mach_frame_size+gpr_stack_size+20h
 	vmload rax
 	vmrun rax
 	; VM-Exit occured again, jump back.
@@ -96,7 +103,7 @@ nvc_svm_subvert_processor_a proc frame
 	mov rdx,rsp
 	push rcx
 	.pushreg rcx
-	mov rcx,qword ptr[rcx+10h]
+	mov rcx,qword ptr[rcx+stacktop_offset_vcpu_ptr]
 	sub rsp,20h
 	.allocstack 20h
 	; First parameter is in rcx - vcpu
