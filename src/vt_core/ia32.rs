@@ -76,8 +76,8 @@ pub mod msr
 	pub struct VmxBasicMsr(pub u64);
 	impl VmxBasicMsr
 	{
-		build_int_get_method!(revision_id,0,31,u32);
-		build_int_get_method!(region_size,32,12,usize);
+		build_int_get_method!(revision_id,0,31,u64);
+		build_int_get_method!(region_size,32,12,u64);
 		build_bit_get_method!(pa_width,48);
 		build_bit_get_method!(dual_monitor,49);
 		build_bit_get_method!(report_io_on_exit,54);
@@ -166,15 +166,15 @@ pub mod msr
 	{
 		build_int_get_method!(tsc_preemption_scale,0,5,u64);
 		build_bit_get_method!(store_lma_to_entry_on_exit,5);
-		build_int_get_method!(supported_activity_state,6,3,u8);
+		build_int_get_method!(supported_activity_state,6,3,u64);
 		build_bit_get_method!(allow_pt_in_vmx,14);
 		build_bit_get_method!(allow_read_smbase_in_smm,15);
-		build_int_get_method!(cr3_target_values,16,9,usize);
-		build_int_get_method!(best_msr_store_count,25,3,usize);
+		build_int_get_method!(cr3_target_values,16,9,u64);
+		build_int_get_method!(best_msr_store_count,25,3,u64);
 		build_bit_get_method!(allow_unblock_smi,28);
 		build_bit_get_method!(allow_vmcs_write_anywhere,29);
 		build_bit_get_method!(allow_null_injection,30);
-		build_int_get_method!(mseg_revision_id,32,32,u32);
+		build_int_get_method!(mseg_revision_id,32,32,u64);
 		build_rdmsr_method!(MSR_VMX_MISC);
 	}
 

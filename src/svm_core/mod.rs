@@ -15,6 +15,7 @@ use alloc::vec::Vec;
 use custom::SvmCustomVm;
 #[cfg(target_os="uefi")]
 use exit::svm_apic_output_handler;
+use iommu::{svm_iommu_output_handler, SvmIommuManager};
 use npt::SvmNptManager;
 use xpf_core::{bitmap::set_bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
 
@@ -29,6 +30,7 @@ pub mod amd64;
 #[allow(dead_code)] mod exit;
 #[allow(dead_code)] mod npt;
 #[allow(dead_code)] mod custom;
+#[allow(dead_code)] mod iommu;
 
 #[repr(C)] pub struct SvmStackTop
 {
@@ -164,7 +166,6 @@ impl SvmVcpu
 			vmsave(self.hvmcb.phys);
 			let idtr=(*hv).host.idt.get_reg();
 			write_idtr(&raw const idtr);
-			println!("Loaded IDT! Limit=0x{:04X}, Base=0x{:016X}!",{idtr.limit},{idtr.base});
 			let gdtr=self.host_cpu.gdt.get_reg();
 			write_gdtr(&raw const gdtr);
 			write_tr(self.host_cpu.tr_sel);
@@ -195,7 +196,9 @@ impl SvmVcpu
 			vmwrite(self.vmcb.virt,GUEST_CR3,state.cr3);
 			vmwrite(self.vmcb.virt,GUEST_CR4,state.cr4);
 			// Save Task Priority Register (CR8)
-			vmwrite(self.vmcb.virt,AVIC_CONTROL,state.cr8&0xF);
+			let mut avic_ctrl=AvicControl(0);
+			avic_ctrl.set_v_tpr(state.cr8);
+			vmwrite(self.vmcb.virt,AVIC_CONTROL,avic_ctrl.0);
 			// Save Debug Registers.
 			vmwrite(self.vmcb.virt,GUEST_DR6,state.dr6);
 			vmwrite(self.vmcb.virt,GUEST_DR7,state.dr7);
@@ -291,6 +294,7 @@ impl SvmVcpu
 	pub iopm:MemoryDescriptor,
 	pub nptm:SvmNptManager,
 	pub host:HostSystem,
+	pub iommu_manager:Option<SvmIommuManager>,
 	pub pio_space:IoAddressSpace<u16>,
 	pub mmio_space:IoAddressSpace<u64>,
 	pub cvm_list:Vec<Option<Box<SvmCustomVm>>>,
@@ -309,6 +313,7 @@ impl Default for SvmHypervisor
 			iopm:MemoryDescriptor::null(),
 			nptm:SvmNptManager::default(),
 			host:HostSystem::build(),
+			iommu_manager:None,
 			pio_space:IoAddressSpace{regions:Vec::new()},
 			mmio_space:IoAddressSpace{regions:Vec::new()},
 			cvm_list:Vec::with_capacity(8),
@@ -465,6 +470,20 @@ impl HypervisorEssentials for SvmHypervisor
 		}
 		// Initialize NPT.
 		self.nptm.build_identity_map();
+		match SvmIommuManager::build_manager()
+		{
+			Ok(mut mgr)=>
+			{
+				for bar in &mgr.iommu_bars
+				{
+					self.mmio_space.add_region(IoRegion::new("iommu",None,svm_iommu_output_handler,bar.bar.phys,PAGE_SIZE as u64));
+				}
+				mgr.protect_ci();
+				mgr.activate();
+				self.iommu_manager=Some(mgr);
+			}
+			Err(st)=>println!("Failed to initialize AMD-Vi! Reason: {st}")
+		}
 		self.nptm.protect_allocated_pages();
 		self.nptm.setup_mmio_filter(&self.mmio_space);
 		self.nptm.protect_ci();

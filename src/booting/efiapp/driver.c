@@ -16,6 +16,7 @@
 #include <Library/BaseMemoryLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/MemoryAllocationLib.h>
+#include <isa_availability.h>
 #include "driver.h"
 
 EFI_STATUS EFIAPI NoirDriverUnload(IN EFI_HANDLE ImageHandle)
@@ -65,6 +66,10 @@ EFI_STATUS EFIAPI NoirRegisterHypervisorVariables()
 
 EFI_STATUS EFIAPI NoirEfiInitialize(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE *SystemTable)
 {
+	// Initialize Microsoft-optimized CRT constants (for memcpy, memset, etc.)
+	__isa_available_init();
+	// Purposefully disable AVX when we use memcpy, memset, etc.
+	if(__isa_available>__ISA_AVAILABLE_SSE42)__isa_available=__ISA_AVAILABLE_SSE42;
 	// Constructors...
 	UefiBootServicesTableLibConstructor(ImageHandle,SystemTable);
 	UefiRuntimeServicesTableLibConstructor(ImageHandle,SystemTable);
@@ -98,7 +103,6 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	EFI_STATUS st=NoirEfiInitialize(ImageHandle,SystemTable);
 	EFI_LOADED_IMAGE_PROTOCOL* ImageInfo=NULL;
 	UINT32 Supportability=NoirQueryVirtualizationSupportability();
-	__isa_available_init();
 	Print(L"Welcome to NoirVisor Runtime Driver!\r\n");
 	NoirPrintCompilerVersion();
 	if((Supportability&3)!=3)

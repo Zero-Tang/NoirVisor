@@ -10,17 +10,41 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use crate::xpf_core::nvstatus::*;
+use core::{ptr::null_mut,sync::atomic::{AtomicU64, AtomicU32, Ordering}};
 
-#[allow(non_upper_case_globals)]
-#[unsafe(no_mangle)] static mut hpet_period:u64=0;
+use crate::xpf_core::{asm::io::mmio_read, nvstatus::*};
+use crate::{print,println,dbg_print};
+use super::acpi::{search_acpi_table,tables::{AcpiSystemDescriptorSignature,HighPrecisionEventTimerTable}};
 
-#[unsafe(no_mangle)] extern "C" fn nvc_hpet_read_counter()->u64
+const HPET_GENRERAL_COUNTER_CLOCK_PERIOD:usize=0x4;
+const HPET_MAIN_COUNTER_VALUE:usize=0xF0;
+
+static HPET_BASE_ADDRESS:AtomicU64=AtomicU64::new(0);
+static HPET_PERIOD:AtomicU32=AtomicU32::new(0);
+
+#[inline(always)] fn hpet_read_register<T:Sized>(offset:usize)->T
 {
-	0
+	unsafe{mmio_read((HPET_BASE_ADDRESS.load(Ordering::Relaxed)+offset as u64) as *const T)}
+}
+
+pub fn hpet_read_counter()->u64
+{
+	hpet_read_register(HPET_MAIN_COUNTER_VALUE)
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_hpet_initialize()->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	let mut hpet_acpi_ptr:*mut HighPrecisionEventTimerTable=null_mut();
+	search_acpi_table(AcpiSystemDescriptorSignature::HIGH_PRECISION_EVENT_TIMER_TABLE,|x| { hpet_acpi_ptr=x.cast(); false});
+	if hpet_acpi_ptr.is_null()
+	{
+		println!("No HPET Hardware is detected!");
+		NOIR_ACPI_NO_SUCH_TABLE
+	}
+	else
+	{
+		HPET_BASE_ADDRESS.store(unsafe{(*hpet_acpi_ptr).block.address},Ordering::Relaxed);
+		HPET_PERIOD.store(hpet_read_register(HPET_GENRERAL_COUNTER_CLOCK_PERIOD),Ordering::Relaxed);
+		NOIR_SUCCESS
+	}
 }

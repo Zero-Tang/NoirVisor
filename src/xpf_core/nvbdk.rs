@@ -238,6 +238,10 @@ unsafe extern "C"
 	pub fn noir_alloc_2mb_page()->*mut c_void;
 	pub fn noir_free_2mb_page(virtual_address:*mut c_void);
 	pub fn noir_find_virt_by_phys(physical_address:u64)->*mut c_void;
+	pub fn noir_map_physical_memory(physical_address:u64,length:usize)->*mut c_void;
+	pub fn noir_map_uncached_memory(physical_address:u64,length:usize)->*mut c_void;
+	pub fn noir_unmap_physical_memory(virtual_address:*mut c_void,length:usize);
+
 	pub fn memcpy(dest:*mut c_void,src:*const c_void,cch:usize);
 	// Image Facility
 	pub fn nvc_store_image_info(base:*mut *mut c_void,size:*mut u32);

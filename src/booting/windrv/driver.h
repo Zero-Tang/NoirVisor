@@ -195,6 +195,7 @@ void NoirFreeAllAllocatedPages();
 void __cdecl NoirDebugPrint(const char* Format,...);
 
 void __isa_available_init();
+extern ULONG32 __isa_available;
 
 extern ULONG32 noir_cvm_exit_context_size;
 

@@ -26,7 +26,7 @@ pub mod caching
 	pub struct MtrrCapMsr(pub u64);
 	impl MtrrCapMsr
 	{
-		build_int_get_method!(var_mtrr_count,0,8,usize);
+		build_int_get_method!(var_mtrr_count,0,8,u64);
 		build_bit_get_method!(support_fixed,8);
 		build_bit_get_method!(support_wc,10);
 		build_bit_get_method!(support_smrr,11);

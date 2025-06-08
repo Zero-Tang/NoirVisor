@@ -33,7 +33,10 @@ def main():
 		i+=1
 	if not os.path.exists(os.path.join("bin",outdir,"msvcrt-static.lib")):
 		sdk_path=os.environ["WindowsSdkDir"]
-		sdk_ver=os.environ["WindowsSDKVersion"]
+		if "WindowsSDKVersion" in os.environ:
+			sdk_ver=os.environ["WindowsSDKVersion"]
+		else:
+			sdk_ver=os.environ["WindowsTargetPlatformVersion"]
 		msvc_path=os.environ["VCToolsInstallDir"]
 		inc_path=os.path.join(sdk_path,"Include",sdk_ver)
 		lib_path=os.path.join(sdk_path,"Lib",sdk_ver)

@@ -77,12 +77,13 @@
 		"sign":
 		{
 			"cmd":["signtool","sign","/v","/fd","SHA1","/f",".\\build\\ztnxtest.pfx",".\\bin\\{outdir}\\NoirVisor.sys"],
-			"dependencies":["NoirVisor"]
+			"dependencies":["NoirVisor"],
+			"cancel_if_opt":true
 		}
 	},
 	"common_flags":
 	{
-		"cl":["{src}","/nologo","/I{incpath}\\km\\crt","/I{incpath}\\shared","/I{incpath}\\km","/Zi","/W3","/WX","/D_KERNEL_MODE","/D_AMD64_","/D_M_AMD64","/D_WIN64","/D_UNICODE","/DUNICODE","/D_{instruction}","/Zc:wchar_t","/std:c17","/FAcs","/Fa{objpath}\\{instruction}.cod","/Fo{objpath}\\{instruction}.obj","/Fd{objpath}","/FS","/GS-","/Qspectre","/Gr","/Gy","/TC","/c","/errorReport:queue"],
+		"cl":["{src}","/nologo","/I{incpath}\\km\\crt","/I{incpath}\\shared","/I{incpath}\\km","/I{ddkpath}\\include","/Zi","/W3","/WX","/D_KERNEL_MODE","/D_AMD64_","/D_M_AMD64","/D_WIN64","/D_UNICODE","/DUNICODE","/D_{instruction}","/Zc:wchar_t","/std:c17","/FAcs","/Fa{objpath}\\{instruction}.cod","/Fo{objpath}\\{instruction}.obj","/Fd{objpath}","/FS","/GS-","/Qspectre","/Gr","/Gy","/TC","/c","/errorReport:queue"],
 		"ml64":["/W3","/WX","/Zf","/Zd","/Zi","/I.\\src\\xpf_core\\msvc","/D_amd64","/D_msvc","/Fo{objpath}\\{instruction}.obj","/c","/nologo","{src}"],
 		"link":["/NODEFAULTLIB","/LIBPATH:{libpath}\\km\\x64","ntoskrnl.lib","/NOLOGO","/DEBUG","/Machine:X64","/ERRORREPORT:QUEUE"]
 	},

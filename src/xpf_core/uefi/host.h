@@ -45,7 +45,6 @@ extern EFI_BOOT_SERVICES *gBS;
 extern EFI_SYSTEM_TABLE *gST;
 
 extern BOOLEAN NoirEfiInRuntimeStage;
-extern UINT32 hpet_period;
 
 CHAR8* EfiMemoryTypeNames[]=
 {

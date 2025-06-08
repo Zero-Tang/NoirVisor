@@ -27,6 +27,12 @@ extern nvc_vt_resume_failure:proc
 
 ifdef _amd64
 
+stacktop_offset_volatile_xmms equ 20h
+stacktop_offset_guest_gpr equ 090h
+stacktop_offset_guest_frame equ 110h
+stacktop_offset_vcpu_ptr equ 140h
+stacktop_offset_flags equ 15Ch
+
 nvc_vt_resume_without_entry proc
 
 	mov rsp,rcx
@@ -48,25 +54,28 @@ nvc_vt_exit_handler_a proc frame
 	nop			; Change to int 3 in order to debug-break.
 	; Add a trap frame so WinDbg may display stack trace in Guest.
 	.pushframe code
-	sub rsp,mach_frame_size+gpr_stack_size+20h
-	; Save all GPRs
-	pushaq_fast 20h
+	; Save all GPRs, and pass to Exit Handler.
+	pushaq_fast stacktop_offset_guest_gpr
+	; Save XMM States.
+	pushax_volatile_fast stacktop_offset_volatile_xmms
 	.allocstack 20h
-	; Load the Guest GPR State to the first parameter.
-	lea rcx,[rsp+20h]
-	; Load vcpu to second parameter.
-	mov rdx,qword ptr [rsp+mach_frame_size+gpr_stack_size+20h]
-	; Load Guest stack frame to third parameter.
-	lea r8,qword ptr [rsp+gpr_stack_size+20h]
-	; End of Prologue...
 	.endprolog
+	; Load the Guest GPR State to the first parameter.
+	lea rcx,[rsp+stacktop_offset_guest_gpr]
+	; Load vcpu to second parameter.
+	mov rdx,qword ptr [rsp+stacktop_offset_vcpu_ptr]
+	; Load Guest stack frame to third parameter.
+	lea r8,qword ptr [rsp+stacktop_offset_guest_frame]
+	; Call exit handler
 	call nvc_vt_exit_handler
-	; Restore GPR state.
-	popaq_fast 20h
+resume_guest:
+	; Restore XMM & GPR State
+	popax_volatile_fast stacktop_offset_volatile_xmms
+	popaq_fast stacktop_offset_guest_gpr
 	; We don't have to increment stack here in
 	; that the host rsp is always loaded from VMCS.
 	; Check if the VMCS is launched.
-	btr dword ptr [rsp+mach_frame_size+gpr_stack_size+20h+1Ch],0
+	btr dword ptr [rsp+stacktop_offset_flags],0
 	jc launch_initial_vmcs
 	vmresume
 	jmp vmentry_failure
@@ -76,19 +85,16 @@ vmentry_failure:
 	; Usually we won't be here, unless the VM-Entry fails.
 	; We will call the special procedure to handle this situation.
 	; First Parameter: the GPR state of the guest.
-	lea rcx,[rsp+20h]
+	lea rcx,[rsp+stacktop_offset_guest_gpr]
 	; Second Parameter: the vCPU.
-	mov rdx,qword ptr [rsp+ktrap_frame_size-mach_frame_size+gpr_stack_size+20h]
+	mov rdx,qword ptr [rsp+stacktop_offset_vcpu_ptr]
 	; Third Parameter: the VMX instruction status.
 	setz r8b
 	setc al
 	adc r8b,al
 	call nvc_vt_resume_failure
-	; If it was Guest vCPU which failed to run, we may return to host.
-	popaq_fast 20h
-	vmresume
-	; Use dead loop if failed again, albeit this is unlikely to happen.
-	jmp vmentry_failure
+	; Try to resume again.
+	jmp resume_guest
 
 nvc_vt_exit_handler_a endp
 

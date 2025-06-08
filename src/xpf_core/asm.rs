@@ -15,7 +15,7 @@
 pub mod io
 {
 	// Note that the string-based I/O will never be implemented, in that x86-S will remove them.
-	use core::arch::asm;
+	use core::arch::{asm, x86_64::_mm_mfence};
 	use paste::paste;
 
 	macro_rules! build_in_func
@@ -74,6 +74,35 @@ pub mod io
 	build_out_func!(byte,u8,"al");
 	build_out_func!(word,u16,"ax");
 	build_out_func!(dword,u32,"eax");
+
+	/// ## Safety
+	/// I/O operations are not guaranteed to be safe.
+	/// ## Notes
+	/// Forbid inlining MMIO operations so that hypervisor may cache MMIO instruction decode result.
+	#[inline(never)] pub unsafe fn mmio_read<T:Sized>(virt:*const T)->T
+	{
+		unsafe
+		{
+			_mm_mfence();
+			let v:T=virt.read();
+			_mm_mfence();
+			v
+		}
+	}
+
+	/// ## Safety
+	/// I/O operations are not guaranteed to be safe.
+	/// ## Notes
+	/// Forbid inlining MMIO operations so that hypervisor may cache MMIO instruction decode result.
+	#[inline(never)] pub unsafe fn mmio_write<T:Sized>(virt:*mut T,value:T)
+	{
+		unsafe
+		{
+			_mm_mfence();
+			virt.write(value);
+			_mm_mfence();
+		}
+	}
 }
 
 pub mod seg

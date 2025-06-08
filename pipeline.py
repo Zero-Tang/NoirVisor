@@ -15,11 +15,15 @@ class PipelineInstruction:
 		self.proc:subprocess.Popen|None=None
 		self.optimizer_enabled=opt
 		self.progressive:bool=raw["progressive"] if "progressive" in raw else False
+		self.cancel_if_opt:bool=raw["cancel_if_opt"] if "cancel_if_opt" in raw else False
 
 	def add_dependency(self,other):
 		self.dependencies.append(other)
 	
 	def worker(self):
+		# If optimizer is enable, this instruction might be canceled.
+		if self.optimizer_enabled and self.cancel_if_opt:
+			return None
 		# The internal dictionary will help format the command strings.
 		internal_dict={"instruction":self.name}|self.parent.global_variable|self.variables
 		# Load instruction configurations.
@@ -66,12 +70,14 @@ class PipelineInstruction:
 			print("[{}] failed to run!".format(self.name))
 
 	def run(self):
-		self.thread=threading.Thread(target=self.worker)
-		self.thread.start()
+		if not (self.optimizer_enabled and self.cancel_if_opt):
+			self.thread=threading.Thread(target=self.worker)
+			self.thread.start()
 	
 	def wait(self)->int|None:
-		self.thread.join()
-		return self.return_code
+		if not (self.optimizer_enabled and self.cancel_if_opt):
+			self.thread.join()
+			return self.return_code
 
 class Pipeline:
 	def __init__(self,config:str,opt:bool=False,outdir:str|None=None,extra_vars:dict[str,str]=dict()):

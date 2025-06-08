@@ -16,7 +16,7 @@ use core::{ffi::c_void, ptr::null_mut};
 
 use ia32::{cpuid::CPUID_VMX, msr::*};
 use vmcs::*;
-use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}}, HypervisorEssentials, *};
+use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}}, HypervisorEssentials, *};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
@@ -25,6 +25,10 @@ use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, 
 
 #[repr(C)] pub struct VtStackTop
 {
+	pub arg_home:[u64;4],
+	pub volatile_xmms:VolatileXmmState,
+	pub gpr_state:GprState,
+	pub guest_frame:InterruptStackFrameWithErrorCode,
 	pub vcpu:*mut VtVcpu,
 	pub custom_vcpu:*mut c_void,	// NOT IMPLEMENTED IN RUST
 	pub nested_vcpu:*mut c_void,	// NOT IMPLEMENTED IN RUST
@@ -380,13 +384,13 @@ impl VtVcpu
 
 	fn subvert(&mut self)
 	{
-		println!("Processor {} entered subversion routine!",self.vcpu_id);
+		sysdprintln!("Processor {} entered subversion routine!",self.vcpu_id);
 		let vt_basic=VmxBasicMsr::read();
 		// Setup Revision Identifier.
 		unsafe
 		{
-			self.vmxon.virt.cast::<u32>().write(vt_basic.get_revision_id());
-			self.vmcs.virt.cast::<u32>().write(vt_basic.get_revision_id());
+			self.vmxon.virt.cast::<u32>().write(vt_basic.get_revision_id() as u32);
+			self.vmcs.virt.cast::<u32>().write(vt_basic.get_revision_id() as u32);
 		}
 		// Enable VMX in CR0 and CR4.
 		let mut cr0=read_cr0();
@@ -412,11 +416,11 @@ impl VtVcpu
 						{
 							VmxResult::Ok(_)=>
 							{
-								println!("VMCS has been loaded to CPU successfully!");
+								sysdprintln!("VMCS has been loaded to CPU successfully!");
 								unsafe
 								{
 									nvc_vt_subvert_processor_a(self as *mut Self);
-									println!("Processor {} completed subversion!",self.vcpu_id);
+									sysdprintln!("Processor {} completed subversion!",self.vcpu_id);
 								}
 							}
 							r=>panic!("Failed to execute vmptrld! Reason: {r}")
@@ -545,7 +549,7 @@ impl HypervisorEssentials for VtHypervisor
 				}
 			};
 		}
-		println!("Subverting the system with Intel VT-x...");
+		sysdprintln!("Subverting the system with Intel VT-x...");
 		// Allocate various stuff. Note that they are required to be raw-pointer.
 		match alloc_contd_pages(PAGE_SIZE)
 		{
@@ -616,10 +620,10 @@ impl HypervisorEssentials for VtHypervisor
 		unsafe
 		{
 			nvc_store_image_info(&raw mut self.image_base,&raw mut self.image_size);
-			println!("Base: 0x{:p}, Size: 0x{:X}",self.image_base,self.image_size);
+			sysdprintln!("Base: 0x{:p}, Size: 0x{:X}",self.image_base,self.image_size);
 			noir_generic_call(nvc_vt_subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
-		println!("System Subversion Completed!");
+		sysdprintln!("System Subversion Completed!");
 		NOIR_SUCCESS
 	}
 
@@ -629,7 +633,7 @@ impl HypervisorEssentials for VtHypervisor
 		{
 			noir_generic_call(nvc_vt_restore_processor_thunk,self as *mut Self as *mut c_void);
 		}
-		println!("System Restoration Completed!");
+		sysdprintln!("System Restoration Completed!");
 		NOIR_SUCCESS
 	}
 }

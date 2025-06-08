@@ -77,7 +77,7 @@
 	},
 	"common_flags":
 	{
-		"cl":["{src}","/nologo","/I{EDK2_PATH}\\edk2\\MdePkg\\Include","/I{EDK2_PATH}\\edk2\\MdePkg\\Include\\X64","/Zi","/W3","/WX","/FAcs","/Fa{objpath}\\{instruction}.cod","/Fo{objpath}\\{instruction}.obj","/Fd{objpath}","/FS","/GS-","/Qspectre","/Gr","/Gy","/TC","/c","/errorReport:queue"],
+		"cl":["{src}","/nologo","/I{EDK2_PATH}\\edk2\\MdePkg\\Include","/I{EDK2_PATH}\\edk2\\MdePkg\\Include\\X64","/I{ddkpath}\\include","/Zi","/W3","/WX","/FAcs","/Fa{objpath}\\{instruction}.cod","/Fo{objpath}\\{instruction}.obj","/Fd{objpath}","/FS","/GS-","/Qspectre","/Gr","/Gy","/TC","/c","/errorReport:queue"],
 		"ml64":["/W3","/WX","/Zf","/Zd","/Zi","/I.\\src\\xpf_core\\msvc","/D_amd64","/D_msvc","/D_efi","/Fo{objpath}\\{instruction}.obj","/c","/nologo","{src}"],
 		"link":["/NODEFAULTLIB","/LIBPATH:{EDK2_PATH}\\bin\\MdePkg\\{outdir}","MdePkgGuids.lib","BaseLib.lib","BaseDebugPrintErrorLevelLib.lib","BaseMemoryLib.lib","BasePrintLib.lib","UefiLib.lib","UefiDebugLibConOut.lib","UefiMemoryAllocationLib.lib","UefiDevicePathLibDevicePathProtocol.Lib","UefiBootServicesTableLib.Lib","UefiRuntimeServicesTableLib.Lib","/NOLOGO","/DEBUG","/Machine:X64","/ERRORREPORT:QUEUE"]
 	},

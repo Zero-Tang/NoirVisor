@@ -359,7 +359,10 @@ impl VtEptManager
 			}
 			else
 			{
-				panic!("Updating splitted PDE is not yet supported!");
+				for i in 0..512
+				{
+					self.update_pte_memory_type(gpa+page_4kb_mult(i),new_type,force_update);
+				}
 			}
 		}
 	}
@@ -380,7 +383,10 @@ impl VtEptManager
 			}
 			else
 			{
-				panic!("Updating splitted PDPTE is not yet supported!");
+				for i in 0..512
+				{
+					self.update_pde_memory_type(gpa+page_2mb_mult(i),new_type,force_update);
+				}
 			}
 		}
 	}
@@ -389,7 +395,8 @@ impl VtEptManager
 	{
 		let mtrr_base=MtrrVariableRangeBaseMsr::read(mtrr_msr_index);
 		let mtrr_mask=MtrrVariableRangeMaskMsr::read(mtrr_msr_index+1);
-		if let Some((base,size,mem_type))=calculate_mtrr_range(mtrr_base,mtrr_mask,self.pa_width)
+		// Note that SMRR has only 32-bit length.
+		if let Some((base,size,mem_type))=calculate_mtrr_range(mtrr_base,mtrr_mask,if mtrr_msr_index==MSR_SMRR_PHYS_BASE {32} else {self.pa_width})
 		{
 			// Ignore MTRRs that define the same memory type as default MTRR.
 			if mtrr_base.get_type()!=self.def_type.get_type()
@@ -432,6 +439,8 @@ impl VtEptManager
 					match increment
 					{
 						PAGE_1GB_SIZE=>self.update_pdpte_memory_type(addr,mem_type as u64,false),
+						PAGE_2MB_SIZE=>self.update_pde_memory_type(addr,mem_type as u64,false),
+						PAGE_4KB_SIZE=>self.update_pte_memory_type(addr,mem_type as u64,false),
 						_=>println!("Unknown Increment: 0x{increment:X}!")
 					}
 					addr+=increment as u64;
