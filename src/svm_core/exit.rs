@@ -56,17 +56,25 @@ impl SvmVcpu
 
 	fn handle_cpuid(&mut self,gpr_state:&mut GprState)
 	{
+		let hv:&SvmHypervisor=unsafe{&*self.hypervisor.cast()};
 		let ia=gpr_state.rax as u32;
 		let ic=gpr_state.rcx as u32;
 		let (a,b,c,d)=
 		if (ia&0x40000000)==0x40000000
 		{
-			// This is Hypervisor's CPUID.
-			let leaf_func=(ia&0x3FFFFFFF) as usize;
-			match MSHV_CPUID_HANDLERS.get(leaf_func)
+			if hv.features.get_cpuid_hv_presence()
 			{
-				Some(f)=>f(ia,ic),
-				None=>(0,0,0,0)
+				// This is Hypervisor's CPUID.
+				let leaf_func=(ia&0x3FFFFFFF) as usize;
+				match MSHV_CPUID_HANDLERS.get(leaf_func)
+				{
+					Some(f)=>f(ia,ic),
+					None=>(0,0,0,0)
+				}
+			}
+			else
+			{
+				(0,0,0,0)
 			}
 		}
 		else
@@ -76,7 +84,7 @@ impl SvmVcpu
 			let (mut a,mut b,mut c,mut d)=cpuid2(ia,ic);
 			match ia
 			{
-				CPUID_STD_PROCESSOR_FEATURE=>c|=CPUID_UNDER_HYPERVISOR,
+				CPUID_STD_PROCESSOR_FEATURE=>c|=if hv.features.get_cpuid_hv_presence() {CPUID_UNDER_HYPERVISOR} else {0},
 				// NoirVisor currently does not support nested virtualization.
 				CPUID_EXT_PROCESSOR_FEATURE=>c&=!CPUID_SVM,
 				CPUID_EXT_SECURE_VIRTUAL_MACHINE_FEATURE=>(a,b,c,d)=(0,0,0,0),
@@ -84,16 +92,13 @@ impl SvmVcpu
 			};
 			(a,b,c,d)
 		};
-		unsafe
-		{
-			// Write the results back to eax, ebx, ecx and edx and clear the higher 32 bits.
-			gpr_state.rax=a as u64;
-			gpr_state.rbx=b as u64;
-			gpr_state.rcx=c as u64;
-			gpr_state.rdx=d as u64;
-			// Advance the rip.
-			advance_rip(self.vmcb.virt);
-		}
+		// Write the results back to eax, ebx, ecx and edx and clear the higher 32 bits.
+		gpr_state.rax=a as u64;
+		gpr_state.rbx=b as u64;
+		gpr_state.rcx=c as u64;
+		gpr_state.rdx=d as u64;
+		// Advance the rip.
+		unsafe{advance_rip(self.vmcb.virt);}
 	}
 
 	/// # `handle_rdmsr`

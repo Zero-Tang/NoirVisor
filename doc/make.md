@@ -69,3 +69,28 @@ make [/target [target]] [/opt:yes|no]
 Valid options are `windows` and `uefi`. Default is `windows`.
 
 `/opt:yes|no` specifies whether optimizer is enabled. Default is `no`.
+
+## Customize Your Target
+To customize your target, you may add a json manifest in the root directory of this repository in the format of `build-xxx.json`, where `xxx` is the name of your target.
+
+### JSON Manifest Format
+The JSON manifest is organized as a dictionary with following keys:
+
+- `instructions`: This key is a dictionary that lists all jobs to be done for the make process. The name of keys are used for identifiers. All jobs must be described as dictionaries.
+- `common_flags`: This key is a dictionary that lists arguments shared by the same executable.
+- `opt_flags`: This key is a dictionary that lists arguments shared by the same executable when optimization is enabled.
+- `extra_env`: This key is a dictionary that lists environment variables to be appended.
+- `internal_var`: This key is a dictionary that lists internal variables used by the make script.
+
+#### Instructions
+All keys in `instruction` are also dictionaries.
+
+- `cmd` (list, required): The command used for running this instruction.
+- `progressive` (boolean, optional): If true, this is a progressive instruction. See Remarks.
+- `var` (dictionary, optional): Passes variables when building command-line arguments for this instruction.
+- `dependencies` (list, optional): Blocks this instruction until all dependent instructions in this list are completed. Circular dependencies can cause deadlocks.
+
+**Remarks** \
+Progressive instructions will gain exclusive access to the console because they print their job's progress on the console. \
+However, as a result, progressive instructions block each other and thereby can't be parallelized. \
+So you should try to reduce the number of progressive instruction to at most one for best parallelism.

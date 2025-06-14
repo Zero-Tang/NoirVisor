@@ -10,7 +10,8 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::c_void, ptr::null_mut, fmt::Display, ops::*, convert::From};
+use core::{arch::x86_64::_bittest64, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut};
+use crate::build_bit_get_method;
 use paste::paste;
 
 #[derive(Copy,Clone)] #[repr(C)] pub struct MemoryDescriptor
@@ -217,6 +218,60 @@ impl GprState
 	pub debug_ctrl:u64
 }
 
+#[repr(C)] pub struct EnabledFeatures(i64);
+
+impl EnabledFeatures
+{
+	pub fn get()->Self
+	{
+		Self(unsafe{noir_query_enabled_features_in_system()})
+	}
+
+	build_bit_get_method!(stealthy_msr_hook,0);
+	build_bit_get_method!(stealthy_inline_hook,1);
+	build_bit_get_method!(cpuid_hv_presence,2);
+	build_bit_get_method!(disable_patchguard,3);
+	build_bit_get_method!(nested_virtualization,4);
+	build_bit_get_method!(kva_shadow_presence,5);
+	build_bit_get_method!(tlfs_passthrough,6);
+	build_bit_get_method!(hide_from_pt,7);
+	build_bit_get_method!(enable_nsv,8);
+	build_bit_get_method!(enable_iommu,9);
+
+	const FEATURE_NAMES:[&'static str;10]=
+	[
+		"Stealthy MSR-Hook",
+		"Stealthy Inline-Hook",
+		"CPUID Presence",
+		"Disable PatchGuard",
+		"Nested Virtualization",
+		"KVA Shadow Compatibility",
+		"TLFS Passthrough",
+		"Hide PT Events",
+		"Secure Virtualization",
+		"DMA Protection"
+	];
+}
+
+impl Display for EnabledFeatures
+{
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+	{
+		write!(f,"(")?;
+		let mut count:usize=0;
+		for (i,&s) in Self::FEATURE_NAMES.iter().enumerate()
+		{
+			if unsafe{_bittest64((&raw const self.0).cast(),i as i64)!=0}
+			{
+				if count!=0 {write!(f,", ")?;}
+				write!(f,"{s}")?;
+				count+=1;
+			}
+		}
+		write!(f,")")
+	}
+}
+
 #[repr(C)] pub struct XcrState
 {
 	pub xcr0:u64
@@ -245,6 +300,8 @@ unsafe extern "C"
 	pub fn memcpy(dest:*mut c_void,src:*const c_void,cch:usize);
 	// Image Facility
 	pub fn nvc_store_image_info(base:*mut *mut c_void,size:*mut u32);
+	// Configuration Facility
+	pub fn noir_query_enabled_features_in_system()->i64;
 	// String Facility
 	pub fn strlen(ptr:*const u8)->usize;
 }

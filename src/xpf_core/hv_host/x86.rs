@@ -101,7 +101,8 @@ impl Default for HostPaging
 		let pml4e_p=r.cr3.virt as *mut Pml4e;
 		unsafe
 		{
-			let scr3_phys=read_cr3();
+			// CR3 might contain PCID. Clear it.
+			let scr3_phys=page_4kb_base(read_cr3());
 			let scr3_virt=noir_find_virt_by_phys(scr3_phys);
 			println!("System CR3 Virt: {scr3_virt:p}, Phys: 0x{scr3_phys:016X}");
 			memcpy(r.cr3.virt,scr3_virt,PAGE_SIZE);

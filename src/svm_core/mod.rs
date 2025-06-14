@@ -299,7 +299,8 @@ impl SvmVcpu
 	pub mmio_space:IoAddressSpace<u64>,
 	pub cvm_list:Vec<Option<Box<SvmCustomVm>>>,
 	pub image_base:*mut c_void,
-	pub image_size:u32
+	pub image_size:u32,
+	pub features:EnabledFeatures
 }
 
 impl Default for SvmHypervisor
@@ -318,7 +319,8 @@ impl Default for SvmHypervisor
 			mmio_space:IoAddressSpace{regions:Vec::new()},
 			cvm_list:Vec::with_capacity(8),
 			image_base:null_mut(),
-			image_size:0
+			image_size:0,
+			features:EnabledFeatures::get()
 		}
 	}
 }
@@ -371,6 +373,7 @@ impl HypervisorEssentials for SvmHypervisor
 			};
 		}
 		println!("Subverting the system with AMD-V...");
+		println!("Enabled features: {}",self.features);
 		// Allocate various stuff. Note that they are required to be raw-pointer.
 		let msrpm=alloc_contd_pages(PAGE_SIZE*2);
 		let iopm=alloc_contd_pages(PAGE_SIZE*3);

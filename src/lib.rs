@@ -231,11 +231,14 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 // the rust-analyzer of VSCode will report duplicate panic_impl.
 
 #[cfg(not(test))]
-use core::panic::PanicInfo;
-
-#[cfg(not(test))]
-#[panic_handler] fn panic(panic: &PanicInfo)->!
+mod panicking
 {
-	println!("\x1b[91m[PANIC] NoirVisor {}",panic);
-	loop{}
+	use crate::{print,println,dbg_print};
+	use core::panic::PanicInfo;
+
+	#[panic_handler] fn panic(panic: &PanicInfo)->!
+	{
+		println!("\x1b[91m[PANIC] NoirVisor {} \x1b[39m",panic);
+		loop{}
+	}
 }

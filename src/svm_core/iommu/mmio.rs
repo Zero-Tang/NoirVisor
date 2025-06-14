@@ -225,18 +225,18 @@ pub enum SvmIommuCommand
 
 impl SvmIommuCommand
 {
-	pub fn into_raw(&self)->[u32;4]
+	pub fn into_raw(self)->[u32;4]
 	{
 		use SvmIommuCommand::*;
 		match self
 		{
 			CompletionWait{store_address,store_data,completion_store,incompletion_interrupt,flush_queue}=>
 			{
-				let mut raw:[u32;4]=[(*store_address&0xffffffff) as u32,(*store_address>>32) as u32,(*store_data&0xffffffff) as u32,(*store_data>>32) as u32];
+				let mut raw:[u32;4]=[(store_address&0xffffffff) as u32,(store_address>>32) as u32,(store_data&0xffffffff) as u32,(store_data>>32) as u32];
 				// Fill in the boolean values.
-				if *completion_store {raw[0]|=0x1;}
-				if *incompletion_interrupt {raw[0]|=0x2;}
-				if *flush_queue {raw[0]|=0x4;}
+				if completion_store {raw[0]|=0x1;}
+				if incompletion_interrupt {raw[0]|=0x2;}
+				if flush_queue {raw[0]|=0x4;}
 				// Mark as COMPLETION_WAIT command.
 				raw[1]|=0x10000000;
 				raw

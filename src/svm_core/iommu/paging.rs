@@ -112,7 +112,7 @@ impl SvmIommuPmlManager
 		}
 		else if phys>=self.gpa_start+self.length
 		{
-			Ordering::Greater
+			Ordering::Less
 		}
 		else
 		{

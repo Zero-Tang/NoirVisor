@@ -3,18 +3,13 @@
 	{
 		"cargo":
 		{
-			"cmd":["cargo","build","--target","x86_64-unknown-uefi"],
+			"cmd":["cargo","build","--target","x86_64-unknown-uefi","--package","loadefi","--package","nvcore"],
 			"progressive":true
-		},
-		"efimain":
-		{
-			"cmd":["cl"],
-			"var":{"src":".\\src\\booting\\efiapp\\efimain.c"}
 		},
 		"driver":
 		{
 			"cmd":["cl"],
-			"var":{"src":".\\src\\booting\\efiapp\\driver.c"}
+			"var":{"src":".\\src\\booting\\uefirtdrv\\driver.c"}
 		},
 		"cfgmgr":
 		{
@@ -59,11 +54,6 @@
 		{
 			"cmd":["python",".\\build\\makeueficonfig.py",".\\build\\DefaultUefiConfig.json",".\\bin\\{outdir}\\NoirVisorConfig.bin"]
 		},
-		"bootx64":
-		{
-			"cmd":["link","{objpath}\\efimain.obj","/OUT:.\\bin\\{outdir}\\bootx64.efi","/SUBSYSTEM:EFI_APPLICATION","/ENTRY:NoirEfiEntry","/PDB:.\\bin\\{outdir}\\bootx64.pdb"],
-			"dependencies":["efimain"]
-		},
 		"NoirVisor":
 		{
 			"cmd":["link","{objpath}\\driver.obj","{objpath}\\cfgmgr.obj","{objpath}\\host.obj","{objpath}\\uefihvm.obj","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj","{objpath}\\kpcr.obj",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libnvcore.a",".\\bin\\{outdir}\\msvcrt-static.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
@@ -71,8 +61,8 @@
 		},
 		"image":
 		{
-			"cmd":["python","mkimg.py","-md","::/EFI","-md","::/EFI/BOOT","-c","bin\\{outdir}\\bootx64.efi|::/EFI/BOOT","-c","bin\\{outdir}\\NoirVisor.efi|::/","-c","bin\\{outdir}\\NoirVisorConfig.bin|::/","-o",".\\bin\\{outdir}\\NoirVisor-Uefi.img"],
-			"dependencies":["bootx64","NoirVisor","config"]
+			"cmd":["python","mkimg.py","-md","::/EFI","-md","::/EFI/BOOT","-c",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\loadefi.efi|::/EFI/BOOT/bootx64.efi","-c","bin\\{outdir}\\NoirVisor.efi|::/","-c","bin\\{outdir}\\NoirVisorConfig.bin|::/","-o",".\\bin\\{outdir}\\NoirVisor-Uefi.img"],
+			"dependencies":["NoirVisor","config"]
 		}
 	},
 	"common_flags":

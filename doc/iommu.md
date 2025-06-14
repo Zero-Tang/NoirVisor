@@ -10,6 +10,7 @@ For QEMU+KVM, you need to add an IOMMU device. For example, you can enable Intel
 ```
 qemu-system-x86_64 -accel kvm -machine q35,kernel-irqchip=split -cpu host,hypervisor=off,vmx=on -device intel-iommu,intremap=on,device-iotlb=on,pt=on,aw-bits=48
 ```
+Note that QEMU's AMD-Vi emulation is probably incorrect (I am using QEMU 10.0.2). I have also tried using Microsoft Hypervisor's DMA protection and it wasn't working on QEMU either.
 
 It seems NoirVisor can't use IOMMU in real machine as a Type-II Hypervisor. It will cause the system to immediately freeze.
 
@@ -36,7 +37,7 @@ In AMD-Vi, there is a `Device-Table Base-Address Register`. You will feed the ph
 There are certain additional considerations in order to implement IOMMU in NoirVisor.
 
 ### Activating IOMMU
-To activate IOMMU, a hypervisor should setup the one set of page table and a device table. All root pointers of page table in the device table should point to the same set of page table so that IOMMU can emulate it. \
+To activate IOMMU, a hypervisor should setup the one set of page table and a device table. All root pointers of page table in the device table should point to the same set of page table so that IOMMU can protect the memory against all DMA-capable devices. \
 After setting up the IOMMU, the hypervisor should use MMIO to write the root pointer of device table into IOMMU, then use MMIO to activate IOMMU's DMA Remapping.
 
 ### Choose Paging Mode
