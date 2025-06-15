@@ -13,7 +13,7 @@
 use core::{arch::x86_64::_bittest, fmt::{self,Display}};
 use paste::paste;
 
-use crate::{xpf_core::{asm::vt::*, x86::{crdr::DR6_BS, rflags::RFLAGS_TF_BIT}},*};
+use crate::{xpf_core::{asm::vt::*, x86::{crdr::DR6_BS, interrupts::EventType, rflags::RFLAGS_TF_BIT}},*};
 
 // 16-Bit Control Fields
 pub const GUEST_VPID:usize=0x0;
@@ -245,6 +245,24 @@ pub const HOST_MSR_IA32_INTERRUPT_SSP_TABLE_ADDR:usize=0x6C1C;
 			gip&=0xFFFFFFFF;
 		}
 		vmwriteptr(GUEST_RIP,gip);
+	}
+}
+
+#[inline] pub unsafe fn inject_event(vector:u8,event_type:EventType,error_code:Option<u32>,valid:bool,length:u32)
+{
+	let mut evt=VmxEntryInterruptionInformation(0);
+	evt.set_vector(vector as u32);
+	evt.set_interruption_type(event_type as u32);
+	evt.set_valid(valid);
+	unsafe
+	{
+		if let Some(code)=error_code
+		{
+			evt.set_deliver_error_code(true);
+			vmwrite32(VMENTRY_EXCEPTION_ERROR_CODE,code);
+		}
+		vmwrite32(VMENTRY_INTERRUPTION_INFORMATION_FIELD,evt.0);
+		vmwrite32(VMENTRY_INSTRUCTION_LENGTH,length);
 	}
 }
 

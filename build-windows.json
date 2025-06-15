@@ -9,61 +9,73 @@
 		"driver":
 		{
 			"cmd":["cl"],
-			"var":{"src":".\\src\\booting\\windrv\\driver.c"}
+			"var":{"src":".\\src\\booting\\windrv\\driver.c"},
+			"cancel_if_intact":[".\\src\\booting\\windrv\\driver.c",".\\src\\booting\\windrv\\driver.h"]
 		},
 		"version":
 		{
-			"cmd":["rc","/nologo","/i{incpath}\\shared","/i{incpath}\\um","/i{incpath}\\km\\crt","/d_AMD64_","/fo{objpath}\\version.res","/n",".\\src\\booting\\windrv\\version.rc"]
+			"cmd":["rc","/nologo","/i{incpath}\\shared","/i{incpath}\\um","/i{incpath}\\km\\crt","/d_AMD64_","/fo{objpath}\\version.res","/n",".\\src\\booting\\windrv\\version.rc"],
+			"cancel_if_intact":[".\\src\\booting\\windrv\\version.rc",".\\src\\booting\\windrv\\resource.h"]
 		},
 		"detour":
 		{
 			"cmd":["cl"],
-			"var":{"src":".\\src\\xpf_core\\windows\\detour.c"}
+			"var":{"src":".\\src\\xpf_core\\windows\\detour.c"},
+			"cancel_if_intact":[".\\src\\xpf_core\\windows\\detour.c",".\\src\\xpf_core\\windows\\detour.h"]
 		},
 		"hooks":
 		{
 			"cmd":["cl"],
-			"var":{"src":".\\src\\xpf_core\\windows\\hooks.c"}
+			"var":{"src":".\\src\\xpf_core\\windows\\hooks.c"},
+			"cancel_if_intact":[".\\src\\xpf_core\\windows\\hooks.c",".\\src\\xpf_core\\windows\\hooks.h"]
 		},
 		"layered":
 		{
 			"cmd":["cl"],
-			"var":{"src":".\\src\\xpf_core\\windows\\layered.c"}
+			"var":{"src":".\\src\\xpf_core\\windows\\layered.c"},
+			"cancel_if_intact":[".\\src\\xpf_core\\windows\\layered.c",".\\src\\xpf_core\\windows\\custom_vm.h"]
 		},
 		"nvsys":
 		{
 			"cmd":["cl"],
-			"var":{"src":".\\src\\xpf_core\\windows\\nvsys.c"}
+			"var":{"src":".\\src\\xpf_core\\windows\\nvsys.c"},
+			"cancel_if_intact":[".\\src\\xpf_core\\windows\\nvsys.c",".\\src\\xpf_core\\windows\\nvsys.h"]
 		},
 		"winhvm":
 		{
 			"cmd":["cl"],
-			"var":{"src":".\\src\\xpf_core\\windows\\winhvm.c"}
+			"var":{"src":".\\src\\xpf_core\\windows\\winhvm.c"},
+			"cancel_if_intact":[".\\src\\xpf_core\\windows\\winhvm.c",".\\src\\xpf_core\\windows\\winhvm.h"]
 		},
 		"msrhook":
 		{
 			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\windows\\msrhook.asm"}
+			"var":{"src":".\\src\\xpf_core\\windows\\msrhook.asm"},
+			"cancel_if_intact":[".\\src\\xpf_core\\windows\\msrhook.asm"]
 		},
 		"svm_hv":
 		{
 			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\svm_hv.asm"}
+			"var":{"src":".\\src\\xpf_core\\msvc\\svm_hv.asm"},
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\svm_hv.asm"]
 		},
 		"vt_hv":
 		{
 			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\vt_hv.asm"}
+			"var":{"src":".\\src\\xpf_core\\msvc\\vt_hv.asm"},
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\vt_hv.asm"]
 		},
 		"interrupt":
 		{
 			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\interrupt.asm"}
+			"var":{"src":".\\src\\xpf_core\\msvc\\interrupt.asm"},
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\interrupt.asm"]
 		},
 		"kpcr":
 		{
 			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\kpcr.asm"}
+			"var":{"src":".\\src\\xpf_core\\msvc\\kpcr.asm"},
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\kpcr.asm"]
 		},
 		"msvcrt":
 		{

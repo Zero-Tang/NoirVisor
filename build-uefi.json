@@ -9,42 +9,50 @@
 		"driver":
 		{
 			"cmd":["cl"],
-			"var":{"src":".\\src\\booting\\uefirtdrv\\driver.c"}
+			"var":{"src":".\\src\\booting\\uefirtdrv\\driver.c"},
+			"cancel_if_intact":[".\\src\\booting\\uefirtdrv\\driver.c",".\\src\\booting\\uefirtdrv\\driver.h"]
 		},
 		"cfgmgr":
 		{
 			"cmd":["cl"],
-			"var":{"src":".\\src\\xpf_core\\uefi\\cfgmgr.c"}
+			"var":{"src":".\\src\\xpf_core\\uefi\\cfgmgr.c"},
+			"cancel_if_intact":[".\\src\\xpf_core\\uefi\\cfgmgr.c",".\\src\\xpf_core\\uefi\\cfgmgr.h"]
 		},
 		"host":
 		{
 			"cmd":["cl"],
-			"var":{"src":".\\src\\xpf_core\\uefi\\host.c"}
+			"var":{"src":".\\src\\xpf_core\\uefi\\host.c"},
+			"cancel_if_intact":[".\\src\\xpf_core\\uefi\\host.c",".\\src\\xpf_core\\uefi\\host.h"]
 		},
 		"uefihvm":
 		{
 			"cmd":["cl"],
-			"var":{"src":".\\src\\xpf_core\\uefi\\uefihvm.c"}
+			"var":{"src":".\\src\\xpf_core\\uefi\\uefihvm.c"},
+			"cancel_if_intact":[".\\src\\xpf_core\\uefi\\uefihvm.c",".\\src\\xpf_core\\uefi\\uefihvm.h"]
 		},
 		"svm_hv":
 		{
 			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\svm_hv.asm"}
+			"var":{"src":".\\src\\xpf_core\\msvc\\svm_hv.asm"},
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\svm_hv.asm"]
 		},
 		"vt_hv":
 		{
 			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\vt_hv.asm"}
+			"var":{"src":".\\src\\xpf_core\\msvc\\vt_hv.asm"},
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\vt_hv.asm"]
 		},
 		"interrupt":
 		{
 			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\interrupt.asm"}
+			"var":{"src":".\\src\\xpf_core\\msvc\\interrupt.asm"},
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\interrupt.asm"]
 		},
 		"kpcr":
 		{
 			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\kpcr.asm"}
+			"var":{"src":".\\src\\xpf_core\\msvc\\kpcr.asm"},
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\kpcr.asm"]
 		},
 		"msvcrt":
 		{

@@ -73,6 +73,7 @@ BOOLEAN NoirInitializeCodeIntegrity(IN VOID* ImageBase);
 void NoirFinalizeCodeIntegrity();
 void NoirTestCodeIntegrity(IN VOID* ImageBase);
 void NoirSuppressImageRelocation(IN VOID* ImageBase);
+void NoirSaveImageInfo(IN EFI_LOADED_IMAGE_PROTOCOL *LoadedImageProtocol);
 BOOLEAN NoirAcpiInitialize();
 BOOLEAN NoirHpetInitialize();
 EFI_STATUS NoirInitializeConfigurationManager();

@@ -512,8 +512,8 @@ impl HypervisorEssentials for SvmHypervisor
 
 #[unsafe(no_mangle)] extern "C" fn nvc_svm_subvert_processor_thunk(context:*mut c_void,processor_id:u32)
 {
-	let hv=context as *mut SvmHypervisor;
-	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};
+	let hv:&mut SvmHypervisor=unsafe{&mut *context.cast()};
+	let vp=hv.vcpus.get_mut(processor_id as usize);
 	sysdprintln!("Subverting processor {} with AMD-V...",processor_id);
 	match vp
 	{
@@ -524,8 +524,8 @@ impl HypervisorEssentials for SvmHypervisor
 
 #[unsafe(no_mangle)] extern "C" fn nvc_svm_restore_processor_thunk(context:*mut c_void,processor_id:u32)
 {
-	let hv=context as *mut SvmHypervisor;
-	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};
+	let hv=unsafe{&mut *(context as *mut SvmHypervisor)};
+	let vp=hv.vcpus.get_mut(processor_id as usize);
 	sysdprintln!("Processor {processor_id} entered restoration routine...");
 	match vp
 	{

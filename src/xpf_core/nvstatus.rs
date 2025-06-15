@@ -112,7 +112,7 @@ impl Display for Status
 		};
 		match s
 		{
-			Some(reason_string)=>write!(f,"Reason: {}",reason_string),
+			Some(reason_string)=>write!(f,"Reason: {reason_string}"),
 			None=>write!(f,"Unknown Status: 0x{:08X}",self.0)
 		}
 	}

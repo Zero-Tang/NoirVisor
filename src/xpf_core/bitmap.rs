@@ -18,7 +18,7 @@ use core::ffi::c_void;
 /// Panics if the bit position exceeds the limit.
 pub unsafe fn set_bitmap(bitmap:*mut c_void,limit:usize,bit_position:usize)
 {
-	assert!((bit_position>>3)<limit,"The set-bitmap operation exceeded the limit! Bit Position: {}, Limit: {} bytes",bit_position,limit);
+	assert!((bit_position>>3)<limit,"The set-bitmap operation exceeded the limit! Bit Position: {bit_position}, Limit: {limit} bytes");
 	let bmp:*mut u32=bitmap.cast();
 	let i=bit_position>>5;
 	let j=bit_position&0x1F;
@@ -31,7 +31,7 @@ pub unsafe fn set_bitmap(bitmap:*mut c_void,limit:usize,bit_position:usize)
 /// Panics if the bit position exceeds the limit.
 pub unsafe fn reset_bitmap(bitmap:*mut c_void,limit:usize,bit_position:usize)
 {
-	assert!((bit_position>>3)<limit,"The reset-bitmap operation exceeded the limit! Bit Position: {}, Limit: {} bytes",bit_position,limit);
+	assert!((bit_position>>3)<limit,"The reset-bitmap operation exceeded the limit! Bit Position: {bit_position}, Limit: {limit} bytes");
 	let bmp:*mut u32=bitmap.cast();
 	let i=bit_position>>5;
 	let j=bit_position&0x1F;
@@ -44,7 +44,7 @@ pub unsafe fn reset_bitmap(bitmap:*mut c_void,limit:usize,bit_position:usize)
 /// Panics if the bit position exceeds the limit.
 pub unsafe fn test_bitmap(bitmap:*const c_void,limit:usize,bit_position:usize)->bool
 {
-	assert!((bit_position>>3)<limit,"The test-bitmap operation exceeded the limit! Bit Position: {}, Limit: {} bytes",bit_position,limit);
+	assert!((bit_position>>3)<limit,"The test-bitmap operation exceeded the limit! Bit Position: {bit_position}, Limit: {limit} bytes");
 	let bmp:*const u32=bitmap.cast();
 	let i=bit_position>>5;
 	let j=bit_position&0x1F;

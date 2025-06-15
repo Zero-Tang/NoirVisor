@@ -89,6 +89,8 @@ All keys in `instruction` are also dictionaries.
 - `progressive` (boolean, optional): If true, this is a progressive instruction. See Remarks.
 - `var` (dictionary, optional): Passes variables when building command-line arguments for this instruction.
 - `dependencies` (list, optional): Blocks this instruction until all dependent instructions in this list are completed. Circular dependencies can cause deadlocks.
+- `cancel_if_opt` (boolean, optional): If true, this instruction will not be executed if the script is running in optimization mode.
+- `cancel_if_intact` (list, optional): If all files in the list are not changed since last run, this instruction will not be executed. If this list is empty or absent, this instruction will always be executed.
 
 **Remarks** \
 Progressive instructions will gain exclusive access to the console because they print their job's progress on the console. \

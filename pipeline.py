@@ -16,13 +16,38 @@ class PipelineInstruction:
 		self.optimizer_enabled=opt
 		self.progressive:bool=raw["progressive"] if "progressive" in raw else False
 		self.cancel_if_opt:bool=raw["cancel_if_opt"] if "cancel_if_opt" in raw else False
+		self.cancel_if_intact:list[str]=raw["cancel_if_intact"] if "cancel_if_intact" in raw else []
 
 	def add_dependency(self,other):
 		self.dependencies.append(other)
 	
-	def worker(self):
-		# If optimizer is enable, this instruction might be canceled.
+	def pre_evaluate_cancel(self)->bool:
+		# If optimizer is enabled, this instruction might be canceled.
 		if self.optimizer_enabled and self.cancel_if_opt:
+			return True
+		# Detect file changes.
+		if len(self.cancel_if_intact):
+			for fn in self.cancel_if_intact:
+				if fn in self.parent.mtimes:
+					t1=os.path.getmtime(fn)
+					t2=self.parent.mtimes[fn]
+					if t1!=t2:
+						return False
+				else:
+					return False
+			return True
+		else:
+			# If this field is empty, this job will always be rerun.
+			return False
+	
+	def post_evaluate_cancel(self):
+		for fn in self.cancel_if_intact:
+			t=os.path.getmtime(fn)
+			self.parent.mtimes[fn]=t
+
+	def worker(self):
+		# Evaluate if this instruction should be cancelled.
+		if self.pre_evaluate_cancel():
 			return None
 		# The internal dictionary will help format the command strings.
 		internal_dict={"instruction":self.name}|self.parent.global_variable|self.variables
@@ -70,12 +95,12 @@ class PipelineInstruction:
 			print("[{}] failed to run!".format(self.name))
 
 	def run(self):
-		if not (self.optimizer_enabled and self.cancel_if_opt):
+		if not self.pre_evaluate_cancel():
 			self.thread=threading.Thread(target=self.worker)
 			self.thread.start()
 	
 	def wait(self)->int|None:
-		if not (self.optimizer_enabled and self.cancel_if_opt):
+		if not self.pre_evaluate_cancel():
 			self.thread.join()
 			return self.return_code
 
@@ -96,6 +121,11 @@ class Pipeline:
 			"cargo_preset":"release" if opt else "debug",
 			"cd":os.getcwd()}|os.environ|extra_vars
 		self.instructions:dict[str,PipelineInstruction]=dict()
+		mtimes_fn=os.path.join("bin",self.global_variable["outdir"],"mtimes.json")
+		try:
+			self.mtimes:dict[str,float]=json.load(open(mtimes_fn)) if os.path.exists(mtimes_fn) else dict()
+		except:
+			self.mtimes=dict()
 		# Load all instructions into the pipeline.
 		for i_name in self._raw["instructions"]:
 			self.instructions[i_name]=PipelineInstruction(self,i_name,self._raw["instructions"][i_name],opt)
@@ -120,3 +150,9 @@ class Pipeline:
 			instr.wait()
 		# Restore environment variables.
 		os.environ=old_environ
+		# Flush mtimes.
+		for i_name in self.instructions:
+			instr=self.instructions[i_name]
+			instr.post_evaluate_cancel()
+		mtimes_fn=os.path.join("bin",self.global_variable["outdir"],"mtimes.json")
+		json.dump(self.mtimes,open(mtimes_fn,'w'),indent='\t')

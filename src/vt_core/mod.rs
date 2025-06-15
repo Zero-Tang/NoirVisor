@@ -460,7 +460,8 @@ impl VtVcpu
 	pub pio_space:IoAddressSpace<u16>,
 	pub mmio_space:IoAddressSpace<u64>,
 	pub image_base:*mut c_void,
-	pub image_size:u32
+	pub image_size:u32,
+	pub features:EnabledFeatures
 }
 
 impl Default for VtHypervisor
@@ -478,7 +479,8 @@ impl Default for VtHypervisor
 			pio_space:IoAddressSpace{regions:Vec::new()},
 			mmio_space:IoAddressSpace{regions:Vec::new()},
 			image_base:null_mut(),
-			image_size:0
+			image_size:0,
+			features:EnabledFeatures::get()
 		}
 	}
 }
@@ -568,8 +570,30 @@ impl HypervisorEssentials for VtHypervisor
 							else {panic!("MSR (0x{index:X}) can't be intercepted via bitmap!")} as usize;
 						set_bitmap(bmp,0x400,i);
 					};
+					// Intercept accesses to the microcode updater.
 					set_interception(MSR_BIOS_UPDATE_TRIGGER,false);
 					set_interception(MSR_BIOS_UPDATE_TRIGGER,true);
+					// Intercept accesses to VMX MSRs.
+					set_interception(MSR_VMX_BASIC,false);
+					set_interception(MSR_VMX_PIN_BASED_CTLS,false);
+					set_interception(MSR_VMX_PROC_BASED_CTLS,false);
+					set_interception(MSR_VMX_EXIT_CTLS,false);
+					set_interception(MSR_VMX_ENTRY_CTLS,false);
+					set_interception(MSR_VMX_MISC,false);
+					set_interception(MSR_VMX_CR0_FIXED0,false);
+					set_interception(MSR_VMX_CR0_FIXED1,false);
+					set_interception(MSR_VMX_CR4_FIXED0,false);
+					set_interception(MSR_VMX_CR4_FIXED1,false);
+					set_interception(MSR_VMX_VMCS_ENUM,false);
+					set_interception(MSR_VMX_PROC_BASED_CTLS2,false);
+					set_interception(MSR_VMX_EPT_VPID_CAP,false);
+					set_interception(MSR_VMX_TRUE_PIN_BASED_CTLS,false);
+					set_interception(MSR_VMX_TRUE_PROC_BASED_CTLS,false);
+					set_interception(MSR_VMX_TRUE_EXIT_CTLS,false);
+					set_interception(MSR_VMX_TRUE_ENTRY_CTLS,false);
+					set_interception(MSR_VMX_VMFUNC,false);
+					set_interception(MSR_VMX_PROC_BASED_CTLS3,false);
+					set_interception(MSR_VMX_EXIT_CTLS2,false);
 				}
 			}
 			None=>fail_cleanup!("Failed to alloate MSR-Bitmap!")
@@ -620,7 +644,7 @@ impl HypervisorEssentials for VtHypervisor
 		unsafe
 		{
 			nvc_store_image_info(&raw mut self.image_base,&raw mut self.image_size);
-			sysdprintln!("Base: 0x{:p}, Size: 0x{:X}",self.image_base,self.image_size);
+			sysdprintln!("Base: {:p}, Size: 0x{:X}",self.image_base,self.image_size);
 			noir_generic_call(nvc_vt_subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
 		sysdprintln!("System Subversion Completed!");
@@ -640,8 +664,8 @@ impl HypervisorEssentials for VtHypervisor
 
 extern "C" fn nvc_vt_subvert_processor_thunk(context:*mut c_void,processor_id:u32)
 {
-	let hv=context as *mut VtHypervisor;
-	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};
+	let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
+	let vp=hv.vcpus.get_mut(processor_id as usize);
 	sysdprintln!("Subverting processor {} with Intel VT-x...",processor_id);
 	match vp
 	{
@@ -653,8 +677,8 @@ extern "C" fn nvc_vt_subvert_processor_thunk(context:*mut c_void,processor_id:u3
 
 extern "C" fn nvc_vt_restore_processor_thunk(context:*mut c_void,processor_id:u32)
 {
-	let hv=context as *mut VtHypervisor;
-	let vp=unsafe{(*hv).vcpus.get_mut(processor_id as usize)};
+	let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
+	let vp=hv.vcpus.get_mut(processor_id as usize);
 	sysdprintln!("Processor {processor_id} entered restoration routine...");
 	match vp
 	{

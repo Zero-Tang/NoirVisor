@@ -12,7 +12,7 @@
 
 use core::arch::x86_64::_xsetbv;
 
-use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, vt_core::nvc_vt_resume_without_entry, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::InterruptStackFrameWithErrorCode}}, *};
+use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, vt_core::nvc_vt_resume_without_entry, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, InterruptStackFrameWithErrorCode, GENERAL_PROTECTION_FAULT}}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu};
 
 impl VtVcpu
@@ -75,16 +75,24 @@ impl VtVcpu
 
 	fn handle_cpuid(&mut self,gpr_state:&mut GprState)
 	{
+		let hv:&VtHypervisor=unsafe{&*self.hypervisor.cast()};
 		let ia=gpr_state.rax as u32;
 		let ic=gpr_state.rcx as u32;
 		let (a,b,c,d)=
 		if (ia&0x40000000)==0x40000000
 		{
-			let leaf_func=(ia&0x3FFFFFFF) as usize;
-			match MSHV_CPUID_HANDLERS.get(leaf_func)
+			if hv.features.get_cpuid_hv_presence()
 			{
-				Some(f)=>f(ia,ic),
-				None=>(0,0,0,0)
+				let leaf_func=(ia&0x3FFFFFFF) as usize;
+				match MSHV_CPUID_HANDLERS.get(leaf_func)
+				{
+					Some(f)=>f(ia,ic),
+					None=>(0,0,0,0)
+				}
+			}
+			else
+			{
+				(0,0,0,0)
 			}
 		}
 		else
@@ -95,7 +103,7 @@ impl VtVcpu
 			let (mut a,mut b,mut c,mut d)=cpuid2(ia,ic);
 			if ia==CPUID_STD_PROCESSOR_FEATURE
 			{
-				c|=CPUID_UNDER_HYPERVISOR;
+				c|=if hv.features.get_cpuid_hv_presence() {CPUID_UNDER_HYPERVISOR} else {0};
 				c&=!CPUID_VMX;
 			}
 			(a,b,c,d)
@@ -238,26 +246,47 @@ impl VtVcpu
 	fn handle_rdmsr(&mut self,gpr_state:&mut GprState)
 	{
 		let index:u32=gpr_state.rcx as u32;
-		if index==MSR_BIOS_UPDATE_TRIGGER
+		let ret_val:Option<u64>=match index
 		{
 			// Prevent the Guest from updating microcode.
 			// Returning u64::MAX should prevent the guest from loading microcodes,
 			// unless they ignore the current version of microcode.
-			gpr_state.rax=u32::MAX as u64;
-			gpr_state.rdx=u32::MAX as u64;
+			MSR_BIOS_UPDATE_TRIGGER=>Some(u64::MAX),
+			_=>panic!("Unexpected interception to rdmsr! MSR-Index: 0x{index:X}")
+		};
+		match ret_val
+		{
+			Some(v)=>
+			{
+				gpr_state.rax=v&0xffffffff;
+				gpr_state.rdx=v>>32;
+				unsafe{advance_rip()};
+			}
+			None=>unsafe{inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true,0)}
 		}
-		unsafe{advance_rip()};
 	}
 
 	fn handle_wrmsr(&mut self,gpr_state:&mut GprState)
 	{
 		let index:u32=gpr_state.rcx as u32;
-		if index==MSR_BIOS_UPDATE_TRIGGER
+		let fault=match index
 		{
 			// Prevent the Guest from updating microcode.
 			// Do so by ignoring the update request.
-		}
-		unsafe{advance_rip()};
+			MSR_BIOS_UPDATE_TRIGGER=>false,
+			_=>panic!("Unexpected interception to wrmsr! MSR-Index: 0x{index:X}")
+		};
+		unsafe
+		{
+			if fault
+			{
+				inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true,0);
+			}
+			else
+			{
+				advance_rip();
+			}
+		};
 	}
 
 	fn handle_invalid_state(&mut self,_gpr_state:&mut GprState)
