@@ -212,6 +212,39 @@ pub const HOST_S_CET:usize=0x6C18;
 pub const HOST_SSP:usize=0x6C1A;
 pub const HOST_MSR_IA32_INTERRUPT_SSP_TABLE_ADDR:usize=0x6C1C;
 
+#[derive(Debug)]
+pub struct VmcsSegment
+{
+	pub selector:u16,
+	pub acces_rights:u32,
+	pub limit:u32,
+	pub base:usize
+}
+
+#[macro_export] macro_rules! read_guest_segment
+{
+	($name:tt) =>
+	{
+		paste!
+		{
+			unsafe
+			{
+				let sel=vmread16([<GUEST_ $name:upper _SELECTOR>]).unwrap();
+				let ar=vmread32([<GUEST_ $name:upper _ACCESS_RIGHTS>]).unwrap();
+				let lim=vmread32([<GUEST_ $name:upper _LIMIT>]).unwrap();
+				let base=vmreadptr([<GUEST_ $name:upper _BASE>]).unwrap();
+				VmcsSegment
+				{
+					selector:sel,
+					acces_rights:ar,
+					limit:lim,
+					base
+				}
+			}
+		}
+	};
+}
+
 #[inline] pub fn vt_attrib(selector:u16,attrib:u16)->u32
 {
 	let mut ar=SegmentAccessRights(attrib as u32);

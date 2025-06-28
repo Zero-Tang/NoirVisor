@@ -17,7 +17,7 @@ use paste::paste;
 
 use acpi::{Ivhd, IvhdLarge};
 use paging::{SvmIommuPmlManager, SvmIommuPte};
-use crate::{svm_core::iommu::mmio::*, xpf_core::{asm::io::{mmio_read, mmio_write}, ci::enum_ci_phys_page}, *};
+use crate::{svm_core::iommu::mmio::*, xpf_core::{asm::io::{mmio_read, mmio_write}, ci::CI_MANAGER}, *};
 use drv_core::acpi::{search_acpi_table, tables::{AcpiSystemDescriptorSignature, IoVirtualizationReportingStructure}};
 use xpf_core::{nvbdk::*, nvstatus::*, ioflt::IoRegion, dlalloc::{alloc_2mb_page, alloc_contd_pages, free_contd_pages}};
 
@@ -204,8 +204,8 @@ impl SvmIommuManager
 
 	pub fn protect_ci(&mut self)
 	{
-		let ci_pages=unsafe{&*enum_ci_phys_page()};
-		for p in ci_pages
+		let ci=CI_MANAGER.read();
+		for p in ci.into_iter()
 		{
 			self.update_pml1e(*p,*p,false,false);
 		}

@@ -228,10 +228,29 @@ pub mod seg
 	build_fn!(ss);
 
 	build_fn_special_16bit!(tr);
-	build_fn_special_16bit!(ldtr);
+	build_fn_special_16bit!(ldt);
 
 	build_fn_special_80bit!(gdt);
 	build_fn_special_80bit!(idt);
+
+	#[inline] pub fn lsl(segment:u16)->u32
+	{
+		let lim:u32;
+		let zf:u8;
+		unsafe
+		{
+			// Note that lsl sets zf flags to indicate whether the segment is valid.
+			asm!
+			(
+				"lsl {lim:e},{sel:x}",
+				"setz {zf}",
+				sel=in(reg) segment,
+				lim=out(reg) lim,
+				zf=out(reg_byte) zf
+			);
+		}
+		if zf==1 {lim} else {0}
+	}
 }
 
 pub mod crdr
@@ -748,6 +767,7 @@ pub mod vt
 	}
 	
 	// Unfortunately, we won't be able to abuse generics to read/write VMCS...
+	#[derive(Debug)]
 	pub enum VmxResult<T>
 	{
 		Ok(T),

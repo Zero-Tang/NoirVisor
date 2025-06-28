@@ -11,13 +11,15 @@
  */
 
 use iced_x86::*;
-use core::{fmt, str, sync::atomic::{AtomicPtr,Ordering}};
+use spin::Mutex;
+use core::{cell::LazyCell, fmt, str};
+use alloc::boxed::Box;
 
 use qemu_debugcon::*;
 use serial::*;
 use unknown::*;
 
-use crate::{Status, NOIR_SUCCESS};
+use crate::xpf_core::nvstatus::{NOIR_SUCCESS,Status};
 
 mod qemu_debugcon;
 #[allow(dead_code)] mod serial;
@@ -91,7 +93,7 @@ impl FormatterOutput for FormatBuffer
 	}
 }
 
-pub trait DebuggerBackend
+pub trait DebuggerBackend:Send
 {
 	/// # Safety
 	/// The `buffer` argument is a raw pointer.
@@ -99,38 +101,19 @@ pub trait DebuggerBackend
 	/// # Safety
 	/// The `buffer` argument is a raw pointer.
 	unsafe fn write(&self,buffer:*const u8,length:usize)->bool;
-	fn acquire(&mut self);
-	fn release(&mut self);
 }
 
-pub enum Debugger
-{
-	QemuDebugCon(QemuDebugConDebugger),
-	Serial(SerialPort),
-	Unknown(UnknownDebugger)
-}
-
-static mut DEBUGGER:Debugger=Debugger::Unknown(UnknownDebugger);
-static DEBUGGER_PTR:AtomicPtr<Debugger>=AtomicPtr::new(&raw mut DEBUGGER);
-
-// Currently, interactive debugger is in draft-stage, so `debug_read` will never be called.
-// Mark it as a piece of dead code.
-#[allow(dead_code)]
-unsafe fn debug_read(debugger:&mut impl DebuggerBackend,buffer:*mut u8,length:usize)->bool
-{
-	debugger.acquire();
-	let b=unsafe{debugger.read(buffer,length)};
-	debugger.release();
-	b
-}
-
-unsafe fn debug_write(debugger:&mut impl DebuggerBackend,buffer:*const u8,length:usize)->bool
-{
-	debugger.acquire();
-	let b=unsafe{debugger.write(buffer,length)};
-	debugger.release();
-	b
-}
+static DEBUGGER:Mutex<LazyCell<Box<dyn DebuggerBackend>>>=Mutex::new(
+	LazyCell::new
+	(
+		|| match unsafe{DEBUGGER_CONFIG}
+		{
+			DebuggerConfig::QemuDebugCon(port)=>Box::new(QemuDebugConDebugger::new(port)),
+			DebuggerConfig::Serial(port,baud_rate)=>Box::new(SerialPort::new(port,baud_rate).unwrap()),
+			DebuggerConfig::Unknown=>Box::new(UnknownDebugger)
+		}
+	)
+);
 
 pub fn dbg_print(args: fmt::Arguments)
 {
@@ -162,14 +145,10 @@ pub fn system_print(args: fmt::Arguments)
 /// Make sure `buffer` has the size of `length`.
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_debug_output(buffer:*const u8,length:usize)
 {
+	let d=DEBUGGER.lock();
 	unsafe
 	{
-		match &mut *DEBUGGER_PTR.load(Ordering::Relaxed)
-		{
-			Debugger::QemuDebugCon(d)=>debug_write(d,buffer,length),
-			Debugger::Serial(d)=>debug_write(d,buffer,length),
-			Debugger::Unknown(d)=>debug_write(d,buffer,length)
-		};
+		d.write(buffer,length);
 	}
 }
 
@@ -177,14 +156,10 @@ pub fn system_print(args: fmt::Arguments)
 /// Make sure `buffer` has the size of `length` and is mutable.
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_debug_input(buffer:*mut u8,length:usize)
 {
+	let d=DEBUGGER.lock();
 	unsafe
 	{
-		match &mut *DEBUGGER_PTR.load(Ordering::Relaxed)
-		{
-			Debugger::QemuDebugCon(d)=>debug_read(d,buffer,length),
-			Debugger::Serial(d)=>debug_read(d,buffer,length),
-			Debugger::Unknown(d)=>debug_read(d,buffer,length)
-		};
+		d.read(buffer,length);
 	}
 }
 
@@ -228,11 +203,21 @@ pub fn system_print(args: fmt::Arguments)
 	}
 }
 
+#[derive(Clone, Copy)]
+enum DebuggerConfig
+{
+	QemuDebugCon(u16),
+	Serial(u16,u32),
+	Unknown
+}
+
+static mut DEBUGGER_CONFIG:DebuggerConfig=DebuggerConfig::Unknown;
+
 #[unsafe(no_mangle)] extern "C" fn noir_configure_serial_port_debugger(_port_number:u8,port_base:u16,baud_rate:u32)->Status
 {
 	unsafe
 	{
-		DEBUGGER=Debugger::Serial(SerialPort::new(port_base,baud_rate).unwrap());
+		DEBUGGER_CONFIG=DebuggerConfig::Serial(port_base,baud_rate);
 	}
 	println!("Internal Debugger is configured to Serial Port! Port=0x{:04X}",port_base);
 	NOIR_SUCCESS
@@ -242,7 +227,7 @@ pub fn system_print(args: fmt::Arguments)
 {
 	unsafe
 	{
-		DEBUGGER=Debugger::QemuDebugCon(QemuDebugConDebugger::new(port));
+		DEBUGGER_CONFIG=DebuggerConfig::QemuDebugCon(port);
 	}
 	println!("Internal Debugger is configured to QEMU ISA-DebugCon! Port=0x{:04X}",port);
 	NOIR_SUCCESS

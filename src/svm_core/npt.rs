@@ -16,8 +16,7 @@ use alloc::vec::Vec;
 use paste::paste;
 
 use crate::*;
-
-use xpf_core::{ci::enum_ci_phys_page, ioflt::IoAddressSpace, nvbdk::*,dlalloc::*};
+use xpf_core::{ci::CI_MANAGER, ioflt::IoAddressSpace, nvbdk::*,dlalloc::*};
 
 macro_rules! derive_npt_common_fields
 {
@@ -390,7 +389,7 @@ impl SvmNptManager
 		}
 	}
 
-	extern "C" fn enum_page_rt(start:u64,length:u64,context:*mut c_void)
+	fn enum_page_rt(start:u64,length:u64,context:*mut c_void)
 	{
 		let s:&mut Self=unsafe{&mut *(context as *mut Self)};
 		if length!=PAGE_2MB_SIZE as u64
@@ -408,9 +407,8 @@ impl SvmNptManager
 
 	pub fn protect_ci(&mut self)
 	{
-		let ci_pages=unsafe{&*enum_ci_phys_page()};
-		// Enumerate all pages in CI and update the PTEs.
-		for p in ci_pages
+		let ci=CI_MANAGER.read();
+		for p in ci.into_iter()
 		{
 			self.update_pte(*p,*p,true,false,true);
 		}

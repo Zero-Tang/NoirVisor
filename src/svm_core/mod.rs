@@ -140,8 +140,7 @@ impl SvmVcpu
 			self.nrip_saving=(d&CPUID_SVM_NEXT_RIP_SAVING)==CPUID_SVM_NEXT_RIP_SAVING;
 			self.vmcb_clean=(d&CPUID_SVM_VMCB_CLEAN)==CPUID_SVM_VMCB_CLEAN;
 			let hv=self.hypervisor as *mut SvmHypervisor;
-			let mut state=ProcessorState::default();
-			noir_save_processor_state(&raw mut state);
+			let state=ProcessorState::new();
 			// Setup Control Area.
 			let mut iv1=InterceptVector1(0);
 			iv1.set_cpuid(true);
@@ -473,19 +472,22 @@ impl HypervisorEssentials for SvmHypervisor
 		}
 		// Initialize NPT.
 		self.nptm.build_identity_map();
-		match SvmIommuManager::build_manager()
+		if self.features.get_enable_iommu()
 		{
-			Ok(mut mgr)=>
+			match SvmIommuManager::build_manager()
 			{
-				for bar in &mgr.iommu_bars
+				Ok(mut mgr)=>
 				{
-					self.mmio_space.add_region(IoRegion::new("iommu",None,svm_iommu_output_handler,bar.bar.phys,PAGE_SIZE as u64));
+					for bar in &mgr.iommu_bars
+					{
+						self.mmio_space.add_region(IoRegion::new("iommu",None,svm_iommu_output_handler,bar.bar.phys,PAGE_SIZE as u64));
+					}
+					mgr.protect_ci();
+					mgr.activate();
+					self.iommu_manager=Some(mgr);
 				}
-				mgr.protect_ci();
-				mgr.activate();
-				self.iommu_manager=Some(mgr);
+				Err(st)=>println!("Failed to initialize AMD-Vi! Reason: {st}")
 			}
-			Err(st)=>println!("Failed to initialize AMD-Vi! Reason: {st}")
 		}
 		self.nptm.protect_allocated_pages();
 		self.nptm.setup_mmio_filter(&self.mmio_space);

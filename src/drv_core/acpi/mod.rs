@@ -13,6 +13,7 @@
 use core::{mem::offset_of, ptr::null_mut, slice, sync::atomic::{AtomicPtr, AtomicUsize, Ordering}};
 
 use alloc::vec::Vec;
+use spin::RwLock;
 use tables::{AcpiSystemDescriptorSignature, ExtendedSystemDescriptorTable, RootSystemDescriptionTable, SystemDescriptionHeader};
 use crate::xpf_core::{nvbdk::{noir_map_physical_memory, noir_unmap_physical_memory}, nvstatus::*};
 use crate::{print,println,dbg_print};
@@ -22,8 +23,7 @@ pub mod tables;
 static RSDT_BASE_ADDRESS:AtomicPtr<SystemDescriptionHeader>=AtomicPtr::new(null_mut());
 static RSDT_LENGTH:AtomicUsize=AtomicUsize::new(0);
 
-static mut ACPI_MANAGER:AcpiManager=AcpiManager{table:Vec::new()};
-static ACPI_MANAGER_PTR:AtomicPtr<AcpiManager>=AtomicPtr::new(&raw mut ACPI_MANAGER);
+static ACPI_MANAGER:RwLock<AcpiManager>=RwLock::new(AcpiManager{table:Vec::new()});
 
 unsafe extern "C"
 {
@@ -32,71 +32,57 @@ unsafe extern "C"
 
 struct AcpiManager
 {
-	table:Vec<*mut SystemDescriptionHeader>
+	table:Vec<AtomicPtr<SystemDescriptionHeader>>
 }
 
 impl AcpiManager
 {
-	fn init_via_rsdt(rsdt:*const RootSystemDescriptionTable)->Self
+	fn add_header(&mut self,phys:impl Into<u64>)
 	{
-		let count=(unsafe{(*rsdt).header.length as usize}-size_of::<SystemDescriptionHeader>())>>2;
-		let mut s:Self=Self{table:Vec::with_capacity(count)};
-		let rsdt_entries=unsafe{slice::from_raw_parts((*rsdt).entries.as_ptr(),count)};
-		unsafe
+		let phys:u64=phys.into();
+		let tmp:*mut SystemDescriptionHeader=unsafe{noir_map_physical_memory(phys,size_of::<SystemDescriptionHeader>()).cast()};
+		if tmp.is_null()
 		{
-			for phys in rsdt_entries
-			{
-				let tmp:*mut SystemDescriptionHeader=noir_map_physical_memory(*phys as u64,size_of::<SystemDescriptionHeader>()).cast();
-				if tmp.is_null()
-				{
-					panic!("Failed to map ACPI Table at 0x{phys:08X}!");
-				}
-				let virt:*mut SystemDescriptionHeader=noir_map_physical_memory(*phys as u64,(*tmp).length as usize).cast();
-				noir_unmap_physical_memory(tmp.cast(),size_of::<SystemDescriptionHeader>());
-				if virt.is_null()
-				{
-					panic!("Failed to map ACPI Table at 0x{phys:08X}!");
-				}
-				println!("Enumerated ACPI Table {}! Mapped to {virt:p} (Size={} bytes)...",(*virt).signature,(*virt).length);
-				s.table.push(virt);
-			}
+			panic!("Failed to map ACPI Table at 0x{phys:016X}!");
 		}
-		s
+		let virt:*mut SystemDescriptionHeader=unsafe{noir_map_physical_memory(phys,(*tmp).length as usize).cast()};
+		unsafe{noir_unmap_physical_memory(tmp.cast(),size_of::<SystemDescriptionHeader>())};
+		if virt.is_null()
+		{
+			panic!("Failed to map ACPI Table at 0x{phys:08X}!");
+		}
+		unsafe{println!("Enumerated ACPI Table {}! Mapped to {virt:p} (Size={} bytes)...",(*virt).signature,(*virt).length)};
+		self.table.push(AtomicPtr::new(virt));
 	}
 
-	fn init_via_xsdt(xsdt:*const ExtendedSystemDescriptorTable)->Self
+	fn init_via_rsdt(&mut self,rsdt:*const RootSystemDescriptionTable)
+	{
+		let count=(unsafe{(*rsdt).header.length as usize}-size_of::<SystemDescriptionHeader>())>>2;
+		let rsdt_entries=unsafe{slice::from_raw_parts((*rsdt).entries.as_ptr(),count)};
+		for phys in rsdt_entries
+		{
+			self.add_header(*phys);
+		}
+	}
+
+	fn init_via_xsdt(&mut self,xsdt:*const ExtendedSystemDescriptorTable)
 	{
 		let count=(unsafe{(*xsdt).header.length as usize}-size_of::<SystemDescriptionHeader>())>>3;
-		let mut s:Self=Self{table:Vec::with_capacity(count)};
 		println!("XSDT Base Address: {xsdt:p}");
-		unsafe
+		let xsdt_ptr:*const u64=unsafe{xsdt.byte_add(offset_of!(ExtendedSystemDescriptorTable,entries)).cast()};
+		for i in 0..count
 		{
-			let xsdt_ptr:*const u64=xsdt.byte_add(offset_of!(ExtendedSystemDescriptorTable,entries)).cast();
-			for i in 0..count
-			{
-				let phys:u64=xsdt_ptr.add(i).read_unaligned();
-				let tmp:*mut SystemDescriptionHeader=noir_map_physical_memory(phys,size_of::<SystemDescriptionHeader>()).cast();
-				if tmp.is_null()
-				{
-					panic!("Failed to map ACPI Table at 0x{phys:016X}!");
-				}
-				let virt:*mut SystemDescriptionHeader=noir_map_physical_memory(phys,(*tmp).length as usize).cast();
-				noir_unmap_physical_memory(tmp.cast(),size_of::<SystemDescriptionHeader>());
-				if virt.is_null()
-				{
-					panic!("Failed to map ACPI Table at 0x{phys:016X}!");
-				}
-				s.table.push(virt);
-			}
+			let phys:u64=unsafe{xsdt_ptr.add(i).read_unaligned()};
+			self.add_header(phys);
 		}
-		s
 	}
 
 	pub fn search(&self,signature:AcpiSystemDescriptorSignature,mut f:impl FnMut(*mut SystemDescriptionHeader)->bool)
 	{
-		for &virt in &self.table
+		for virt in &self.table
 		{
-			if unsafe{(*virt).signature.0}==signature.0 && !f(virt)
+			let v=virt.load(Ordering::Relaxed);
+			if unsafe{(*v).signature.0}==signature.0 && !f(v)
 			{
 				break;
 			}
@@ -106,7 +92,7 @@ impl AcpiManager
 
 pub fn search_acpi_table(signature:AcpiSystemDescriptorSignature,f:impl FnMut(*mut SystemDescriptionHeader)->bool)
 {
-	let acpi_mgr:&'static AcpiManager=unsafe{&*ACPI_MANAGER_PTR.load(Ordering::Relaxed)};
+	let acpi_mgr=ACPI_MANAGER.read();
 	acpi_mgr.search(signature,f);
 }
 
@@ -116,12 +102,13 @@ pub fn search_acpi_table(signature:AcpiSystemDescriptorSignature,f:impl FnMut(*m
 	RSDT_BASE_ADDRESS.store(unsafe{noir_locate_acpi_rsdt(&raw mut rsdt_len)},Ordering::Relaxed);
 	RSDT_LENGTH.store(rsdt_len,Ordering::Relaxed);
 	let ptr_head=RSDT_BASE_ADDRESS.load(Ordering::Relaxed);
+	let mut acpi_mgr=ACPI_MANAGER.write();
 	unsafe
 	{
-		ACPI_MANAGER=match (*ptr_head).signature
+		match (*ptr_head).signature
 		{
-			AcpiSystemDescriptorSignature::ROOT_SYSTEM_DESCRIPTION_TABLE=>AcpiManager::init_via_rsdt(ptr_head.cast()),
-			AcpiSystemDescriptorSignature::EXTENDED_SYSTEM_DESCRIPTION_TABLE=>AcpiManager::init_via_xsdt(ptr_head.cast()),
+			AcpiSystemDescriptorSignature::ROOT_SYSTEM_DESCRIPTION_TABLE=>acpi_mgr.init_via_rsdt(ptr_head.cast()),
+			AcpiSystemDescriptorSignature::EXTENDED_SYSTEM_DESCRIPTION_TABLE=>acpi_mgr.init_via_xsdt(ptr_head.cast()),
 			_=>panic!("Unknown Signature for Root System Description Table is detected!")
 		};
 	}
@@ -130,12 +117,13 @@ pub fn search_acpi_table(signature:AcpiSystemDescriptorSignature,f:impl FnMut(*m
 
 #[unsafe(no_mangle)] extern "C" fn nvc_acpi_finalize()
 {
-	let acpi_mgr:&'static AcpiManager=unsafe{&*ACPI_MANAGER_PTR.load(Ordering::Relaxed)};
+	let acpi_mgr=ACPI_MANAGER.read();
 	for virt in &acpi_mgr.table
 	{
+		let virt=virt.load(Ordering::Relaxed);
 		unsafe
 		{
-			noir_unmap_physical_memory(virt.cast(),(**virt).length as usize);
+			noir_unmap_physical_memory(virt.cast(),(*virt).length as usize);
 		}
 	}
 }

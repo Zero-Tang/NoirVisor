@@ -12,11 +12,50 @@
 
 use core::arch::x86_64::_xsetbv;
 
+use paste::paste;
+
 use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, vt_core::nvc_vt_resume_without_entry, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, InterruptStackFrameWithErrorCode, GENERAL_PROTECTION_FAULT}}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu};
 
 impl VtVcpu
 {
+	fn dump_current_vmcs(&mut self)
+	{
+		macro_rules! print_segment
+		{
+			($name:tt) =>
+			{
+				paste!
+				{
+					let [<$name:lower>]=read_guest_segment!($name);
+					println!("Guest {} Segment: {:X?}",stringify!($name:upper),[<$name:lower>]);
+				}
+			};
+		}
+		print_segment!(cs);
+		print_segment!(ds);
+		print_segment!(es);
+		print_segment!(fs);
+		print_segment!(gs);
+		print_segment!(ss);
+		print_segment!(tr);
+		print_segment!(ldtr);
+		let cr0=unsafe{vmreadptr(GUEST_CR0).unwrap()};
+		let cr3=unsafe{vmreadptr(GUEST_CR3).unwrap()};
+		let cr4=unsafe{vmreadptr(GUEST_CR4).unwrap()};
+		let dr7=unsafe{vmreadptr(GUEST_DR7).unwrap()};
+		println!("Guest CR0=0x{cr0:X}, CR3=0x{cr3:X}, CR4=0x{cr4:X}, DR7=0x{dr7:X}");
+		let ssp=unsafe{vmreadptr(GUEST_SSP)};
+		let rsp=unsafe{vmreadptr(GUEST_RSP).unwrap()};
+		let rip=unsafe{vmreadptr(GUEST_RIP).unwrap()};
+		let rflags=unsafe{vmreadptr(GUEST_RFLAGS).unwrap()};
+		println!("Guest rsp: 0x{rsp:X}, rip: 0x{rip:X}, rflags: 0x{rflags:X}, ssp: 0x{ssp:X?}");
+		let efer=unsafe{vmread64(GUEST_MSR_IA32_EFER).unwrap()};
+		let pat=unsafe{vmread64(GUEST_MSR_IA32_PAT).unwrap()};
+		let dbg_ctrl=unsafe{vmread64(GUEST_MSR_IA32_DEBUG_CTRL).unwrap()};
+		println!("Guest EFER: 0x{efer:X}, PAT: 0x{pat:X}, Debug-Control: 0x{dbg_ctrl:X}");
+	}
+
 	fn handle_triple_fault(&mut self,_gpr_state:&mut GprState)
 	{
 		panic!("Triple-Fault occured!");
@@ -291,6 +330,7 @@ impl VtVcpu
 
 	fn handle_invalid_state(&mut self,_gpr_state:&mut GprState)
 	{
+		self.dump_current_vmcs();
 		panic!("Invalid Guest State!");
 	}
 

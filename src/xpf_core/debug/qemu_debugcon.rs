@@ -10,15 +10,12 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{sync::atomic::{AtomicBool,Ordering},arch::asm};
-
 use super::DebuggerBackend;
 use crate::xpf_core::asm::io::*;
 
 pub struct QemuDebugConDebugger
 {
-	port_base:u16,
-	lock:AtomicBool
+	port_base:u16
 }
 
 impl DebuggerBackend for QemuDebugConDebugger
@@ -48,35 +45,15 @@ impl DebuggerBackend for QemuDebugConDebugger
 		}
 		true
 	}
-
-	fn acquire(&mut self)
-	{
-		while self.lock.compare_exchange(false,true,Ordering::Acquire,Ordering::Relaxed).is_err()
-		{
-			while self.lock.load(Ordering::Relaxed)
-			{
-				unsafe
-				{
-					asm!("pause");
-				}
-			}
-		}
-	}
-
-	fn release(&mut self)
-	{
-		self.lock.store(false,Ordering::Release);
-	}
 }
 
 impl QemuDebugConDebugger
 {
-	pub fn new(port_base:u16)->QemuDebugConDebugger
+	pub const fn new(port_base:u16)->QemuDebugConDebugger
 	{
 		Self
 		{
-			port_base,
-			lock:false.into()
+			port_base
 		}
 	}
 }

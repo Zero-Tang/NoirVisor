@@ -71,20 +71,14 @@
 			"var":{"src":".\\src\\xpf_core\\msvc\\interrupt.asm"},
 			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\interrupt.asm"]
 		},
-		"kpcr":
-		{
-			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\kpcr.asm"},
-			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\kpcr.asm"]
-		},
 		"msvcrt":
 		{
 			"cmd":["python","build_msvcrt.py","--outdir","{outdir}"]
 		},
 		"NoirVisor":
 		{
-			"cmd":["link","{objpath}\\driver.obj","{objpath}\\version.res","{objpath}\\detour.obj","{objpath}\\hooks.obj","{objpath}\\layered.obj","{objpath}\\nvsys.obj","{objpath}\\winhvm.obj","{objpath}\\msrhook.obj","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj","{objpath}\\kpcr.obj","{objpath}\\memcpy.obj","{objpath}\\memset.obj","{objpath}\\memcmp.obj","{objpath}\\strlen.obj","{objpath}\\cpu_disp.obj",".\\target\\x86_64-pc-windows-msvc\\{cargo_preset}\\nvcore.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.sys","/SUBSYSTEM:NATIVE","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
-			"dependencies":["cargo","driver","version","detour","hooks","layered","nvsys","winhvm","msrhook","svm_hv","vt_hv","interrupt","kpcr","msvcrt"]
+			"cmd":["link","{objpath}\\driver.obj","{objpath}\\version.res","{objpath}\\detour.obj","{objpath}\\hooks.obj","{objpath}\\layered.obj","{objpath}\\nvsys.obj","{objpath}\\winhvm.obj","{objpath}\\msrhook.obj","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj","{objpath}\\memcpy.obj","{objpath}\\memset.obj","{objpath}\\memcmp.obj","{objpath}\\strlen.obj","{objpath}\\cpu_disp.obj",".\\target\\x86_64-pc-windows-msvc\\{cargo_preset}\\nvcore.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.sys","/SUBSYSTEM:NATIVE","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
+			"dependencies":["cargo","driver","version","detour","hooks","layered","nvsys","winhvm","msrhook","svm_hv","vt_hv","interrupt","msvcrt"]
 		},
 		"sign":
 		{

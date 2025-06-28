@@ -122,7 +122,7 @@ impl VtVcpu
 	{
 		unsafe
 		{
-			let hv:*mut VtHypervisor=self.hypervisor.cast();
+			let hv:*const VtHypervisor=self.hypervisor.cast();
 			let stack:*mut VtStackTop=self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast();
 			// Setup Host State.
 			let mut ist:[*mut c_void;8]=self.ist;
@@ -210,7 +210,7 @@ impl VtVcpu
 			vmwrite32(GUEST_TR_LIMIT,state.tr.limit);
 			let tr_ar=if cfg!(target_os="uefi")
 			{
-				0x808B
+				0x8B
 			}
 			else
 			{
@@ -370,8 +370,7 @@ impl VtVcpu
 
 	fn subvert_i(&mut self,gsp:usize)
 	{
-		let mut state=ProcessorState::default();
-		unsafe{noir_save_processor_state(&raw mut state)};
+		let state=ProcessorState::new();
 		self.setup_guest_state_area(&state,gsp);
 		self.setup_msr_auto_list(&state);
 		self.setup_host_state_area(&state);

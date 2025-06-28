@@ -59,25 +59,6 @@ impl DebuggerBackend for SerialPort
 		}
 		true
 	}
-
-	fn acquire(&mut self)
-	{
-		while self.lock.compare_exchange(false,true,Ordering::Acquire,Ordering::Relaxed).is_err()
-		{
-			while self.lock.load(Ordering::Relaxed)
-			{
-				unsafe
-				{
-					asm!("pause");
-				}
-			}
-		}
-	}
-
-	fn release(&mut self)
-	{
-		self.lock.store(false,Ordering::Release);
-	}
 }
 
 impl SerialPort

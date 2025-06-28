@@ -14,9 +14,10 @@ use core::{alloc::*, arch::asm, ffi::c_void, fmt::{self,Display}, ptr::null_mut,
 
 use portable_dlmalloc::{raw::*, MspaceAlloc};
 use paste::paste;
+use spin::Mutex;
 
 use super::{bitmap::{set_bitmap, reset_bitmap, test_bitmap}, nvbdk::*};
-use crate::{dbg_print, print, println};
+use crate::{system_print, sysdprint, sysdprintln};
 
 static CHECK_ALLOC:AtomicBool=AtomicBool::new(false);
 
@@ -84,7 +85,7 @@ enum PageAllocationType
 #[derive(Clone, Copy)]
 pub struct PageAllocationInformation
 {
-	virt:*mut c_void,
+	virt:u64,
 	phys:u64,
 	alloc_type:PageAllocationType
 }
@@ -93,7 +94,7 @@ impl Display for PageAllocationInformation
 {
 	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result
 	{
-		write!(f,"Virt: {:p}, Phys: 0x{:016X}, ",self.virt,self.phys)?;
+		write!(f,"Virt: {:016X}, Phys: 0x{:016X}, ",self.virt,self.phys)?;
 		match self.alloc_type
 		{
 			PageAllocationType::Full=>write!(f,"Full Large Page is occupied."),
@@ -126,7 +127,7 @@ impl PageAllocationInformation
 			(
 				Self
 				{
-					virt,
+					virt:virt as u64,
 					phys:unsafe{noir_get_physical_address(virt)},
 					alloc_type:PageAllocationType::Blank([0;8])
 				}
@@ -177,7 +178,7 @@ impl PageAllocationInformation
 						{
 							unsafe 
 							{
-								let s=self.virt.byte_add(page_mult(i));
+								let s=self.virt+page_mult(i) as u64;
 								// Set the bitmap.
 								for j in i..i+pages
 								{
@@ -188,8 +189,8 @@ impl PageAllocationInformation
 								(
 									MemoryDescriptor
 									{
-										virt:s,
-										phys:noir_get_physical_address(s)
+										virt:s as *mut c_void,
+										phys:noir_get_physical_address(s as *mut c_void)
 									}
 								);
 							}
@@ -207,7 +208,7 @@ impl PageAllocationInformation
 	{
 		Self
 		{
-			virt:null_mut(),
+			virt:0,
 			phys:0,
 			alloc_type:PageAllocationType::Invalid
 		}
@@ -222,22 +223,18 @@ pub struct PageAllocationManager
 
 #[unsafe(no_mangle)] unsafe extern "C" fn nvc_free_all_large_pages()
 {
-	let pa_mgr=&raw mut PAGE_ALLOC_MANAGER;
-	unsafe
+	let mut lk=PAGE_ALLOC_MANAGER.lock();
+	for entry in &mut lk.list
 	{
-		for entry in &mut (*pa_mgr).list
+		match entry.alloc_type
 		{
-			match entry.alloc_type
+			PageAllocationType::Blank(_)|PageAllocationType::Full=>
 			{
-				PageAllocationType::Blank(_)|PageAllocationType::Full=>
-				{
-					println!("Freeing {:p} from page allocation manager...",entry.virt);
-					noir_free_2mb_page(entry.virt);
-				}
-				_=>()
+				sysdprintln!("Freeing {:016X} from page allocation manager...",entry.virt);
+				unsafe{noir_free_2mb_page(entry.virt as *mut c_void)};
 			}
+			_=>()
 		}
-		*pa_mgr=PageAllocationManager::empty();
 	}
 }
 
@@ -295,15 +292,16 @@ impl PageAllocationManager
 		{
 			unsafe
 			{
-				if virt>=self.list[i].virt && virt<self.list[i].virt.byte_add(PAGE_2MB_SIZE)
+				let v=self.list[i].virt as *mut c_void;
+				if virt>=v && virt<v.byte_add(PAGE_2MB_SIZE)
 				{
 					match &mut self.list[i].alloc_type
 					{
-						PageAllocationType::Full=>println!("Partially freeing full large-page is unsupported!"),
+						PageAllocationType::Full=>sysdprintln!("Partially freeing full large-page is unsupported!"),
 						PageAllocationType::Invalid=>panic!("Freeing invalid entry!"),
 						PageAllocationType::Blank(info)=>
 						{
-							let start=page_count(virt.offset_from(self.list[i].virt) as usize);
+							let start=page_count(virt.offset_from(v) as usize);
 							for j in start..start+pages
 							{
 								reset_bitmap(info.as_mut_ptr().cast(),64,j);
@@ -326,88 +324,78 @@ impl PageAllocationManager
 	}
 }
 
-static mut PAGE_ALLOC_MANAGER:PageAllocationManager=PageAllocationManager::empty();
+static PAGE_ALLOC_MANAGER:Mutex<PageAllocationManager>=Mutex::new(PageAllocationManager::empty());
 
 pub fn alloc_contd_pages(length:usize)->Option<MemoryDescriptor>
 {
-	unsafe 
-	{
-		let pa_mgr=&raw mut PAGE_ALLOC_MANAGER;
-		(*pa_mgr).alloc_pages(page_count(length))
-	}
+	let mut lk=PAGE_ALLOC_MANAGER.lock();
+	lk.alloc_pages(page_count(length))
 }
 
 pub fn free_contd_pages(virt:*mut c_void,length:usize)
 {
-	unsafe 
-	{
-		let pa_mgr=&raw mut PAGE_ALLOC_MANAGER;
-		(*pa_mgr).free_pages(virt,page_count(length));
-	}
+	let mut lk=PAGE_ALLOC_MANAGER.lock();
+	lk.free_pages(virt,page_count(length));
 }
 
 pub fn alloc_2mb_page()->Option<MemoryDescriptor>
 {
-	unsafe
-	{
-		let pa_mgr=&raw mut PAGE_ALLOC_MANAGER;
-		(*pa_mgr).new_full();
-		Some
-		(
-			MemoryDescriptor
-			{
-				virt:(*pa_mgr).list[(*pa_mgr).count-1].virt,
-				phys:(*pa_mgr).list[(*pa_mgr).count-1].phys
-			}
-		)
-	}
+	let mut lk=PAGE_ALLOC_MANAGER.lock();
+	lk.new_full();
+	Some
+	(
+		MemoryDescriptor
+		{
+			virt:lk.list[lk.count-1].virt as *mut c_void,
+			phys:lk.list[lk.count-1].phys
+		}
+	)
 }
 
 pub fn free_2mb_page(ptr:*mut c_void)
 {
-	unsafe
+	let mut lk=PAGE_ALLOC_MANAGER.lock();
+	for i in 0..lk.count
 	{
-		let pa_mgr=&raw mut PAGE_ALLOC_MANAGER;
-		for i in 0..(*pa_mgr).count
+		if core::ptr::eq(lk.list[i].virt as *mut c_void,ptr)
 		{
-			if core::ptr::eq((*pa_mgr).list[i].virt,ptr)
-			{
-				(*pa_mgr).list[i].alloc_type=PageAllocationType::Blank([0;8]);
-				break;
-			}
+			lk.list[i].alloc_type=PageAllocationType::Blank([0;8]);
+			break;
 		}
 	}
 }
 
 pub fn enum_allocated_large_pages(callback_rt:PhysicalRangeCallback,context:*mut c_void)
 {
-	unsafe
+	let mut i:usize=0;
+	loop
 	{
-		let pa_mgr=&raw mut PAGE_ALLOC_MANAGER;
-		for i in 0..(*pa_mgr).count
-		{
-			println!("{}",(*pa_mgr).list[i]);
-			callback_rt((*pa_mgr).list[i].phys,PAGE_2MB_SIZE as u64,context);
-		}
+		let count={PAGE_ALLOC_MANAGER.lock().count};
+		if i>=count {break;}
+		let phys={PAGE_ALLOC_MANAGER.lock().list[i].phys};
+		// The callback routine may allocate memories.
+		// Therefore, there mustn't be any lock holders on allocation manager.
+		callback_rt(phys,PAGE_2MB_SIZE as u64,context);
+		i+=1;
 	}
 }
 
 #[unsafe(no_mangle)] unsafe extern "C" fn custom_mmap(length:usize)->*mut c_void
 {
-	let pa_mgr=&raw mut PAGE_ALLOC_MANAGER;
-	unsafe
+	match alloc_2mb_page()
 	{
-		(*pa_mgr).new_full();
-		let index=(*pa_mgr).count-1;
-		let p=(*pa_mgr).list[index].virt;
-		println!("[mmap] ptr: {p:p}, size: 0x{length:X}, index: {index}");
-		p
+		Some(md)=>
+		{
+			sysdprintln!("[mmap] ptr: {:p}, size: 0x{length:X}",md.virt);
+			md.virt
+		}
+		None=>unsafe{null_mut::<c_void>().byte_sub(1)}
 	}
 }
 
 #[unsafe(no_mangle)] unsafe extern "C" fn custom_munmap(ptr:*mut c_void,length:usize)->i32
 {
-	println!("[munmap] ptr: {ptr:p}, size: 0x{length:X}");
+	sysdprintln!("[munmap] ptr: {ptr:p}, size: 0x{length:X}");
 	for i in (0..length).step_by(PAGE_2MB_SIZE)
 	{
 		unsafe

@@ -48,12 +48,6 @@
 			"var":{"src":".\\src\\xpf_core\\msvc\\interrupt.asm"},
 			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\interrupt.asm"]
 		},
-		"kpcr":
-		{
-			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\kpcr.asm"},
-			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\kpcr.asm"]
-		},
 		"msvcrt":
 		{
 			"cmd":["python","build_msvcrt.py","--outdir","{outdir}"]
@@ -64,8 +58,8 @@
 		},
 		"NoirVisor":
 		{
-			"cmd":["link","{objpath}\\driver.obj","{objpath}\\cfgmgr.obj","{objpath}\\host.obj","{objpath}\\uefihvm.obj","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj","{objpath}\\kpcr.obj",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libnvcore.a",".\\bin\\{outdir}\\msvcrt-static.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
-			"dependencies":["driver","cfgmgr","host","uefihvm","cargo","svm_hv","vt_hv","interrupt","kpcr","msvcrt"]
+			"cmd":["link","{objpath}\\driver.obj","{objpath}\\cfgmgr.obj","{objpath}\\host.obj","{objpath}\\uefihvm.obj","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libnvcore.a",".\\bin\\{outdir}\\msvcrt-static.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
+			"dependencies":["driver","cfgmgr","host","uefihvm","cargo","svm_hv","vt_hv","interrupt","msvcrt"]
 		},
 		"image":
 		{

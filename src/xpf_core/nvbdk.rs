@@ -11,7 +11,7 @@
  */
 
 use core::{arch::x86_64::_bittest64, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut};
-use crate::build_bit_get_method;
+use crate::{build_bit_get_method, xpf_core::{asm::{crdr::*, msr::rdmsr, seg::*}, x86::{descriptors::{DescriptorTable, SegmentFlags}, msr::*}}};
 use paste::paste;
 
 #[derive(Copy,Clone)] #[repr(C)] pub struct MemoryDescriptor
@@ -58,7 +58,73 @@ impl MemoryDescriptor
 	pub base:u64
 }
 
-#[repr(C)] #[derive(Default)] pub struct ProcessorState
+impl SegmentRegister
+{
+	pub fn from_sel_gdt(gdt:&DescriptorTable,selector:u16)->Option<Self>
+	{
+		if selector<gdt.limit
+		{
+			let p=(gdt.base+(selector&0xfff8) as u64) as *const u8;
+			let a=unsafe{p.add(5).cast::<SegmentFlags>().read_unaligned()};
+			Some
+			(
+				Self
+				{
+					selector,
+					attrib:a.0,
+					limit:lsl(selector),
+					base:if a.get_present()
+					{
+						if a.get_system_segment()
+						{
+							0
+						}
+						else
+						{
+							let lo=unsafe{p.add(2).cast::<u16>().read()} as u64;
+							let mid1=unsafe{p.add(4).read()} as u64;
+							let mid2=unsafe{p.add(7).read()} as u64;
+							let hi=unsafe{p.add(8).cast::<u32>().read()} as u64;
+							lo|(mid1<<16)|(mid2<<24)|(hi<<32)
+						}
+					}
+					else
+					{
+						0
+					}
+				}
+			)
+		}
+		else
+		{
+			None
+		}
+	}
+
+	pub fn from_sel_gdt_with_base(gdt:&DescriptorTable,selector:u16,base:u64)->Option<Self>
+	{
+		Self::from_sel_gdt(gdt,selector).map(|seg| Self
+		{
+			selector:seg.selector,
+			attrib:seg.attrib,
+			limit:seg.limit,
+			base
+		})
+	}
+
+	pub fn from_dt(descriptor:&DescriptorTable)->Self
+	{
+		Self
+		{
+			selector:0,
+			attrib:0,
+			limit:descriptor.limit as u32,
+			base:descriptor.base
+		}
+	}
+}
+
+#[derive(Default)] pub struct ProcessorState
 {
 	pub cs:SegmentRegister,
 	pub ds:SegmentRegister,
@@ -94,6 +160,52 @@ impl MemoryDescriptor
 	pub fsbase:u64,
 	pub gsbase:u64,
 	pub gsswap:u64
+}
+
+impl ProcessorState
+{
+	pub fn new()->Self
+	{
+		let gdtr=read_gdtr();
+		let idtr=read_idtr();
+		Self
+		{
+			cs:SegmentRegister::from_sel_gdt(&gdtr,read_cs()).unwrap(),
+			ds:SegmentRegister::from_sel_gdt(&gdtr,read_ds()).unwrap(),
+			es:SegmentRegister::from_sel_gdt(&gdtr,read_es()).unwrap(),
+			fs:SegmentRegister::from_sel_gdt_with_base(&gdtr,read_fs(),rdmsr(MSR_FS_BASE)).unwrap(),
+			gs:SegmentRegister::from_sel_gdt_with_base(&gdtr,read_gs(),rdmsr(MSR_GS_BASE)).unwrap(),
+			ss:SegmentRegister::from_sel_gdt(&gdtr,read_ss()).unwrap(),
+			tr:SegmentRegister::from_sel_gdt(&gdtr,read_tr()).unwrap(),
+			ldtr:SegmentRegister::from_sel_gdt(&gdtr,read_ldt()).unwrap(),
+			gdtr:SegmentRegister::from_dt(&gdtr),
+			idtr:SegmentRegister::from_dt(&idtr),
+			cr0:read_cr0() as usize,
+			cr2:read_cr2() as usize,
+			cr3:read_cr3() as usize,
+			cr4:read_cr4() as usize,
+			cr8:read_cr8(),
+			dr0:read_dr0() as usize,
+			dr1:read_dr1() as usize,
+			dr2:read_dr2() as usize,
+			dr3:read_dr3() as usize,
+			dr6:read_dr6() as usize,
+			dr7:read_dr7() as usize,
+			sysenter_cs:rdmsr(MSR_SYSENTER_CS),
+			sysenter_esp:rdmsr(MSR_SYSENTER_ESP),
+			sysenter_eip:rdmsr(MSR_SYSENTER_EIP),
+			debug_ctrl:rdmsr(MSR_DEBUG_CONTROL),
+			pat:rdmsr(MSR_PAT),
+			efer:rdmsr(MSR_EFER),
+			star:rdmsr(MSR_STAR),
+			lstar:rdmsr(MSR_LSTAR),
+			cstar:rdmsr(MSR_CSTAR),
+			sfmask:rdmsr(MSR_SFMASK),
+			fsbase:rdmsr(MSR_FS_BASE),
+			gsbase:rdmsr(MSR_GS_BASE),
+			gsswap:rdmsr(MSR_KERNEL_GS_BASE)
+		}
+	}
 }
 
 #[repr(C)] pub struct GprState
@@ -278,17 +390,15 @@ impl Display for EnabledFeatures
 }
 
 pub type BroadcastWorker=extern "C" fn(context:*mut c_void,processor_id:u32);
-pub type PhysicalRangeCallback=extern "C" fn(start:u64,length:u64,context:*mut c_void);
+pub type PhysicalRangeCallback=fn(start:u64,length:u64,context:*mut c_void);
 
 unsafe extern "C"
 {
 	// Processor State Facility
 	pub fn noir_get_processor_count()->u32;
 	pub fn noir_get_current_processor()->u32;
-	pub fn noir_save_processor_state(state:*mut ProcessorState);
 	pub fn noir_generic_call(worker:BroadcastWorker,context:*mut c_void);
 	// Memory Facility
-	pub fn noir_enum_physical_memory_ranges(callback_rt:PhysicalRangeCallback,context:*mut c_void);
 	pub fn noir_get_physical_address(virtual_address:*mut c_void)->u64;
 	pub fn noir_alloc_2mb_page()->*mut c_void;
 	pub fn noir_free_2mb_page(virtual_address:*mut c_void);

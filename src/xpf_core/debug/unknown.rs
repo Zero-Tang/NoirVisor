@@ -25,14 +25,4 @@ impl DebuggerBackend for UnknownDebugger
 	{
 		false
 	}
-
-	fn acquire(&mut self)
-	{
-		
-	}
-
-	fn release(&mut self)
-	{
-		
-	}
 }

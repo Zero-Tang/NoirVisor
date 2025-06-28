@@ -37,6 +37,14 @@ extern noir_machine_check_abort_handler:proc
 extern noir_simd_floating_point_fault_handler:proc
 extern noir_control_protection_fault_handler:proc
 
+__chkstk proc
+
+	; In Rust, sorting a Vec will call __chkstk.
+	; The ntoskrnl's implementation of __chkstk does nothing and returns.
+	ret
+
+__chkstk endp
+
 nvc_vt_host_nmi_handler proc frame
 
 	; In Intel VT-x, the NMI is not blocked while in Host Context.
