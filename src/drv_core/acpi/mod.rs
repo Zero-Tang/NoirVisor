@@ -45,19 +45,19 @@ impl AcpiManager
 		{
 			panic!("Failed to map ACPI Table at 0x{phys:016X}!");
 		}
-		let virt:*mut SystemDescriptionHeader=unsafe{noir_map_physical_memory(phys,(*tmp).length as usize).cast()};
+		let virt:*mut SystemDescriptionHeader=unsafe{noir_map_physical_memory(phys,(*tmp).get_length() as usize).cast()};
 		unsafe{noir_unmap_physical_memory(tmp.cast(),size_of::<SystemDescriptionHeader>())};
 		if virt.is_null()
 		{
 			panic!("Failed to map ACPI Table at 0x{phys:08X}!");
 		}
-		unsafe{println!("Enumerated ACPI Table {}! Mapped to {virt:p} (Size={} bytes)...",(*virt).signature,(*virt).length)};
+		unsafe{println!("Enumerated ACPI Table {}! Mapped to {virt:p} (Size={} bytes)...",(*virt).signature,(*virt).get_length())};
 		self.table.push(AtomicPtr::new(virt));
 	}
 
 	fn init_via_rsdt(&mut self,rsdt:*const RootSystemDescriptionTable)
 	{
-		let count=(unsafe{(*rsdt).header.length as usize}-size_of::<SystemDescriptionHeader>())>>2;
+		let count=(unsafe{(*rsdt).header.get_length() as usize}-size_of::<SystemDescriptionHeader>())>>2;
 		let rsdt_entries=unsafe{slice::from_raw_parts((*rsdt).entries.as_ptr(),count)};
 		for phys in rsdt_entries
 		{
@@ -67,7 +67,7 @@ impl AcpiManager
 
 	fn init_via_xsdt(&mut self,xsdt:*const ExtendedSystemDescriptorTable)
 	{
-		let count=(unsafe{(*xsdt).header.length as usize}-size_of::<SystemDescriptionHeader>())>>3;
+		let count=(unsafe{(*xsdt).header.get_length() as usize}-size_of::<SystemDescriptionHeader>())>>3;
 		println!("XSDT Base Address: {xsdt:p}");
 		let xsdt_ptr:*const u64=unsafe{xsdt.byte_add(offset_of!(ExtendedSystemDescriptorTable,entries)).cast()};
 		for i in 0..count
@@ -123,7 +123,12 @@ pub fn search_acpi_table(signature:AcpiSystemDescriptorSignature,f:impl FnMut(*m
 		let virt=virt.load(Ordering::Relaxed);
 		unsafe
 		{
-			noir_unmap_physical_memory(virt.cast(),(*virt).length as usize);
+			noir_unmap_physical_memory(virt.cast(),(*virt).get_length() as usize);
 		}
 	}
+}
+
+#[unsafe(no_mangle)] extern "C" fn nvc_acpi_get_rsdt_ptr()->*mut SystemDescriptionHeader
+{
+	RSDT_BASE_ADDRESS.load(Ordering::Relaxed)
 }

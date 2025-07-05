@@ -27,6 +27,7 @@ pub fn set_alloc_checker(v:bool)
 }
 
 // Re-implement the allocator in order to intercept global allocations.
+#[allow(dead_code)]
 struct InternalAllocator;
 
 unsafe impl GlobalAlloc for InternalAllocator
@@ -54,6 +55,8 @@ unsafe impl GlobalAlloc for InternalAllocator
 	}
 }
 
+// We will use standard library's allocator for test cases.
+#[cfg(not(test))]
 #[global_allocator] static GLOBAL_ALLOCATOR:InternalAllocator=InternalAllocator;
 
 pub fn get_used()->usize

@@ -79,7 +79,7 @@ impl SvmIommuManager
 		{
 			let ivrs:*const IoVirtualizationReportingStructure=x.cast();
 			let mut ivd:*const u8=unsafe{(*ivrs).ivdb.as_ptr()};
-			let end:*const u8=unsafe{ivrs.byte_add((*ivrs).header.length as usize).cast()};
+			let end:*const u8=unsafe{ivrs.byte_add((*ivrs).header.get_length() as usize).cast()};
 			while ivd<end
 			{
 				println!("Found I/O Virtualization Definition Type 0x{:X} at {ivd:p}!",unsafe{*ivd});

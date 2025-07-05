@@ -46,7 +46,8 @@ void NoirReportMemoryIntrospectionCounter()
 	NoirDebugPrint("Unreleased Paged Pools: %d\n",NoirAllocatedPagedPools);
 	NoirDebugPrint("Unreleased Contiguous Memory Count: %d\n",NoirAllocatedContiguousMemoryCount);
 	NoirDebugPrint("Unreleased Large Parge Count: %d\n",NoirAllocatedLargePageCount);
-	if(NoirAllocatedNonPagedPools || NoirAllocatedPagedPools || NoirAllocatedContiguousMemoryCount || NoirAllocatedLargePageCount)
+	NoirDebugPrint("Unreleased Mapped Physical Memory Size: 0x%llX\n",NoirMappedPhysicalMemorySize);
+	if(NoirAllocatedNonPagedPools || NoirAllocatedPagedPools || NoirAllocatedContiguousMemoryCount || NoirAllocatedLargePageCount || NoirMappedPhysicalMemorySize)
 		NoirDebugPrint("Memory Leak is detected!\n");
 	else
 		NoirDebugPrint("No Memory Leaks...\n");
@@ -344,19 +345,24 @@ BOOL noir_query_page_attributes(IN PVOID virtual_address,OUT PBOOLEAN valid,OUT 
 void* noir_map_physical_memory(ULONG64 physical_address,size_t length)
 {
 	PHYSICAL_ADDRESS pa={.QuadPart=physical_address};
-	return MmMapIoSpace(pa,length,MmCached);
+	PVOID p=MmMapIoSpace(pa,length,MmCached);
+	if(p)InterlockedAdd64(&NoirMappedPhysicalMemorySize,length);
+	return p;
 }
 
 // We might need to map physical memory for MMIO-accesses.
 void* noir_map_uncached_memory(ULONG64 physical_address,size_t length)
 {
 	PHYSICAL_ADDRESS pa={.QuadPart=physical_address};
-	return MmMapIoSpace(pa,length,MmNonCached);
+	PVOID p=MmMapIoSpace(pa,length,MmNonCached);
+	if(p)InterlockedAdd64(&NoirMappedPhysicalMemorySize,length);
+	return p;
 }
 
 void noir_unmap_physical_memory(void* virtual_address,size_t length)
 {
 	MmUnmapIoSpace(virtual_address,length);
+	InterlockedAdd64(&NoirMappedPhysicalMemorySize,-(LONG64)length);
 }
 
 void* noir_find_virt_by_phys(ULONG64 physical_address)

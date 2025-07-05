@@ -389,7 +389,7 @@ impl SvmNptManager
 		}
 	}
 
-	fn enum_page_rt(start:u64,length:u64,context:*mut c_void)
+	extern "C" fn enum_page_rt(start:u64,length:u64,context:*mut c_void)
 	{
 		let s:&mut Self=unsafe{&mut *(context as *mut Self)};
 		if length!=PAGE_2MB_SIZE as u64

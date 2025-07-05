@@ -12,8 +12,9 @@
 
 pub mod caching
 {
-    use crate::{xpf_core::{asm::msr::rdmsr, nvbdk::page_4kb_mult}, *};
+    use crate::*;
     use super::msr::*;
+	use xpf_core::{asm::msr::rdmsr, nvbdk::{page_1gb_offset, page_2mb_offset, page_4kb_mult, PAGE_1GB_SIZE, PAGE_2MB_SIZE, PAGE_4KB_SIZE}};
 
 	use paste::paste;
 
@@ -76,18 +77,305 @@ pub mod caching
 		}
 	}
 
-	pub fn calculate_mtrr_range(base:MtrrVariableRangeBaseMsr,mask:MtrrVariableRangeMaskMsr,pa_width:u64)->Option<(u64,u64,u8)>
+	#[derive(Clone, Copy)]
+	pub enum MtrrSource
 	{
-		if mask.get_valid()
+		DefaultType,
+		VariableRange,
+		FixedRange
+	}
+
+	pub struct MtrrPage
+	{
+		pub base:u64,
+		pub page_size:u8,
+		pub memory_type:u8,
+		pub source:MtrrSource
+	}
+
+	pub struct MtrrRangeIter<'a>
+	{
+		source:&'a MtrrRange,
+		current:u64
+	}
+
+	impl<'a> Iterator for MtrrRangeIter<'a>
+	{
+		type Item = MtrrPage;
+		fn next(&mut self) -> Option<Self::Item>
 		{
-			let mtrr_base=page_4kb_mult(base.get_phys_base());
-			let mtrr_mask=page_4kb_mult(mask.get_phys_mask());
-			let mtrr_type=base.get_type() as u8;
-			Some((mtrr_base,(1<<pa_width)-mtrr_mask,mtrr_type))
+			let remainder=(self.source.base+self.source.length-self.current) as usize;
+			if remainder>0
+			{
+				// Check alignment
+				let (length,increment)=if page_1gb_offset(self.current)==0
+				{
+					// Current address is 1GiB-aligned. Check remaining size.
+					match remainder
+					{
+						0..PAGE_2MB_SIZE=>(0,PAGE_4KB_SIZE),
+						PAGE_2MB_SIZE..PAGE_1GB_SIZE=>(1,PAGE_2MB_SIZE),
+						_=>(2,PAGE_1GB_SIZE)
+					}
+				}
+				else if page_2mb_offset(self.current)==0
+				{
+					// Current address is 2MiB-aligned. Check remaining size.
+					match remainder
+					{
+						0..PAGE_2MB_SIZE=>(0,PAGE_4KB_SIZE),
+						_=>(1,PAGE_2MB_SIZE)
+					}
+				}
+				else
+				{
+					(0,PAGE_4KB_SIZE)
+				};
+				self.current+=increment as u64;
+				Some
+				(
+					MtrrPage
+					{
+						base:self.current-increment as u64,
+						page_size:length,
+						memory_type:self.source.memory_type,
+						source:self.source.source
+					}
+				)
+			}
+			else
+			{
+				None
+			}
 		}
-		else
+	}
+
+	#[derive(Clone, Copy)]
+	pub struct MtrrRange
+	{
+		pub base:u64,
+		pub length:u64,
+		pub memory_type:u8,
+		pub source:MtrrSource
+	}
+
+	impl MtrrRange
+	{
+		pub fn from_var_mtrr(base:MtrrVariableRangeBaseMsr,mask:MtrrVariableRangeMaskMsr,pa_width:u64)->Option<Self>
 		{
-			None
+			if mask.get_valid()
+			{
+				Some
+				(
+					Self
+					{
+						base:page_4kb_mult(base.get_phys_base()),
+						length:(1<<pa_width)-page_4kb_mult(mask.get_phys_mask()),
+						memory_type:base.get_type() as u8,
+						source:MtrrSource::VariableRange
+					}
+				)
+			}
+			else
+			{
+				None
+			}
+		}
+
+		pub fn from_raw_parts(base:u64,length:u64,memory_type:u8,source:MtrrSource)->Self
+		{
+			Self
+			{
+				base,
+				length,
+				memory_type,
+				source
+			}
+		}
+
+		pub fn iter(&self)->MtrrRangeIter<'_>
+		{
+			MtrrRangeIter
+			{
+				source:self,
+				current:self.base
+			}
+		}
+	}
+
+	#[derive(Default)]
+	pub struct FixedMtrrManager
+	{
+		pub fixed64k_00000:[u8;8],
+		pub fixed16k_80000:[u8;8],
+		pub fixed16k_a0000:[u8;8],
+		pub fixed4k_c0000:[u8;8],
+		pub fixed4k_c8000:[u8;8],
+		pub fixed4k_d0000:[u8;8],
+		pub fixed4k_d8000:[u8;8],
+		pub fixed4k_e0000:[u8;8],
+		pub fixed4k_e8000:[u8;8],
+		pub fixed4k_f0000:[u8;8],
+		pub fixed4k_f8000:[u8;8],
+	}
+
+	pub struct MtrrManagerIter<'a>
+	{
+		source:&'a MtrrManager,
+		// Default-range
+		default_base:bool,
+		// Variable-range
+		var_index:usize,
+		smrr:bool,
+		// Fixed-range
+		fixed_index:usize
+	}
+
+	impl<'a> Iterator for MtrrManagerIter<'a>
+	{
+		type Item = MtrrRange;
+		fn next(&mut self) -> Option<Self::Item>
+		{
+			use MtrrSource::*;
+			// The first iteration checks the default base.
+			if !self.default_base
+			{
+				self.default_base=true;
+				return Some(MtrrRange::from_raw_parts(0,self.source.max_pa,self.source.def_type,DefaultType));
+			}
+			// Next, iterate variable-length MTRRs
+			if self.var_index<self.source.var_mtrrs.len()
+			{
+				self.var_index+=1;
+				if let Some(range)=self.source.var_mtrrs[self.var_index-1]
+				{
+					println!("Iterating Variable MTRR (Base: 0x{:016X}, Length: 0x{:016X})",range.base,range.length);
+					return Some(range);
+				}
+			}
+			// After that, check SMRR.
+			if !self.smrr
+			{
+				self.smrr=true;
+				// SMRR might be disabled or unsupported.
+				if let Some(range)=self.source.smrr
+				{
+					return Some(range);
+				}
+			}
+			// Finally, iterate all fixed range MTRRs.
+			match &self.source.fixed_mtrrs
+			{
+				Some(fixed_mgr)=>
+				{
+					let i=&mut self.fixed_index;
+					let result=match *i
+					{
+						0x0..0x8=>Some(MtrrRange::from_raw_parts((*i as u64)<<16,64<<10,fixed_mgr.fixed64k_00000[*i],FixedRange)),
+						0x8..0x10=>Some(MtrrRange::from_raw_parts(0x80000+(((*i-0x8) as u64)<<14),16<<10,fixed_mgr.fixed16k_80000[*i-0x8],FixedRange)),
+						0x10..0x18=>Some(MtrrRange::from_raw_parts(0xA0000+(((*i-0x10) as u64)<<14),16<<10,fixed_mgr.fixed16k_a0000[*i-0x10],FixedRange)),
+						0x18..0x20=>Some(MtrrRange::from_raw_parts(0xC0000+(((*i-0x18) as u64)<<12),4<<10,fixed_mgr.fixed4k_c0000[*i-0x18],FixedRange)),
+						0x20..0x28=>Some(MtrrRange::from_raw_parts(0xC8000+(((*i-0x20) as u64)<<12),4<<10,fixed_mgr.fixed4k_c8000[*i-0x20],FixedRange)),
+						0x28..0x30=>Some(MtrrRange::from_raw_parts(0xD0000+(((*i-0x28) as u64)<<12),4<<10,fixed_mgr.fixed4k_d0000[*i-0x28],FixedRange)),
+						0x30..0x38=>Some(MtrrRange::from_raw_parts(0xD8000+(((*i-0x30) as u64)<<12),4<<10,fixed_mgr.fixed4k_d8000[*i-0x30],FixedRange)),
+						0x38..0x40=>Some(MtrrRange::from_raw_parts(0xE0000+(((*i-0x38) as u64)<<12),4<<10,fixed_mgr.fixed4k_e0000[*i-0x38],FixedRange)),
+						0x40..0x48=>Some(MtrrRange::from_raw_parts(0xE8000+(((*i-0x40) as u64)<<12),4<<10,fixed_mgr.fixed4k_e8000[*i-0x40],FixedRange)),
+						0x48..0x50=>Some(MtrrRange::from_raw_parts(0xF0000+(((*i-0x48) as u64)<<12),4<<10,fixed_mgr.fixed4k_f0000[*i-0x48],FixedRange)),
+						0x50..0x58=>Some(MtrrRange::from_raw_parts(0xF8000+(((*i-0x50) as u64)<<12),4<<10,fixed_mgr.fixed4k_f8000[*i-0x50],FixedRange)),
+						_=>None
+					};
+					*i+=1;
+					result
+				}
+				None=>None
+			}
+		}
+	}
+
+	#[derive(Default)]
+	pub struct MtrrManager
+	{
+		pub def_type:u8,
+		pub fixed_mtrrs:Option<FixedMtrrManager>,
+		pub var_mtrrs:[Option<MtrrRange>;16],
+		pub smrr:Option<MtrrRange>,
+		pub max_pa:u64
+	}
+
+	impl MtrrManager
+	{
+		pub fn init(&mut self)
+		{
+			let mtrr_def=MtrrDefTypeMsr::read();
+			// Clear the structure.
+			self.def_type=0;
+			self.fixed_mtrrs=None;
+			self.var_mtrrs=[const{None};16];
+			self.smrr=None;
+			let (a,_,_,_)=cpuid2(CPUID_EXT_PROCESSOR_CAPABILITY_PARAMETERS_EXTENDED_ID,0);
+			let pa_width=(a&0xff) as u64;
+			self.max_pa=1<<pa_width;
+			if mtrr_def.get_enabled()
+			{
+				// Setup default type.
+				self.def_type=mtrr_def.get_type() as u8;
+				// Setup Fixed MTRRs.
+				if mtrr_def.get_fixed_enabled()
+				{
+					self.fixed_mtrrs=Some
+					(
+						FixedMtrrManager
+						{
+							fixed64k_00000:rdmsr(MSR_MTRR_FIX64K_00000).to_le_bytes(),
+							fixed16k_80000:rdmsr(MSR_MTRR_FIX16K_80000).to_le_bytes(),
+							fixed16k_a0000:rdmsr(MSR_MTRR_FIX16K_A0000).to_le_bytes(),
+							fixed4k_c0000:rdmsr(MSR_MTRR_FIX4K_C0000).to_le_bytes(),
+							fixed4k_c8000:rdmsr(MSR_MTRR_FIX4K_C8000).to_le_bytes(),
+							fixed4k_d0000:rdmsr(MSR_MTRR_FIX4K_D0000).to_le_bytes(),
+							fixed4k_d8000:rdmsr(MSR_MTRR_FIX4K_D8000).to_le_bytes(),
+							fixed4k_e0000:rdmsr(MSR_MTRR_FIX4K_E0000).to_le_bytes(),
+							fixed4k_e8000:rdmsr(MSR_MTRR_FIX4K_E8000).to_le_bytes(),
+							fixed4k_f0000:rdmsr(MSR_MTRR_FIX4K_F0000).to_le_bytes(),
+							fixed4k_f8000:rdmsr(MSR_MTRR_FIX4K_F8000).to_le_bytes()
+						}
+					);
+				}
+				// Setup Variable MTRRs.
+				let mtrr_cap=MtrrCapMsr::read();
+				for i in 0..mtrr_cap.get_var_mtrr_count() as usize
+				{
+					let mtrr_mask=MtrrVariableRangeMaskMsr::read(MSR_MTRR_PHYS_MASK0+i as u32);
+					if mtrr_mask.get_valid()
+					{
+						let mtrr_base=MtrrVariableRangeBaseMsr::read(MSR_MTRR_PHYS_BASE0+i as u32);
+						self.var_mtrrs[i]=MtrrRange::from_var_mtrr(mtrr_base,mtrr_mask,pa_width);
+						println!("Detected Variable-MTRR (Base=0x{:016X}, Mask=0x{:016X})",mtrr_base.0,mtrr_mask.0);
+					}
+				}
+				// Setup SMRR.
+				if mtrr_cap.get_support_smrr()
+				{
+					let mask=MtrrVariableRangeMaskMsr::read(MSR_SMRR_PHYS_MASK);
+					if mask.get_valid()
+					{
+						let base=MtrrVariableRangeBaseMsr::read(MSR_SMRR_PHYS_BASE);
+						// Note that SMRR uses only 32-bit physical address.
+						self.smrr=MtrrRange::from_var_mtrr(base,mask,32);
+					}
+				}
+			}
+		}
+
+		pub fn iter(&self)->MtrrManagerIter<'_>
+		{
+			MtrrManagerIter
+			{
+				source:self,
+				default_base:false,
+				var_index:0,
+				smrr:false,
+				fixed_index:0
+			}
 		}
 	}
 }
@@ -879,6 +1167,8 @@ pub mod msr
 	pub const MSR_SYSENTER_ESP:u32=0x175;
 	pub const MSR_SYSENTER_EIP:u32=0x176;
 	pub const MSR_DEBUG_CONTROL:u32=0x1D9;
+	pub const MSR_SMRR_PHYS_BASE:u32=0x1F2;
+	pub const MSR_SMRR_PHYS_MASK:u32=0x1F3;
 	pub const MSR_MTRR_PHYS_BASE0:u32=0x200;
 	pub const MSR_MTRR_PHYS_MASK0:u32=0x201;
 	pub const MSR_MTRR_PHYS_BASE1:u32=0x202;

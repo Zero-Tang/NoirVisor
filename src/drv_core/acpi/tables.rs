@@ -11,7 +11,7 @@
  */
 
 use paste::paste;
-use core::{fmt::{self,Display},str};
+use core::{fmt::{self,Display}, mem::offset_of, str};
 
 use crate::*;
 
@@ -49,7 +49,7 @@ impl AcpiAddressSpaceId
 }
 
 #[derive(Clone, Copy, PartialEq)]
-#[repr(C)] pub struct AcpiSystemDescriptorSignature(pub u32);
+#[repr(C)] pub struct AcpiSystemDescriptorSignature(pub [u8;4]);
 
 macro_rules! make_acpi_signature
 {
@@ -57,7 +57,7 @@ macro_rules! make_acpi_signature
 	{
 		paste!
 		{
-			pub const [<$name:upper>]:Self=Self(u32::from_ne_bytes(*$value));
+			pub const [<$name:upper>]:Self=Self(*$value);
 		}
 	};
 }
@@ -79,15 +79,15 @@ impl Display for AcpiSystemDescriptorSignature
 {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
 	{
-		let buff=self.0.to_ne_bytes();
+		let buff=self.0;
 		write!(f,"{}",unsafe{str::from_utf8_unchecked(&buff)})
 	}
 }
 
-#[repr(C)] pub struct SystemDescriptionHeader
+#[repr(C,packed)] pub struct SystemDescriptionHeader
 {
 	pub signature:AcpiSystemDescriptorSignature,
-	pub length:u32,
+	length:u32,
 	pub revision:u8,
 	pub checksum:u8,
 	pub oemid:[u8;6],
@@ -95,6 +95,17 @@ impl Display for AcpiSystemDescriptorSignature
 	pub oem_revision:u32,
 	pub creator_id:u32,
 	pub creator_revision:u32
+}
+
+impl SystemDescriptionHeader
+{
+	pub fn get_length(&self)->u32
+	{
+		// ACPI-table does not guarantee alignment.
+		let s=self as *const Self;
+		let p:*const u32=unsafe{s.byte_add(offset_of!(Self,length)).cast()};
+		unsafe{p.read_unaligned()}
+	}
 }
 
 #[repr(C)] pub struct RootSystemDescriptionTable

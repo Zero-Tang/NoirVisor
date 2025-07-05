@@ -8,3 +8,4 @@ pub mod ioflt;
 pub mod x86;
 pub mod nvbdk;
 pub mod hv_host;
+#[cfg(test)] mod tests;

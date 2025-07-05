@@ -507,11 +507,14 @@ impl HypervisorCapabilities for VtHypervisor
 					let mut ept_requirement:bool=true;
 					// We have a series of EPT feature requirements.
 					ept_requirement&=ept_sup.get_support_wb_ept();
+					// 2MiB-paging is NoirVisor's minimum requirement.
+					// 1GiB-paging is preferred, but some processors don't support it (e.g.: vCPU in VMware).
 					ept_requirement&=ept_sup.get_support_2mb_paging();
 					ept_requirement&=ept_sup.get_support_invept();
 					ept_requirement&=ept_sup.get_support_single_context_invept();
 					ept_requirement&=ept_sup.get_support_global_context_invept();
 					ept_requirement&=ept_sup.get_support_invvpid();
+					ept_requirement&=ept_sup.get_support_ia_invvpid();
 					ept_requirement&=ept_sup.get_support_sc_invvpid();
 					ept_requirement&=ept_sup.get_support_ac_invvpid();
 					if ept_requirement {supportability|=2;}

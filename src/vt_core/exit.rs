@@ -342,13 +342,25 @@ impl VtVcpu
 	fn handle_ept_violation(&mut self,_gpr_state:&mut GprState)
 	{
 		let gpa=unsafe{vmread64(GUEST_PHYSICAL_ADDRESS)}.unwrap();
-		println!("EPT Violation happened! GPA=0x{gpa:X}");
+		panic!("EPT Violation happened! GPA=0x{gpa:X}");
 	}
 
 	fn handle_ept_misconfig(&mut self,_gpr_state:&mut GprState)
 	{
 		let gpa=unsafe{vmread64(GUEST_PHYSICAL_ADDRESS)}.unwrap();
-		println!("EPT Misconfiguration happened! GPA=0x{gpa:X}");
+		let hv:&mut VtHypervisor=unsafe{&mut *self.hypervisor.cast()};
+		let p=unsafe{&mut *hv.eptm.locate_pdpte(gpa)};
+		println!("Dumping EPT Page Entries for EPT Misconfiguration...");
+		println!("EPT PDPTE Entry: 0x{:016X}",p.0);
+		if let Some(p)=hv.eptm.locate_pde(gpa)
+		{
+			println!("EPT PDE Entry: 0x{:016X}",unsafe{(*p).0});
+		}
+		if let Some(p)=hv.eptm.locate_pte(gpa)
+		{
+			println!("EPT PTE Entry: 0x{:016X}",unsafe{(*p).0});
+		}
+		panic!("EPT Misconfiguration happened! GPA=0x{gpa:X}");
 	}
 
 	fn handle_xsetbv(&mut self,gpr_state:&mut GprState)

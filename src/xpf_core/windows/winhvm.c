@@ -284,6 +284,7 @@ BOOL NoirAcpiInitialize()
 void NoirAcpiFinalize()
 {
 	nvc_acpi_finalize();
+	NoirFreeNonPagedMemory(nvc_acpi_get_rsdt_ptr());
 }
 
 NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)

@@ -28,6 +28,9 @@ NoirVisor uses Rust 2024 standard.
 ## Allocator
 NoirVisor uses [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc) as the global allocator.
 
+## Automated Testing
+NoirVisor uses `cargo test` suite to test NoirVisor. However, system subversion and restoration are not currently included in tests yet.
+
 ## Coding Style
 The coding style for NoirVisor in Rust is probably drastically different than most projects you have seen:
 

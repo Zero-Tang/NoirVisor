@@ -10,9 +10,11 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_bittest64, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut};
+use core::{arch::x86_64::_bittest64, cell::LazyCell, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut};
 use crate::{build_bit_get_method, xpf_core::{asm::{crdr::*, msr::rdmsr, seg::*}, x86::{descriptors::{DescriptorTable, SegmentFlags}, msr::*}}};
+use alloc::vec::Vec;
 use paste::paste;
+use spin::Mutex;
 
 #[derive(Copy,Clone)] #[repr(C)] pub struct MemoryDescriptor
 {
@@ -390,7 +392,26 @@ impl Display for EnabledFeatures
 }
 
 pub type BroadcastWorker=extern "C" fn(context:*mut c_void,processor_id:u32);
-pub type PhysicalRangeCallback=fn(start:u64,length:u64,context:*mut c_void);
+pub type PhysicalRangeCallback=extern "C" fn(start:u64,length:u64,context:*mut c_void);
+
+pub struct PhysicalRange
+{
+	pub start:u64,
+	pub length:u64
+}
+
+extern "C" fn phys_mem_range_enum_rt(start:u64,length:u64,context:*mut c_void)
+{
+	let v:&mut Vec<PhysicalRange>=unsafe{&mut *context.cast()};
+	v.push(PhysicalRange{start,length});
+}
+
+pub static SYSTEM_PHYSICAL_MEMORY_RANGES:Mutex<LazyCell<Vec<PhysicalRange>>>=Mutex::new(LazyCell::new(||
+{
+	let mut v=Vec::new();
+	unsafe{noir_enum_physical_memory_ranges(phys_mem_range_enum_rt,(&raw mut v).cast())};
+	v
+}));
 
 unsafe extern "C"
 {
@@ -406,7 +427,7 @@ unsafe extern "C"
 	pub fn noir_map_physical_memory(physical_address:u64,length:usize)->*mut c_void;
 	pub fn noir_map_uncached_memory(physical_address:u64,length:usize)->*mut c_void;
 	pub fn noir_unmap_physical_memory(virtual_address:*mut c_void,length:usize);
-
+	pub fn noir_enum_physical_memory_ranges(callback_routine:PhysicalRangeCallback,context:*mut c_void);
 	pub fn memcpy(dest:*mut c_void,src:*const c_void,cch:usize);
 	// Image Facility
 	pub fn nvc_store_image_info(base:*mut *mut c_void,size:*mut u32);

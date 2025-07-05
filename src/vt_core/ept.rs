@@ -14,9 +14,8 @@ use core::cmp::Ordering;
 
 use alloc::vec::Vec;
 
-use crate::*;
-use super::ia32::msr::MSR_SMRR_PHYS_BASE;
-use xpf_core::{asm::msr::rdmsr, dlalloc::{alloc_2mb_page, alloc_contd_pages}, nvbdk::*, x86::{caching::*, msr::*}};
+use crate::{vt_core::ia32::msr::VmxEptVpidCapMsr, *};
+use xpf_core::{dlalloc::{alloc_2mb_page, alloc_contd_pages}, nvbdk::*, x86::caching::*};
 
 use paste::paste;
 
@@ -184,9 +183,8 @@ pub struct VtEptManager
 	pub pdpte:MemoryDescriptor,
 	pub pde:Vec<VtEptPageTableDescriptor>,
 	pub pte:Vec<VtEptPageTableDescriptor>,
-	pub def_type:MtrrDefTypeMsr,
-	pub mtrr_cap:MtrrCapMsr,
-	pub pa_width:u64
+	pub mtrr_mgr:MtrrManager,
+	pub ept_cap:VmxEptVpidCapMsr
 }
 
 impl Default for VtEptManager
@@ -199,9 +197,8 @@ impl Default for VtEptManager
 			pdpte:MemoryDescriptor::null(),
 			pde:Vec::new(),
 			pte:Vec::new(),
-			def_type:MtrrDefTypeMsr::read(),
-			mtrr_cap:MtrrCapMsr::read(),
-			pa_width:0
+			mtrr_mgr:MtrrManager::default(),
+			ept_cap:VmxEptVpidCapMsr(0)
 		}
 	}
 }
@@ -391,115 +388,36 @@ impl VtEptManager
 		}
 	}
 
-	fn update_per_var_mtrr(&mut self,mtrr_msr_index:u32)
-	{
-		let mtrr_base=MtrrVariableRangeBaseMsr::read(mtrr_msr_index);
-		let mtrr_mask=MtrrVariableRangeMaskMsr::read(mtrr_msr_index+1);
-		// Note that SMRR has only 32-bit length.
-		if let Some((base,size,mem_type))=calculate_mtrr_range(mtrr_base,mtrr_mask,if mtrr_msr_index==MSR_SMRR_PHYS_BASE {32} else {self.pa_width})
-		{
-			// Ignore MTRRs that define the same memory type as default MTRR.
-			if mtrr_base.get_type()!=self.def_type.get_type()
-			{
-				println!("Base: 0x{base:X}, Size: 0x{size:X}, Type: {mem_type}");
-				let mut addr=base;
-				while addr<base+size
-				{
-					let remainder=(base+size-addr) as usize;
-					let increment=if page_1gb_offset(addr as usize)==0
-					{
-						if (0..PAGE_2MB_SIZE).contains(&remainder)
-						{
-							PAGE_4KB_SIZE
-						}
-						else if (PAGE_2MB_SIZE..PAGE_1GB_SIZE).contains(&remainder)
-						{
-							PAGE_2MB_SIZE
-						}
-						else
-						{
-							PAGE_1GB_SIZE
-						}
-					}
-					else if page_2mb_offset(addr as usize)==0
-					{
-						if (PAGE_2MB_SIZE..PAGE_1GB_SIZE).contains(&remainder)
-						{
-							PAGE_2MB_SIZE
-						}
-						else
-						{
-							PAGE_1GB_SIZE
-						}
-					}
-					else
-					{
-						PAGE_4KB_SIZE
-					};
-					match increment
-					{
-						PAGE_1GB_SIZE=>self.update_pdpte_memory_type(addr,mem_type as u64,false),
-						PAGE_2MB_SIZE=>self.update_pde_memory_type(addr,mem_type as u64,false),
-						PAGE_4KB_SIZE=>self.update_pte_memory_type(addr,mem_type as u64,false),
-						_=>println!("Unknown Increment: 0x{increment:X}!")
-					}
-					addr+=increment as u64;
-				}
-			}
-		}
-	}
-
-	pub fn update_per_fixed_mtrr(&mut self,mtrr_msr_index:u32,gpa:u64,pages:usize)
-	{
-		let t=rdmsr(mtrr_msr_index).to_le_bytes();
-		for (i,r )in t.iter().enumerate()
-		{
-			for j in 0..pages
-			{
-				self.update_pte_memory_type(gpa+page_4kb_mult(i*pages+j) as u64,*r as u64,true);
-			}
-		}
-	}
-
 	pub fn update_by_mtrr(&mut self)
 	{
-		println!("MTRR Default Type MSR: 0x{:X}, Capability: 0x{:X}",self.def_type.0,self.mtrr_cap.0);
-		if self.def_type.get_enabled()
+		let mut mtrr_mgr=MtrrManager::default();
+		mtrr_mgr.init();
+		for r in mtrr_mgr.iter()
 		{
-			let mtrr_count=self.mtrr_cap.get_var_mtrr_count();
-			// Traverse variable-range MTRRs.
-			for i in 0..mtrr_count
+			for p in r.iter()
 			{
-				self.update_per_var_mtrr(MSR_MTRR_PHYS_BASE0+(i<<1) as u32);
-			}
-			if self.mtrr_cap.get_support_smrr()
-			{
-				println!("SMRR is also supported!");
-				self.update_per_var_mtrr(MSR_SMRR_PHYS_BASE);
-			}
-			// Traverse fixed-range MTRRs.
-			if self.def_type.get_fixed_enabled()
-			{
-				// First of all, split PDE of first 2MiB.
-				self.update_per_fixed_mtrr(MSR_MTRR_FIX64K_00000,0x00000,16);
-				self.update_per_fixed_mtrr(MSR_MTRR_FIX16K_80000,0x80000,4);
-				self.update_per_fixed_mtrr(MSR_MTRR_FIX16K_A0000,0xA0000,4);
-				self.update_per_fixed_mtrr(MSR_MTRR_FIX4K_C0000,0xC0000,1);
-				self.update_per_fixed_mtrr(MSR_MTRR_FIX4K_C8000,0xC8000,1);
-				self.update_per_fixed_mtrr(MSR_MTRR_FIX4K_D0000,0xD0000,1);
-				self.update_per_fixed_mtrr(MSR_MTRR_FIX4K_D8000,0xD8000,1);
-				self.update_per_fixed_mtrr(MSR_MTRR_FIX4K_E0000,0xE0000,1);
-				self.update_per_fixed_mtrr(MSR_MTRR_FIX4K_E8000,0xE8000,1);
-				self.update_per_fixed_mtrr(MSR_MTRR_FIX4K_F0000,0xF0000,1);
-				self.update_per_fixed_mtrr(MSR_MTRR_FIX4K_F8000,0xF8000,1);
+				let force_update=match p.source
+				{
+					MtrrSource::DefaultType=>true,
+					MtrrSource::VariableRange=>false,
+					MtrrSource::FixedRange=>true,
+				};
+				let updater_fn=match p.page_size
+				{
+					0=>Self::update_pte_memory_type,
+					1=>Self::update_pde_memory_type,
+					2=>Self::update_pdpte_memory_type,
+					_=>panic!("Unrecognized page-size identifier: {}!",p.page_size)
+				};
+				updater_fn(self,p.base,p.memory_type as u64,force_update);
 			}
 		}
+		self.mtrr_mgr=mtrr_mgr;
 	}
 
 	pub fn build_identity_map(&mut self)
 	{
-		let (a,_,_,_)=cpuid2(CPUID_EXT_PROCESSOR_CAPABILITY_PARAMETERS_EXTENDED_ID,0);
-		self.pa_width=(a&0xFF) as u64;
+		self.ept_cap=VmxEptVpidCapMsr::read();
 		match alloc_contd_pages(PAGE_SIZE)
 		{
 			Some(md)=>self.pml4e=md,
@@ -517,7 +435,7 @@ impl VtEptManager
 			for j in 0..PAGE_TABLE_ENTRIES64
 			{
 				let k=(i<<PAGE_SHIFT_DIFF)+j;
-				let pdpte_v=EptHugePdpte::new(true,true,true,self.def_type.get_type(),page_1gb_mult(k) as u64);
+				let pdpte_v=EptHugePdpte::new(true,true,true,MEMORY_TYPE_WB as u64,page_1gb_mult(k) as u64);
 				unsafe
 				{
 					let pdpte_p=self.pdpte.virt.cast::<EptHugePdpte>().add(k);
@@ -529,6 +447,16 @@ impl VtEptManager
 			{
 				let pml4e_p=self.pml4e.virt.cast::<EptPml4e>().add(i);
 				pml4e_p.write(pml4e_v);
+			}
+		}
+		if self.ept_cap.get_support_1gb_paging()
+		{
+			// 1GiB-paging is unsupported in this system. Split all PDPTEs in the lowest 512GiB.
+			// Nested-Virtualization provided by VMware doesn't support 1GiB Paging.
+			sysdprintln!("This system does not support EPT 1GiB-paging!");
+			for i in 0..PAGE_TABLE_ENTRIES64
+			{
+				self.split_pdpte(page_1gb_mult(i as u64));
 			}
 		}
 		self.update_by_mtrr();

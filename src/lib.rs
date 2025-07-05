@@ -231,14 +231,37 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 // the rust-analyzer of VSCode will report duplicate panic_impl.
 
 #[cfg(not(test))]
+#[allow(dead_code)]
 mod panicking
 {
-	use crate::{print,println,dbg_print};
+	use crate::{print,println,dbg_print,sysdprint,sysdprintln,system_print};
 	use core::panic::PanicInfo;
+	use spin::Mutex;
+
+	pub enum PanicPrinter
+	{
+		System,
+		Internal
+	}
+
+	#[cfg(windows)]
+	static PANIC_PRINTER:Mutex<PanicPrinter>=Mutex::new(PanicPrinter::System);
+	#[cfg(target_os = "uefi")]
+	static PANIC_PRINTER:Mutex<PanicPrinter>=Mutex::new(PanicPrinter::Internal);
+
+	pub fn set_panic_printer(printer:PanicPrinter)
+	{
+		*PANIC_PRINTER.lock()=printer;
+	}
 
 	#[panic_handler] fn panic(panic: &PanicInfo)->!
 	{
-		println!("\x1b[91m[PANIC] NoirVisor {} \x1b[39m",panic);
+		let printer=PANIC_PRINTER.lock();
+		match *printer
+		{
+			PanicPrinter::System=>sysdprintln!("[PANIC] NoirVisor {}",panic),
+			PanicPrinter::Internal=>println!("\x1b[91m[PANIC] NoirVisor {} \x1b[39m",panic)
+		}
 		loop{}
 	}
 }
