@@ -79,6 +79,7 @@ BOOLEAN NoirHpetInitialize();
 EFI_STATUS NoirInitializeConfigurationManager();
 void NoirFinalizeConfigurationManager();
 EFI_STATUS NoirConfigureInternalDebugger();
+BOOLEAN NoirInitializeLogger();
 
 void __isa_available_init();
 extern UINT32 __isa_available;

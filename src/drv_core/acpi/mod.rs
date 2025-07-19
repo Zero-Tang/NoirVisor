@@ -11,12 +11,13 @@
  */
 
 use core::{mem::offset_of, ptr::null_mut, slice, sync::atomic::{AtomicPtr, AtomicUsize, Ordering}};
-
 use alloc::vec::Vec;
+
 use spin::RwLock;
+use log::*;
+
 use tables::{AcpiSystemDescriptorSignature, ExtendedSystemDescriptorTable, RootSystemDescriptionTable, SystemDescriptionHeader};
 use crate::xpf_core::{nvbdk::{noir_map_physical_memory, noir_unmap_physical_memory}, nvstatus::*};
-use crate::{print,println,dbg_print};
 
 pub mod tables;
 
@@ -51,7 +52,7 @@ impl AcpiManager
 		{
 			panic!("Failed to map ACPI Table at 0x{phys:08X}!");
 		}
-		unsafe{println!("Enumerated ACPI Table {}! Mapped to {virt:p} (Size={} bytes)...",(*virt).signature,(*virt).get_length())};
+		unsafe{debug!("Enumerated ACPI Table {}! Mapped to {virt:p} (Size={} bytes)...",(*virt).signature,(*virt).get_length())};
 		self.table.push(AtomicPtr::new(virt));
 	}
 
@@ -68,7 +69,7 @@ impl AcpiManager
 	fn init_via_xsdt(&mut self,xsdt:*const ExtendedSystemDescriptorTable)
 	{
 		let count=(unsafe{(*xsdt).header.get_length() as usize}-size_of::<SystemDescriptionHeader>())>>3;
-		println!("XSDT Base Address: {xsdt:p}");
+		debug!("XSDT Base Address: {xsdt:p}");
 		let xsdt_ptr:*const u64=unsafe{xsdt.byte_add(offset_of!(ExtendedSystemDescriptorTable,entries)).cast()};
 		for i in 0..count
 		{

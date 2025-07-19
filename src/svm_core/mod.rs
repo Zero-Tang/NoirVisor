@@ -16,6 +16,7 @@ use custom::SvmCustomVm;
 #[cfg(target_os="uefi")]
 use exit::svm_apic_output_handler;
 use iommu::{svm_iommu_output_handler, SvmIommuManager};
+use log::*;
 use npt::SvmNptManager;
 use xpf_core::{bitmap::set_bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
 
@@ -232,14 +233,14 @@ impl SvmVcpu
 			// Load Guest State.
 			vmload(self.vmcb.phys);
 		}
-		println!("Processor {} Completed setting up VMCB! (0x{:X})",self.vcpu_id,self.vmcb.phys);
+		trace!("Processor {} Completed setting up VMCB! (0x{:X})",self.vcpu_id,self.vmcb.phys);
 		// "Return" puts the VMCB on rax register.
 		self.vmcb.phys
 	}
 
 	fn subvert(&mut self)
 	{
-		println!("Processor {} entered subversion routine!",self.vcpu_id);
+		info!("Processor {} entered subversion routine!",self.vcpu_id);
 		// Enable SVM in EFER.
 		let efer=rdmsr(MSR_EFER)|MSR_EFER_SVME|MSR_EFER_NXE;
 		wrmsr(MSR_EFER,efer);
@@ -257,7 +258,7 @@ impl SvmVcpu
 		unsafe
 		{
 			let stack:*mut SvmStackTop=self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()) as *mut SvmStackTop;
-			println!("Stack-Top of vCPU {}: {stack:p}",self.vcpu_id);
+			trace!("Stack-Top of vCPU {}: {stack:p}",self.vcpu_id);
 			(*stack).guest_vmcb_pa=self.vmcb.phys;
 			(*stack).host_vmcb_pa=self.hvmcb.phys;
 			(*stack).vcpu=self as *mut Self;
@@ -267,7 +268,7 @@ impl SvmVcpu
 			(*stack).reserved=0;
 			nvc_svm_subvert_processor_a(stack);
 		}
-		sysdprintln!("Processor {} completed subversion!",self.vcpu_id);
+		info!("Processor {} completed subversion!",self.vcpu_id);
 	}
 
 	fn restore(&mut self)
@@ -282,7 +283,7 @@ impl SvmVcpu
 		// Also stop redirecting INIT signals.
 		let vmcr=rdmsr(MSR_VMCR)&!(MSR_VMCR_DISA20M|MSR_VMCR_R_INIT);
 		wrmsr(MSR_VMCR,vmcr);
-		sysdprintln!("Processor {} completed restoration!",self.vcpu_id);
+		info!("Processor {} completed restoration!",self.vcpu_id);
 	}
 }
 
@@ -371,8 +372,8 @@ impl HypervisorEssentials for SvmHypervisor
 				}
 			};
 		}
-		println!("Subverting the system with AMD-V...");
-		println!("Enabled features: {}",self.features);
+		trace!("Subverting the system with AMD-V...");
+		trace!("Enabled features: {}",self.features);
 		// Allocate various stuff. Note that they are required to be raw-pointer.
 		let msrpm=alloc_contd_pages(PAGE_SIZE*2);
 		let iopm=alloc_contd_pages(PAGE_SIZE*3);
@@ -390,14 +391,22 @@ impl HypervisorEssentials for SvmHypervisor
 					{
 						($index:expr) =>
 						{
-							set_bitmap(self.msrpm.virt,0x2000,svm_msrpm_bit($index,false) as usize);
+							match svm_msrpm_bit($index,false)
+							{
+								Some(i)=>set_bitmap(self.msrpm.virt,0x2000,i as usize),
+								None=>warn!("Warning: MSR 0x{:X} is invalid!",$index)
+							}
 						};
 					}
 					macro_rules! intercept_write
 					{
 						($index:expr) =>
 						{
-							set_bitmap(self.msrpm.virt,0x2000,svm_msrpm_bit($index,true) as usize);
+							match svm_msrpm_bit($index,true)
+							{
+								Some(i)=>set_bitmap(self.msrpm.virt,0x2000,i as usize),
+								None=>warn!("Warning: MSR 0x{:X} is invalid!",$index)
+							}
 						};
 					}
 					macro_rules! intercept_any
@@ -425,7 +434,7 @@ impl HypervisorEssentials for SvmHypervisor
 			Some(md)=>self.iopm=md,
 			None=>fail_cleanup!("Failed to allocate I/O Permission-Map!")
 		}
-		println!("MSRPM: 0x{:016X}, IOPM: 0x{:016X}",msrpm.unwrap().phys,iopm.unwrap().phys);
+		debug!("MSRPM: 0x{:016X}, IOPM: 0x{:016X}",msrpm.unwrap().phys,iopm.unwrap().phys);
 		let vcpu_count=unsafe{noir_get_processor_count()};
 		for i in 0..vcpu_count
 		{
@@ -486,7 +495,7 @@ impl HypervisorEssentials for SvmHypervisor
 					mgr.activate();
 					self.iommu_manager=Some(mgr);
 				}
-				Err(st)=>println!("Failed to initialize AMD-Vi! Reason: {st}")
+				Err(st)=>error!("Failed to initialize AMD-Vi! Reason: {st}")
 			}
 		}
 		self.nptm.protect_allocated_pages();
@@ -497,7 +506,7 @@ impl HypervisorEssentials for SvmHypervisor
 			nvc_store_image_info(&raw mut self.image_base,&raw mut self.image_size);
 			noir_generic_call(nvc_svm_subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
-		sysdprintln!("System subversion completed!");
+		info!("System subversion completed!");
 		NOIR_SUCCESS
 	}
 
@@ -507,7 +516,7 @@ impl HypervisorEssentials for SvmHypervisor
 		{
 			noir_generic_call(nvc_svm_restore_processor_thunk,self as *mut Self as *mut c_void);
 		}
-		sysdprintln!("System restoration completed!");
+		info!("System restoration completed!");
 		NOIR_SUCCESS
 	}
 }
@@ -516,7 +525,7 @@ impl HypervisorEssentials for SvmHypervisor
 {
 	let hv:&mut SvmHypervisor=unsafe{&mut *context.cast()};
 	let vp=hv.vcpus.get_mut(processor_id as usize);
-	sysdprintln!("Subverting processor {} with AMD-V...",processor_id);
+	info!("Subverting processor {processor_id} with AMD-V...");
 	match vp
 	{
 		Some(vcpu)=>vcpu.subvert(),
@@ -528,7 +537,7 @@ impl HypervisorEssentials for SvmHypervisor
 {
 	let hv=unsafe{&mut *(context as *mut SvmHypervisor)};
 	let vp=hv.vcpus.get_mut(processor_id as usize);
-	sysdprintln!("Processor {processor_id} entered restoration routine...");
+	info!("Processor {processor_id} entered restoration routine...");
 	match vp
 	{
 		Some(vcpu)=>vcpu.restore(),

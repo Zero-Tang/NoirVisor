@@ -10,11 +10,11 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_bittest64, cell::LazyCell, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut};
+use core::{arch::x86_64::_bittest64, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut};
 use crate::{build_bit_get_method, xpf_core::{asm::{crdr::*, msr::rdmsr, seg::*}, x86::{descriptors::{DescriptorTable, SegmentFlags}, msr::*}}};
 use alloc::vec::Vec;
 use paste::paste;
-use spin::Mutex;
+use spin::Lazy;
 
 #[derive(Copy,Clone)] #[repr(C)] pub struct MemoryDescriptor
 {
@@ -406,12 +406,12 @@ extern "C" fn phys_mem_range_enum_rt(start:u64,length:u64,context:*mut c_void)
 	v.push(PhysicalRange{start,length});
 }
 
-pub static SYSTEM_PHYSICAL_MEMORY_RANGES:Mutex<LazyCell<Vec<PhysicalRange>>>=Mutex::new(LazyCell::new(||
+pub static SYSTEM_PHYSICAL_MEMORY_RANGES:Lazy<Vec<PhysicalRange>>=Lazy::new(||
 {
 	let mut v=Vec::new();
 	unsafe{noir_enum_physical_memory_ranges(phys_mem_range_enum_rt,(&raw mut v).cast())};
 	v
-}));
+});
 
 unsafe extern "C"
 {
@@ -435,6 +435,11 @@ unsafe extern "C"
 	pub fn noir_query_enabled_features_in_system()->i64;
 	// String Facility
 	pub fn strlen(ptr:*const u8)->usize;
+	// Synchronization Facility
+	pub fn noir_acquire_pushlock_exclusive(push_lock:*mut usize);
+	pub fn noir_acquire_pushlock_shared(push_lock:*mut usize);
+	pub fn noir_release_pushlock_exclusive(push_lock:*mut usize);
+	pub fn noir_release_pushlock_shared(push_lock:*mut usize);
 }
 
 // Page-related definitions

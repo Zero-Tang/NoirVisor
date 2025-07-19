@@ -13,9 +13,10 @@
 use core::arch::x86_64::_xsetbv;
 
 use paste::paste;
+use log::*;
 
-use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, vt_core::nvc_vt_resume_without_entry, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, InterruptStackFrameWithErrorCode, GENERAL_PROTECTION_FAULT}}}, *};
-use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu};
+use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, InterruptStackFrameWithErrorCode, GENERAL_PROTECTION_FAULT, INVALID_OPCODE_FAULT}}}, *};
+use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, nvc_vt_resume_without_entry};
 
 impl VtVcpu
 {
@@ -28,7 +29,7 @@ impl VtVcpu
 				paste!
 				{
 					let [<$name:lower>]=read_guest_segment!($name);
-					println!("Guest {} Segment: {:X?}",stringify!($name:upper),[<$name:lower>]);
+					error!("Guest {} Segment: {:X?}",stringify!($name:upper),[<$name:lower>]);
 				}
 			};
 		}
@@ -44,16 +45,16 @@ impl VtVcpu
 		let cr3=unsafe{vmreadptr(GUEST_CR3).unwrap()};
 		let cr4=unsafe{vmreadptr(GUEST_CR4).unwrap()};
 		let dr7=unsafe{vmreadptr(GUEST_DR7).unwrap()};
-		println!("Guest CR0=0x{cr0:X}, CR3=0x{cr3:X}, CR4=0x{cr4:X}, DR7=0x{dr7:X}");
+		error!("Guest CR0=0x{cr0:X}, CR3=0x{cr3:X}, CR4=0x{cr4:X}, DR7=0x{dr7:X}");
 		let ssp=unsafe{vmreadptr(GUEST_SSP)};
 		let rsp=unsafe{vmreadptr(GUEST_RSP).unwrap()};
 		let rip=unsafe{vmreadptr(GUEST_RIP).unwrap()};
 		let rflags=unsafe{vmreadptr(GUEST_RFLAGS).unwrap()};
-		println!("Guest rsp: 0x{rsp:X}, rip: 0x{rip:X}, rflags: 0x{rflags:X}, ssp: 0x{ssp:X?}");
+		error!("Guest rsp: 0x{rsp:X}, rip: 0x{rip:X}, rflags: 0x{rflags:X}, ssp: 0x{ssp:X?}");
 		let efer=unsafe{vmread64(GUEST_MSR_IA32_EFER).unwrap()};
 		let pat=unsafe{vmread64(GUEST_MSR_IA32_PAT).unwrap()};
 		let dbg_ctrl=unsafe{vmread64(GUEST_MSR_IA32_DEBUG_CTRL).unwrap()};
-		println!("Guest EFER: 0x{efer:X}, PAT: 0x{pat:X}, Debug-Control: 0x{dbg_ctrl:X}");
+		error!("Guest EFER: 0x{efer:X}, PAT: 0x{pat:X}, Debug-Control: 0x{dbg_ctrl:X}");
 	}
 
 	fn handle_triple_fault(&mut self,_gpr_state:&mut GprState)
@@ -161,13 +162,13 @@ impl VtVcpu
 
 	fn handle_getsec(&mut self,_gpr_state:&mut GprState)
 	{
-		println!("SMX Virtualization is not supported!");
+		error!("SMX Virtualization is not supported!");
 		unsafe{advance_rip()};
 	}
 
 	fn handle_invd(&mut self,_gpr_state:&mut GprState)
 	{
-		println!("The invd instruction is executed!");
+		trace!("The invd instruction is executed!");
 		// In Hyper-V, it invoked wbinvd at invd exit.
 		wbinvd();
 		unsafe{advance_rip()};
@@ -177,7 +178,7 @@ impl VtVcpu
 	{
 		let vmcall_func=gpr_state.rcx as u32;
 		let gcr3=unsafe{vmreadptr(GUEST_CR3)}.unwrap() as u64;
-		println!("The vmcall instruction is intercepted! Hypercall Leaf: 0x{vmcall_func:X}");
+		debug!("The vmcall instruction is intercepted! Hypercall Leaf: 0x{vmcall_func:X}");
 		match vmcall_func
 		{
 			NOIR_HYPERCALL_CODE_CALLEXIT=>
@@ -247,12 +248,14 @@ impl VtVcpu
 				}
 				else
 				{
-					println!("Invalid Call to restore system! rip=0x{grip:016X}");
+					error!("Invalid Call to restore system! rip=0x{grip:016X}");
+					unsafe{inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true,0);}
 				}
 			}
 			_=>
 			{
-				println!("Unknown Hypercall Code 0x{vmcall_func:X} is called!");
+				error!("Unknown Hypercall Code 0x{vmcall_func:X} is called!");
+				unsafe{inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true,0);}
 			}
 		}
 	}
@@ -260,14 +263,14 @@ impl VtVcpu
 	fn handle_cr_access(&mut self,gpr_state:&mut GprState)
 	{
 		let q=ControlRegisterQualification::read();
-		println!("CR Index: {}, GPR Index: {}, Access: {}",q.get_cr_index(),q.get_access_type(),q.get_gpr_index());
+		debug!("CR Index: {}, GPR Index: {}, Access: {}",q.get_cr_index(),q.get_access_type(),q.get_gpr_index());
 		match q.get_access_type()
 		{
 			ControlRegisterQualification::WRITE_CR=>
 			{
 				gpr_state.rsp=unsafe{vmread64(GUEST_RSP)}.unwrap();
 				let new_value=gpr_state.read(q.get_gpr_index()).unwrap() as usize;
-				println!("New Value: 0x{new_value:X}");
+				debug!("New Value: 0x{new_value:X}");
 				unsafe
 				{
 					match q.get_cr_index()
@@ -277,7 +280,7 @@ impl VtVcpu
 					};
 				}
 			}
-			_=>println!("Unrecognized Access: {}",q.get_access_type())
+			_=>error!("Unrecognized Access: {}",q.get_access_type())
 		}
 		panic!("CR-Access Exit is not implemented!");
 	}
@@ -350,15 +353,15 @@ impl VtVcpu
 		let gpa=unsafe{vmread64(GUEST_PHYSICAL_ADDRESS)}.unwrap();
 		let hv:&mut VtHypervisor=unsafe{&mut *self.hypervisor.cast()};
 		let p=unsafe{&mut *hv.eptm.locate_pdpte(gpa)};
-		println!("Dumping EPT Page Entries for EPT Misconfiguration...");
-		println!("EPT PDPTE Entry: 0x{:016X}",p.0);
+		error!("Dumping EPT Page Entries for EPT Misconfiguration...");
+		error!("EPT PDPTE Entry: 0x{:016X}",p.0);
 		if let Some(p)=hv.eptm.locate_pde(gpa)
 		{
-			println!("EPT PDE Entry: 0x{:016X}",unsafe{(*p).0});
+			error!("EPT PDE Entry: 0x{:016X}",unsafe{(*p).0});
 		}
 		if let Some(p)=hv.eptm.locate_pte(gpa)
 		{
-			println!("EPT PTE Entry: 0x{:016X}",unsafe{(*p).0});
+			error!("EPT PTE Entry: 0x{:016X}",unsafe{(*p).0});
 		}
 		panic!("EPT Misconfiguration happened! GPA=0x{gpa:X}");
 	}
@@ -367,7 +370,7 @@ impl VtVcpu
 	{
 		let index=(gpr_state.rcx&0xFFFFFFFF) as u32;
 		let value=(gpr_state.rax&0xFFFFFFFF)|(gpr_state.rdx&0xFFFFFFFF00000000);
-		println!("The xsetbv instruction is intercepted! Index={index}, Value=0x{value:16X}");
+		debug!("The xsetbv instruction is intercepted! Index={index}, Value=0x{value:16X}");
 		unsafe
 		{
 			_xsetbv(index,value);

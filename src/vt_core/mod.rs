@@ -11,12 +11,13 @@
  */
 
 use alloc::vec::Vec;
-use ept::VtEptManager;
 use core::{ffi::c_void, ptr::null_mut};
 
 use ia32::{cpuid::CPUID_VMX, msr::*};
 use vmcs::*;
-use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}}, HypervisorEssentials, *};
+use ept::VtEptManager;
+use crate::*;
+use xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
@@ -375,7 +376,7 @@ impl VtVcpu
 		self.setup_msr_auto_list(&state);
 		self.setup_host_state_area(&state);
 		self.setup_control_area();
-		println!("Processor {} completed setting up VMCS!",self.vcpu_id);
+		info!("Processor {} completed setting up VMCS!",self.vcpu_id);
 		// xpf_core::asm::misc::int3();
 		let r=unsafe{vmlaunch()};
 		panic!("Failed to launch VM! {r}");
@@ -383,7 +384,7 @@ impl VtVcpu
 
 	fn subvert(&mut self)
 	{
-		sysdprintln!("Processor {} entered subversion routine!",self.vcpu_id);
+		info!("Processor {} entered subversion routine!",self.vcpu_id);
 		let vt_basic=VmxBasicMsr::read();
 		// Setup Revision Identifier.
 		unsafe
@@ -415,11 +416,11 @@ impl VtVcpu
 						{
 							VmxResult::Ok(_)=>
 							{
-								sysdprintln!("VMCS has been loaded to CPU successfully!");
+								info!("VMCS has been loaded to CPU {} successfully!",self.vcpu_id);
 								unsafe
 								{
 									nvc_vt_subvert_processor_a(self as *mut Self);
-									sysdprintln!("Processor {} completed subversion!",self.vcpu_id);
+									info!("Processor {} completed subversion!",self.vcpu_id);
 								}
 							}
 							r=>panic!("Failed to execute vmptrld! Reason: {r}")
@@ -443,7 +444,7 @@ impl VtVcpu
 			// Clear CR4.VMXE bit.
 			let cr4=read_cr4()&!CR4_VMXE;
 			write_cr4(cr4);
-			sysdprintln!("Processor {} completed restoration!",self.vcpu_id);
+			info!("Processor {} completed restoration!",self.vcpu_id);
 		}
 	}
 }
@@ -548,12 +549,12 @@ impl HypervisorEssentials for VtHypervisor
 			($($arg:tt)*) =>
 			{
 				{
-					print!("{}\n",format_args!($($arg)*));
+					error!("{}",format_args!($($arg)*));
 					return NOIR_INSUFFICIENT_RESOURCES;
 				}
 			};
 		}
-		sysdprintln!("Subverting the system with Intel VT-x...");
+		info!("Subverting the system with Intel VT-x...");
 		// Allocate various stuff. Note that they are required to be raw-pointer.
 		match alloc_contd_pages(PAGE_SIZE)
 		{
@@ -569,7 +570,11 @@ impl HypervisorEssentials for VtHypervisor
 							.byte_add(if index>=0xC0000000 {0x400} else {0});
 						let i=if (0..0x2000).contains(&index) {index}
 							else if (0xC0000000..0xC0002000).contains(&index) {index-0xC0000000}
-							else {panic!("MSR (0x{index:X}) can't be intercepted via bitmap!")} as usize;
+							else
+							{
+								warn!("MSR (0x{index:X}) can't be intercepted via bitmap!");
+								return;
+							} as usize;
 						set_bitmap(bmp,0x400,i);
 					};
 					// Intercept accesses to the microcode updater.
@@ -646,10 +651,10 @@ impl HypervisorEssentials for VtHypervisor
 		unsafe
 		{
 			nvc_store_image_info(&raw mut self.image_base,&raw mut self.image_size);
-			sysdprintln!("Base: {:p}, Size: 0x{:X}",self.image_base,self.image_size);
+			debug!("Base: {:p}, Size: 0x{:X}",self.image_base,self.image_size);
 			noir_generic_call(nvc_vt_subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
-		sysdprintln!("System Subversion Completed!");
+		info!("System Subversion Completed!");
 		NOIR_SUCCESS
 	}
 
@@ -659,7 +664,7 @@ impl HypervisorEssentials for VtHypervisor
 		{
 			noir_generic_call(nvc_vt_restore_processor_thunk,self as *mut Self as *mut c_void);
 		}
-		sysdprintln!("System Restoration Completed!");
+		info!("System Restoration Completed!");
 		NOIR_SUCCESS
 	}
 }
@@ -668,7 +673,7 @@ extern "C" fn nvc_vt_subvert_processor_thunk(context:*mut c_void,processor_id:u3
 {
 	let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
 	let vp=hv.vcpus.get_mut(processor_id as usize);
-	sysdprintln!("Subverting processor {} with Intel VT-x...",processor_id);
+	info!("Subverting processor {} with Intel VT-x...",processor_id);
 	match vp
 	{
 		Some(vcpu)=>vcpu.subvert(),
@@ -681,7 +686,7 @@ extern "C" fn nvc_vt_restore_processor_thunk(context:*mut c_void,processor_id:u3
 {
 	let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
 	let vp=hv.vcpus.get_mut(processor_id as usize);
-	sysdprintln!("Processor {processor_id} entered restoration routine...");
+	info!("Processor {processor_id} entered restoration routine...");
 	match vp
 	{
 		Some(vcpu)=>vcpu.restore(),

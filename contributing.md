@@ -11,10 +11,15 @@ Netizen Name, [E-Mail Address] \
 By saying Netizen Name, it refers to the name you use in GitHub. Your real name can also be accepted. If you prefer the name you use in other forums, you may state down that forum website. \
 Starting from your first contribution, you, nonetheless, cannot use other names on your future contribution, unless you contribute through another account.
 
+## Pull-Requests
+To contribute, you have to fork this repository, make your patches, then open a Pull-Request. \
+Each commit of your patch should be able to be built for all targets. If you pushed your commits without realizing, you may use `git rebase` command to amend them and then do a `git push -f`. For example, you may squash the "fix" commit into its previous commit.
+
 ## Coding Conventions
-- In VT-Core, SVM-Core and MSHV-Core, use lower-case when coding.
-- For platform-specific coding, use the style specific to that platform.
-- No spaces unless it significantly affects reading.
+For Rust codes, consult [NoirVisor's coding style in Rust](doc/rust.md#coding-style). \
+For C codes, you may follow the platform-specific coding style.
+
+In future, NoirVisor may deploy experimental `.clang-format` and `rustfmt.toml` files.
 
 ## Raising Issues
 Before you start raising the issue, search over the issue list. If there is already someone raised the issue, you may give additional comments. \

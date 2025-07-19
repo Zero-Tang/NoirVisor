@@ -22,12 +22,14 @@ pub mod cvm_core;
 pub mod mshv_core;
 pub mod disasm;
 
-use alloc::boxed::Box;
-use vt_core::VtHypervisor;
 use core::str;
+use alloc::boxed::Box;
+
+use log::*;
 
 use xpf_core::{asm::cpuid::cpuid2, dlalloc::set_alloc_checker, nvstatus::*, x86::cpuid::*, nvbdk::PAGE_SIZE};
 pub use xpf_core::debug::*;
+use vt_core::VtHypervisor;
 use svm_core::SvmHypervisor;
 
 // Limit stack size to 64KiB. Should be enough for most circumstances.
@@ -116,7 +118,7 @@ impl ProcessorManufacturer
 			}
 			Err(e)=>
 			{
-				println!("Encountered UTF-8 Exception! Reason: {}",e);
+				warn!("Encountered UTF-8 Exception! Reason: {e}");
 				Self::Unknown
 			}
 		}
@@ -184,7 +186,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 {
 	use ProcessorManufacturer::*;
 	// Subvert the system.
-	println!("Subverting the system...");
+	info!("Subverting the system...");
 	let mut vstr_raw:[u8;12]=[0;12];
 	let hv:Option<Box<dyn HypervisorEssentials>>=match ProcessorManufacturer::query(&mut vstr_raw)
 	{

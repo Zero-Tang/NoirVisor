@@ -24,6 +24,7 @@ members = ["crates/loadefi","crates/nvcvm"]
 paste = "1.0.15"
 nvcvm = {path = "crates/nvcvm"}
 spin = "0.10.0"
+log = "0.4.27"
 
 [dependencies.portable-dlmalloc]
 version = "0.3.2"

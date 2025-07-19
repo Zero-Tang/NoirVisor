@@ -13,6 +13,8 @@
 use core::{cmp::Ordering, slice};
 
 use paste::paste;
+use log::*;
+
 use crate::{svm_core::iommu::SvmIommuManager, xpf_core::{dlalloc::{alloc_contd_pages, free_contd_pages}, nvbdk::*}, *};
 
 /// ## SvmIommuPde
@@ -88,7 +90,7 @@ impl SvmIommuPmlManager
 			Some(md)=>
 			{
 				let pte_p:*mut SvmIommuPte=md.virt.cast();
-				println!("Allocated PML at {pte_p:p} with page-size of 0x{page_size:X}...");
+				debug!("Allocated PML at {pte_p:p} with page-size of 0x{page_size:X}...");
 				for i in 0..512
 				{
 					unsafe{pte_p.add(i as usize).write(SvmIommuPte::new_pte(gpa_base+(page_size as u64)*i,true,true))};

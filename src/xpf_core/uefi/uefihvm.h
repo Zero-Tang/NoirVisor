@@ -67,5 +67,6 @@ UINT32 nvc_build_hypervisor();
 void nvc_teardown_hypervisor();
 UINT32 nvc_acpi_initialize();
 UINT32 nvc_hpet_initialize();
+BOOLEAN nvc_logger_initialize(UINT32 Level);
 UINT32 noir_configure_serial_port_debugger(UINT8 PortNumber,UINT16 PortBase,UINT32 BaudRate);
-UINT32 noir_configure_qemu_debug_console(UINT16 port);
+UINT32 noir_configure_qemu_debug_console(UINT16 Port);

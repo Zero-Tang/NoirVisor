@@ -26,25 +26,16 @@ use xpf_core::{x86::{interrupts::*, rflags::*}, nvbdk::SegmentRegister};
 	((attrib&0xF00)<<4)|(attrib&0xFF)
 }
 
-#[inline] pub fn svm_msrpm_bit(index:u32,operation:bool)->u32
+#[inline] pub fn svm_msrpm_bit(index:u32,operation:bool)->Option<u32>
 {
-	let base=if index<0x2000
+	let base=match index
 	{
-		index<<1
-	}
-	else if (0xC0000000..0xC0002000).contains(&index)
-	{
-		((index-0xC0000000)<<1)+0x4000
-	}
-	else if (0xC0010000..0xC0012000).contains(&index)
-	{
-		((index-0xC0010000)<<1)+0x8000
-	}
-	else
-	{
-		panic!("Uncovered MSR Range 0x{:X}!",index)
+		0..0x2000=>Some(index<<1),
+		0xC0000000..0xC0002000=>Some(((index-0xC0000000)<<1)+0x4000),
+		0xC0010000..0xC0012000=>Some(((index-0xC0010000)<<1)+0x8000),
+		_=>None
 	};
-	base+if operation {1} else {0}
+	base.map(|x| x+if operation {1} else {0})
 }
 
 /// # Safety

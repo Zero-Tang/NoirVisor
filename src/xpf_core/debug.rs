@@ -11,6 +11,7 @@
  */
 
 use iced_x86::*;
+use log::*;
 use spin::Mutex;
 use core::{cell::LazyCell, fmt, str};
 use alloc::boxed::Box;
@@ -19,7 +20,7 @@ use qemu_debugcon::*;
 use serial::*;
 use unknown::*;
 
-use crate::xpf_core::nvstatus::{NOIR_SUCCESS,Status};
+use crate::{xpf_core::nvstatus::{NOIR_SUCCESS,Status},print,println,sysdprint,sysdprintln};
 
 mod qemu_debugcon;
 #[allow(dead_code)] mod serial;
@@ -35,6 +36,63 @@ unsafe extern "C"
 	/// The `maximum_length` specifies the maximum size of the `string`. \
 	/// If the `string` contains a null-terminator `\0`, the output will stop there.
 	fn noir_system_debugger_write(string:*const u8,maximum_length:usize);
+}
+
+struct InternalLogger;
+
+impl InternalLogger
+{
+	const LEVEL_CHAR:[char;6]=[' ','E','W','I','D','T'];
+	const LEVEL_COLOR:[u8;6]=[39,31,33,32,94,36];
+}
+
+impl Log for InternalLogger
+{
+	fn enabled(&self, _metadata: &Metadata) -> bool
+	{
+		true
+	}
+
+	fn flush(&self)
+	{
+		// We currently do not implement asynchronous logging.
+		// Therefore, leave the implementation empty.
+	}
+
+	fn log(&self, record: &Record)
+	{
+		let level=InternalLogger::LEVEL_CHAR[record.level() as usize];
+		let color=InternalLogger::LEVEL_COLOR[record.level() as usize];
+		println!("\x1b[{color}m{:28} @{:4} |{level}|\x1b[39m {}",record.file().unwrap(),record.line().unwrap(),record.args());
+	}
+}
+
+static INTERNAL_LOGGER:InternalLogger=InternalLogger;
+
+#[unsafe(no_mangle)] extern "C" fn nvc_logger_initialize(level:u32)->bool
+{
+	let lv:Option<LevelFilter>=match level
+	{
+		0=>Some(LevelFilter::Off),
+		1=>Some(LevelFilter::Error),
+		2=>Some(LevelFilter::Warn),
+		3=>Some(LevelFilter::Info),
+		4=>Some(LevelFilter::Debug),
+		5=>Some(LevelFilter::Trace),
+		_=>None
+	};
+	let Some(level)=lv else
+	{
+		sysdprintln!("Logger level {level} is unknown! It must be between 0-5 (0 and 5 included)!");
+		return false;
+	};
+	let r=set_logger(&INTERNAL_LOGGER);
+	match &r
+	{
+		Ok(_)=>set_max_level(level),
+		Err(e)=>sysdprintln!("Failed to set logger! Reason: {e}")
+	};
+	r.is_ok()
 }
 
 // We need to implement a formatter without alloc!
@@ -109,7 +167,15 @@ static DEBUGGER:Mutex<LazyCell<Box<dyn DebuggerBackend>>>=Mutex::new(
 		|| match unsafe{DEBUGGER_CONFIG}
 		{
 			DebuggerConfig::QemuDebugCon(port)=>Box::new(QemuDebugConDebugger::new(port)),
-			DebuggerConfig::Serial(port,baud_rate)=>Box::new(SerialPort::new(port,baud_rate).unwrap()),
+			DebuggerConfig::Serial(port,baud_rate)=>match SerialPort::new(port,baud_rate)
+			{
+				Some(serial)=>Box::new(serial),
+				None=>
+				{
+					sysdprintln!("Failed to initialize serial port console!");
+					Box::new(UnknownDebugger)
+				}
+			}
 			DebuggerConfig::Unknown=>Box::new(UnknownDebugger)
 		}
 	)

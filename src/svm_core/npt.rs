@@ -13,6 +13,7 @@
 use core::{fmt::Display,ffi::c_void};
 use alloc::vec::Vec;
 
+use log::*;
 use paste::paste;
 
 use crate::*;
@@ -196,14 +197,14 @@ impl SvmNptManager
 			Some(md)=>self.pml4e=md,
 			None=>panic!("Failed to allocate PML4E!")
 		}
-		println!("PML4E is allocated at {:p}",self.pml4e.virt);
+		debug!("PML4E is allocated at {:p}",self.pml4e.virt);
 		let pdpte=alloc_2mb_page();
 		match pdpte
 		{
 			Some(md)=>self.pdpte=md,
 			None=>panic!("Failed to allocate PDPTE!")
 		}
-		println!("PDPTE is allocated at {:p}",self.pdpte.virt);
+		debug!("PDPTE is allocated at {:p}",self.pdpte.virt);
 		for i in 0..512
 		{
 			for j in 0..512
@@ -269,7 +270,7 @@ impl SvmNptManager
 							pde_array.add(i).write(new_pde);
 						}
 					}
-					println!("Splitted PDPTE Entry: {:p} for GPA 0x{:016X}",pdpte_p,gpa);
+					debug!("Splitted PDPTE Entry: {pdpte_p:p} for GPA 0x{gpa:016X}");
 					pdpte_p.set_page_size(false);
 					pdpte_p.set_pde(page_count(md.phys));
 					self.pde.push(pde_d);
@@ -344,7 +345,7 @@ impl SvmNptManager
 								pte_array.add(i).write(new_pte);
 							}
 						}
-						println!("Splitted PDE Entry: {:p} for GPA 0x{:016X}",pde_p,gpa);
+						debug!("Splitted PDE Entry: {pde_p:p} for GPA 0x{gpa:016X}");
 						unsafe
 						{
 							(*pde_p).set_page_size(false);
@@ -353,7 +354,7 @@ impl SvmNptManager
 						self.pte.push(pte_d);
 					}
 				}
-				None=>panic!("Failed to split PDE while allocating PDE! GPA=0x{:016X}",gpa)
+				None=>panic!("Failed to split PDE while allocating PDE! GPA=0x{gpa:016X}")
 			}
 		}
 	}
@@ -396,7 +397,7 @@ impl SvmNptManager
 		{
 			panic!("While enumerating allocated large pages, Page 0x{:016X} does not have exactly 2MiB size! (0x{:X})",start,length);
 		}
-		println!("Protecting page range 0x{:X} to 0x{:X}...",start,start+length);
+		debug!("Protecting page range 0x{:X} to 0x{:X}...",start,start+length);
 		s.update_pde(start,start,true,false,false,true);
 	}
 

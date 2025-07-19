@@ -95,7 +95,6 @@ def main():
 			sdk_ver=os.environ["WindowsTargetPlatformVersion"]
 		msvc_path=os.environ["VCToolsInstallDir"]
 		inc_path=os.path.join(sdk_path,"Include",sdk_ver)
-		print(inc_path)
 		lib_path=os.path.join(sdk_path,"Lib",sdk_ver)
 		pl=Pipeline(config,optimizer_enabled,extra_vars={"ddkpath":msvc_path,"incpath":inc_path,"libpath":lib_path})
 		pl.run()

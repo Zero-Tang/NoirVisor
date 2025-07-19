@@ -104,15 +104,15 @@ nvc_svm_subvert_processor_a proc frame
 	push rcx
 	.pushreg rcx
 	mov rcx,qword ptr[rcx+stacktop_offset_vcpu_ptr]
-	sub rsp,20h
-	.allocstack 20h
+	sub rsp,28h
+	.allocstack 28h
 	; First parameter is in rcx - vcpu
 	; Second parameter is in rdx - guest rsp
 	.endprolog
 	call nvc_svm_subvert_processor_i
 	; Now, rax stores the physical address of VMCB.
 	; Switch stack pointer to host stack now.
-	mov rsp,qword ptr[rsp+20h]
+	mov rsp,qword ptr[rsp+28h]
 	; Stack is switched, launch guest now.
 	; At this moment, the vmrun instruction
 	; behaves like vmlaunch in Intel VT-x.
@@ -125,7 +125,7 @@ nvc_svm_subvert_processor_a endp
 
 nvc_svm_guest_start proc frame
 
-	.allocstack 0A8h
+	.allocstack 0B0h
 	.endprolog
 	; At this moment, Guest is successfully launched.
 	; Host rsp is saved and Guest rsp is switched

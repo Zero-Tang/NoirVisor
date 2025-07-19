@@ -345,6 +345,7 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 {
 	NoirPrintCompilerVersion();
 	NoirConfigureInternalDebugger();
+	NoirInitializeLogger();
 	NTSTATUS st=KeExpandKernelStackAndCallout(NoirInitializeWithExpandedStackCallout,NULL,MAXIMUM_EXPANSION_SIZE-PAGE_SIZE);
 	NoirDebugPrint("Initializer with Expanded Stack returned 0x%X\n",st);
 	NoirInitializeCodeIntegrity(DriverObject->DriverStart);

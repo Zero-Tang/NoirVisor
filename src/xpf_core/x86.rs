@@ -16,6 +16,7 @@ pub mod caching
     use super::msr::*;
 	use xpf_core::{asm::msr::rdmsr, nvbdk::{page_1gb_offset, page_2mb_offset, page_4kb_mult, PAGE_1GB_SIZE, PAGE_2MB_SIZE, PAGE_4KB_SIZE}};
 
+	use log::*;
 	use paste::paste;
 
 	pub const MEMORY_TYPE_UC:u8=0;
@@ -249,7 +250,7 @@ pub mod caching
 				self.var_index+=1;
 				if let Some(range)=self.source.var_mtrrs[self.var_index-1]
 				{
-					println!("Iterating Variable MTRR (Base: 0x{:016X}, Length: 0x{:016X})",range.base,range.length);
+					trace!("Iterating Variable MTRR (Base: 0x{:016X}, Length: 0x{:016X})",range.base,range.length);
 					return Some(range);
 				}
 			}
@@ -349,7 +350,7 @@ pub mod caching
 					{
 						let mtrr_base=MtrrVariableRangeBaseMsr::read(MSR_MTRR_PHYS_BASE0+i as u32);
 						self.var_mtrrs[i]=MtrrRange::from_var_mtrr(mtrr_base,mtrr_mask,pa_width);
-						println!("Detected Variable-MTRR (Base=0x{:016X}, Mask=0x{:016X})",mtrr_base.0,mtrr_mask.0);
+						trace!("Detected Variable-MTRR (Base=0x{:016X}, Mask=0x{:016X})",mtrr_base.0,mtrr_mask.0);
 					}
 				}
 				// Setup SMRR.

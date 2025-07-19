@@ -21,11 +21,11 @@ There are two generations of VM in Hyper-V.
 - For Gen 1 VMs, you may directly modify serial port settings in the settings page. 
 - For Gen 2 VMs, you should use PowerShell to set the COM Ports.
 	```PowerShell
-	Set-VMComPort -VM <VMName> -Number <Index> -Path <Pipe Name>
+	Set-VMComPort -VMName <VMName> -Number <Index> -Path <Pipe Name>
 	```
 	- The `VMName` is the name of your VM.
 	- The `Index` is the number of your COM Port. It should be either 1 or 2.
-	- The `Pipe Name` is the name of the named pipe.
+	- The `Pipe Name` is the name of the named pipe. For named pipes on local machine, it starts with `\\.\pipe\`.
 
 ### QEMU ISA Debug Console
 This method utilizes QEMU's ISA Debug Console so that NoirVisor can run inside QEMU with Linux KVM host. This method can be used in any processor context. However, only QEMU with Linux KVM is available since this is the only option to enable nested virtualization.

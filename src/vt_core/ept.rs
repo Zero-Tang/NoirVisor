@@ -11,13 +11,13 @@
  */
 
 use core::cmp::Ordering;
-
 use alloc::vec::Vec;
 
 use crate::{vt_core::ia32::msr::VmxEptVpidCapMsr, *};
 use xpf_core::{dlalloc::{alloc_2mb_page, alloc_contd_pages}, nvbdk::*, x86::caching::*};
 
 use paste::paste;
+use log::*;
 
 macro_rules! derive_common_ept_fields
 {
@@ -221,7 +221,7 @@ impl VtEptManager
 		if let Err(i)=self.pde.binary_search_by(|d| d.cmp_by_addr(gpa,PAGE_1GB_SIZE))
 		{
 			// This 1GiB page has not been described yet.
-			println!("Splitting PDPTE for GPA 0x{gpa:X}...");
+			debug!("Splitting PDPTE for GPA 0x{gpa:X}...");
 			match alloc_contd_pages(PAGE_SIZE)
 			{
 				Some(md)=>
@@ -276,7 +276,7 @@ impl VtEptManager
 		if let Err(i)=self.pte.binary_search_by(|d| d.cmp_by_addr(gpa,PAGE_2MB_SIZE))
 		{
 			// This 2MiB page has not been described yet.
-			println!("Splitting PDE for GPA 0x{gpa:X}...");
+			debug!("Splitting PDE for GPA 0x{gpa:X}...");
 			match alloc_contd_pages(PAGE_SIZE)
 			{
 				Some(md)=>
@@ -423,13 +423,13 @@ impl VtEptManager
 			Some(md)=>self.pml4e=md,
 			None=>panic!("Failed to allocate PML4E")
 		}
-		println!("PML4E is allocated at {:p}",self.pml4e.virt);
+		debug!("PML4E is allocated at {:p}",self.pml4e.virt);
 		match alloc_2mb_page()
 		{
 			Some(md)=>self.pdpte=md,
 			None=>panic!("Failed to allocate PDPTE")
 		}
-		println!("PDPTE is allocated at {:p}",self.pdpte.virt);
+		debug!("PDPTE is allocated at {:p}",self.pdpte.virt);
 		for i in 0..PAGE_TABLE_ENTRIES64
 		{
 			for j in 0..PAGE_TABLE_ENTRIES64
@@ -449,11 +449,11 @@ impl VtEptManager
 				pml4e_p.write(pml4e_v);
 			}
 		}
-		if self.ept_cap.get_support_1gb_paging()
+		if !self.ept_cap.get_support_1gb_paging()
 		{
 			// 1GiB-paging is unsupported in this system. Split all PDPTEs in the lowest 512GiB.
 			// Nested-Virtualization provided by VMware doesn't support 1GiB Paging.
-			sysdprintln!("This system does not support EPT 1GiB-paging!");
+			warn!("This system does not support EPT 1GiB-paging!");
 			for i in 0..PAGE_TABLE_ENTRIES64
 			{
 				self.split_pdpte(page_1gb_mult(i as u64));

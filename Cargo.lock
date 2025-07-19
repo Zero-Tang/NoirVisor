@@ -81,6 +81,7 @@ name = "nvcore"
 version = "0.1.0"
 dependencies = [
  "iced-x86",
+ "log",
  "nvcvm",
  "paste",
  "portable-dlmalloc",

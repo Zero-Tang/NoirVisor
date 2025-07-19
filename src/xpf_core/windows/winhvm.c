@@ -287,6 +287,32 @@ void NoirAcpiFinalize()
 	NoirFreeNonPagedMemory(nvc_acpi_get_rsdt_ptr());
 }
 
+BOOL NoirInitializeLogger()
+{
+	ULONG Level=5;
+	HANDLE hKey=NULL;
+	UNICODE_STRING uniKeyName=RTL_CONSTANT_STRING(L"\\Registry\\Machine\\Software\\Zero-Tang\\NoirVisor");
+	OBJECT_ATTRIBUTES oa;
+	InitializeObjectAttributes(&oa,&uniKeyName,OBJ_CASE_INSENSITIVE|OBJ_KERNEL_HANDLE,NULL,NULL);
+	NTSTATUS st=ZwOpenKey(&hKey,GENERIC_READ,&oa);
+	if(NT_SUCCESS(st))
+	{
+		UNICODE_STRING uniKvName=RTL_CONSTANT_STRING(L"LogLevel");
+		ULONG RetLen=0;
+		BYTE Buffer[sizeof(KEY_VALUE_PARTIAL_INFORMATION)+sizeof(ULONG32)];
+		st=ZwQueryValueKey(hKey,&uniKvName,KeyValuePartialInformation,Buffer,sizeof(Buffer),&RetLen);
+		if(NT_SUCCESS(st))
+		{
+			PKEY_VALUE_PARTIAL_INFORMATION KvPartInf=(PKEY_VALUE_PARTIAL_INFORMATION)Buffer;
+			Level=*(PULONG)KvPartInf->Data;
+		}
+		else
+			NoirDebugPrint("Failed to query LogLevel! Status=0x%08X, Returned-Length: %u\n",st,RetLen);
+		ZwClose(hKey);
+	}
+	return nvc_logger_initialize(Level);
+}
+
 NTSTATUS NoirQueryEnabledFeaturesInSystem(OUT PULONG64 Features)
 {
 	// Setup default values. Hooking becomes a very unstable feature in Windows with post-2018 updates!

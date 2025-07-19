@@ -26,10 +26,13 @@ Rust codes will be managed with the Cargo package manager. They will be compiled
 NoirVisor uses Rust 2024 standard.
 
 ## Allocator
-NoirVisor uses [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc) as the global allocator.
+NoirVisor uses [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc) as the global allocator. You should avoid using allocators while in VM-Exit handlers!
 
 ## Automated Testing
 NoirVisor uses `cargo test` suite to test NoirVisor. However, system subversion and restoration are not currently included in tests yet.
+
+## Logging
+While we do provide macros like `print!` and `println!`, please use `error!`, `warn!`, `info!`, `debug!` and `trace!` macro provided by [the `log` crate](https://docs.rs/log/latest/log/).
 
 ## Coding Style
 The coding style for NoirVisor in Rust is probably drastically different than most projects you have seen:

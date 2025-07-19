@@ -192,6 +192,18 @@ BOOLEAN NoirHpetInitialize()
 	return nvc_hpet_initialize()==0;
 }
 
+BOOLEAN NoirInitializeLogger()
+{
+	UINT32 Level,Type;
+	EFI_STATUS st=NoirGetConfigurationRecord("LogLevel",&Type,&Level,sizeof(Level),NULL);
+	if(st!=EFI_SUCCESS)
+	{
+		Print(L"No logger level is specified, using Trace level!\n");
+		Level=5;
+	}
+	return nvc_logger_initialize(Level);
+}
+
 void NoirTestCodeIntegrity(IN VOID* ImageBase)
 {
 	// Try to write something

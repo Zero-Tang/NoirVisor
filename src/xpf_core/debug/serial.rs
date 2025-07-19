@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{sync::atomic::*,arch::asm};
+use core::arch::asm;
 
 use crate::xpf_core::asm::io::{in_byte,out_byte};
 use super::DebuggerBackend;
@@ -30,8 +30,7 @@ const COM_PORT_OFFSET_SCRATCH:u16=7;
 pub struct SerialPort
 {
 	// Basic Configuration
-	port_base:u16,
-	lock:AtomicBool
+	port_base:u16
 }
 
 impl DebuggerBackend for SerialPort
@@ -76,8 +75,8 @@ impl SerialPort
 			out_byte(port_base+COM_PORT_OFFSET_BAUDRATE_MSB,0);
 			// Disable DLAB. Use 8-bit data, no parity, one stop bit.
 			out_byte(port_base+COM_PORT_OFFSET_LINE_CTRL,3);
-			// Enable FIFO, clear them, and use 14-byte interrupt threshold.
-			out_byte(port_base+COM_PORT_OFFSET_FIFO_CTRL,0xC7);
+			// Enable FIFO, clear them, and use 1-byte interrupt threshold.
+			out_byte(port_base+COM_PORT_OFFSET_FIFO_CTRL,0x47);
 			// Enable loopback mode.
 			out_byte(port_base+COM_PORT_OFFSET_MODEM_CTRL,0x1E);
 			// Test serial port.
@@ -90,8 +89,7 @@ impl SerialPort
 				(
 					Self
 					{
-						port_base,
-						lock:AtomicBool::new(false)
+						port_base
 					}
 				)
 			}

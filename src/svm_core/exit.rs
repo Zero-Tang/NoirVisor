@@ -153,7 +153,7 @@ impl SvmVcpu
 			}
 			_=>
 			{
-				println!("Unexpected rdmsr is intercepted! Index=0x{:X}",index);
+				warn!("Unexpected rdmsr is intercepted! Index=0x{index:X}");
 				unsafe
 				{
 					inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
@@ -239,7 +239,7 @@ impl SvmVcpu
 			}
 			_=>
 			{
-				println!("Unexpected wrmsr is intercepted! Index=0x{:X}, Value=0x{:016X}",index,value);
+				warn!("Unexpected wrmsr is intercepted! Index=0x{index:X}, Value=0x{value:016X}");
 				unsafe
 				{
 					inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
@@ -358,13 +358,13 @@ impl SvmVcpu
 				}
 				else
 				{
-					println!("Invalid Call to restore system! rip=0x{grip:016X}");
+					warn!("Invalid Call to restore system! rip=0x{grip:016X}");
 					unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 				}
 			}
 			_=>
 			{
-				println!("Unknown Hypercall Code 0x{vmmcall_func:X} is called!");
+				warn!("Unknown Hypercall Code 0x{vmmcall_func:X} is called!");
 				unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 			}
 		}
@@ -372,31 +372,31 @@ impl SvmVcpu
 
 	fn handle_vmload(&mut self,gpr_state:&mut GprState)
 	{
-		println!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",gpr_state.rax);
+		error!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",gpr_state.rax);
 		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
 	fn handle_vmsave(&mut self,gpr_state:&mut GprState)
 	{
-		println!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",gpr_state.rax);
+		error!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",gpr_state.rax);
 		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
 	fn handle_stgi(&mut self,_gpr_state:&mut GprState)
 	{
-		println!("Nested virtualization is unsupported!");
+		error!("Nested virtualization is unsupported!");
 		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
 	fn handle_clgi(&mut self,_gpr_state:&mut GprState)
 	{
-		println!("Nested virtualization is unsupported!");
+		error!("Nested virtualization is unsupported!");
 		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
 	fn handle_skinit(&mut self,_gpr_state:&mut GprState)
 	{
-		println!("Nested virtualization is unsupported!");
+		error!("Nested virtualization is unsupported!");
 		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
@@ -409,7 +409,7 @@ impl SvmVcpu
 		// Check if this #NPF is due to Code Integrity violation.
 		if is_ci_phys_page(gpa)
 		{
-			println!("Intercepted #NPF for GPA=0x{gpa:016X}! rip=0x{rip:016X} rsp=0x{:016X}, Fault-Reason: {fault}",unsafe{vmread::<u64>(vmcb,GUEST_RSP)});
+			error!("Intercepted #NPF for GPA=0x{gpa:016X}! rip=0x{rip:016X} rsp=0x{:016X}, Fault-Reason: {fault}",unsafe{vmread::<u64>(vmcb,GUEST_RSP)});
 			panic!("CI-fault is intercepted!");
 		}
 		else if !fault.get_code_read()

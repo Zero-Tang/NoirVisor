@@ -12,8 +12,9 @@
 
 use core::{ptr::null_mut,sync::atomic::{AtomicU64, AtomicU32, Ordering}};
 
+use log::*;
+
 use crate::xpf_core::{asm::io::mmio_read, nvstatus::*};
-use crate::{print,println,dbg_print};
 use super::acpi::{search_acpi_table,tables::{AcpiSystemDescriptorSignature,HighPrecisionEventTimerTable}};
 
 const HPET_GENRERAL_COUNTER_CLOCK_PERIOD:usize=0x4;
@@ -38,7 +39,7 @@ pub fn hpet_read_counter()->u64
 	search_acpi_table(AcpiSystemDescriptorSignature::HIGH_PRECISION_EVENT_TIMER_TABLE,|x| { hpet_acpi_ptr=x.cast(); false});
 	if hpet_acpi_ptr.is_null()
 	{
-		println!("No HPET Hardware is detected!");
+		warn!("No HPET Hardware is detected!");
 		NOIR_ACPI_NO_SUCH_TABLE
 	}
 	else

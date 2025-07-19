@@ -12,8 +12,9 @@
 
 use core::ffi::c_void;
 
+use log::*;
+
 use crate::xpf_core::{asm::{crdr::*, seg::*}, nvbdk::*, dlalloc::{alloc_contd_pages, free_contd_pages}, x86::{descriptors::*, interrupts::*, paging::*}};
-use crate::*;
 
 pub struct HostSystem
 {
@@ -26,7 +27,7 @@ impl HostSystem
 	pub fn build()->Self
 	{
 		let cs=read_cs();
-		println!("Default CS Selector: 0x{:04X}",cs);
+		debug!("Default CS Selector: 0x{cs:04X}");
 		Self
 		{
 			paging:HostPaging::default(),
@@ -104,10 +105,10 @@ impl Default for HostPaging
 			// CR3 might contain PCID. Clear it.
 			let scr3_phys=page_4kb_base(read_cr3());
 			let scr3_virt=noir_find_virt_by_phys(scr3_phys);
-			println!("System CR3 Virt: {scr3_virt:p}, Phys: 0x{scr3_phys:016X}");
+			debug!("System CR3 Virt: {scr3_virt:p}, Phys: 0x{scr3_phys:016X}");
 			memcpy(r.cr3.virt,scr3_virt,PAGE_SIZE);
 			let pml4e_v=Pml4e::new(true,true,false,false,false,r.pdpt.phys);
-			println!("PML4E Pointer: {:p}, PML4E value 0x{:016X}",pml4e_p,pml4e_v.0);
+			debug!("PML4E Pointer: {:p}, PML4E value 0x{:016X}",pml4e_p,pml4e_v.0);
 			pml4e_p.write(pml4e_v);
 		}
 		r
@@ -118,7 +119,7 @@ impl Drop for HostPaging
 {
 	fn drop(&mut self)
 	{
-		println!("Dropping Host Paging...");
+		trace!("Dropping Host Paging...");
 		if !self.cr3.virt.is_null()
 		{
 			free_contd_pages(self.cr3.virt,PAGE_SIZE*2);
@@ -246,8 +247,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Divide-Error Fault happened!");
 	}
 }
@@ -260,8 +261,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Debug Fault/Trap happened!");
 	}
 }
@@ -274,8 +275,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Breakpoint Trap happened!");
 	}
 }
@@ -288,8 +289,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Overflow Trap happened!");
 	}
 }
@@ -302,8 +303,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Bound-Range Fault happened!");
 	}
 }
@@ -316,8 +317,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Invalid-Opcode Fault happened!");
 	}
 }
@@ -330,8 +331,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Device-Not-Available Fault happened!\n{}Dumping GPR State...\n{}",*exception_frame,*gpr_state);
 	}
 }
@@ -344,8 +345,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Double-Fault Abort happened!");
 	}
 }
@@ -358,8 +359,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Invalid-TSS Fault happened!");
 	}
 }
@@ -372,8 +373,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Segment-Not-Present Fault happened!");
 	}
 }
@@ -386,8 +387,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Stack Fault happened!");
 	}
 }
@@ -400,8 +401,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("General-Protection Fault happened!");
 	}
 }
@@ -416,8 +417,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 	{
 		let cr2=read_cr2();
 		let err_code=PageFaultErrorCode::from_u32((*exception_frame).error_code);
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Page Fault happened! Virtual-Address: 0x{:016X}, Error Reason: {}",cr2,err_code);
 	}
 }
@@ -430,8 +431,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("x87 Floating-Point Exception-Pending Fault happened!");
 	}
 }
@@ -444,8 +445,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Alignment-Check Fault happened!");
 	}
 }
@@ -458,8 +459,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Machine-Check Abort happened!");
 	}
 }
@@ -472,8 +473,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("SIMD Floating-Point Fault happened!");
 	}
 }
@@ -486,8 +487,8 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 {
 	unsafe
 	{
-		print!("Dumping Exception Frame:\n{}",*exception_frame);
-		print!("Dumping GPR State:\n{}",*gpr_state);
+		error!("Dumping Exception Frame:\n{}",*exception_frame);
+		error!("Dumping GPR State:\n{}",*gpr_state);
 		panic!("Control-Protection Fault happened!");
 	}
 }

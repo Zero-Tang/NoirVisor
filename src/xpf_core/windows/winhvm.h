@@ -138,6 +138,7 @@ ULONG noir_configure_serial_port_debugger(IN BYTE PortNumber,IN USHORT PortBase,
 ULONG noir_configure_qemu_debug_console(IN USHORT Port);
 ULONG nvc_acpi_initialize();
 void nvc_acpi_finalize();
+BOOL nvc_logger_initialize(ULONG32 Level);
 PVOID nvc_acpi_get_rsdt_ptr();
 void noir_get_vendor_string(char* vendor_string);
 void noir_get_processor_name(char* processor_name);

@@ -176,6 +176,7 @@ void NoirTeardownHypervisor();
 NTSTATUS NoirConfigureInternalDebugger();
 BOOL NoirAcpiInitialize();
 void NoirAcpiFinalize();
+BOOL NoirInitializeLogger();
 ULONG NoirQueryVirtualizationSupportability();
 BOOLEAN NoirIsVirtualizationEnabled();
 void NoirLocatePsLoadedModule(IN PDRIVER_OBJECT DriverObject);

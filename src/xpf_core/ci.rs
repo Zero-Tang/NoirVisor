@@ -12,10 +12,11 @@
 
 use core::{ffi::*, slice};
 use alloc::vec::Vec;
+
 use spin::RwLock;
+use log::*;
 
-use crate::{dbg_print, print, println, xpf_core::nvbdk::page_4kb_base};
-
+use crate::xpf_core::nvbdk::page_4kb_base;
 use super::nvbdk::{bytes_to_pages, noir_get_physical_address, page_mult};
 
 pub struct CiManager
@@ -98,11 +99,11 @@ pub fn is_ci_phys_page(phys:u64)->bool
 {
 	if soft_ci
 	{
-		println!("Software-based Code-Integrity is deprecated!\nIgnoring software CI request...");
+		info!("Software-based Code-Integrity is deprecated!\nIgnoring software CI request...");
 	}
 	if !hard_ci
 	{
-		println!("Hardware-based Code-Integrity is required!");
+		warn!("Hardware-based Code-Integrity is required!");
 		false
 	}
 	else

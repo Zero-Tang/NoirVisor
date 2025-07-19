@@ -12,7 +12,8 @@
 
 use core::{ffi::c_void, slice};
 use alloc::vec::Vec;
-use mmio::DeviceTableBaseRegister;
+
+use log::*;
 use paste::paste;
 
 use acpi::{Ivhd, IvhdLarge};
@@ -20,6 +21,7 @@ use paging::{SvmIommuPmlManager, SvmIommuPte};
 use crate::{svm_core::iommu::mmio::*, xpf_core::{asm::io::{mmio_read, mmio_write}, ci::CI_MANAGER}, *};
 use drv_core::acpi::{search_acpi_table, tables::{AcpiSystemDescriptorSignature, IoVirtualizationReportingStructure}};
 use xpf_core::{nvbdk::*, nvstatus::*, ioflt::IoRegion, dlalloc::{alloc_2mb_page, alloc_contd_pages, free_contd_pages}};
+use mmio::DeviceTableBaseRegister;
 
 mod acpi;
 mod paging;
@@ -27,7 +29,7 @@ mod mmio;
 
 pub(super) fn svm_iommu_output_handler(_region:&IoRegion<u64>,address:u64,size:u64,value:*const c_void,_context:*mut c_void)
 {
-	println!("Intercepted writes to IOMMU! Address=0x{address:X}, Size: {size}");
+	debug!("Intercepted writes to IOMMU! Address=0x{address:X}, Size: {size}");
 	// Current implementation is simply pass-thru.
 	unsafe
 	{
@@ -82,7 +84,7 @@ impl SvmIommuManager
 			let end:*const u8=unsafe{ivrs.byte_add((*ivrs).header.get_length() as usize).cast()};
 			while ivd<end
 			{
-				println!("Found I/O Virtualization Definition Type 0x{:X} at {ivd:p}!",unsafe{*ivd});
+				debug!("Found I/O Virtualization Definition Type 0x{:X} at {ivd:p}!",unsafe{*ivd});
 				let len:usize=match unsafe{*ivd}
 				{
 					0x10|0x11=>
@@ -116,7 +118,7 @@ impl SvmIommuManager
 				Some(md)=>mgr.pml4e=md,
 				None=>panic!("Failed to allocate PML4E for AMD-Vi!")
 			}
-			println!("PML4E is allocated to {:p} for AMD-Vi!",mgr.pml4e.virt);
+			debug!("PML4E is allocated to {:p} for AMD-Vi!",mgr.pml4e.virt);
 			for i in 0..PAGE_TABLE_ENTRIES64
 			{
 				let pml4e_p=unsafe{mgr.pml4e.virt.cast::<SvmIommuPte>().add(i)};
@@ -131,7 +133,7 @@ impl SvmIommuManager
 				Some(md)=>mgr.device_table=md,
 				None=>panic!("Failed to allocate Device-Table for AMD-Vi!")
 			}
-			println!("Device Table is allocated to {:p} for AMD-Vi!",mgr.device_table.virt);
+			debug!("Device Table is allocated to {:p} for AMD-Vi!",mgr.device_table.virt);
 			let dev_tables:&mut [SvmIommuDeviceTableEntry]=unsafe{slice::from_raw_parts_mut(mgr.device_table.virt.cast(),0x10000)};
 			for dte in dev_tables
 			{
@@ -184,7 +186,7 @@ impl SvmIommuManager
 			let mut log_buff_reg=EventLogBaseRegister::default();
 			log_buff_reg.set_base(x.log_base.phys);
 			log_buff_reg.set_length(0x10);	// Out EventLog-Buffer has 4KiB.
-			println!("Activating IOMMU for BAR 0x{:X}...",x.bar.phys);
+			info!("Activating IOMMU for BAR 0x{:X}...",x.bar.phys);
 			unsafe
 			{
 				mmio_write(x.bar.virt.byte_add(MMIO_BASE_DEVICE_TABLE_BASE).cast(),dev_table_reg.0);
@@ -196,8 +198,8 @@ impl SvmIommuManager
 				mmio_write(x.bar.virt.byte_add(MMIO_BASE_EVENT_LOG_BUFFER_TAIL).cast(),0u64);
 				mmio_write(x.bar.virt.byte_add(MMIO_BASE_IOMMU_CONTROL_REGISTER).cast(),iommu_cr.0);
 			}
-			println!("Awaiting activation...");
-			println!("Successfully activated IOMMU for BAR 0x{:X}...",x.bar.phys);
+			info!("Awaiting activation...");
+			info!("Successfully activated IOMMU for BAR 0x{:X}...",x.bar.phys);
 
 		}
 	}
@@ -215,7 +217,7 @@ impl SvmIommuManager
 	{
 		match self.iommu_bars.binary_search_by(|x| x.bar.phys.cmp(&bar))
 		{
-			Ok(i)=>println!("IOMMU BAR 0x{bar:X} is already inserted at index {i}!"),
+			Ok(i)=>warn!("IOMMU BAR 0x{bar:X} is already inserted at index {i}!"),
 			Err(i)=>self.iommu_bars.insert(i,SvmIommuBar::new(bar))
 		}
 	}
