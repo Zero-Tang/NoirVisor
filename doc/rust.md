@@ -34,6 +34,10 @@ NoirVisor uses `cargo test` suite to test NoirVisor. However, system subversion 
 ## Logging
 While we do provide macros like `print!` and `println!`, please use `error!`, `warn!`, `info!`, `debug!` and `trace!` macro provided by [the `log` crate](https://docs.rs/log/latest/log/).
 
+## VSCode Setup
+You may add a `.vscode/settings.json` file to configure the behavior of `rust-analyzer` plugin. The `.vscode/` directory is ignored by `git` so feel free to configure however you want. \
+You would most likely want to configure the `rust-analyzer.cargo.target` variable in order to switch to either Windows or UEFI.
+
 ## Coding Style
 The coding style for NoirVisor in Rust is probably drastically different than most projects you have seen:
 

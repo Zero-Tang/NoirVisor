@@ -256,8 +256,16 @@ pub struct VmcsSegment
 {
 	unsafe
 	{
-		let mut gip=vmreadptr(GUEST_RIP).unwrap();
 		let ins_len=vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap();
+		advance_rip_manually(ins_len);
+	}
+}
+
+#[inline] pub unsafe fn advance_rip_manually(length:u32)
+{
+	unsafe
+	{
+		let mut gip=vmreadptr(GUEST_RIP).unwrap();
 		let rflags=vmread32(GUEST_RFLAGS).unwrap() as i32;
 		if _bittest(&raw const rflags,RFLAGS_TF_BIT as i32)!=0
 		{
@@ -270,7 +278,7 @@ pub struct VmcsSegment
 			interruptibility.set_blocking_by_mov_ss(false);
 			vmwrite32(GUEST_INTERRUPTIBILITY_STATE,interruptibility.0);
 		}
-		gip=gip.wrapping_add(ins_len as usize);
+		gip=gip.wrapping_add(length as usize);
 		let cs_ar=SegmentAccessRights(vmread32(GUEST_CS_ACCESS_RIGHTS).unwrap());
 		if !cs_ar.get_long_mode()
 		{

@@ -11,18 +11,21 @@
  */
 
 use alloc::vec::Vec;
+use iced_x86::MasmFormatter;
 use core::{ffi::c_void, ptr::null_mut};
 
 use ia32::{cpuid::CPUID_VMX, msr::*};
 use vmcs::*;
 use ept::VtEptManager;
 use crate::*;
+#[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 use xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
 #[allow(dead_code)] mod exit;
 #[allow(dead_code)] mod ept;
+#[allow(dead_code)] mod decode;
 
 #[repr(C)] pub struct VtStackTop
 {
@@ -38,7 +41,7 @@ use xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::
 	pub flags:u32
 }
 
-#[repr(C)] pub struct VtVcpu
+pub struct VtVcpu
 {
 	pub vmcs:MemoryDescriptor,
 	pub vmxon:MemoryDescriptor,
@@ -53,6 +56,9 @@ use xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::
 	pub host_cpu:HostProcessor,
 	pub msr_auto_host:[VmxMsrAutoItem;5],
 	pub msr_auto_guest:[VmxMsrAutoItem;5],
+	// Always use this member to format the mnemonic of an instruction.
+	// Do not use `MasmFormatter::new()` on your own because it will cause runtime allocation!
+	pub disasm_fmter:MasmFormatter
 }
 
 impl Default for VtVcpu
@@ -73,13 +79,15 @@ impl Default for VtVcpu
 			x2apic_id:0,
 			host_cpu:HostProcessor::default(),
 			msr_auto_host:[VmxMsrAutoItem::default();5],
-			msr_auto_guest:[VmxMsrAutoItem::default();5]
+			msr_auto_guest:[VmxMsrAutoItem::default();5],
+			disasm_fmter:MasmFormatter::new()
 		}
 	}
 }
 
 unsafe extern "C"
 {
+	#[allow(improper_ctypes)]
 	fn nvc_vt_subvert_processor_a(stack:*mut VtVcpu);
 	fn nvc_vt_exit_handler_a();
 	fn nvc_vt_guest_start();
@@ -449,7 +457,7 @@ impl VtVcpu
 	}
 }
 
-#[repr(C)] pub struct VtHypervisor
+pub struct VtHypervisor
 {
 	pub vcpus:Vec<VtVcpu>,
 	pub msr_bitmap:MemoryDescriptor,
@@ -461,7 +469,18 @@ impl VtVcpu
 	pub mmio_space:IoAddressSpace<u64>,
 	pub image_base:*mut c_void,
 	pub image_size:u32,
-	pub features:EnabledFeatures
+	pub features:EnabledFeatures,
+	#[cfg(windows)] pub mshvcall_forwarder:Option<MshvCallForwarder>
+}
+
+impl VtHypervisor
+{
+	pub fn is_rip_from_hypervisor(&self,rip:usize)->bool
+	{
+		let start=self.image_base as usize;
+		let end=start+self.image_size as usize;
+		(start..end).contains(&rip)
+	}
 }
 
 impl Default for VtHypervisor
@@ -480,7 +499,8 @@ impl Default for VtHypervisor
 			mmio_space:IoAddressSpace{regions:Vec::new()},
 			image_base:null_mut(),
 			image_size:0,
-			features:EnabledFeatures::get()
+			features:EnabledFeatures::get(),
+			#[cfg(windows)] mshvcall_forwarder:MshvCallForwarder::new()
 		}
 	}
 }
@@ -648,6 +668,8 @@ impl HypervisorEssentials for VtHypervisor
 		}
 		// Initialize EPT.
 		self.eptm.build_identity_map();
+		self.eptm.protect_allocated_pages();
+		self.eptm.protect_ci();
 		unsafe
 		{
 			nvc_store_image_info(&raw mut self.image_base,&raw mut self.image_size);
@@ -673,7 +695,7 @@ extern "C" fn nvc_vt_subvert_processor_thunk(context:*mut c_void,processor_id:u3
 {
 	let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
 	let vp=hv.vcpus.get_mut(processor_id as usize);
-	info!("Subverting processor {} with Intel VT-x...",processor_id);
+	info!("Subverting processor {processor_id} with Intel VT-x...");
 	match vp
 	{
 		Some(vcpu)=>vcpu.subvert(),

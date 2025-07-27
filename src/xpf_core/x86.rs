@@ -383,7 +383,7 @@ pub mod caching
 
 pub mod paging
 {
-	use core::{ffi::c_void, fmt::{self,Display,Formatter}};	
+	use core::{fmt::{self,Display,Formatter}, slice};	
 	use paste::paste;
 	use crate::*;
 	use svm_core::amd64::msr::MSR_EFER_LMA;
@@ -684,10 +684,10 @@ pub mod paging
 				// Physical-Address Extension is enabled!
 				let mut va:u64=va;
 				let efer=vcpu.get_efer();
-				let level=if (efer&MSR_EFER_LMA)==MSR_EFER_LMA
+				if (efer&MSR_EFER_LMA)==MSR_EFER_LMA
 				{
 					// Long-Mode is activated. Virtual-Address is 64-bit!
-					if (cr4&CR4_LA57)==CR4_LA57
+					let level=if (cr4&CR4_LA57)==CR4_LA57
 					{
 						// 5-level 57-bit Linear-Address.
 						5
@@ -696,15 +696,28 @@ pub mod paging
 					{
 						// 4-level 48-bit Linear-Address.
 						4
-					}
+					};
+					translate_64bit_va_routine(va,vcpu,cr3,level,w,x,ss)
 				}
 				else
 				{
 					// 3-level 32-bit PAE paging.
 					va&=0xFFFFFFFF;
-					3
-				};
-				translate_64bit_va_routine(va,vcpu,cr3,level,w,x,ss)
+					let pdpe_index=va>>PAGE_1GB_SHIFT;
+					let mut pdpe_buff:[u8;8]=[0;8];
+					vcpu.read_phys_mem(vcpu.get_cr3()+(pdpe_index<<3),&mut pdpe_buff);
+					let pdpe_pa=u64::from_le_bytes(pdpe_buff);
+					// PDPE only has a present bit, no W/NX bits.
+					if (pdpe_pa&X86_PAGING_PRESENT)==0
+					{
+						Err(PageFaultErrorCode(0))
+					}
+					else
+					{
+						// Only 2 levels remaining.
+						translate_64bit_va_routine(va,vcpu,page_4kb_base(pdpe_pa),2,w,x,ss)
+					}
+				}
 			}
 			else
 			{
@@ -726,7 +739,8 @@ pub mod paging
 		{
 			Ok(pa)=>
 			{
-				unsafe{memcpy(buffer.cast(),pa as *const c_void,copy_size);}
+				let buff=unsafe{slice::from_raw_parts_mut(buffer,copy_size)};
+				vcpu.read_phys_mem(pa,buff);
 				Ok(())
 			}
 			Err(e)=>

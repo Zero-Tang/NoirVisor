@@ -392,7 +392,7 @@ impl SvmNptManager
 
 	extern "C" fn enum_page_rt(start:u64,length:u64,context:*mut c_void)
 	{
-		let s:&mut Self=unsafe{&mut *(context as *mut Self)};
+		let s:&mut Self=unsafe{&mut *context.cast()};
 		if length!=PAGE_2MB_SIZE as u64
 		{
 			panic!("While enumerating allocated large pages, Page 0x{:016X} does not have exactly 2MiB size! (0x{:X})",start,length);
@@ -447,11 +447,6 @@ impl SvmNptManager
 				p+=increment as u64;
 			}
 		}
-	}
-
-	pub fn cleanup(&mut self)
-	{
-		unimplemented!("Cleaning up NPT Manager...");
 	}
 }
 

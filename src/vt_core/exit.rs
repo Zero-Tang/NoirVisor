@@ -12,10 +12,14 @@
 
 use core::arch::x86_64::_xsetbv;
 
+use iced_x86::{Decoder, Formatter};
 use paste::paste;
 use log::*;
 
-use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, InterruptStackFrameWithErrorCode, GENERAL_PROTECTION_FAULT, INVALID_OPCODE_FAULT}}}, *};
+#[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
+#[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall, nvc_forward_memory_mapped_hypercall};
+#[cfg(windows)] use super::VtStackTop;
+use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, ci::is_ci_phys_page, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, InterruptStackFrameWithErrorCode, GENERAL_PROTECTION_FAULT, INVALID_OPCODE_FAULT}}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, nvc_vt_resume_without_entry};
 
 impl VtVcpu
@@ -178,16 +182,14 @@ impl VtVcpu
 	{
 		let vmcall_func=gpr_state.rcx as u32;
 		let gcr3=unsafe{vmreadptr(GUEST_CR3)}.unwrap() as u64;
-		debug!("The vmcall instruction is intercepted! Hypercall Leaf: 0x{vmcall_func:X}");
-		match vmcall_func
+		let grip=unsafe{vmreadptr(GUEST_RIP)}.unwrap();
+		let hv:&mut VtHypervisor=unsafe{&mut *self.hypervisor.cast()};
+		if hv.is_rip_from_hypervisor(grip)
 		{
-			NOIR_HYPERCALL_CODE_CALLEXIT=>
+			debug!("The vmcall instruction is intercepted! Hypercall Leaf: 0x{vmcall_func:X}");
+			match vmcall_func
 			{
-				let grip=unsafe{vmreadptr(GUEST_RIP)}.unwrap();
-				let hv=self.hypervisor as *mut VtHypervisor;
-				let start=unsafe{(*hv).image_base} as usize;
-				let end=start+unsafe{(*hv).image_size} as usize;
-				if (start..end).contains(&grip)
+				NOIR_HYPERCALL_CODE_CALLEXIT=>
 				{
 					let nrip=grip+unsafe{vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap() as usize};
 					let gflags=unsafe{vmreadptr(GUEST_RFLAGS)}.unwrap();
@@ -246,16 +248,48 @@ impl VtVcpu
 					}
 					// Never reaches here!
 				}
-				else
+				_=>
 				{
-					error!("Invalid Call to restore system! rip=0x{grip:016X}");
+					error!("Unknown Hypercall Code 0x{vmcall_func:X} is called!");
 					unsafe{inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true,0);}
 				}
 			}
-			_=>
+		}
+		else
+		{
+			// This hypercall might be compliant to Microsoft TLFS.
+			// Check if forwarder exists.
+			#[cfg(windows)]
+			if hv.mshvcall_forwarder.is_some()
 			{
-				error!("Unknown Hypercall Code 0x{vmcall_func:X} is called!");
-				unsafe{inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true,0);}
+				let stack:&mut VtStackTop=unsafe{&mut *self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast()};
+				let hvcall_code=TlfsHypercallCode(gpr_state.rcx);
+				// Construct the forward stack.
+				let mut fwd_stack=MshvForwardStack::from_context(gpr_state,&mut stack.volatile_xmms);
+				if hvcall_code.get_fast()
+				{
+					unsafe
+					{
+						nvc_forward_fast_hypercall(&raw mut fwd_stack);
+						fwd_stack.to_context(gpr_state);
+						advance_rip();
+					}
+				}
+				else
+				{
+					// FIXME: This sort of hypercall (e.g.: HvPostMessage) only happens in Hyper-V. It seems Windows does not invoke such hypercalls in QEMU/KVM.
+					info!("Microsoft Memory-Mapped Hypercall is intercepted! Code: 0x{:X}, Input GPA: 0x{:X}, Output GPA: 0x{:X}",hvcall_code.0,gpr_state.rdx,gpr_state.r8);
+					unsafe
+					{
+						gpr_state.rax=nvc_forward_memory_mapped_hypercall(hvcall_code.0,gpr_state.rdx,gpr_state.r8,gpr_state.rax);
+						info!("Return-Value: 0x{:X}",gpr_state.rax);
+						advance_rip();
+					}
+				}
+			}
+			else
+			{
+				unimplemented!("Microsoft TLFS Hypercall handler is not implemented yet!");
 			}
 		}
 	}
@@ -345,7 +379,30 @@ impl VtVcpu
 	fn handle_ept_violation(&mut self,_gpr_state:&mut GprState)
 	{
 		let gpa=unsafe{vmread64(GUEST_PHYSICAL_ADDRESS)}.unwrap();
-		panic!("EPT Violation happened! GPA=0x{gpa:X}");
+		let rip=unsafe{vmreadptr(GUEST_RIP).unwrap()};
+		if is_ci_phys_page(gpa)
+		{
+			let mut inslen=unsafe{vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap()};
+			error!("CI-fault for GPA=0x{gpa:X} is intercepted! rip=0x{rip:X}, Instruction-Length: {inslen}");
+			if inslen==0
+			{
+				// VMware's nested virtualization does not forward instruction length upon EPT-violation.
+				// Fetch instruction from guest and manually advance rip.
+				warn!("Instruction-Length from VMCS is 0! Fetching instruction via software...");
+				let instruction_bytes:[u8;15]=self.fetch_instruction();
+				let mut decoder=Decoder::with_ip(self.get_current_bitness(),&instruction_bytes,rip as u64,0);
+				let ins=decoder.decode();
+				inslen=ins.len() as u32;
+				let mut mnemonic=FormatBuffer::default();
+				self.disasm_fmter.format(&ins,&mut mnemonic);
+				debug!("CI-fault instruction bytes: {:02X?} | {}",&instruction_bytes[..ins.len()],mnemonic.as_str());
+			}
+			unsafe{advance_rip_manually(inslen)};
+		}
+		else
+		{
+			panic!("Unexpected EPT Violation happened! GPA=0x{gpa:X}, rip=0x{rip:X}");
+		}
 	}
 
 	fn handle_ept_misconfig(&mut self,_gpr_state:&mut GprState)
@@ -371,6 +428,7 @@ impl VtVcpu
 		let index=(gpr_state.rcx&0xFFFFFFFF) as u32;
 		let value=(gpr_state.rax&0xFFFFFFFF)|(gpr_state.rdx&0xFFFFFFFF00000000);
 		debug!("The xsetbv instruction is intercepted! Index={index}, Value=0x{value:16X}");
+		// TODO: verify value's validity.
 		unsafe
 		{
 			_xsetbv(index,value);

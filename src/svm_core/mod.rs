@@ -15,12 +15,14 @@ use alloc::vec::Vec;
 use custom::SvmCustomVm;
 #[cfg(target_os="uefi")]
 use exit::svm_apic_output_handler;
+use iced_x86::MasmFormatter;
 use iommu::{svm_iommu_output_handler, SvmIommuManager};
 use log::*;
 use npt::SvmNptManager;
 use xpf_core::{bitmap::set_bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
+#[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 
-use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::*, seg::*, svm::*}, dlalloc::*, nvbdk::*, nvstatus::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}},*};
+use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::*, seg::*, svm::*}, dlalloc::*, nvbdk::*, nvstatus::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
@@ -48,7 +50,7 @@ pub mod amd64;
 	pub reserved:u32
 }
 
-#[repr(C)] pub struct SvmNestedVcpu
+pub struct SvmNestedVcpu
 {
 	pub svme:bool,
 	pub ignne:bool,
@@ -57,7 +59,7 @@ pub mod amd64;
 	pub svm_key:u64
 }
 
-#[repr(C)] pub struct SvmVcpu
+pub struct SvmVcpu
 {
 	pub vmcb:MemoryDescriptor,
 	pub hsave:MemoryDescriptor,
@@ -75,7 +77,10 @@ pub mod amd64;
 	// Features supported by the processors.
 	pub decode_assists:bool,
 	pub nrip_saving:bool,
-	pub vmcb_clean:bool
+	pub vmcb_clean:bool,
+	// Always use this member to format the mnemonic of an instruction.
+	// Do not use `MasmFormatter::new()` on your own because it will cause runtime allocation!
+	pub disasm_fmter:MasmFormatter
 }
 
 impl SvmVcpu
@@ -106,15 +111,18 @@ impl SvmVcpu
 			under_hvm:false,
 			decode_assists:false,
 			nrip_saving:false,
-			vmcb_clean:false
+			vmcb_clean:false,
+			disasm_fmter:MasmFormatter::new()
 		}
 	}
 }
 
 unsafe extern "C"
 {
+	#[allow(improper_ctypes)]
 	fn nvc_svm_subvert_processor_a(stack:*mut SvmStackTop);
 	fn nvc_svm_guest_start();
+	pub fn nvc_svm_return(stack:*const GprState)->!;
 }
 
 /// # Safety
@@ -287,7 +295,7 @@ impl SvmVcpu
 	}
 }
 
-#[repr(C)] pub struct SvmHypervisor
+pub struct SvmHypervisor
 {
 	pub vcpus:Vec<SvmVcpu>,
 	pub msrpm:MemoryDescriptor,
@@ -300,7 +308,18 @@ impl SvmVcpu
 	pub cvm_list:Vec<Option<Box<SvmCustomVm>>>,
 	pub image_base:*mut c_void,
 	pub image_size:u32,
-	pub features:EnabledFeatures
+	pub features:EnabledFeatures,
+	#[cfg(windows)] pub mshvcall_forwarder:Option<MshvCallForwarder>
+}
+
+impl SvmHypervisor
+{
+	pub fn is_rip_from_hypervisor(&self,rip:u64)->bool
+	{
+		let start=self.image_base as u64;
+		let end=start+self.image_size as u64;
+		(start..end).contains(&rip)
+	}
 }
 
 impl Default for SvmHypervisor
@@ -320,7 +339,8 @@ impl Default for SvmHypervisor
 			cvm_list:Vec::with_capacity(8),
 			image_base:null_mut(),
 			image_size:0,
-			features:EnabledFeatures::get()
+			features:EnabledFeatures::get(),
+			#[cfg(windows)] mshvcall_forwarder:MshvCallForwarder::new()
 		}
 	}
 }
@@ -367,7 +387,7 @@ impl HypervisorEssentials for SvmHypervisor
 			($($arg:tt)*) =>
 			{
 				{
-					print!("{}\n",format_args!($($arg)*));
+					error!("{}\n",format_args!($($arg)*));
 					return NOIR_INSUFFICIENT_RESOURCES;
 				}
 			};

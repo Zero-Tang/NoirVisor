@@ -18,14 +18,11 @@ use iced_x86::*;
 use decode::dispatch_decoder;
 use npt::NptFaultCode;
 use xpf_core::{ci::is_ci_phys_page, x86::{descriptors::DescriptorTable, interrupts::*}};
+#[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall,nvc_forward_memory_mapped_hypercall};
 
 use super::*;
-use crate::mshv_core::cpuid::*;
-
-unsafe extern "C"
-{
-	fn nvc_svm_return(stack:*const GprState)->!;
-}
+#[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
+use mshv_core::cpuid::*;
 
 pub(super) fn svm_apic_output_handler(_region:&IoRegion<u64>,address:u64,size:u64,value:*const c_void,_context:*mut c_void)
 {
@@ -288,84 +285,122 @@ impl SvmVcpu
 
 	fn handle_vmmcall(&mut self,gpr_state:&mut GprState)
 	{
-		let vmmcall_func=gpr_state.rcx as u32;
-		let gcr3:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR3)};
-		match vmmcall_func
+		let grip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
+		let hv:&SvmHypervisor=unsafe{&*self.hypervisor.cast()};
+		if hv.is_rip_from_hypervisor(grip)
 		{
-			NOIR_HYPERCALL_CODE_CALLEXIT=>
+			let vmmcall_func=gpr_state.rcx as u32;
+			match vmmcall_func
 			{
-				let grip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
-				let hv=self.hypervisor as *mut SvmHypervisor;
-				let start=unsafe{(*hv).image_base} as u64;
-				let end=start+unsafe{(*hv).image_size} as u64;
-				if (start..end).contains(&grip)
+				NOIR_HYPERCALL_CODE_CALLEXIT=>
 				{
-					// FIXME: Validate the caller to prevent malicious unloading request.
-					let nrip:u64=unsafe{vmread(self.vmcb.virt,NEXT_RIP)};
-					let gflags:u64=unsafe{vmread(self.vmcb.virt,GUEST_RFLAGS)};
-					let saved_state:GprState=GprState
+					let gcr3:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR3)};
+					let start=hv.image_base as u64;
+					let end=start+hv.image_size as u64;
+					if (start..end).contains(&grip)
 					{
-						rax:nrip,
-						rcx:gflags,
-						rdx:gpr_state.rsp,
-						rbx:gpr_state.rbx,
-						rsp:gpr_state.rsp,
-						rbp:gpr_state.rbp,
-						rsi:gpr_state.rsi,
-						rdi:gpr_state.rdi,
-						r8:gpr_state.r8,
-						r9:gpr_state.r9,
-						r10:gpr_state.r10,
-						r11:gpr_state.r11,
-						r12:gpr_state.r12,
-						r13:gpr_state.r13,
-						r14:gpr_state.r14,
-						r15:gpr_state.r15,
-					};
-					// Switch to Restored Control Registers.
-					let gcr4:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR4)};
-					write_cr3(gcr3);
-					write_cr4(gcr4);
-					// Restore the processor's hidden state.
-					vmload(self.vmcb.phys);
-					unsafe
-					{
-						// Switch to Restored IDT.
-						let gidtr:DescriptorTable=DescriptorTable
+						let nrip:u64=unsafe{vmread(self.vmcb.virt,NEXT_RIP)};
+						let gflags:u64=unsafe{vmread(self.vmcb.virt,GUEST_RFLAGS)};
+						let saved_state:GprState=GprState
 						{
-							limit:vmread(self.vmcb.virt,GUEST_IDTR_LIMIT),
-							base:vmread(self.vmcb.virt,GUEST_IDTR_BASE)
+							rax:nrip,
+							rcx:gflags,
+							rdx:gpr_state.rsp,
+							rbx:gpr_state.rbx,
+							rsp:gpr_state.rsp,
+							rbp:gpr_state.rbp,
+							rsi:gpr_state.rsi,
+							rdi:gpr_state.rdi,
+							r8:gpr_state.r8,
+							r9:gpr_state.r9,
+							r10:gpr_state.r10,
+							r11:gpr_state.r11,
+							r12:gpr_state.r12,
+							r13:gpr_state.r13,
+							r14:gpr_state.r14,
+							r15:gpr_state.r15,
 						};
-						write_idtr(&raw const gidtr);
-						// Switch to Restored GDT.
-						let ggdtr:DescriptorTable=DescriptorTable
+						// Switch to Restored Control Registers.
+						let gcr4:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR4)};
+						write_cr3(gcr3);
+						write_cr4(gcr4);
+						// Restore the processor's hidden state.
+						vmload(self.vmcb.phys);
+						unsafe
 						{
-							limit:vmread(self.vmcb.virt,GUEST_GDTR_LIMIT),
-							base:vmread(self.vmcb.virt,GUEST_GDTR_BASE)
-						};
-						write_gdtr(&raw const ggdtr);
-						// Note that TSS is switched in previous vmload.
-						
+							// Switch to Restored IDT.
+							let gidtr:DescriptorTable=DescriptorTable
+							{
+								limit:vmread(self.vmcb.virt,GUEST_IDTR_LIMIT),
+								base:vmread(self.vmcb.virt,GUEST_IDTR_BASE)
+							};
+							write_idtr(&raw const gidtr);
+							// Switch to Restored GDT.
+							let ggdtr:DescriptorTable=DescriptorTable
+							{
+								limit:vmread(self.vmcb.virt,GUEST_GDTR_LIMIT),
+								base:vmread(self.vmcb.virt,GUEST_GDTR_BASE)
+							};
+							write_gdtr(&raw const ggdtr);
+							// Note that TSS is switched in previous vmload.
+						}
+						// Set the GIF. Otherwise the host will never be interrupted.
+						stgi();
+						// Return to the caller in Host Mode.
+						unsafe
+						{
+							nvc_svm_return(&raw const saved_state);
+						}
+						// Never reaches here!
 					}
-					// Set the GIF. Otherwise the host will never be interrupted.
-					stgi();
-					// Return to the caller in Host Mode.
-					unsafe
+					else
 					{
-						nvc_svm_return(&raw const saved_state);
+						warn!("Invalid Call to restore system! rip=0x{grip:016X}");
+						unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 					}
-					// Never reaches here!
 				}
-				else
+				_=>
 				{
-					warn!("Invalid Call to restore system! rip=0x{grip:016X}");
+					warn!("Unknown Hypercall Code 0x{vmmcall_func:X} is called!");
 					unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 				}
 			}
-			_=>
+		}
+		else
+		{
+			// This hypercall might be compliant to Microsoft TLFS.
+			// Check if forwarder exists.
+			#[cfg(windows)]
+			if let Some(_fwder)=&hv.mshvcall_forwarder
 			{
-				warn!("Unknown Hypercall Code 0x{vmmcall_func:X} is called!");
-				unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
+				let stack:*mut SvmStackTop=unsafe{self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast()};
+				let hvcall_code=TlfsHypercallCode(gpr_state.rcx);
+				// Construct the forward stack.
+				let mut fwd_stack=MshvForwardStack::from_context(gpr_state,unsafe{&raw mut (*stack).volatile_xmms});
+				if hvcall_code.get_fast()
+				{
+					unsafe
+					{
+						nvc_forward_fast_hypercall(&raw mut fwd_stack);
+						fwd_stack.to_context(gpr_state);
+						advance_rip(self.vmcb.virt);
+					}
+				}
+				else
+				{
+					// FIXME: This sort of hypercall (e.g.: HvPostMessage) only happens in Hyper-V. It seems Windows does not invoke such hypercalls in QEMU/KVM.
+					info!("Microsoft Memory-Mapped Hypercall is intercepted! Code: 0x{:X}, Input GPA: 0x{:X}, Output GPA: 0x{:X}",hvcall_code.0,gpr_state.rdx,gpr_state.r8);
+					unsafe
+					{
+						gpr_state.rax=nvc_forward_memory_mapped_hypercall(hvcall_code.0,gpr_state.rdx,gpr_state.r8,gpr_state.rax);
+						info!("Return-Value: 0x{:X}",gpr_state.rax);
+						advance_rip(self.vmcb.virt);
+					}
+				}
+			}
+			else
+			{
+				unimplemented!("Microsoft TLFS Hypercall handler is not implemented yet!");
 			}
 		}
 	}
@@ -409,8 +444,17 @@ impl SvmVcpu
 		// Check if this #NPF is due to Code Integrity violation.
 		if is_ci_phys_page(gpa)
 		{
-			error!("Intercepted #NPF for GPA=0x{gpa:016X}! rip=0x{rip:016X} rsp=0x{:016X}, Fault-Reason: {fault}",unsafe{vmread::<u64>(vmcb,GUEST_RSP)});
-			panic!("CI-fault is intercepted!");
+			// Decode the instruction length.
+			let ins_bytes:&[u8]=unsafe{slice::from_raw_parts(self.vmcb.virt.byte_add(GUEST_INSTRUCTION_BYTES).cast(),15)};
+			let bitness=self.get_current_bitness();
+			let mut decoder=Decoder::with_ip(bitness,ins_bytes,rip,DecoderOptions::AMD);
+			assert!(decoder.can_decode());
+			let ins_info=decoder.decode();
+			error!("CI-fault for GPA=0x{gpa:016X} is intercepted! rip=0x{rip:016X}, Fault-Reason: {fault}, Instruction-Length: {}",ins_info.len());
+			let mut mnemonic=FormatBuffer::default();
+			self.disasm_fmter.format(&ins_info,&mut mnemonic);
+			debug!("CI-fault Instruction: {:02X?} | {}",&ins_bytes[..ins_info.len()],mnemonic.as_str());
+			unsafe{advance_rip_manually(vmcb,ins_info.len())};
 		}
 		else if !fault.get_code_read()
 		{
@@ -418,21 +462,7 @@ impl SvmVcpu
 			// This could be MMIO Filter.
 			let ins_bytes:&[u8]=unsafe{slice::from_raw_parts(self.vmcb.virt.byte_add(GUEST_INSTRUCTION_BYTES).cast(),15)};
 			// Check bitness.
-			let bitness:u32=unsafe
-			{
-				if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)	// The CS.L bit.
-				{
-					64
-				}
-				else if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,10)	// The CS.D bit.
-				{
-					32
-				}
-				else
-				{
-					16
-				}
-			};
+			let bitness=self.get_current_bitness();
 			// Call disassembler.
 			let mut decoder=Decoder::with_ip(bitness,ins_bytes,rip,DecoderOptions::AMD);
 			assert!(decoder.can_decode());

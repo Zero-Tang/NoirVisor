@@ -10,10 +10,10 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::cmp::Ordering;
+use core::{cmp::Ordering, ffi::c_void};
 use alloc::vec::Vec;
 
-use crate::{vt_core::ia32::msr::VmxEptVpidCapMsr, *};
+use crate::{vt_core::ia32::msr::VmxEptVpidCapMsr, xpf_core::{ci::CI_MANAGER, dlalloc::enum_allocated_large_pages}, *};
 use xpf_core::{dlalloc::{alloc_2mb_page, alloc_contd_pages}, nvbdk::*, x86::caching::*};
 
 use paste::paste;
@@ -327,21 +327,24 @@ impl VtEptManager
 		}
 	}
 
-	pub fn update_pte_memory_type(&mut self,gpa:u64,new_type:u64,force_update:bool)
+	pub fn update_pte(&mut self,gpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
 	{
 		self.split_pde(gpa);
 		let pte_p=self.locate_pte(gpa).unwrap();
 		unsafe
 		{
-			if new_type<(*pte_p).get_memory_type() || force_update
+			if let Some((new_type,force_update))=memory_type && (new_type<(*pte_p).get_memory_type() || force_update)
 			{
 				(*pte_p).set_memory_type(new_type);
 			}
+			if let Some(p)=r {(*pte_p).set_read(p);}
+			if let Some(p)=w {(*pte_p).set_write(p);}
+			if let Some(p)=x {(*pte_p).set_execute(p);}
 		}
 		
 	}
 
-	pub fn update_pde_memory_type(&mut self,gpa:u64,new_type:u64,force_update:bool)
+	pub fn update_pde(&mut self,gpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
 	{
 		self.split_pdpte(gpa);
 		let pde_p=self.locate_pde(gpa).unwrap();
@@ -349,22 +352,25 @@ impl VtEptManager
 		{
 			if (*pde_p).get_page_size()
 			{
-				if new_type<(*pde_p).get_memory_type() || force_update
+				if let Some((new_type,force_update))=memory_type && (new_type<(*pde_p).get_memory_type() || force_update)
 				{
 					(*pde_p).set_memory_type(new_type);
 				}
+				if let Some(p)=r {(*pde_p).set_read(p);}
+				if let Some(p)=w {(*pde_p).set_write(p);}
+				if let Some(p)=x {(*pde_p).set_execute(p);}
 			}
 			else
 			{
 				for i in 0..512
 				{
-					self.update_pte_memory_type(gpa+page_4kb_mult(i),new_type,force_update);
+					self.update_pte(gpa+page_4kb_mult(i),memory_type,r,w,x);
 				}
 			}
 		}
 	}
 
-	pub fn update_pdpte_memory_type(&mut self,gpa:u64,new_type:u64,force_update:bool)
+	pub fn update_pdpte(&mut self,gpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
 	{
 		let pdpte_i=page_1gb_count(gpa as usize);
 		unsafe
@@ -372,17 +378,19 @@ impl VtEptManager
 			let pdpte_p=self.pdpte.virt.cast::<EptHugePdpte>().add(pdpte_i);
 			if (*pdpte_p).get_page_size()
 			{
-				let old_type=(*pdpte_p).get_memory_type();
-				if new_type<old_type || force_update
+				if let Some((new_type,force_update))=memory_type && (new_type<(*pdpte_p).get_memory_type() || force_update)
 				{
 					(*pdpte_p).set_memory_type(new_type);
 				}
+				if let Some(p)=r {(*pdpte_p).set_read(p);}
+				if let Some(p)=w {(*pdpte_p).set_write(p);}
+				if let Some(p)=x {(*pdpte_p).set_execute(p);}
 			}
 			else
 			{
 				for i in 0..512
 				{
-					self.update_pde_memory_type(gpa+page_2mb_mult(i),new_type,force_update);
+					self.update_pde(gpa+page_2mb_mult(i),memory_type,r,w,x);
 				}
 			}
 		}
@@ -404,15 +412,40 @@ impl VtEptManager
 				};
 				let updater_fn=match p.page_size
 				{
-					0=>Self::update_pte_memory_type,
-					1=>Self::update_pde_memory_type,
-					2=>Self::update_pdpte_memory_type,
+					0=>Self::update_pte,
+					1=>Self::update_pde,
+					2=>Self::update_pdpte,
 					_=>panic!("Unrecognized page-size identifier: {}!",p.page_size)
 				};
-				updater_fn(self,p.base,p.memory_type as u64,force_update);
+				updater_fn(self,p.base,Some((p.memory_type as u64,force_update)),None,None,None);
 			}
 		}
 		self.mtrr_mgr=mtrr_mgr;
+	}
+
+	extern "C" fn enum_page_rt(start:u64,length:u64,context:*mut c_void)
+	{
+		let s:&mut Self=unsafe{&mut *context.cast()};
+		if length!=PAGE_2MB_SIZE as u64
+		{
+			panic!("While enumerating allocated large pages, Page 0x{:016X} does not have exactly 2MiB size! (0x{:X})",start,length);
+		}
+		debug!("Protecting page range 0x{:X} to 0x{:X}...",start,start+length);
+		s.update_pde(start,None,Some(true),Some(false),Some(false));
+	}
+
+	pub fn protect_allocated_pages(&mut self)
+	{
+		enum_allocated_large_pages(Self::enum_page_rt,(self as *mut Self).cast());
+	}
+
+	pub fn protect_ci(&mut self)
+	{
+		let ci=CI_MANAGER.read();
+		for p in ci.into_iter()
+		{
+			self.update_pte(*p,None,None,Some(false),None);
+		}
 	}
 
 	pub fn build_identity_map(&mut self)

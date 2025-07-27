@@ -14,7 +14,7 @@ Therefore, NoirVisor must have a special primitive for debugger.
 Currently, NoirVisor supports debugging over serial connections or QEMU's ISA Debug Console.
 
 ### Serial Connection
-This method is supposed to support serial connections. However, due to unknown reasons, serial connection is not available on Windows in VMware machines. Serial connection is lost once OS is loaded. Direct I/O will be refused by the serial device. Although you can't use serial connection in VMware, you may instead use it in Hyper-V.
+This method is supposed to support serial connections. However, due to power management reasons, serial connection is unavailable on Windows. They will be set to D3 state, so connection is not viable. Hyper-V's and QEMU's implementation of serial emulation does not contain power management, so you can use serial connection on Hyper-V and QEMU.
 
 ### Serial Connection for Hyper-V VMs
 There are two generations of VM in Hyper-V.

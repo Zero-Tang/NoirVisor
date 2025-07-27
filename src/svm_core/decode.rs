@@ -70,6 +70,25 @@ impl PageTranslationHelper for SvmVcpu
 
 impl SvmVcpu
 {
+	pub(super) fn get_current_bitness(&self)->u32
+	{
+		unsafe
+		{
+			if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)	// The CS.L bit.
+			{
+				64
+			}
+			else if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,10)	// The CS.D bit.
+			{
+				32
+			}
+			else
+			{
+				16
+			}
+		}
+	}
+
 	fn decode_unknown(&mut self)
 	{
 		// This interception means NoirVisor does not know such interception at all. So panic on interception.
@@ -96,21 +115,7 @@ impl SvmVcpu
 		// Fetch instructions.
 		self.fetch_instruction();
 		// Check bitness.
-		let bitness:u32=unsafe
-		{
-			if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)	// The CS.L bit.
-			{
-				64
-			}
-			else if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,10)	// The CS.D bit.
-			{
-				32
-			}
-			else
-			{
-				16
-			}
-		};
+		let bitness:u32=self.get_current_bitness();
 		// Call disassembler.
 		let mut decoder=Decoder::with_ip(bitness,buff,rip,DecoderOptions::AMD);
 		if decoder.can_decode()

@@ -10,7 +10,7 @@ For QEMU+KVM, you need to add an IOMMU device. For example, you can enable Intel
 ```
 qemu-system-x86_64 -accel kvm -machine q35,kernel-irqchip=split -cpu host,hypervisor=off,vmx=on -device intel-iommu,intremap=on,device-iotlb=on,pt=on,aw-bits=48
 ```
-Note that QEMU's AMD-Vi emulation is probably incorrect (I am using QEMU 10.0.2). I have also tried using Microsoft Hypervisor's DMA protection and it wasn't working on QEMU either.
+Older versions of QEMU does not emulate AMD-Vi properly. You should use QEMU 10.0.3 or higher versions.
 
 It seems NoirVisor can't use IOMMU in real machine as a Type-II Hypervisor. It will cause the system to immediately freeze.
 

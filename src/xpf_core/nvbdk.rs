@@ -16,6 +16,8 @@ use alloc::vec::Vec;
 use paste::paste;
 use spin::Lazy;
 
+#[cfg(windows)] use crate::mshv_core::forwarder::MshvForwardStack;
+
 #[derive(Copy,Clone)] #[repr(C)] pub struct MemoryDescriptor
 {
 	pub virt:*mut c_void,
@@ -440,6 +442,9 @@ unsafe extern "C"
 	pub fn noir_acquire_pushlock_shared(push_lock:*mut usize);
 	pub fn noir_release_pushlock_exclusive(push_lock:*mut usize);
 	pub fn noir_release_pushlock_shared(push_lock:*mut usize);
+	// TLFS Forwarder Facility
+	#[cfg(windows)] pub fn nvc_forward_fast_hypercall(forward_stack:*mut MshvForwardStack);
+	#[cfg(windows)] pub fn nvc_forward_memory_mapped_hypercall(code:u64,input_gpa:u64,output_gpa:u64,source_rax:u64)->u64;
 }
 
 // Page-related definitions

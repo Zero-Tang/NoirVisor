@@ -138,7 +138,7 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	NoirHpetInitialize();
 	NoirBuildHypervisor();
 	// Just to make sure Hardware CI is working.
-	// If you uncomment the next line, NoirVisor should panic.
-	// NoirTestCodeIntegrity(ImageInfo->ImageBase);
+	// You should see an error message on debug console.
+	NoirTestCodeIntegrity(ImageInfo->ImageBase);
 	return EFI_SUCCESS;
 }
