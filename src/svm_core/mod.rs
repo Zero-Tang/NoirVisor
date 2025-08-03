@@ -80,7 +80,9 @@ pub struct SvmVcpu
 	pub vmcb_clean:bool,
 	// Always use this member to format the mnemonic of an instruction.
 	// Do not use `MasmFormatter::new()` on your own because it will cause runtime allocation!
-	pub disasm_fmter:MasmFormatter
+	pub disasm_fmter:MasmFormatter,
+	// This context handles exceptions.
+	pub gs_context:PerCpuGsException
 }
 
 impl SvmVcpu
@@ -112,7 +114,8 @@ impl SvmVcpu
 			decode_assists:false,
 			nrip_saving:false,
 			vmcb_clean:false,
-			disasm_fmter:MasmFormatter::new()
+			disasm_fmter:MasmFormatter::new(),
+			gs_context:PerCpuGsException::default()
 		}
 	}
 }
@@ -216,6 +219,7 @@ impl SvmVcpu
 			vmwrite(self.vmcb.virt,GUEST_RIP,nvc_svm_guest_start as usize as u64);
 			// Save Processor Hidden State.
 			vmsave(self.hvmcb.phys);
+			vmwrite(self.hvmcb.virt,GUEST_GS_BASE,&raw mut self.gs_context as u64);
 			// Save Model-Specific Registers.
 			vmwrite(self.vmcb.virt,GUEST_PAT,state.pat);
 			vmwrite(self.vmcb.virt,GUEST_EFER,state.efer);

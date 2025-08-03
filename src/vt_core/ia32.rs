@@ -164,7 +164,9 @@ pub mod msr
 	{
 		build_int_get_method!(tsc_preemption_scale,0,5,u64);
 		build_bit_get_method!(store_lma_to_entry_on_exit,5);
-		build_int_get_method!(supported_activity_state,6,3,u64);
+		build_bit_get_method!(support_hlt_state,6);
+		build_bit_get_method!(support_shutdown_state,7);
+		build_bit_get_method!(support_wait_for_sipi_state,8);
 		build_bit_get_method!(allow_pt_in_vmx,14);
 		build_bit_get_method!(allow_read_smbase_in_smm,15);
 		build_int_get_method!(cr3_target_values,16,9,u64);

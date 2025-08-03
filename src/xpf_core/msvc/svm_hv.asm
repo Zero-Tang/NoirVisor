@@ -73,10 +73,8 @@ nvc_svm_exit_handler_a proc frame
 	; Load processor's hidden state for Host.
 	mov rax,qword ptr[rsp+stacktop_offset_hvmcb_pa]
 	vmload rax
-	lea rcx,[rsp+stacktop_offset_guest_gpr]		; First Parameter - Guest GPRs
-	lea r8,[rsp+stacktop_offset_guest_frame]	; Third Parameter - Guest Stack
-	; Second Parameter - vCPU
-	mov rdx,qword ptr[rsp+stacktop_offset_vcpu_ptr]
+	; Just pass the stack to the handler
+	mov rcx,rsp
 	; End of Prologue...
 	; Call Exit Handler
 	call nvc_svm_exit_handler

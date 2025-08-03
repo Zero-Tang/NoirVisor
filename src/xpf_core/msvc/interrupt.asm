@@ -37,6 +37,24 @@ extern noir_machine_check_abort_handler:proc
 extern noir_simd_floating_point_fault_handler:proc
 extern noir_control_protection_fault_handler:proc
 
+nvc_call_try_task proc frame
+
+	sub rsp,28h
+	.allocstack 28h
+	.endprolog
+	mov gs:[0h],rsp
+	mov rax,end_of_try
+	mov gs:[8h],rax
+	mov rax,rcx
+	mov rcx,rdx
+	call rax
+	xor eax,eax
+end_of_try:
+	add rsp,28h
+	ret
+
+nvc_call_try_task endp
+
 __chkstk proc
 
 	; In Rust, sorting a Vec will call __chkstk.

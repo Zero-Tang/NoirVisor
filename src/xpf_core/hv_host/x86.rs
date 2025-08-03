@@ -14,7 +14,7 @@ use core::ffi::c_void;
 
 use log::*;
 
-use crate::xpf_core::{asm::{crdr::*, seg::*}, nvbdk::*, dlalloc::{alloc_contd_pages, free_contd_pages}, x86::{descriptors::*, interrupts::*, paging::*}};
+use crate::xpf_core::{asm::{crdr::*, msr::rdmsr, seg::*}, dlalloc::{alloc_contd_pages, free_contd_pages}, nvbdk::*, x86::{descriptors::*, interrupts::*, msr::MSR_GS_BASE, paging::*}};
 
 pub struct HostSystem
 {
@@ -235,9 +235,92 @@ impl HostIDT
 	}
 }
 
+#[derive(Debug)]
+#[repr(C)] pub enum PerCpuGsState
+{
+	AwaitExecution,
+	Failed{vector:u8,error_code:Option<u32>},
+	Successful
+}
+
+impl Default for PerCpuGsState
+{
+	fn default() -> Self
+	{
+		Self::AwaitExecution
+	}
+}
+
+#[derive(Default,Debug)]
+#[repr(C,align(16))] pub struct PerCpuGsException
+{
+	pub handler_rsp:u64,
+	pub handler_rip:u64,
+	pub state:PerCpuGsState
+}
+
+impl PerCpuGsException
+{
+	pub fn reset(&mut self)
+	{
+		self.state=PerCpuGsState::AwaitExecution;
+	}
+
+	pub fn set(&mut self,vector:u8,error_code:Option<u32>)
+	{
+		self.state=PerCpuGsState::Failed{vector,error_code};
+	}
+}
+
 pub type InterruptHandler=unsafe extern "C" fn(stack_frame:*mut InterruptStackFrame,gpr_state:*mut GprState);
 pub type InterruptHandlerWithErrorCode=unsafe extern "C" fn(stack_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState);
 pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
+
+#[inline(always)] fn handle_exception_without_error_code(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState,vector:u8,exception_name:&str)
+{
+	use PerCpuGsState::*;
+	let frame=unsafe{&mut *exception_frame};
+	let gs_ctxt=unsafe{&mut *(rdmsr(MSR_GS_BASE) as *mut PerCpuGsException)};
+	error!("{exception_name} happened!");
+	error!("Dumping Exception Frame:\n{}",frame);
+	error!("Dumping GPR State:\n{}",unsafe{&*gpr_state});
+	debug!("Current GS-Base: {:p}",gs_ctxt as *mut PerCpuGsException);
+	debug!("Current GS-State: {:?}",&gs_ctxt.state);
+	match &gs_ctxt.state
+	{
+		AwaitExecution=>
+		{
+			frame.return_rip=gs_ctxt.handler_rip;
+			frame.return_rsp=gs_ctxt.handler_rsp;
+			gs_ctxt.set(vector,None);
+			info!("Returning to host...");
+		}
+		_=>panic!("Host is not expecting for exception!")
+	}
+}
+
+#[inline(always)] fn handle_exception_with_error_code(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState,vector:u8,exception_name:&str)
+{
+	use PerCpuGsState::*;
+	let frame=unsafe{&mut *exception_frame};
+	let gs_ctxt=unsafe{&mut *(rdmsr(MSR_GS_BASE) as *mut PerCpuGsException)};
+	error!("{exception_name} happened!");
+	error!("Dumping Exception Frame:\n{}",frame);
+	error!("Dumping GPR State:\n{}",unsafe{&*gpr_state});
+	debug!("Current GS-Base: {:p}",gs_ctxt as *mut PerCpuGsException);
+	debug!("Current GS-State: {:?}",&gs_ctxt.state);
+	match &gs_ctxt.state
+	{
+		AwaitExecution=>
+		{
+			frame.return_rip=gs_ctxt.handler_rip;
+			frame.return_rsp=gs_ctxt.handler_rsp;
+			gs_ctxt.set(vector,Some(frame.error_code));
+			info!("Returning to host...");
+		}
+		_=>panic!("Host is not expecting for exception!")
+	}
+}
 
 /// ## Vector 0 #DE - Divide-by-Zero Error Fault
 /// This function handles `#DE` (Divide-by-Zero Error) fault.
@@ -245,12 +328,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_divide_error_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("Divide-Error Fault happened!");
-	}
+	handle_exception_without_error_code(exception_frame,gpr_state,DIVIDE_ERROR_FAULT,"Divide-Error Fault");
 }
 
 /// ## Vector 1 #DB - Debug Fault or Trap
@@ -259,12 +337,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_debug_fault_trap_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("Debug Fault/Trap happened!");
-	}
+	handle_exception_without_error_code(exception_frame,gpr_state,DEBUG_FAULT_OR_TRAP,"Debug Fault/Trap");
 }
 
 /// ## Vector 3 #BP - Breakpoint Trap
@@ -301,12 +374,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_bound_range_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("Bound-Range Fault happened!");
-	}
+	handle_exception_without_error_code(exception_frame,gpr_state,EXCEED_BOUND_RANGE_FAULT,"Bound-Range Fault");
 }
 
 /// ## Vector 6 #UD - Invalid-Opcode Fault
@@ -315,12 +383,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_invalid_opcode_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("Invalid-Opcode Fault happened!");
-	}
+	handle_exception_without_error_code(exception_frame,gpr_state,INVALID_OPCODE_FAULT,"Invalid-Opcode Fault");
 }
 
 /// ## Vector 7 #NM - Device-Not-Available Fault
@@ -329,12 +392,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_device_not_available_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("Device-Not-Available Fault happened!\n{}Dumping GPR State...\n{}",*exception_frame,*gpr_state);
-	}
+	handle_exception_without_error_code(exception_frame,gpr_state,NO_MATH_COPROCESSOR_FAULT,"Device-Not-Available Fault");
 }
 
 /// ## Vector 8 #DF - Double-Fault Abort
@@ -357,12 +415,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_invalid_tss_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("Invalid-TSS Fault happened!");
-	}
+	handle_exception_with_error_code(exception_frame,gpr_state,INVALID_TSS_FAULT,"Invalid-TSS Fault");
 }
 
 /// ## Vector 11 #NP - Segment-Not-Present Fault
@@ -371,12 +424,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_segment_not_present_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("Segment-Not-Present Fault happened!");
-	}
+	handle_exception_with_error_code(exception_frame,gpr_state,SEGMENT_ABSENT_FAULT,"Segment-Not-Present Fault");
 }
 
 /// ## Vector 12 #SS - Stack Fault
@@ -385,12 +433,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_stack_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("Stack Fault happened!");
-	}
+	handle_exception_with_error_code(exception_frame,gpr_state,STACK_FAULT,"Stack Fault");
 }
 
 /// ## Vector 13 #GP - General-Protection Fault
@@ -399,12 +442,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_general_protection_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("General-Protection Fault happened!");
-	}
+	handle_exception_with_error_code(exception_frame,gpr_state,GENERAL_PROTECTION_FAULT,"General-Protection Fault");
 }
 
 /// ## Vector 14 #PF - Page Fault
@@ -413,14 +451,9 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_page_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		let cr2=read_cr2();
-		let err_code=PageFaultErrorCode::from_u32((*exception_frame).error_code);
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("Page Fault happened! Virtual-Address: 0x{:016X}, Error Reason: {}",cr2,err_code);
-	}
+	let cr2=read_cr2();
+	error!("Page-Fault CR2=0x{cr2:X}");
+	handle_exception_with_error_code(exception_frame,gpr_state,PAGE_FAULT,"Page Fault");
 }
 
 /// ## Vector 16 #MF - x87 Floating-Point Exception-Pending Fault
@@ -429,12 +462,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_x87_floating_point_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("x87 Floating-Point Exception-Pending Fault happened!");
-	}
+	handle_exception_without_error_code(exception_frame,gpr_state,X87_FP_EXCEPTION_FAULT,"x87 Floating-Point Exception-Pending Fault");
 }
 
 /// ## Vector 17 #AM - Alignment-Check Fault
@@ -443,12 +471,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_alignment_check_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("Alignment-Check Fault happened!");
-	}
+	handle_exception_with_error_code(exception_frame,gpr_state,ALIGNMENT_CHECK_FAULT,"Alignment-Check Fault");
 }
 
 /// ## Vector 18 #MC - Machine-Check Abort
@@ -471,12 +494,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_simd_floating_point_fault_handler(exception_frame:*mut InterruptStackFrame,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("SIMD Floating-Point Fault happened!");
-	}
+	handle_exception_without_error_code(exception_frame,gpr_state,SIMD_FP_EXCEPTION_FAULT,"SIMD Floating-Point Fault");
 }
 
 /// ## Vector 21 #CP - Control-Protection Fault
@@ -485,12 +503,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 /// This function is called by assembly. *DO NOT CALL THIS FUNCTION FROM RUST!*
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_control_protection_fault_handler(exception_frame:*mut InterruptStackFrameWithErrorCode,gpr_state:*mut GprState)
 {
-	unsafe
-	{
-		error!("Dumping Exception Frame:\n{}",*exception_frame);
-		error!("Dumping GPR State:\n{}",*gpr_state);
-		panic!("Control-Protection Fault happened!");
-	}
+	handle_exception_with_error_code(exception_frame,gpr_state,CONTROL_PROTECTION_FAULT,"Control-Protection Fault");
 }
 
 unsafe extern "C"

@@ -60,12 +60,8 @@ nvc_vt_exit_handler_a proc frame
 	pushax_volatile_fast stacktop_offset_volatile_xmms
 	.allocstack 20h
 	.endprolog
-	; Load the Guest GPR State to the first parameter.
-	lea rcx,[rsp+stacktop_offset_guest_gpr]
-	; Load vcpu to second parameter.
-	mov rdx,qword ptr [rsp+stacktop_offset_vcpu_ptr]
-	; Load Guest stack frame to third parameter.
-	lea r8,qword ptr [rsp+stacktop_offset_guest_frame]
+	; Just pass the stack to the exit handler.
+	mov rcx,rsp
 	; Call exit handler
 	call nvc_vt_exit_handler
 resume_guest:
@@ -84,14 +80,12 @@ launch_initial_vmcs:
 vmentry_failure:
 	; Usually we won't be here, unless the VM-Entry fails.
 	; We will call the special procedure to handle this situation.
-	; First Parameter: the GPR state of the guest.
-	lea rcx,[rsp+stacktop_offset_guest_gpr]
-	; Second Parameter: the vCPU.
-	mov rdx,qword ptr [rsp+stacktop_offset_vcpu_ptr]
-	; Third Parameter: the VMX instruction status.
-	setz r8b
+	; First Parameter: the parameter
+	mov rcx,rsp
+	; Second Parameter: the VMX instruction status.
+	setz dl
 	setc al
-	adc r8b,al
+	adc dl,al
 	call nvc_vt_resume_failure
 	; Try to resume again.
 	jmp resume_guest

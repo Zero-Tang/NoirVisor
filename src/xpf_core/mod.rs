@@ -9,4 +9,5 @@ pub mod x86;
 pub mod nvbdk;
 pub mod hv_host;
 pub mod pushlock;
+pub mod trytask;
 #[cfg(test)] mod tests;

@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::slice;
+use core::{mem::MaybeUninit, slice};
 
 use paste::paste;
 use iced_x86::*;
@@ -19,6 +19,8 @@ use decode::dispatch_decoder;
 use npt::NptFaultCode;
 use xpf_core::{ci::is_ci_phys_page, x86::{descriptors::DescriptorTable, interrupts::*}};
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall,nvc_forward_memory_mapped_hypercall};
+
+use crate::xpf_core::trytask::try_task;
 
 use super::*;
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
@@ -44,16 +46,17 @@ pub(super) fn svm_apic_output_handler(_region:&IoRegion<u64>,address:u64,size:u6
 // Rules of thumb in implementing VM-Exit Handlers: Do not allocate memories from heap!
 impl SvmVcpu
 {
-	fn handle_unknown(&mut self,_gpr_state:&mut GprState)
+	fn handle_unknown(&mut self,_context:&mut SvmStackTop)
 	{
 		let vmcb=self.vmcb.virt;
 		let intercept_code:i64=unsafe{vmread(vmcb,EXIT_CODE)};
 		panic!("Unknown VM-Exit is intercepted! Code: 0x{:016X}",intercept_code);
 	}
 
-	fn handle_cpuid(&mut self,gpr_state:&mut GprState)
+	fn handle_cpuid(&mut self,context:&mut SvmStackTop)
 	{
 		let hv:&SvmHypervisor=unsafe{&*self.hypervisor.cast()};
+		let gpr_state:&mut GprState=&mut context.gpr_state;
 		let ia=gpr_state.rax as u32;
 		let ic=gpr_state.rcx as u32;
 		let (a,b,c,d)=
@@ -104,10 +107,31 @@ impl SvmVcpu
 	/// Return `None` if this `rdmsr` request failed. Exception was injected.
 	fn handle_rdmsr(&mut self,index:u32)->Option<u64>
 	{
+		#[repr(C,align(8))] struct MsrContext
+		{
+			index:u32,
+			value:MaybeUninit<u64>
+		}
+		extern "C" fn try_rdmsr(ctxt:*mut c_void)
+		{
+			debug!("Context is located at {ctxt:p}!");
+			let ctxt:&mut MsrContext=unsafe{&mut *ctxt.cast()};
+			ctxt.value.write(rdmsr(ctxt.index));
+		}
 		if self.under_hvm && (0x40000000..0x80000000).contains(&index)
 		{
 			// If NoirVisor is running under a hypervisor (e.g.: Hyper-V), we may pass-thru this MSR to upper hypervisor.
-			return Some(rdmsr(index));
+			let mut x=MsrContext{index,value:MaybeUninit::uninit()};
+			match try_task(try_rdmsr,(&raw mut x).cast())
+			{
+				Ok(_)=>return Some(unsafe{x.value.assume_init()}),
+				Err(e)=>
+				{
+					error!("Failed to pass-thru Microsoft TLFS MSR-read (index=0x{index:X}) request! Vector={}, Error-Code: {:X?}",e.vector,e.error_code);
+					unsafe{inject_event(self.vmcb.virt,e.vector,EventType::HardwareException,e.error_code,true);}
+					return None;
+				}
+			}
 		}
 		match index
 		{
@@ -141,6 +165,7 @@ impl SvmVcpu
 			}
 			MSR_SMM_CTRL=>
 			{
+				error!("SMM_CTRL rdmsr handler is not implemented!");
 				unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
 				None
 			}
@@ -150,12 +175,26 @@ impl SvmVcpu
 			}
 			_=>
 			{
+				let mut x:MsrContext=MsrContext{index,value:MaybeUninit::uninit()};
 				warn!("Unexpected rdmsr is intercepted! Index=0x{index:X}");
-				unsafe
+				match try_task(try_rdmsr,(&raw mut x).cast())
 				{
-					inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
+					Ok(_)=>
+					{
+						let v=unsafe{x.value.assume_init()};
+						warn!("Value is 0x{v:X}");
+						Some(v)
+					}
+					Err(e)=>
+					{
+						error!("The rdmsr task failed! Vector={}, Error-Code: {:X?}",e.vector,e.error_code);
+						unsafe
+						{
+							inject_event(self.vmcb.virt,e.vector,EventType::HardwareException,e.error_code,true);
+						}
+						None
+					}
 				}
-				None
 			}
 		}
 	}
@@ -166,11 +205,31 @@ impl SvmVcpu
 	/// Return `false` if this `wrmsr` request failed. Exception was injected.
 	fn handle_wrmsr(&mut self,index:u32,value:u64)->bool
 	{
+		#[repr(C)] struct MsrContext
+		{
+			index:u32,
+			value:u64
+		}
+		extern "C" fn try_wrmsr(ctxt:*mut c_void)
+		{
+			let ctxt:&mut MsrContext=unsafe{&mut *ctxt.cast()};
+			wrmsr(ctxt.index,ctxt.value);
+		}
 		if self.under_hvm && (0x40000000..0x80000000).contains(&index)
 		{
 			// If NoirVisor is running under a hypervisor (e.g.: Hyper-V), we may pass-thru this MSR to upper hypervisor.
-			wrmsr(index,value);
-			return true;
+			let mut x=MsrContext{index,value};
+			// It's not guaranteed this MSR is valid.
+			match try_task(try_wrmsr,(&raw mut x).cast())
+			{
+				Ok(_)=>return true,
+				Err(e)=>
+				{
+					error!("Failed to pass-thru Microsoft TLFS MSR-write (index=0x{index:X}) request! Vector={}, Error-Code: {:X?}",e.vector,e.error_code);
+					unsafe{inject_event(self.vmcb.virt,e.vector,EventType::HardwareException,e.error_code,true);}
+					return false;
+				}
+			}
 		}
 		match index
 		{
@@ -213,6 +272,7 @@ impl SvmVcpu
 			}
 			MSR_SMM_CTRL=>
 			{
+				error!("SMM_CTRL wrmsr handler is not implemented!");
 				unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
 				false
 			}
@@ -236,23 +296,32 @@ impl SvmVcpu
 			}
 			_=>
 			{
-				warn!("Unexpected wrmsr is intercepted! Index=0x{index:X}, Value=0x{value:016X}");
-				unsafe
+				let mut x:MsrContext=MsrContext{index,value};
+				warn!("Unexpected wrmsr is intercepted! Index=0x{index:X}");
+				match try_task(try_wrmsr,(&raw mut x).cast())
 				{
-					inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
+					Ok(_)=>true,
+					Err(e)=>
+					{
+						error!("The wrmsr task failed! Vector={}, Error-Code: {:X?}",e.vector,e.error_code);
+						unsafe
+						{
+							inject_event(self.vmcb.virt,e.vector,EventType::HardwareException,e.error_code,true);
+						}
+						false
+					}
 				}
-				false
 			}
 		}
 	}
 
-	fn handle_msr(&mut self,gpr_state:&mut GprState)
+	fn handle_msr(&mut self,context:&mut SvmStackTop)
 	{
-		let index=gpr_state.rcx as u32;
+		let index=context.gpr_state.rcx as u32;
 		let op_write:bool=unsafe{vmread(self.vmcb.virt,EXIT_INFO1)};
 		if op_write
 		{
-			let value=(gpr_state.rax&0xFFFFFFFF)|(gpr_state.rdx<<32);
+			let value=(context.gpr_state.rax&0xFFFFFFFF)|(context.gpr_state.rdx<<32);
 			if self.handle_wrmsr(index,value)
 			{
 				// Advance rip.
@@ -266,25 +335,26 @@ impl SvmVcpu
 			let hi=(value>>32) as u32;
 			unsafe
 			{
-				(&raw mut gpr_state.rax).cast::<u32>().write(lo);
-				(&raw mut gpr_state.rdx).cast::<u32>().write(hi);
+				(&raw mut context.gpr_state.rax).cast::<u32>().write(lo);
+				(&raw mut context.gpr_state.rdx).cast::<u32>().write(hi);
 				advance_rip(self.vmcb.virt);
 			}
 		}
 	}
 
-	fn handle_shutdown(&mut self,_gpr_state:&mut GprState)
+	fn handle_shutdown(&mut self,_context:&mut SvmStackTop)
 	{
 		panic!("Shutdown occured!");
 	}
 
-	fn handle_vmrun(&mut self,gpr_state:&mut GprState)
+	fn handle_vmrun(&mut self,context:&mut SvmStackTop)
 	{
-		panic!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",gpr_state.rax);
+		panic!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",context.gpr_state.rax);
 	}
 
-	fn handle_vmmcall(&mut self,gpr_state:&mut GprState)
+	fn handle_vmmcall(&mut self,context:&mut SvmStackTop)
 	{
+		let gpr_state=&mut context.gpr_state;
 		let grip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
 		let hv:&SvmHypervisor=unsafe{&*self.hypervisor.cast()};
 		if hv.is_rip_from_hypervisor(grip)
@@ -405,37 +475,37 @@ impl SvmVcpu
 		}
 	}
 
-	fn handle_vmload(&mut self,gpr_state:&mut GprState)
+	fn handle_vmload(&mut self,context:&mut SvmStackTop)
 	{
-		error!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",gpr_state.rax);
+		error!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",context.gpr_state.rax);
 		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
-	fn handle_vmsave(&mut self,gpr_state:&mut GprState)
+	fn handle_vmsave(&mut self,context:&mut SvmStackTop)
 	{
-		error!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",gpr_state.rax);
+		error!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",context.gpr_state.rax);
 		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
-	fn handle_stgi(&mut self,_gpr_state:&mut GprState)
-	{
-		error!("Nested virtualization is unsupported!");
-		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
-	}
-
-	fn handle_clgi(&mut self,_gpr_state:&mut GprState)
+	fn handle_stgi(&mut self,_context:&mut SvmStackTop)
 	{
 		error!("Nested virtualization is unsupported!");
 		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
-	fn handle_skinit(&mut self,_gpr_state:&mut GprState)
+	fn handle_clgi(&mut self,_context:&mut SvmStackTop)
 	{
 		error!("Nested virtualization is unsupported!");
 		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
-	fn handle_npf(&mut self,gpr_state:&mut GprState)
+	fn handle_skinit(&mut self,_context:&mut SvmStackTop)
+	{
+		error!("Nested virtualization is unsupported!");
+		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
+	}
+
+	fn handle_npf(&mut self,context:&mut SvmStackTop)
 	{
 		let vmcb=self.vmcb.virt;
 		let fault:NptFaultCode=unsafe{vmread(vmcb,EXIT_INFO1)};
@@ -467,7 +537,6 @@ impl SvmVcpu
 			let mut decoder=Decoder::with_ip(bitness,ins_bytes,rip,DecoderOptions::AMD);
 			assert!(decoder.can_decode());
 			let ins_info=decoder.decode();
-			let gpr_array=gpr_state as *mut GprState as *mut u64;
 			match ins_info.mnemonic()
 			{
 				Mnemonic::Mov=>
@@ -477,7 +546,7 @@ impl SvmVcpu
 					{
 						let data=match ins_info.op1_kind()
 						{
-							OpKind::Register=>unsafe{gpr_array.add(ins_info.op1_register().number()).read()},
+							OpKind::Register=>context.gpr_state.read(ins_info.op1_register().number()).unwrap(),
 							OpKind::Immediate8=>ins_info.immediate8().into(),
 							OpKind::Immediate16=>ins_info.immediate16().into(),
 							OpKind::Immediate32=>ins_info.immediate32().into(),
@@ -503,7 +572,7 @@ impl SvmVcpu
 		}
 	}
 
-	fn handle_invalid(&mut self,_gpr_state:&mut GprState)
+	fn handle_invalid(&mut self,_context:&mut SvmStackTop)
 	{
 		let intercept_code:i64=unsafe{vmread(self.vmcb.virt,EXIT_CODE)};
 		panic!("Invalid State! Exit Code: 0x{:X}",intercept_code);
@@ -513,32 +582,31 @@ impl SvmVcpu
 /// # Safety
 /// This function is unsafe is because it's called from assembly.
 /// DO NOT CALL THIS FUNCTION FROM RUST CODE!
-#[unsafe(no_mangle)] unsafe extern "C" fn nvc_svm_exit_handler(gpr_state:*mut GprState,vcpu:*mut SvmVcpu,guest_stack:*mut InterruptStackFrameWithErrorCode)
+#[unsafe(no_mangle)] unsafe extern "C" fn nvc_svm_exit_handler(stack:*mut SvmStackTop)
 {
 	unsafe
 	{
-		let vp=&mut (*vcpu);
-		let gpr=&mut (*gpr_state);
-		let stack:*mut SvmStackTop=(vp.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>())).cast();
-		if (*stack).guest_vmcb_pa==(*vcpu).vmcb.phys
+		let vcpu=&mut *(*stack).vcpu;
+		let gpr=&mut (*stack).gpr_state;
+		if (*stack).guest_vmcb_pa==vcpu.vmcb.phys
 		{
 			// This VM-Exit is intercepted from the subverted system.
-			let cur_vmcb=(*vcpu).vmcb.virt;
+			let cur_vmcb=vcpu.vmcb.virt;
 			// Allow debugger to display the stack trace from the guest.
 			// Note: this stack trace is only meaningful from subverted host.
-			(*guest_stack).return_rip=vmread(cur_vmcb,GUEST_RIP);
-			(*guest_stack).return_rsp=vmread(cur_vmcb,GUEST_RSP);
+			(*stack).guest_frame.return_rip=vmread(cur_vmcb,GUEST_RIP);
+			(*stack).guest_frame.return_rsp=vmread(cur_vmcb,GUEST_RSP);
 			// Intercept code is supposed to be 64-bit, but Linux KVM has a bug that treats the intercept code as 32-bit.
 			let intercept_code:i32=vmread(cur_vmcb,EXIT_CODE);
 			let decoder=dispatch_decoder(intercept_code as i64);
 			let handler=dispatch_handler(intercept_code as i64);
 			// If VMCB-Clean-Bits is supported, we may cache the VMCB fields.
-			if (*vcpu).vmcb_clean {vmwrite::<u32>((*vcpu).vmcb.virt,VMCB_CLEAN_BITS,0xFFFFFFFF)};
+			if (*vcpu).vmcb_clean {vmwrite::<u32>(vcpu.vmcb.virt,VMCB_CLEAN_BITS,0xFFFFFFFF)};
 			// Handle the VM-Exit!
 			gpr.rax=vmread(cur_vmcb,GUEST_RAX);
 			gpr.rsp=vmread(cur_vmcb,GUEST_RSP);
-			decoder(vp);
-			handler(vp,gpr);
+			decoder(vcpu);
+			handler(vcpu,&mut *stack);
 			vmwrite((*vcpu).vmcb.virt,GUEST_RAX,gpr.rax);
 			// The rax in GPR state should be the physical address of VMCB
 			// in order to execute the vmrun instruction properly.
@@ -688,7 +756,7 @@ pub const INTERCEPTED_VMSA_BUSY:i64=-2;
 pub const IDLE_REQUIRED:i64=-3;
 pub const INVALID_PMC:i64=-4;
 
-type SvmExitHandler=fn(&mut SvmVcpu,&mut GprState);
+type SvmExitHandler=fn(&mut SvmVcpu,&mut SvmStackTop);
 
 // Defining sparse array is much easier in Rust than in C!
 const SVM_EXIT_HANDLER_GROUP1:[SvmExitHandler;SVM_MAXIMUM_CODE1]=

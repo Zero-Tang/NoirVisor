@@ -1145,7 +1145,7 @@ pub mod interrupts
 		{
 			writeln!(f,"Return cs:rip={:04X}:{:016X}, ",self.return_cs,self.return_rip)?;
 			writeln!(f,"Return ss:rsp={:04X}:{:016X}, ",self.return_ss,self.return_rsp)?;
-			writeln!(f,"Return rflags=0x{:016X}",self.return_rflags)
+			write!(f,"Return rflags=0x{:016X}",self.return_rflags)
 		}
 	}
 
@@ -1166,7 +1166,7 @@ pub mod interrupts
 			writeln!(f,"Return cs:rip={:04X}:{:016X}, ",self.return_cs,self.return_rip)?;
 			writeln!(f,"Return ss:rsp={:04X}:{:016X}, ",self.return_ss,self.return_rsp)?;
 			writeln!(f,"Return rflags=0x{:016X}",self.return_rflags)?;
-			writeln!(f,"Error-Code=0x{:08X}",self.error_code)
+			write!(f,"Error-Code=0x{:08X}",self.error_code)
 		}
 	}
 }

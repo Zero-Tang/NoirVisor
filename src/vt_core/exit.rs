@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::arch::x86_64::_xsetbv;
+use core::{arch::x86_64::_xsetbv, ffi::c_void};
 
 use iced_x86::{Decoder, Formatter};
 use paste::paste;
@@ -18,9 +18,8 @@ use log::*;
 
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall, nvc_forward_memory_mapped_hypercall};
-#[cfg(windows)] use super::VtStackTop;
-use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, ci::is_ci_phys_page, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, InterruptStackFrameWithErrorCode, GENERAL_PROTECTION_FAULT, INVALID_OPCODE_FAULT}}}, *};
-use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, nvc_vt_resume_without_entry};
+use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, ci::is_ci_phys_page, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, trytask::try_task, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, GENERAL_PROTECTION_FAULT, INVALID_OPCODE_FAULT}}}, *};
+use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, VtStackTop, nvc_vt_resume_without_entry};
 
 impl VtVcpu
 {
@@ -61,13 +60,14 @@ impl VtVcpu
 		error!("Guest EFER: 0x{efer:X}, PAT: 0x{pat:X}, Debug-Control: 0x{dbg_ctrl:X}");
 	}
 
-	fn handle_triple_fault(&mut self,_gpr_state:&mut GprState)
+	fn handle_triple_fault(&mut self,_context:&mut VtStackTop)
 	{
 		panic!("Triple-Fault occured!");
 	}
 
-	fn handle_init(&mut self,gpr_state:&mut GprState)
+	fn handle_init(&mut self,context:&mut VtStackTop)
 	{
+		let gpr_state=&mut context.gpr_state;
 		unsafe 
 		{
 			// General-Purpose Registers
@@ -117,8 +117,9 @@ impl VtVcpu
 		}
 	}
 
-	fn handle_cpuid(&mut self,gpr_state:&mut GprState)
+	fn handle_cpuid(&mut self,context:&mut VtStackTop)
 	{
+		let gpr_state=&mut context.gpr_state;
 		let hv:&VtHypervisor=unsafe{&*self.hypervisor.cast()};
 		let ia=gpr_state.rax as u32;
 		let ic=gpr_state.rcx as u32;
@@ -164,13 +165,13 @@ impl VtVcpu
 		}
 	}
 
-	fn handle_getsec(&mut self,_gpr_state:&mut GprState)
+	fn handle_getsec(&mut self,_context:&mut VtStackTop)
 	{
 		error!("SMX Virtualization is not supported!");
 		unsafe{advance_rip()};
 	}
 
-	fn handle_invd(&mut self,_gpr_state:&mut GprState)
+	fn handle_invd(&mut self,_context:&mut VtStackTop)
 	{
 		trace!("The invd instruction is executed!");
 		// In Hyper-V, it invoked wbinvd at invd exit.
@@ -178,8 +179,9 @@ impl VtVcpu
 		unsafe{advance_rip()};
 	}
 
-	fn handle_vmcall(&mut self,gpr_state:&mut GprState)
+	fn handle_vmcall(&mut self,context:&mut VtStackTop)
 	{
+		let gpr_state=&mut context.gpr_state;
 		let vmcall_func=gpr_state.rcx as u32;
 		let gcr3=unsafe{vmreadptr(GUEST_CR3)}.unwrap() as u64;
 		let grip=unsafe{vmreadptr(GUEST_RIP)}.unwrap();
@@ -294,8 +296,9 @@ impl VtVcpu
 		}
 	}
 
-	fn handle_cr_access(&mut self,gpr_state:&mut GprState)
+	fn handle_cr_access(&mut self,context:&mut VtStackTop)
 	{
+		let gpr_state=&mut context.gpr_state;
 		let q=ControlRegisterQualification::read();
 		debug!("CR Index: {}, GPR Index: {}, Access: {}",q.get_cr_index(),q.get_access_type(),q.get_gpr_index());
 		match q.get_access_type()
@@ -319,9 +322,9 @@ impl VtVcpu
 		panic!("CR-Access Exit is not implemented!");
 	}
 
-	fn handle_rdmsr(&mut self,gpr_state:&mut GprState)
+	fn handle_rdmsr(&mut self,context:&mut VtStackTop)
 	{
-		let index:u32=gpr_state.rcx as u32;
+		let index:u32=context.gpr_state.rcx as u32;
 		let ret_val:Option<u64>=match index
 		{
 			// Prevent the Guest from updating microcode.
@@ -334,17 +337,17 @@ impl VtVcpu
 		{
 			Some(v)=>
 			{
-				gpr_state.rax=v&0xffffffff;
-				gpr_state.rdx=v>>32;
+				context.gpr_state.rax=v&0xffffffff;
+				context.gpr_state.rdx=v>>32;
 				unsafe{advance_rip()};
 			}
 			None=>unsafe{inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true,0)}
 		}
 	}
 
-	fn handle_wrmsr(&mut self,gpr_state:&mut GprState)
+	fn handle_wrmsr(&mut self,context:&mut VtStackTop)
 	{
-		let index:u32=gpr_state.rcx as u32;
+		let index:u32=context.gpr_state.rcx as u32;
 		let fault=match index
 		{
 			// Prevent the Guest from updating microcode.
@@ -365,18 +368,18 @@ impl VtVcpu
 		};
 	}
 
-	fn handle_invalid_state(&mut self,_gpr_state:&mut GprState)
+	fn handle_invalid_state(&mut self,_context:&mut VtStackTop)
 	{
 		self.dump_current_vmcs();
 		panic!("Invalid Guest State!");
 	}
 
-	fn handle_invalid_auto_msr(&mut self,_gpr_state:&mut GprState)
+	fn handle_invalid_auto_msr(&mut self,_context:&mut VtStackTop)
 	{
 		panic!("Invalid Auto-MSR List!");
 	}
 
-	fn handle_ept_violation(&mut self,_gpr_state:&mut GprState)
+	fn handle_ept_violation(&mut self,_context:&mut VtStackTop)
 	{
 		let gpa=unsafe{vmread64(GUEST_PHYSICAL_ADDRESS)}.unwrap();
 		let rip=unsafe{vmreadptr(GUEST_RIP).unwrap()};
@@ -405,7 +408,7 @@ impl VtVcpu
 		}
 	}
 
-	fn handle_ept_misconfig(&mut self,_gpr_state:&mut GprState)
+	fn handle_ept_misconfig(&mut self,_context:&mut VtStackTop)
 	{
 		let gpa=unsafe{vmread64(GUEST_PHYSICAL_ADDRESS)}.unwrap();
 		let hv:&mut VtHypervisor=unsafe{&mut *self.hypervisor.cast()};
@@ -423,42 +426,57 @@ impl VtVcpu
 		panic!("EPT Misconfiguration happened! GPA=0x{gpa:X}");
 	}
 
-	fn handle_xsetbv(&mut self,gpr_state:&mut GprState)
+	fn handle_xsetbv(&mut self,context:&mut VtStackTop)
 	{
+		let gpr_state=&mut context.gpr_state;
 		let index=(gpr_state.rcx&0xFFFFFFFF) as u32;
 		let value=(gpr_state.rax&0xFFFFFFFF)|(gpr_state.rdx&0xFFFFFFFF00000000);
 		debug!("The xsetbv instruction is intercepted! Index={index}, Value=0x{value:16X}");
-		// TODO: verify value's validity.
 		unsafe
 		{
-			_xsetbv(index,value);
-			advance_rip();
+			#[repr(C)] struct XcrContext
+			{
+				index:u32,
+				value:u64
+			}
+			extern "C" fn try_xsetbv(context:*mut c_void)
+			{
+				let ctxt:&mut XcrContext=unsafe{&mut *context.cast()};
+				unsafe{_xsetbv(ctxt.index,ctxt.value)};
+			}
+			let mut x=XcrContext{index,value};
+			// Expect an exception may come.
+			match try_task(try_xsetbv,(&raw mut x).cast())
+			{
+				Ok(_)=>advance_rip(),
+				Err(e)=>
+				{
+					error!("The xsetbv task failed! Vector={}, Error-Code: {:X?}",e.vector,e.error_code);
+					inject_event(e.vector,EventType::HardwareException,e.error_code,true,0);
+				}
+			}
 		}
 	}
 
-	fn handle_unknown(&mut self,_gpr_state:&mut GprState)
+	fn handle_unknown(&mut self,_context:&mut VtStackTop)
 	{
 		let exit_reason=unsafe{vmread32(VMEXIT_REASON).unwrap()};
 		panic!("Unknown VM-Exit is intercepted! Exit-Reason: {} (0x{exit_reason:X})",exit_reason&0xFFFF);
 	}
 }
 
-#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_exit_handler(gpr_state:*mut GprState,vcpu:*mut VtVcpu,guest_state:*mut InterruptStackFrameWithErrorCode)
+#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_exit_handler(context:*mut VtStackTop)
 {
-	unsafe
-	{
-		(*guest_state).return_rsp=vmreadptr(GUEST_RSP).unwrap() as u64;
-		(*guest_state).return_rip=vmreadptr(GUEST_RIP).unwrap() as u64;
-		let exit_reason=vmread32(VMEXIT_REASON).unwrap();
-		let vp=&mut (*vcpu);
-		let gpr=&mut (*gpr_state);
-		gpr.rsp=(*guest_state).return_rsp;
-		let handler=dispatch_handler(exit_reason);
-		handler(vp,gpr);
-	}
+	let ctxt=unsafe{&mut *context};
+	ctxt.guest_frame.return_rsp=unsafe{vmreadptr(GUEST_RSP).unwrap() as u64};
+	ctxt.guest_frame.return_rip=unsafe{vmreadptr(GUEST_RIP).unwrap() as u64};
+	let exit_reason=unsafe{vmread32(VMEXIT_REASON).unwrap()};
+	ctxt.gpr_state.rsp=ctxt.guest_frame.return_rsp;
+	let handler=dispatch_handler(exit_reason);
+	handler(unsafe{&mut *ctxt.vcpu},ctxt);
 }
 
-#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_resume_failure(_gpr_state:*mut GprState,_vcpu:*mut VtVcpu,_vmx_status:u8)
+#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_resume_failure(_context:*mut VtStackTop,_vmx_status:u8)
 {
 	panic!("VM-Entry failed on resume!");
 }
@@ -542,7 +560,7 @@ pub const INTERCEPTED_WRMSRLIST:u32=79;
 
 const VT_MAXIMUM_CODE:usize=80;
 
-type VtExitHandler=fn(&mut VtVcpu,&mut GprState);
+type VtExitHandler=fn(&mut VtVcpu,&mut VtStackTop);
 
 // Defining sparse array is much easier in Rust than in C!
 const VT_EXIT_HANDLERS:[VtExitHandler;VT_MAXIMUM_CODE]=

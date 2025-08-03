@@ -27,7 +27,7 @@ spin = "0.10.0"
 log = "0.4.27"
 
 [dependencies.portable-dlmalloc]
-version = "0.3.2"
+version = "0.3.3"
 features = ["alt-alloc"]
 
 [dependencies.iced-x86]

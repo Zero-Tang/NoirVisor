@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::c_void, slice};
+use core::{ffi::c_void, hint::spin_loop, slice};
 use alloc::vec::Vec;
 
 use log::*;
@@ -181,10 +181,10 @@ impl SvmIommuManager
 		for x in &mut self.iommu_bars
 		{
 			let mut cmd_buff_reg=CommandBufferBaseRegister::default();
-			cmd_buff_reg.set_base(x.cmd_base.phys);
+			cmd_buff_reg.set_base(page_4kb_count(x.cmd_base.phys));
 			cmd_buff_reg.set_length(0x10);	// Our Command-Buffer has 4KiB.
 			let mut log_buff_reg=EventLogBaseRegister::default();
-			log_buff_reg.set_base(x.log_base.phys);
+			log_buff_reg.set_base(page_4kb_count(x.log_base.phys));
 			log_buff_reg.set_length(0x10);	// Out EventLog-Buffer has 4KiB.
 			info!("Activating IOMMU for BAR 0x{:X}...",x.bar.phys);
 			unsafe
@@ -198,9 +198,25 @@ impl SvmIommuManager
 				mmio_write(x.bar.virt.byte_add(MMIO_BASE_EVENT_LOG_BUFFER_TAIL).cast(),0u64);
 				mmio_write(x.bar.virt.byte_add(MMIO_BASE_IOMMU_CONTROL_REGISTER).cast(),iommu_cr.0);
 			}
-			info!("Awaiting activation...");
+			info!("Awaiting activation (Log-Base: 0x{:X})...",log_buff_reg.0);
+			let mut signal:u64=0;
+			let signal_phys=unsafe{noir_get_physical_address((&raw mut signal).cast())};
+			let cmd1=SvmIommuCommand::InvalidateIommuAll;
+			let cmd2=SvmIommuCommand::CompletionWait
+			{
+				store_address:signal_phys,
+				store_data:1,
+				completion_store:true,
+				incompletion_interrupt:false,
+				flush_queue:true
+			};
+			x.issue_cmd(cmd1);
+			x.issue_cmd(cmd2);
+			while signal==0
+			{
+				spin_loop();
+			}
 			info!("Successfully activated IOMMU for BAR 0x{:X}...",x.bar.phys);
-
 		}
 	}
 

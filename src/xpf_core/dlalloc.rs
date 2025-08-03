@@ -12,7 +12,7 @@
 
 use core::{alloc::*, arch::asm, ffi::c_void, fmt::{self,Display}, ptr::null_mut, sync::atomic::*, slice, str};
 
-use portable_dlmalloc::{raw::*, MspaceAlloc};
+use portable_dlmalloc::{raw::*, MspaceAlloc, DLMalloc};
 use paste::paste;
 use spin::Mutex;
 
@@ -40,24 +40,31 @@ unsafe impl GlobalAlloc for InternalAllocator
 			{
 				panic!("Intercepted unwanted allocation! Alignment: {} bytes. Size: {} bytes.",layout.align(),layout.size());
 			}
-			dlmemalign(layout.align(),layout.size()).cast()
+			DLMALLOC.alloc(layout)
 		}
 	}
 
-	unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout)
+	unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout)
 	{
-		unsafe{dlfree(ptr.cast())}
+		unsafe
+		{
+			DLMALLOC.dealloc(ptr,layout);
+		}
 	}
 
-	unsafe fn realloc(&self, ptr: *mut u8, _layout: Layout, new_size: usize) -> *mut u8
+	unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8
 	{
-		unsafe{dlrealloc(ptr.cast(),new_size).cast()}
+		unsafe
+		{
+			DLMALLOC.realloc(ptr,layout,new_size)
+		}
 	}
 }
 
 // We will use standard library's allocator for test cases.
 #[cfg(not(test))]
 #[global_allocator] static GLOBAL_ALLOCATOR:InternalAllocator=InternalAllocator;
+static DLMALLOC:DLMalloc=DLMalloc;
 
 pub fn get_used()->usize
 {

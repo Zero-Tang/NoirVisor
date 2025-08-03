@@ -19,7 +19,7 @@ use vmcs::*;
 use ept::VtEptManager;
 use crate::*;
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
-use xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
+use xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
@@ -58,7 +58,9 @@ pub struct VtVcpu
 	pub msr_auto_guest:[VmxMsrAutoItem;5],
 	// Always use this member to format the mnemonic of an instruction.
 	// Do not use `MasmFormatter::new()` on your own because it will cause runtime allocation!
-	pub disasm_fmter:MasmFormatter
+	pub disasm_fmter:MasmFormatter,
+	// This context handles exceptions.
+	pub gs_context:PerCpuGsException
 }
 
 impl Default for VtVcpu
@@ -80,7 +82,8 @@ impl Default for VtVcpu
 			host_cpu:HostProcessor::default(),
 			msr_auto_host:[VmxMsrAutoItem::default();5],
 			msr_auto_guest:[VmxMsrAutoItem::default();5],
-			disasm_fmter:MasmFormatter::new()
+			disasm_fmter:MasmFormatter::new(),
+			gs_context:PerCpuGsException::default()
 		}
 	}
 }
@@ -166,7 +169,7 @@ impl VtVcpu
 			vmwrite16(HOST_SS_SELECTOR,state.ss.selector&SELECTOR_RPLTI_MASK);
 			// Host State Area - Segment Bases
 			vmwriteptr(HOST_FS_BASE,state.fs.base as usize);
-			vmwriteptr(HOST_GS_BASE,state.gs.base as usize);
+			vmwriteptr(HOST_GS_BASE,&raw mut self.gs_context as usize);
 			// Host State Area - Control Registers
 			let cr0=(state.cr0|rdmsr(MSR_VMX_CR0_FIXED0) as usize)&rdmsr(MSR_VMX_CR0_FIXED1) as usize;
 			let cr4=(state.cr4|rdmsr(MSR_VMX_CR4_FIXED0) as usize)&rdmsr(MSR_VMX_CR4_FIXED1) as usize;
@@ -251,6 +254,7 @@ impl VtVcpu
 			vmwrite64(GUEST_MSR_IA32_SYSENTER_ESP,state.sysenter_esp);
 			vmwrite64(GUEST_MSR_IA32_SYSENTER_EIP,state.sysenter_eip);
 			vmwrite64(GUEST_MSR_IA32_EFER,state.efer);
+			vmwrite64(GUEST_MSR_IA32_PAT,state.pat);
 			// Save rflags, rsp and rip.
 			vmwriteptr(GUEST_RSP,gsp);
 			vmwriteptr(GUEST_RIP,nvc_vt_guest_start as usize);
@@ -315,6 +319,8 @@ impl VtVcpu
 		exit_ctrl.set_host_address_space_size(cfg!(target_arch="x86_64"));
 		exit_ctrl.set_load_efer(true);
 		exit_ctrl.set_save_efer(true);
+		exit_ctrl.set_load_pat(true);
+		exit_ctrl.set_save_pat(true);
 		// Filter unsupported fields.
 		let exit_ctrl_msr=VmxExitCtrlMsr::read(true_msr);
 		exit_ctrl.0|=exit_ctrl_msr.get_allowed0().0;
@@ -333,6 +339,7 @@ impl VtVcpu
 		entry_ctrl.set_load_debug_controls(true);
 		entry_ctrl.set_ia32e_mode_guest(cfg!(target_arch="x86_64"));
 		entry_ctrl.set_load_efer(true);
+		entry_ctrl.set_load_pat(true);
 		// Filter unsupported fields.
 		let entry_ctrl_msr=VmxEntryCtrlMsr::read(true_msr);
 		entry_ctrl.0|=entry_ctrl_msr.get_allowed0().0;
@@ -519,6 +526,7 @@ impl HypervisorCapabilities for VtHypervisor
 			let use_true_msr=vt_basic.get_use_true_msr();
 			let pri_proc_sup=VmxPriProcCtrlMsr::read(use_true_msr);
 			basic_requirement&=pri_proc_sup.get_allowed1().get_use_msr_bitmap();
+			let vt_misc=VmxMiscMsr::read();
 			if pri_proc_sup.get_allowed1().get_activate_secondary_controls()
 			{
 				let sec_proc_sup=VmxSecProcCtrlMsr::read();
@@ -542,10 +550,17 @@ impl HypervisorCapabilities for VtHypervisor
 				}
 				basic_requirement&=sec_proc_sup.get_allowed1().get_enable_vpid();
 				basic_requirement&=sec_proc_sup.get_allowed1().get_unrestricted_guest();
-				if sec_proc_sup.get_allowed1().get_vmcs_shadowing()
+				let mut accel_nvirt_requirement:bool=true;
+				accel_nvirt_requirement&=sec_proc_sup.get_allowed1().get_vmcs_shadowing();
+				accel_nvirt_requirement&=vt_misc.get_allow_vmcs_write_anywhere();
+				if accel_nvirt_requirement
 				{
 					supportability|=4;
 				}
+			}
+			#[cfg(target_os="uefi")]
+			{
+				basic_requirement&=vt_misc.get_support_wait_for_sipi_state();
 			}
 			if basic_requirement {supportability|=1;}
 		}
