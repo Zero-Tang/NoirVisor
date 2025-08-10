@@ -10,9 +10,9 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{alloc::*, arch::asm, ffi::c_void, fmt::{self,Display}, ptr::null_mut, sync::atomic::*, slice, str};
+use core::{ffi::c_void, fmt::{self,Display}, sync::atomic::*};
 
-use portable_dlmalloc::{raw::*, MspaceAlloc, DLMalloc};
+use portable_dlmalloc::raw::*;
 use paste::paste;
 use spin::Mutex;
 
@@ -26,45 +26,130 @@ pub fn set_alloc_checker(v:bool)
 	CHECK_ALLOC.store(v,Ordering::SeqCst);
 }
 
-// Re-implement the allocator in order to intercept global allocations.
-#[allow(dead_code)]
-struct InternalAllocator;
-
-unsafe impl GlobalAlloc for InternalAllocator
+#[cfg(not(test))]
+mod dlmalloc
 {
-	unsafe fn alloc(&self, layout: Layout) -> *mut u8
+	use core::{alloc::*, ffi::c_void, hint::spin_loop, ptr::null_mut, sync::atomic::{AtomicUsize, Ordering}};
+
+	use portable_dlmalloc::DLMalloc;
+	
+	use super::{CHECK_ALLOC, alloc_2mb_page, free_2mb_page};
+	use crate::{system_print, sysdprint, sysdprintln, xpf_core::nvbdk::{PAGE_2MB_SIZE, nulstr_from_ptr}};
+
+	struct InternalAllocator;
+
+	// Re-implement the allocator in order to intercept global allocations.
+	unsafe impl GlobalAlloc for InternalAllocator
 	{
-		unsafe
+		unsafe fn alloc(&self, layout: Layout) -> *mut u8
 		{
-			if CHECK_ALLOC.load(Ordering::SeqCst)
+			unsafe
 			{
-				panic!("Intercepted unwanted allocation! Alignment: {} bytes. Size: {} bytes.",layout.align(),layout.size());
+				if CHECK_ALLOC.load(Ordering::SeqCst)
+				{
+					panic!("Intercepted unwanted allocation! Alignment: {} bytes. Size: {} bytes.",layout.align(),layout.size());
+				}
+				DLMALLOC.alloc(layout)
 			}
-			DLMALLOC.alloc(layout)
+		}
+
+		unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout)
+		{
+			unsafe
+			{
+				DLMALLOC.dealloc(ptr,layout);
+			}
+		}
+
+		unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8
+		{
+			unsafe
+			{
+				DLMALLOC.realloc(ptr,layout,new_size)
+			}
 		}
 	}
 
-	unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout)
+	#[global_allocator] static GLOBAL_ALLOCATOR:InternalAllocator=InternalAllocator;
+	static DLMALLOC:DLMalloc=DLMalloc;
+
+	#[unsafe(no_mangle)] unsafe extern "C" fn custom_mmap(length:usize)->*mut c_void
 	{
-		unsafe
+		match alloc_2mb_page()
 		{
-			DLMALLOC.dealloc(ptr,layout);
+			Some(md)=>
+			{
+				sysdprintln!("[mmap] ptr: {:p}, size: 0x{length:X}",md.virt);
+				md.virt
+			}
+			None=>unsafe{null_mut::<c_void>().byte_sub(1)}
 		}
 	}
 
-	unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8
+	#[unsafe(no_mangle)] unsafe extern "C" fn custom_munmap(ptr:*mut c_void,length:usize)->i32
+	{
+		sysdprintln!("[munmap] ptr: {ptr:p}, size: 0x{length:X}");
+		for i in (0..length).step_by(PAGE_2MB_SIZE)
+		{
+			unsafe
+			{
+				free_2mb_page(ptr.byte_add(i));
+			}
+		}
+		0
+	}
+
+	#[unsafe(no_mangle)] unsafe extern "C" fn custom_direct_mmap(_length:usize)->*mut c_void
 	{
 		unsafe
 		{
-			DLMALLOC.realloc(ptr,layout,new_size)
+			null_mut::<c_void>().byte_sub(1)
+		}
+	}
+
+	#[unsafe(no_mangle)] unsafe extern "C" fn init_lock(lock:*mut usize)
+	{
+		unsafe
+		{
+			*lock=0;
+		}
+	}
+
+	#[unsafe(no_mangle)] unsafe extern "C" fn final_lock(_lock:*mut usize)
+	{
+		// DO NOTHING SINCE SPIN-LOCK DOESN'T NEED FINALIZATION.
+	}
+
+	#[unsafe(no_mangle)] unsafe extern "C" fn acquire_lock(lock:*mut usize)
+	{
+		let p=unsafe{AtomicUsize::from_ptr(lock)};
+		// Use a TTAS Spin-Lock.
+		while p.compare_exchange(0,1,Ordering::Acquire,Ordering::Relaxed).is_err()
+		{
+			while p.load(Ordering::Relaxed)==1
+			{
+				// The pause instruction is intended to optimize spin-locks.
+				spin_loop();
+			}
+		}
+	}
+
+	#[unsafe(no_mangle)] unsafe extern "C" fn release_lock(lock:*mut usize)
+	{
+		let p=unsafe{AtomicUsize::from_ptr(lock)};
+		p.store(0,Ordering::Release);
+	}
+
+	#[unsafe(no_mangle)] unsafe extern "C" fn custom_abort(message:*const u8,src_file:*const u8,src_line:u32)->!
+	{
+		unsafe
+		{
+			let msg=nulstr_from_ptr(message);
+			let sfn=nulstr_from_ptr(src_file);
+			panic!("DLMalloc aborted! Reason: {msg}\n{sfn}@{src_line}");
 		}
 	}
 }
-
-// We will use standard library's allocator for test cases.
-#[cfg(not(test))]
-#[global_allocator] static GLOBAL_ALLOCATOR:InternalAllocator=InternalAllocator;
-static DLMALLOC:DLMalloc=DLMalloc;
 
 pub fn get_used()->usize
 {
@@ -81,8 +166,6 @@ pub fn get_free()->usize
 		dlmallinfo().fordblks
 	}
 }
-
-pub static CVM_ALLOCATOR:MspaceAlloc=MspaceAlloc::new(0);
 
 #[derive(Clone, Copy)]
 enum PageAllocationType
@@ -387,94 +470,5 @@ pub fn enum_allocated_large_pages(callback_rt:PhysicalRangeCallback,context:*mut
 		// Therefore, there mustn't be any lock holders on allocation manager.
 		callback_rt(phys,PAGE_2MB_SIZE as u64,context);
 		i+=1;
-	}
-}
-
-#[unsafe(no_mangle)] unsafe extern "C" fn custom_mmap(length:usize)->*mut c_void
-{
-	match alloc_2mb_page()
-	{
-		Some(md)=>
-		{
-			sysdprintln!("[mmap] ptr: {:p}, size: 0x{length:X}",md.virt);
-			md.virt
-		}
-		None=>unsafe{null_mut::<c_void>().byte_sub(1)}
-	}
-}
-
-#[unsafe(no_mangle)] unsafe extern "C" fn custom_munmap(ptr:*mut c_void,length:usize)->i32
-{
-	sysdprintln!("[munmap] ptr: {ptr:p}, size: 0x{length:X}");
-	for i in (0..length).step_by(PAGE_2MB_SIZE)
-	{
-		unsafe
-		{
-			free_2mb_page(ptr.byte_add(i));
-		}
-	}
-	0
-}
-
-#[unsafe(no_mangle)] unsafe extern "C" fn custom_direct_mmap(_length:usize)->*mut c_void
-{
-	unsafe
-	{
-		null_mut::<c_void>().byte_sub(1)
-	}
-}
-
-#[unsafe(no_mangle)] unsafe extern "C" fn init_lock(lock:*mut usize)
-{
-	unsafe
-	{
-		*lock=0;
-	}
-}
-
-#[unsafe(no_mangle)] unsafe extern "C" fn final_lock(_lock:*mut usize)
-{
-	// DO NOTHING SINCE SPIN-LOCK DOESN'T NEED FINALIZATION.
-}
-
-#[unsafe(no_mangle)] unsafe extern "C" fn acquire_lock(lock:*mut usize)
-{
-	let p=unsafe{AtomicUsize::from_ptr(lock)};
-	// Use a TTAS Spin-Lock.
-	while p.compare_exchange(0,1,Ordering::Acquire,Ordering::Relaxed).is_err()
-	{
-		while p.load(Ordering::Relaxed)==1
-		{
-			// The pause instruction is intended to optimize spin-locks.
-			unsafe
-			{
-				asm!("pause");
-			}
-		}
-	}
-}
-
-#[unsafe(no_mangle)] unsafe extern "C" fn release_lock(lock:*mut usize)
-{
-	let p=unsafe{AtomicUsize::from_ptr(lock)};
-	p.store(0,Ordering::Release);
-}
-
-#[unsafe(no_mangle)] unsafe extern "C" fn custom_abort(message:*const u8,src_file:*const u8,src_line:u32)->!
-{
-	unsafe
-	{
-		let msg=nulstr_from_ptr(message);
-		let sfn=nulstr_from_ptr(src_file);
-		panic!("DLMalloc aborted! Reason: {msg}\n{sfn}@{src_line}");
-	}
-}
-
-unsafe fn nulstr_from_ptr<'a>(ptr:*const u8)->&'a str
-{
-	unsafe
-	{
-		let str_slice=slice::from_raw_parts(ptr,strlen(ptr));
-		str::from_utf8_unchecked(str_slice)
 	}
 }

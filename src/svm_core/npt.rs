@@ -17,7 +17,7 @@ use log::*;
 use paste::paste;
 
 use crate::*;
-use xpf_core::{ci::CI_MANAGER, ioflt::IoAddressSpace, nvbdk::*,dlalloc::*};
+use xpf_core::{ci::CI_MANAGER, ioflt::IoAddressSpace, nvbdk::*,allocator::*};
 
 macro_rules! derive_npt_common_fields
 {

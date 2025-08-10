@@ -249,6 +249,7 @@ pub struct VmcsSegment
 {
 	let mut ar=SegmentAccessRights(attrib as u32);
 	ar.set_unusable(selector==0);
+	ar.set_reserved(0);
 	ar.0
 }
 
@@ -283,7 +284,7 @@ pub struct VmcsSegment
 		if !cs_ar.get_long_mode()
 		{
 			// The rip might overflow if the guest is not in long mode.
-			gip&=0xFFFFFFFF;
+			gip&=u32::MAX as usize;
 		}
 		vmwriteptr(GUEST_RIP,gip);
 	}
@@ -394,6 +395,7 @@ impl SegmentAccessRights
 	build_int_mut_method!(dpl,5,2,u32);
 	build_bit_mut_method!(present,7);
 	build_bit_mut_method!(avl,12);
+	build_int_mut_method!(reserved,8,4,u32);
 	build_bit_mut_method!(long_mode,13);
 	build_bit_mut_method!(default_size,14);
 	build_bit_mut_method!(granularity,15);

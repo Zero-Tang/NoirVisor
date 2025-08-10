@@ -232,7 +232,7 @@ impl SvmIommuCommand
 		{
 			CompletionWait{store_address,store_data,completion_store,incompletion_interrupt,flush_queue}=>
 			{
-				let mut raw:[u32;4]=[(store_address&0xffffffff) as u32,(store_address>>32) as u32,(store_data&0xffffffff) as u32,(store_data>>32) as u32];
+				let mut raw:[u32;4]=[store_address as u32,(store_address>>32) as u32,store_data as u32,(store_data>>32) as u32];
 				// Fill in the boolean values.
 				if completion_store {raw[0]|=0x1;}
 				if incompletion_interrupt {raw[0]|=0x2;}

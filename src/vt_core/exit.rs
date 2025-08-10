@@ -337,7 +337,7 @@ impl VtVcpu
 		{
 			Some(v)=>
 			{
-				context.gpr_state.rax=v&0xffffffff;
+				context.gpr_state.rax=v&u32::MAX as u64;
 				context.gpr_state.rdx=v>>32;
 				unsafe{advance_rip()};
 			}
@@ -429,8 +429,8 @@ impl VtVcpu
 	fn handle_xsetbv(&mut self,context:&mut VtStackTop)
 	{
 		let gpr_state=&mut context.gpr_state;
-		let index=(gpr_state.rcx&0xFFFFFFFF) as u32;
-		let value=(gpr_state.rax&0xFFFFFFFF)|(gpr_state.rdx&0xFFFFFFFF00000000);
+		let index=gpr_state.rcx as u32;
+		let value=(gpr_state.rax&u32::MAX as u64)|(gpr_state.rdx<<32);
 		debug!("The xsetbv instruction is intercepted! Index={index}, Value=0x{value:16X}");
 		unsafe
 		{

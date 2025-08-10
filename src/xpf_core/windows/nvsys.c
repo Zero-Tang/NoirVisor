@@ -114,6 +114,49 @@ void NoirFreePagedMemory(IN PVOID VirtualAddress)
 	InterlockedDecrement(&NoirAllocatedPagedPools);
 }
 
+static PVOID PrependAlignmentPointer(IN PVOID Pointer,IN SIZE_T Alignment)
+{
+	ULONG_PTR p=(ULONG_PTR)Pointer;
+	ULONG_PTR MaskHi=~(Alignment-1);
+	ULONG_PTR q=(p&MaskHi)+Alignment;
+	*(PULONG_PTR)(q-sizeof(void*))=p;
+	return (PVOID)q;
+}
+
+static BOOL RequireRealignment(IN SIZE_T Length,IN SIZE_T Alignment)
+{
+	if(Length<PAGE_SIZE)
+		return Alignment>(sizeof(PVOID)<<1);
+	else
+		return Alignment>PAGE_SIZE;
+}
+
+void* noir_kmalloc(size_t length,size_t alignment)
+{
+	if(RequireRealignment(length,alignment))
+	{
+		PVOID p=NoirAllocateNonPagedMemory(length+alignment);
+		return PrependAlignmentPointer(p,alignment);
+	}
+	else
+	{
+		return NoirAllocateNonPagedMemory(length);
+	}
+}
+
+void noir_kfree(void* ptr,size_t length,size_t alignment)
+{
+	if(RequireRealignment(length,alignment))
+	{
+		PVOID p=*(PVOID*)((ULONG_PTR)ptr-sizeof(PVOID));
+		NoirFreeNonPagedMemory(p);
+	}
+	else
+	{
+		NoirFreeNonPagedMemory(ptr);
+	}
+}
+
 ULONG32 noir_get_processor_count()
 {
 	KAFFINITY af;

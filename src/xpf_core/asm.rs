@@ -354,7 +354,7 @@ pub mod msr
 	/// Writes the Model-Specific Register specified in `index` with `value`.
 	#[inline] pub fn wrmsr(index:u32,value:u64)
 	{
-		let lo:u32=(value&0xffffffff) as u32;
+		let lo:u32=value as u32;
 		let hi:u32=(value>>32) as u32;
 		unsafe
 		{
@@ -913,7 +913,7 @@ pub mod vt
 			}
 			else
 			{
-				match vmwrite32(field,(value&0xffffffff) as u32)
+				match vmwrite32(field,value as u32)
 				{
 					VmxResult::Ok(EmptyUnit(()))=>vmwrite32(field+1,(value>>32) as u32),
 					VmxResult::Err(e)=>VmxResult::Err(e),

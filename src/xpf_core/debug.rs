@@ -13,7 +13,7 @@
 use iced_x86::*;
 use log::*;
 use spin::Mutex;
-use core::{cell::LazyCell, fmt, str};
+use core::{cell::LazyCell, fmt, mem::MaybeUninit, str};
 use alloc::boxed::Box;
 
 use qemu_debugcon::*;
@@ -98,7 +98,7 @@ static INTERNAL_LOGGER:InternalLogger=InternalLogger;
 // We need to implement a formatter without alloc!
 pub struct FormatBuffer
 {
-	buffer:[u8;512],
+	buffer:MaybeUninit<[u8;512]>,
 	used:usize
 }
 
@@ -108,7 +108,7 @@ impl FormatBuffer
 	{
 		unsafe
 		{
-			str::from_utf8_unchecked(&self.buffer[..self.used])
+			str::from_utf8_unchecked(&self.buffer.assume_init_ref()[..self.used])
 		}
 	}
 }
@@ -119,7 +119,7 @@ impl Default for FormatBuffer
 	{
 		Self
 		{
-			buffer:[0;512],
+			buffer:MaybeUninit::uninit(),
 			used:0
 		}
 	}
@@ -129,7 +129,7 @@ impl fmt::Write for FormatBuffer
 {
 	fn write_str(&mut self, s: &str) -> fmt::Result
 	{
-		let remainder=&mut self.buffer[self.used..];
+		let remainder=unsafe{&mut self.buffer.assume_init_mut()[self.used..]};
 		let current=s.as_bytes();
 		if remainder.len()<current.len()
 		{
@@ -146,7 +146,8 @@ impl FormatterOutput for FormatBuffer
 	fn write(&mut self, text: &str, _kind: FormatterTextKind)
 	{
 		let b=text.as_bytes();
-		self.buffer[self.used..self.used+b.len()].copy_from_slice(b);
+		let remainder=unsafe{&mut self.buffer.assume_init_mut()[self.used..self.used+b.len()]};
+		remainder.copy_from_slice(b);
 		self.used+=b.len();
 	}
 }
@@ -189,7 +190,7 @@ pub fn dbg_print(args: fmt::Arguments)
 	{
 		unsafe
 		{
-			noir_debug_output(w.buffer.as_ptr(),w.used);
+			noir_debug_output(w.buffer.assume_init_ref().as_ptr(),w.used);
 		}
 	}
 }
@@ -202,7 +203,7 @@ pub fn system_print(args: fmt::Arguments)
 	{
 		unsafe 
 		{
-			noir_system_debugger_write(w.buffer.as_ptr(),w.used);
+			noir_system_debugger_write(w.buffer.assume_init_ref().as_ptr(),w.used);
 		}
 	}
 }

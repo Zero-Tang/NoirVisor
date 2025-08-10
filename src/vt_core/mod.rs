@@ -19,7 +19,7 @@ use vmcs::*;
 use ept::VtEptManager;
 use crate::*;
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
-use xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::rdmsr, seg::*, vt::*}, bitmap::*, dlalloc::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
+use xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::*, seg::*, vt::*}, bitmap::*, allocator::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
@@ -569,7 +569,15 @@ impl HypervisorCapabilities for VtHypervisor
 
 	fn check_enabled()->bool
 	{
-		let feat_ctrl=rdmsr(MSR_FEATURE_CONTROL);
+		let mut feat_ctrl=rdmsr(MSR_FEATURE_CONTROL);
+		sysdprintln!("IA32_FEATURE_CONTROL= 0x{feat_ctrl:X}");
+		if (feat_ctrl&MSR_FEATURE_CONTROL_LOCK)==0
+		{
+			// In Bochs, VMX is disabled by default, but it's not locked.
+			sysdprintln!("Enabling VMX since it's not locked...");
+			wrmsr(MSR_FEATURE_CONTROL,MSR_FEATURE_CONTROL_LOCK|MSR_FEATURE_CONTROL_VMXON_OUT_SMX);
+			feat_ctrl=rdmsr(MSR_FEATURE_CONTROL);
+		}
 		feat_ctrl&MSR_FEATURE_CONTROL_VMXON_OUT_SMX==MSR_FEATURE_CONTROL_VMXON_OUT_SMX
 	}
 }

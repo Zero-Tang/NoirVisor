@@ -127,7 +127,7 @@ impl SvmVcpu
 			{
 				if !vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)
 				{
-					nrip&=0xFFFFFFFF;
+					nrip&=u32::MAX as u64;
 				}
 				vmwrite(self.vmcb.virt,NEXT_RIP,nrip);
 			}

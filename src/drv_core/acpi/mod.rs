@@ -44,13 +44,15 @@ impl AcpiManager
 		let tmp:*mut SystemDescriptionHeader=unsafe{noir_map_physical_memory(phys,size_of::<SystemDescriptionHeader>()).cast()};
 		if tmp.is_null()
 		{
-			panic!("Failed to map ACPI Table at 0x{phys:016X}!");
+			error!("Failed to map ACPI Table at 0x{phys:016X}!");
+			return;
 		}
 		let virt:*mut SystemDescriptionHeader=unsafe{noir_map_physical_memory(phys,(*tmp).get_length() as usize).cast()};
 		unsafe{noir_unmap_physical_memory(tmp.cast(),size_of::<SystemDescriptionHeader>())};
 		if virt.is_null()
 		{
-			panic!("Failed to map ACPI Table at 0x{phys:08X}!");
+			error!("Failed to map ACPI Table at 0x{phys:016X}!");
+			return;
 		}
 		unsafe{debug!("Enumerated ACPI Table {}! Mapped to {virt:p} (Size={} bytes)...",(*virt).signature,(*virt).get_length())};
 		self.table.push(AtomicPtr::new(virt));
@@ -76,6 +78,12 @@ impl AcpiManager
 			let phys:u64=unsafe{xsdt_ptr.add(i).read_unaligned()};
 			self.add_header(phys);
 		}
+	}
+
+	fn init_empty(&mut self)
+	{
+		// OVMF in Bochs could not not properly initialize ACPI.
+		debug!("No ACPI support!");
 	}
 
 	pub fn search(&self,signature:AcpiSystemDescriptorSignature,mut f:impl FnMut(*mut SystemDescriptionHeader)->bool)
@@ -110,7 +118,7 @@ pub fn search_acpi_table(signature:AcpiSystemDescriptorSignature,f:impl FnMut(*m
 		{
 			AcpiSystemDescriptorSignature::ROOT_SYSTEM_DESCRIPTION_TABLE=>acpi_mgr.init_via_rsdt(ptr_head.cast()),
 			AcpiSystemDescriptorSignature::EXTENDED_SYSTEM_DESCRIPTION_TABLE=>acpi_mgr.init_via_xsdt(ptr_head.cast()),
-			_=>panic!("Unknown Signature for Root System Description Table is detected!")
+			_=>acpi_mgr.init_empty()
 		};
 	}
 	NOIR_SUCCESS

@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::c_void, ptr::*};
+use core::{arch::x86_64::_xgetbv, ffi::c_void, ptr::*};
 use alloc::vec::Vec;
 use custom::SvmCustomVm;
 #[cfg(target_os="uefi")]
@@ -22,7 +22,7 @@ use npt::SvmNptManager;
 use xpf_core::{bitmap::set_bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 
-use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::*, seg::*, svm::*}, dlalloc::*, nvbdk::*, nvstatus::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
+use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::*, seg::*, svm::*}, allocator::*, nvbdk::*, nvstatus::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
@@ -47,7 +47,9 @@ pub mod amd64;
 	pub custom_vcpu:*mut c_void,	// NOT IMPLEMENTED IN RUST
 	pub nested_vcpu:*mut c_void,	// NOT IMPLEMENTED IN RUST
 	pub proc_id:u32,
-	pub reserved:u32
+	pub reserved:u32,
+	pub guest_xcr0:u64,
+	pub host_xcr0:u64
 }
 
 pub struct SvmNestedVcpu
@@ -145,6 +147,7 @@ impl SvmVcpu
 	{
 		unsafe
 		{
+			let stack:&mut SvmStackTop=&mut *self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast();
 			let mut d=0;
 			cpuid(CPUID_EXT_SECURE_VIRTUAL_MACHINE_FEATURE,0,None,None,None,Some(&mut d));
 			// Setup supported features.
@@ -184,12 +187,19 @@ impl SvmVcpu
 			// The FXSR and XSAVE features must be required for CVM features.
 			write_cr4(state.cr4 as u64|CR4_OSFXSR|CR4_OSXSAVE);
 			// Setup APIC ID.
-			let (_,xid,c,_)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
+			let (_,xid,c,d)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
 			let (_,_,_,x2id)=cpuid2(CPUID_STD_EXTENDED_TOPOLOGY_INFORMATION,0);
 			self.apic_id=(xid&0xFF) as u8;
 			self.x2apic_id=x2id;
 			// Check if we are under nested hypervisor.
 			self.under_hvm=(c&CPUID_UNDER_HYPERVISOR)!=0;
+			// Set to the maximum XCR0.
+			// Current implementation would only support up to AVX, AVX512 excluded.
+			stack.host_xcr0=1;
+			stack.host_xcr0|=(((d&CPUID_SSE)!=0) as u64)<<1;
+			stack.host_xcr0|=(((c&CPUID_AVX)!=0) as u64)<<2;
+			stack.guest_xcr0=_xgetbv(0);
+			trace!("Using Guest XCR0 as 0x{:X}, Host XCR0 as 0x{:X}...",stack.guest_xcr0,stack.host_xcr0);
 			// Save Segment States.
 			vmwrite_segment(self.vmcb.virt,GUEST_CS_SELECTOR,state.cs);
 			vmwrite_segment(self.vmcb.virt,GUEST_DS_SELECTOR,state.ds);
@@ -396,8 +406,8 @@ impl HypervisorEssentials for SvmHypervisor
 				}
 			};
 		}
-		trace!("Subverting the system with AMD-V...");
-		trace!("Enabled features: {}",self.features);
+		info!("Subverting the system with AMD-V...");
+		info!("Enabled features: {}",self.features);
 		// Allocate various stuff. Note that they are required to be raw-pointer.
 		let msrpm=alloc_contd_pages(PAGE_SIZE*2);
 		let iopm=alloc_contd_pages(PAGE_SIZE*3);

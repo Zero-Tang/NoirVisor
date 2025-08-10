@@ -702,7 +702,7 @@ pub mod paging
 				else
 				{
 					// 3-level 32-bit PAE paging.
-					va&=0xFFFFFFFF;
+					va&=u32::MAX as u64;
 					let pdpe_index=va>>PAGE_1GB_SHIFT;
 					let mut pdpe_buff:[u8;8]=[0;8];
 					vcpu.read_phys_mem(vcpu.get_cr3()+(pdpe_index<<3),&mut pdpe_buff);
@@ -1068,7 +1068,11 @@ pub mod cpuid
 	pub const CPUID_EXT_POWER_MANAGEMENT_RAS_CAPABILITY:u32=0x80000007;
 	pub const CPUID_EXT_PROCESSOR_CAPABILITY_PARAMETERS_EXTENDED_ID:u32=0x80000008;
 	/// Use this flag for CPUID[EAX=0x00000001].ECX
+	pub const CPUID_AVX:u32=1<<28;
+	/// Use this flag for CPUID[EAX=0x00000001].ECX
 	pub const CPUID_UNDER_HYPERVISOR:u32=0x80000000;
+	/// Use this flag for CPUID[EAX=0x00000001].EDX
+	pub const CPUID_SSE:u32=1<<25;
 	/// Use this flag for CPUID[EAX=0x80000001].EDX
 	pub const CPUID_1GB_PAGE:u32=0x4000000;
 }

@@ -136,6 +136,7 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	NoirSaveImageInfo(ImageInfo);
 	NoirAcpiInitialize();
 	NoirHpetInitialize();
+	StdOut->OutputString(StdOut,L"Subverting the system...\r\n");
 	NoirBuildHypervisor();
 	// Just to make sure Hardware CI is working.
 	// You should see an error message on debug console.

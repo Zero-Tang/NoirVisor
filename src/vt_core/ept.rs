@@ -13,8 +13,8 @@
 use core::{cmp::Ordering, ffi::c_void};
 use alloc::vec::Vec;
 
-use crate::{vt_core::ia32::msr::VmxEptVpidCapMsr, xpf_core::{ci::CI_MANAGER, dlalloc::enum_allocated_large_pages}, *};
-use xpf_core::{dlalloc::{alloc_2mb_page, alloc_contd_pages}, nvbdk::*, x86::caching::*};
+use crate::{vt_core::ia32::msr::VmxEptVpidCapMsr, xpf_core::{ci::CI_MANAGER, allocator::enum_allocated_large_pages}, *};
+use xpf_core::{allocator::{alloc_2mb_page, alloc_contd_pages}, nvbdk::*, x86::caching::*};
 
 use paste::paste;
 use log::*;

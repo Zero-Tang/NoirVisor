@@ -35,6 +35,8 @@ stacktop_offset_vcpu_ptr equ 150h
 stacktop_offset_cvcpu_ptr equ 158h
 stacktop_offset_nvcpu_ptr equ 160h
 stacktop_offset_proc_id equ 168h
+stacktop_offset_guest_xcr0 equ 170h
+stacktop_offset_host_xcr0 equ 178h
 
 nvc_svm_return proc
 
@@ -64,15 +66,23 @@ nvc_svm_exit_handler_a proc frame
 	.pushframe code
 	; Save all GPRs, and pass to Exit Handler.
 	pushaq_fast stacktop_offset_guest_gpr
-	; Save XMM States.
-	pushax_volatile_fast stacktop_offset_volatile_xmms
-	.allocstack 20h
-	.endprolog
 	; Save processor's hidden state for Guest.
 	vmsave rax
 	; Load processor's hidden state for Host.
 	mov rax,qword ptr[rsp+stacktop_offset_hvmcb_pa]
 	vmload rax
+	; Save the guest XCR0 and switch to host XCR0.
+	xor ecx,ecx
+	xgetbv
+	mov dword ptr [rsp+stacktop_offset_guest_xcr0+0],eax
+	mov dword ptr [rsp+stacktop_offset_guest_xcr0+4],edx
+	mov eax,dword ptr [rsp+stacktop_offset_host_xcr0+0]
+	mov edx,dword ptr [rsp+stacktop_offset_host_xcr0+4]
+	xsetbv
+	; Save XMM States.
+	pushax_volatile_fast stacktop_offset_volatile_xmms
+	.allocstack 20h
+	.endprolog
 	; Just pass the stack to the handler
 	mov rcx,rsp
 	; End of Prologue...
@@ -80,6 +90,11 @@ nvc_svm_exit_handler_a proc frame
 	call nvc_svm_exit_handler
 	; Restore all volatile XMMs.
 	popax_volatile_fast stacktop_offset_volatile_xmms
+	; Switch back to the guest XCR0.
+	mov eax,dword ptr [rsp+stacktop_offset_guest_xcr0+0]
+	mov edx,dword ptr [rsp+stacktop_offset_guest_xcr0+4]
+	xor ecx,ecx
+	xsetbv
 	; Restore all the GPRs.
 	; Certain context should be revised by VMM.
 	popaq_fast stacktop_offset_guest_gpr

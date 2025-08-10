@@ -15,7 +15,7 @@ use core::{cmp::Ordering, slice};
 use paste::paste;
 use log::*;
 
-use crate::{svm_core::iommu::SvmIommuManager, xpf_core::{dlalloc::{alloc_contd_pages, free_contd_pages}, nvbdk::*}, *};
+use crate::{svm_core::iommu::SvmIommuManager, xpf_core::{allocator::{alloc_contd_pages, free_contd_pages}, nvbdk::*}, *};
 
 /// ## SvmIommuPde
 /// The concept of PDE in AMD-Vi is drastically different from AMD-V NPT, Intel EPT and Intel VT-d. \

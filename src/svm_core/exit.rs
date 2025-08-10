@@ -259,7 +259,7 @@ impl SvmVcpu
 			MSR_IGNNE=>
 			{
 				// Only the lowest bit can be set to 1.
-				if (value&0xFFFFFFFFFFFFFFFE)!=0
+				if (value&(u64::MAX-1))!=0
 				{
 					unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
 					false
@@ -321,7 +321,7 @@ impl SvmVcpu
 		let op_write:bool=unsafe{vmread(self.vmcb.virt,EXIT_INFO1)};
 		if op_write
 		{
-			let value=(context.gpr_state.rax&0xFFFFFFFF)|(context.gpr_state.rdx<<32);
+			let value=(context.gpr_state.rax&u32::MAX as u64)|(context.gpr_state.rdx<<32);
 			if self.handle_wrmsr(index,value)
 			{
 				// Advance rip.
@@ -331,7 +331,7 @@ impl SvmVcpu
 		else if let Some(value)=self.handle_rdmsr(index)
 		{
 			// Write back to registers and advance rip.
-			let lo=(value&0xFFFFFFFF) as u32;
+			let lo=value as u32;
 			let hi=(value>>32) as u32;
 			unsafe
 			{
@@ -344,6 +344,9 @@ impl SvmVcpu
 
 	fn handle_shutdown(&mut self,_context:&mut SvmStackTop)
 	{
+		let gdt_base:u64=unsafe{vmread(self.vmcb.virt,GUEST_GDTR_BASE)};
+		let idt_base:u64=unsafe{vmread(self.vmcb.virt,GUEST_IDTR_BASE)};
+		info!("GDT-Base: 0x{gdt_base:X}, IDT-Base: 0x{idt_base:X}");
 		panic!("Shutdown occured!");
 	}
 
@@ -601,7 +604,7 @@ impl SvmVcpu
 			let decoder=dispatch_decoder(intercept_code as i64);
 			let handler=dispatch_handler(intercept_code as i64);
 			// If VMCB-Clean-Bits is supported, we may cache the VMCB fields.
-			if (*vcpu).vmcb_clean {vmwrite::<u32>(vcpu.vmcb.virt,VMCB_CLEAN_BITS,0xFFFFFFFF)};
+			if (*vcpu).vmcb_clean {vmwrite(vcpu.vmcb.virt,VMCB_CLEAN_BITS,u32::MAX)};
 			// Handle the VM-Exit!
 			gpr.rax=vmread(cur_vmcb,GUEST_RAX);
 			gpr.rsp=vmread(cur_vmcb,GUEST_RSP);

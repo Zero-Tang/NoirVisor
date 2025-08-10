@@ -27,7 +27,7 @@ use alloc::boxed::Box;
 
 use log::*;
 
-use xpf_core::{asm::cpuid::cpuid2, dlalloc::set_alloc_checker, nvstatus::*, x86::cpuid::*, nvbdk::PAGE_SIZE};
+use xpf_core::{asm::cpuid::cpuid2, allocator::set_alloc_checker, nvstatus::*, x86::cpuid::*, nvbdk::PAGE_SIZE};
 pub use xpf_core::debug::*;
 use vt_core::VtHypervisor;
 use svm_core::SvmHypervisor;

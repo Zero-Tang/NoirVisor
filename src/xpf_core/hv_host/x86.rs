@@ -14,7 +14,7 @@ use core::ffi::c_void;
 
 use log::*;
 
-use crate::xpf_core::{asm::{crdr::*, msr::rdmsr, seg::*}, dlalloc::{alloc_contd_pages, free_contd_pages}, nvbdk::*, x86::{descriptors::*, interrupts::*, msr::MSR_GS_BASE, paging::*}};
+use crate::xpf_core::{asm::{crdr::*, msr::rdmsr, seg::*}, allocator::{alloc_contd_pages, free_contd_pages}, nvbdk::*, x86::{descriptors::*, interrupts::*, msr::MSR_GS_BASE, paging::*}};
 
 pub struct HostSystem
 {

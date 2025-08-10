@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_bittest64, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut};
+use core::{arch::x86_64::_bittest64, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut, slice};
 use crate::{build_bit_get_method, xpf_core::{asm::{crdr::*, msr::rdmsr, seg::*}, x86::{descriptors::{DescriptorTable, SegmentFlags}, msr::*}}};
 use alloc::vec::Vec;
 use paste::paste;
@@ -445,6 +445,15 @@ unsafe extern "C"
 	// TLFS Forwarder Facility
 	#[cfg(windows)] pub fn nvc_forward_fast_hypercall(forward_stack:*mut MshvForwardStack);
 	#[cfg(windows)] pub fn nvc_forward_memory_mapped_hypercall(code:u64,input_gpa:u64,output_gpa:u64,source_rax:u64)->u64;
+}
+
+pub unsafe fn nulstr_from_ptr<'a>(ptr:*const u8)->&'a str
+{
+	unsafe
+	{
+		let str_slice=slice::from_raw_parts(ptr,strlen(ptr));
+		str::from_utf8_unchecked(str_slice)
+	}
 }
 
 // Page-related definitions

@@ -58,3 +58,10 @@ static ALLOCATED:AtomicBool=AtomicBool::new(false);
 {
 
 }
+
+pub type PhysicalRangeCallback=extern "C" fn(start:u64,length:u64,context:*mut c_void);
+
+#[unsafe(no_mangle)] extern "C" fn noir_enum_physical_memory_ranges(_callback_routine:PhysicalRangeCallback,_context:*mut c_void)
+{
+
+}

@@ -89,7 +89,7 @@ pub mod msr
 		{
 			#[inline] pub fn get_allowed0(&self)->$type
 			{
-				$type((self.0&0xFFFFFFFF) as u32)
+				$type(self.0 as u32)
 			}
 
 			#[inline] pub fn get_allowed1(&self)->$type
