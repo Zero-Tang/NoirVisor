@@ -12,6 +12,7 @@
 
 use core::{arch::asm, ffi::c_void, ops::{BitAndAssign, BitOrAssign, BitXorAssign}};
 use paste::paste;
+use bitfield_struct::bitfield;
 
 use crate::{xpf_core::x86::crdr::DR6_BS_BIT, *};
 use xpf_core::{x86::{interrupts::*, rflags::*}, nvbdk::SegmentRegister};
@@ -44,8 +45,8 @@ use xpf_core::{x86::{interrupts::*, rflags::*}, nvbdk::SegmentRegister};
 {
 	let evt=match error_code
 	{
-		Some(ec)=>EventInjection::new(vector,event_type,true,valid,ec),
-		None=>EventInjection::new(vector,event_type,false,valid,0)
+		Some(ec)=>EventInjection::construct(vector,event_type,true,valid,ec),
+		None=>EventInjection::construct(vector,event_type,false,valid,0)
 	};
 	unsafe
 	{
@@ -393,79 +394,105 @@ macro_rules! derive_rw_method
 }
 
 // Vector 1 of Control Area
-pub struct InterceptVector1(pub u32);
+#[bitfield(u32)] pub struct InterceptVector1
+{
+	pub phys_intr:bool,
+	pub nmi:bool,
+	pub smi:bool,
+	pub init:bool,
+	pub virt_intr:bool,
+	pub cr0_non_ts_mp:bool,
+	pub sidt:bool,
+	pub sgdt:bool,
+	pub sldt:bool,
+	pub str:bool,
+	pub lidt:bool,
+	pub lgdt:bool,
+	pub lldt:bool,
+	pub ltr:bool,
+	pub rdtsc:bool,
+	pub rdpmc:bool,
+	pub pushf:bool,
+	pub popf:bool,
+	pub cpuid:bool,
+	pub rsm:bool,
+	pub iret:bool,
+	pub int:bool,
+	pub invd:bool,
+	pub pause:bool,
+	pub hlt:bool,
+	pub invlpg:bool,
+	pub invlpga:bool,
+	pub io:bool,
+	pub msr:bool,
+	pub task_switch:bool,
+	pub ferr_freeze:bool,
+	pub shutdown:bool
+}
+
 impl InterceptVector1
 {
 	derive_rw_method!(INTERCEPT_VECTOR1);
-	build_bit_mut_method!(intr,0);
-	build_bit_mut_method!(nmi,1);
-	build_bit_mut_method!(smi,2);
-	build_bit_mut_method!(init,3);
-	build_bit_mut_method!(vintr,4);
-	build_bit_mut_method!(cr0_non_ts_mp,5);
-	build_bit_mut_method!(sidt,6);
-	build_bit_mut_method!(sgdt,7);
-	build_bit_mut_method!(sldt,8);
-	build_bit_mut_method!(str,9);
-	build_bit_mut_method!(lidt,10);
-	build_bit_mut_method!(lgdt,11);
-	build_bit_mut_method!(lldt,12);
-	build_bit_mut_method!(ltr,13);
-	build_bit_mut_method!(rdtsc,14);
-	build_bit_mut_method!(rdpmc,15);
-	build_bit_mut_method!(pushf,16);
-	build_bit_mut_method!(popf,17);
-	build_bit_mut_method!(cpuid,18);
-	build_bit_mut_method!(rsm,19);
-	build_bit_mut_method!(iret,20);
-	build_bit_mut_method!(int,21);
-	build_bit_mut_method!(invd,22);
-	build_bit_mut_method!(pause,23);
-	build_bit_mut_method!(hlt,24);
-	build_bit_mut_method!(invlpg,25);
-	build_bit_mut_method!(invlpga,26);
-	build_bit_mut_method!(io,27);
-	build_bit_mut_method!(msr,28);
-	build_bit_mut_method!(task_switch,29);
-	build_bit_mut_method!(ferr_freeze,30);
-	build_bit_mut_method!(shutdown,31);
 }
 
 // Vector 2 of Control Area
-pub struct InterceptVector2(pub u32);
+#[bitfield(u32)] pub struct InterceptVector2
+{
+	pub vmrun:bool,
+	pub vmmcall:bool,
+	pub vmload:bool,
+	pub vmsave:bool,
+	pub stgi:bool,
+	pub clgi:bool,
+	pub skinit:bool,
+	pub rdtscp:bool,
+	pub icebp:bool,
+	pub wbinvd:bool,
+	pub monitor:bool,
+	pub mwait:bool,
+	pub mwait_armed:bool,
+	pub xsetbv:bool,
+	pub rdpru:bool,
+	pub post_w_efer:bool,
+	pub post_w_cr0:bool,
+	pub post_w_cr1:bool,
+	pub post_w_cr2:bool,
+	pub post_w_cr3:bool,
+	pub post_w_cr4:bool,
+	pub post_w_cr5:bool,
+	pub post_w_cr6:bool,
+	pub post_w_cr7:bool,
+	pub post_w_cr8:bool,
+	pub post_w_cr9:bool,
+	pub post_w_cr10:bool,
+	pub post_w_cr11:bool,
+	pub post_w_cr12:bool,
+	pub post_w_cr13:bool,
+	pub post_w_cr14:bool,
+	pub post_w_cr15:bool
+}
+
 impl InterceptVector2
 {
 	derive_rw_method!(INTERCEPT_VECTOR2);
-	build_bit_mut_method!(vmrun,0);
-	build_bit_mut_method!(vmmcall,1);
-	build_bit_mut_method!(vmload,2);
-	build_bit_mut_method!(vmsave,3);
-	build_bit_mut_method!(stgi,4);
-	build_bit_mut_method!(clgi,5);
-	build_bit_mut_method!(skinit,6);
-	build_bit_mut_method!(rdtscp,7);
-	build_bit_mut_method!(icebp,8);
-	build_bit_mut_method!(wbinvd,9);
-	build_bit_mut_method!(monitor,10);
-	build_bit_mut_method!(mwait,11);
-	build_bit_mut_method!(mwait_armed,12);
-	build_bit_mut_method!(xsetbv,13);
-	build_bit_mut_method!(rdpru,14);
-	build_bit_mut_method!(post_efer_write,15);
 }
 
 // Vector 3 of Control Area
-pub struct InterceptVector3(pub u32);
+#[bitfield(u32)] pub struct InterceptVector3
+{
+	pub invlpgb:bool,
+	pub illegal_invlpgb:bool,
+	pub invpcid:bool,
+	pub mcommit:bool,
+	pub tlbsync:bool,
+	pub buslock:bool,
+	pub idle_hlt:bool,
+	#[bits(25)] pub reserved:u32
+}
+
 impl InterceptVector3
 {
 	derive_rw_method!(INTERCEPT_VECTOR3);
-	build_bit_mut_method!(invlpgb,0);
-	build_bit_mut_method!(illegal_invlpgb,1);
-	build_bit_mut_method!(invpcid,2);
-	build_bit_mut_method!(mcommit,3);
-	build_bit_mut_method!(tlbsync,4);
-	build_bit_mut_method!(buslock,5);
-	build_bit_mut_method!(hlt_not_pending_vintr,6);
 }
 
 // TLB Control
@@ -475,79 +502,103 @@ pub const TLB_CONTROL_FLUSH_GUEST_TLB:u8=3;
 pub const TLB_CONTROL_FLUSH_GUEST_NON_GLOBAL_TLB:u8=7;
 
 // Offset 0x060: AVIC Control
-#[derive(Default)]
-pub struct AvicControl(pub u64);
+#[bitfield(u64)] pub struct AvicControl
+{
+	pub v_tpr:u8,
+	pub v_irq:bool,
+	pub v_gif:bool,
+	rsvd0:bool,
+	pub v_nmi:bool,
+	pub v_nmi_mask:bool,
+	#[bits(3)] rsvd1:u64,
+	#[bits(4)] pub v_intr_prio:u64,
+	pub v_ignore_tpr:bool,
+	#[bits(3)] rsvd2:u64,
+	pub v_intr_mask:bool,
+	pub v_gif_enabled:bool,
+	pub v_nmi_enabled:bool,
+	#[bits(3)] rsvd3:u64,
+	pub x2avic_enabled:bool,
+	pub avic_enabled:bool,
+	pub v_intr_vector:u8,
+	#[bits(24)] rsvd4:u64
+}
+
 impl AvicControl
 {
-	build_int_mut_method!(v_tpr,0,8,u64);
-	build_bit_mut_method!(v_irq,8);
-	build_bit_mut_method!(v_gif,9);
-	build_bit_mut_method!(v_nmi,11);
-	build_bit_mut_method!(v_nmi_mask,12);
-	build_int_mut_method!(v_intr_priority,16,4,u64);
-	build_bit_mut_method!(v_ignore_tpr,20);
-	build_bit_mut_method!(v_intr_mask,24);
-	build_bit_mut_method!(v_gif_enable,25);
-	build_bit_mut_method!(v_nmi_enable,26);
-	build_bit_mut_method!(x2avic_enable,30);
-	build_bit_mut_method!(avic_enable,31);
+	derive_rw_method!(AVIC_CONTROL);
 }
 
 // Offset 0x068: Interrupt Control
-#[derive(Default)]
-pub struct InterruptControl(pub u64);
+#[bitfield(u64)] pub struct InterruptControl
+{
+	pub interrupt_shadow:bool,
+	pub sev_es_rflags_if:bool,
+	#[bits(62)] rsvd:u64
+}
+
 impl InterruptControl
 {
-	build_bit_mut_method!(interrupt_shadow,0);
-	build_bit_mut_method!(sev_es_interrupt_mask,1);
+	derive_rw_method!(GUEST_INTERRUPT);
 }
 
 // Offset 0x090: Nested Paing
-#[derive(Default)]
-pub struct NptControl(pub u64);
+#[bitfield(u64)] pub struct NptControl
+{
+	pub enable_npt:bool,
+	pub enable_sev:bool,
+	pub enable_sev_es:bool,
+	pub enable_gmet:bool,
+	pub enable_sss_check:bool,
+	pub enable_vte:bool,
+	pub enable_rogpt:bool,
+	pub enable_invlpgb:bool,
+	#[bits(56)] rsvd:u64
+}
+
 impl NptControl
 {
-	build_bit_mut_method!(enable_npt,0);
-	build_bit_mut_method!(enable_sev,1);
-	build_bit_mut_method!(enable_sev_es,2);
-	build_bit_mut_method!(enable_gmet,3);
-	build_bit_mut_method!(enable_sss_check,4);
-	build_bit_mut_method!(enable_vte,5);
-	build_bit_mut_method!(enable_rogpt,6);
-	build_bit_mut_method!(enable_invlpgb,7);
+	derive_rw_method!(NPT_CONTROL);
 }
 
 // Offset 0x0A8: Event Injection
-#[derive(Default)]
-#[repr(C)] pub struct EventInjection(pub u64);
+#[bitfield(u64)] pub struct EventInjection
+{
+	pub vector:u8,
+	#[bits(3)] pub event_type:u8,
+	pub error_code_valid:bool,
+	#[bits(19)] rsvd0:u64,
+	pub valid:bool,
+	pub error_code:u32
+}
+
 impl EventInjection
 {
-	#[inline] pub fn new(vector:u8,event_type:EventType,has_error_code:bool,valid:bool,error_code:u32)->Self
+	#[inline] pub fn construct(vector:u8,event_type:EventType,has_error_code:bool,valid:bool,error_code:u32)->Self
 	{
 		let mut v=Self(0);
-		v.set_vector(vector as u64);
-		v.set_type(event_type as u64);
+		v.set_vector(vector);
+		v.set_event_type(event_type as u8);
 		v.set_error_code_valid(has_error_code);
 		v.set_valid(valid);
-		v.set_error_code(error_code as u64);
+		v.set_error_code(error_code);
 		v
 	}
-
-	build_int_mut_method!(vector,0,8,u64);
-	build_int_mut_method!(type,8,3,u64);
-	build_bit_mut_method!(error_code_valid,11);
-	build_bit_mut_method!(valid,31);
-	build_int_mut_method!(error_code,32,32,u64);
 }
 
 // Offset 0x0B8: LBR Virtualization
-#[derive(Default)]
-#[repr(C)] pub struct LbrVirtualization(pub u64);
+#[bitfield(u64)] pub struct LbrVirtualization
+{
+	pub lbr_virt:bool,
+	pub vmls_virt:bool,
+	pub ibs_virt:bool,
+	pub pmc_virt:bool,
+	#[bits(60)] rsvd:u64
+}
+
 impl LbrVirtualization
 {
-	build_bit_mut_method!(enable_lbr_virt,0);
-	build_bit_mut_method!(eanble_vmls_virt,1);
-	build_bit_mut_method!(enable_ibs_virt,2);
+	derive_rw_method!(LBR_VIRTUALIZATION_CONTROL);
 }
 
 // Offset 0x0C0: VMCB Clean Bits

@@ -50,8 +50,8 @@ impl PageTranslationHelper for VtVcpu
 
 	fn is_user_mode(&self)->bool
 	{
-		let ss_ar=SegmentAccessRights(unsafe{vmread32(GUEST_SS_ACCESS_RIGHTS).unwrap()});
-		ss_ar.get_dpl()==3
+		let ss_ar=SegmentAccessRights::from_bits(unsafe{vmread32(GUEST_SS_ACCESS_RIGHTS).unwrap()});
+		ss_ar.dpl()==3
 	}
 
 	fn read_phys_mem(&self,pa:u64,buffer:&mut [u8])->usize
@@ -77,17 +77,17 @@ impl VtVcpu
 {
 	pub(super) fn get_current_bitness(&self)->u32
 	{
-		let cs_ar=SegmentAccessRights(unsafe{vmread32(GUEST_CS_ACCESS_RIGHTS).unwrap()});
+		let cs_ar=SegmentAccessRights::from_bits(unsafe{vmread32(GUEST_CS_ACCESS_RIGHTS).unwrap()});
 		let efer=self.get_efer();
 		if (efer&MSR_EFER_LMA)==0
 		{
 			// Long-Mode is inactive. It could be either 16-bit or 32-bit.
-			if cs_ar.get_default_size() {32} else {16}
+			if cs_ar.default_size() {32} else {16}
 		}
 		else
 		{
 			// Long-Mode is active. It could be either 32-bit or 64-bit.
-			if cs_ar.get_long_mode() {64} else {32}
+			if cs_ar.long_mode() {64} else {32}
 		}
 	}
 
@@ -98,7 +98,7 @@ impl VtVcpu
 		let mut fault_pa:Option<u64>=None;
 		if let Err(e)=read_virtual_address(rip,self,&mut instruction_bytes,&mut fault_pa)
 		{
-			panic!("Page-fault is triggered by software while fetching instruction! Code: 0x{:08X}, rip=0x{rip:016X}",e.0);
+			panic!("Page-fault is triggered by software while fetching instruction! Code: 0x{:08X}, rip=0x{rip:016X}",e.into_bits());
 		}
 		instruction_bytes
 	}

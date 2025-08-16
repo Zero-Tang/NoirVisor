@@ -12,26 +12,32 @@
 
 use core::{cmp::Ordering, slice};
 
-use paste::paste;
+use bitfield_struct::bitfield;
 use log::*;
 
-use crate::{svm_core::iommu::SvmIommuManager, xpf_core::{allocator::{alloc_contd_pages, free_contd_pages}, nvbdk::*}, *};
+use crate::xpf_core::{allocator::{alloc_contd_pages, free_contd_pages}, nvbdk::*};
+use super::SvmIommuManager;
 
 /// ## SvmIommuPde
 /// The concept of PDE in AMD-Vi is drastically different from AMD-V NPT, Intel EPT and Intel VT-d. \
 /// In AMD-Vi, PDE simply means a non-terminal level in the map. It can be followed by a PDE or a PTE. \
 /// In other words, PDE in AMD-Vi is equivalent to normal PDE, PDPTE, PML4E and PML5E in AMD-V NPT.
-#[repr(C)] pub struct SvmIommuPde(pub u64);
+#[bitfield(u64)] pub struct SvmIommuPde
+{
+	pub present:bool,
+	#[bits(4)] rsvd0:u64,
+	pub accessed:bool,
+	#[bits(3)] rsvd1:u64,
+	#[bits(3)] next_level:u64,
+	#[bits(40)] pub pte:u64,
+	#[bits(9)] rsvd2:u64,
+	pub read:bool,
+	pub write:bool,
+	rsvd3:bool
+}
 
 impl SvmIommuPde
 {
-	build_bit_mut_method!(present,0);
-	build_bit_mut_method!(accessed,5);
-	build_int_mut_method!(next_level,9,3,u64);
-	build_int_mut_method!(pte,12,40,u64);
-	build_bit_mut_method!(read,61);
-	build_bit_mut_method!(write,62);
-
 	pub fn new_pde<const N:u64>(next_level:u64,read:bool,write:bool)->Self
 	{
 		let mut template=Self(next_level);
@@ -47,20 +53,25 @@ impl SvmIommuPde
 /// The concept of PTE in AMD-Vi is drastically different from AMD-V NPT, Intel EPT and Intel VT-d. \
 /// In AMD-Vi, PTE simply means a terminal level in the map. It determines the base of the page. \
 /// In other words, PTE in AMD-Vi is equivalent to PTE, large PDE and huge PDPTE in AMD-V NPT.
-#[repr(C)] pub struct SvmIommuPte(pub u64);
+#[bitfield(u64)] pub struct SvmIommuPte
+{
+	pub present:bool,
+	#[bits(4)] rsvd0:u64,
+	pub accessed:bool,
+	pub dirty:bool,
+	#[bits(2)] rsvd1:u64,
+	#[bits(3)] next_level:u64,
+	#[bits(40)] pub pfn:u64,
+	#[bits(7)] rsvd2:u64,
+	pub u:bool,
+	pub force_coherent:bool,
+	pub read:bool,
+	pub write:bool,
+	rsvd3:bool
+}
 
 impl SvmIommuPte
 {
-	build_bit_mut_method!(present,0);
-	build_bit_mut_method!(accessed,5);
-	build_bit_mut_method!(dirty,6);
-	build_int_get_method!(next_level,9,3,u64);
-	build_int_mut_method!(pfn,12,40,u64);
-	build_bit_mut_method!(u,59);
-	build_bit_mut_method!(force_coherent,60);
-	build_bit_mut_method!(read,61);
-	build_bit_mut_method!(write,62);
-
 	pub fn new_pte(page_base:u64,read:bool,write:bool)->Self
 	{
 		let mut template=Self(page_base);

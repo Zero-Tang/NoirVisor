@@ -25,6 +25,7 @@ paste = "1.0.15"
 nvcvm = {path = "crates/nvcvm"}
 spin = "0.10.0"
 log = "0.4.27"
+bitfield-struct = "0.11.0"
 
 [dependencies.portable-dlmalloc]
 version = "0.3.3"

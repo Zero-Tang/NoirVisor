@@ -11,7 +11,8 @@
  */
 
 use crate::*;
-use paste::paste;
+
+use bitfield_struct::bitfield;
 
 #[repr(C,packed)] pub struct Ivhd
 {
@@ -33,45 +34,41 @@ impl Ivhd
 	pub const REVISION_MIXED:u8=0x2;
 }
 
-#[repr(C)] pub struct IvhdFlags(pub u8);
-
-impl IvhdFlags
+#[bitfield(u8)] pub struct IvhdFlags
 {
-	build_bit_mut_method!(ht_tun_en,0);
-	build_bit_mut_method!(pass_pw,1);
-	build_bit_mut_method!(res_pass_pw,2);
-	build_bit_mut_method!(isoc,3);
-	build_bit_mut_method!(iotlb_sup,4);
-	build_bit_mut_method!(coherent,5);
-	build_bit_mut_method!(prefetch_sup,6);
-	build_bit_mut_method!(ppr_sup,7);
+	pub ht_tun_en:bool,
+	pub pass_pw:bool,
+	pub res_pass_pw:bool,
+	pub isoc:bool,
+	pub iotlb_sup:bool,
+	pub coherent:bool,
+	pub prefetch_sup:bool,
+	pub ppr_sup:bool
 }
 
-#[repr(C)] pub struct IvhdIommuInfo(pub u16);
-
-impl IvhdIommuInfo
+#[bitfield(u16)] pub struct IvhdIommuInfo
 {
-	build_int_mut_method!(msi_num,0,5,u16);
-	build_int_mut_method!(unit_id,12,5,u16);
+	#[bits(5)] pub msi_num:u16,
+	#[bits(3)] rsvd0:u16,
+	#[bits(5)] pub unit_id:u16,
+	#[bits(3)] rsvd1:u16
 }
 
-#[repr(C)] pub struct IvhdIommuFeatureReporting(pub u32);
-
-impl IvhdIommuFeatureReporting
+#[bitfield(u32)] pub struct IvhdIommuFeatureReporting
 {
-	build_bit_mut_method!(xt_sup,0);
-	build_bit_mut_method!(nx_sup,1);
-	build_bit_mut_method!(gt_sup,2);
-	build_int_mut_method!(glx_sup,3,2,u32);
-	build_bit_mut_method!(ia_sup,5);
-	build_bit_mut_method!(ga_sup,6);
-	build_bit_mut_method!(he_sup,7);
-	build_int_mut_method!(pas_max,8,5,u32);
-	build_int_mut_method!(pn_counters,13,4,u32);
-	build_int_mut_method!(pn_banks,17,6,u32);
-	build_int_mut_method!(msi_num_ppr,23,5,u32);
-	build_int_mut_method!(gats,28,2,u32);
-	build_int_mut_method!(hats,30,2,u32);
+	pub xt_sup:bool,
+	pub nx_sup:bool,
+	pub gt_sup:bool,
+	#[bits(2)] pub glx_sup:u32,
+	pub ia_sup:bool,
+	pub ga_sup:bool,
+	pub he_sup:bool,
+	#[bits(5)] pub pas_max:u32,
+	#[bits(4)] pub pn_counters:u32,
+	#[bits(6)] pub pn_banks:u32,
+	#[bits(5)] pub msi_num_ppr:u32,
+	#[bits(2)] pub gats:u32,
+	#[bits(2)] pub hats:u32
 }
 
 #[repr(C,packed)] pub struct IvhdLarge
@@ -259,23 +256,21 @@ impl IvhdDeviceEntry
 	}
 }
 
-#[repr(C)] pub struct IvhdDteSetting(pub u8);
-
-impl IvhdDteSetting
+#[bitfield(u8)] pub struct IvhdDteSetting
 {
-	build_bit_mut_method!(init_pass,0);
-	build_bit_mut_method!(exint_pass,1);
-	build_bit_mut_method!(nmi_pass,2);
-	build_int_mut_method!(sys_mgt,4,2,u8);
-	build_bit_mut_method!(lint0_pass,6);
-	build_bit_mut_method!(lint1_pass,7);
+	pub init_pass:bool,
+	pub exint_pass:bool,
+	pub nmi_pass:bool,
+	rsvd:bool,
+	#[bits(2)] pub sys_mgt:u8,
+	pub lint0_pass:bool,
+	pub lint1_pass:bool
 }
 
-#[repr(C)] pub struct IvhdExtendedDteSetting(pub u32);
-
-impl IvhdExtendedDteSetting
+#[bitfield(u32)] pub struct IvhdExtendedDteSetting
 {
-	build_bit_mut_method!(ats_disabled,31);
+	#[bits(31)] rsvd:u32,
+	pub ats_disabled:bool
 }
 
 #[repr(C)] pub struct IvhdSpecialDeviceVariety(pub u8);
@@ -305,12 +300,11 @@ pub enum IvhdDeviceUniqueID
 	pub block_length:u64
 }
 
-#[repr(C)] pub struct IvmdFlags(pub u8);
-
-impl IvmdFlags
+#[bitfield(u8)] pub struct IvmdFlags
 {
-	build_bit_mut_method!(unity,0);
-	build_bit_mut_method!(ir,1);
-	build_bit_mut_method!(iw,2);
-	build_bit_mut_method!(exclusion_range,3);
+	pub unity:bool,
+	pub ir:bool,
+	pub iw:bool,
+	pub exclusion_range:bool,
+	#[bits(4)] rsvd:u8
 }

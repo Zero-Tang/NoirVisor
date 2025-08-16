@@ -16,128 +16,191 @@ use alloc::vec::Vec;
 use crate::{vt_core::ia32::msr::VmxEptVpidCapMsr, xpf_core::{ci::CI_MANAGER, allocator::enum_allocated_large_pages}, *};
 use xpf_core::{allocator::{alloc_2mb_page, alloc_contd_pages}, nvbdk::*, x86::caching::*};
 
-use paste::paste;
+use bitfield_struct::bitfield;
 use log::*;
 
-macro_rules! derive_common_ept_fields
+#[bitfield(u64)] pub struct EptPml4e
 {
-	() =>
-	{
-		build_bit_mut_method!(read,0);
-		build_bit_mut_method!(write,1);
-		build_bit_mut_method!(execute,2);
-		build_bit_mut_method!(accessed,8);
-		build_bit_mut_method!(user_execute,10);
-	};
+	pub read:bool,
+	pub write:bool,
+	pub execute:bool,
+	#[bits(5)] rsvd0:u64,
+	pub accessed:bool,
+	ignored0:bool,
+	pub user_execute:bool,
+	ignored1:bool,
+	#[bits(40)] pub pdpte_base:u64,
+	#[bits(12)] ignored2:u64
 }
 
-macro_rules! derive_last_entry_fields
+impl EptPml4e
 {
-	() =>
+	#[inline] pub fn construct(r:bool,w:bool,x:bool,pdpte_base:u64)->Self
 	{
-		build_int_mut_method!(memory_type,3,3,u64);
-		build_bit_mut_method!(ignore_pat,6);
-		build_bit_mut_method!(dirty,9);
-		build_bit_mut_method!(verify_guest_paging,57);
-		build_bit_mut_method!(paging_write,58);
-		build_bit_mut_method!(sss,60);
-		build_bit_mut_method!(suppress_ve,63);
-	};
-	($ps_bit:literal) =>
-	{
-		derive_last_entry_fields!();
-		build_bit_mut_method!(page_size,7);
-		build_int_mut_method!(page_base,$ps_bit,(52-$ps_bit),u64);
+		let mut v=Self::new();
+		v.set_read(r);
+		v.set_write(w);
+		v.set_execute(x);
+		v.set_pdpte_base(page_4kb_count(pdpte_base));
+		v
 	}
 }
 
-macro_rules! derive_intermediate_new_method
+#[bitfield(u64)] pub struct EptHugePdpte
 {
-	($field_name:tt) =>
-	{
-		paste!
-		{
-			pub fn new(r:bool,w:bool,x:bool,$field_name:u64)->Self
-			{
-				let mut s=Self(0);
-				s.set_read(r);
-				s.set_write(w);
-				s.set_execute(x);
-				s.[<set_ $field_name>](page_4kb_count($field_name));
-				s
-			}
-		}
-	};
+	pub read:bool,
+	pub write:bool,
+	pub execute:bool,
+	#[bits(3)] pub memory_type:u64,
+	pub ignore_pat:bool,
+	pub page_size:bool,		/// Must be true to set huge page.
+	pub accessed:bool,
+	pub dirty:bool,
+	pub user_execute:bool,
+	ignored0:bool,
+	#[bits(18)] rsvd0:u64,
+	#[bits(22)] pub page_base:u64,
+	#[bits(8)] rsvd1:u64,
+	pub supervisor_shadow_stack:bool,
+	#[bits(2)] ignored1:u64,
+	pub suppress_ve:bool
 }
 
-macro_rules! derive_last_new_method
-{
-	($page_size:tt,$large:literal) =>
-	{
-		paste!
-		{
-			pub fn new(r:bool,w:bool,x:bool,memory_type:u64,page_base:u64)->Self
-			{
-				let mut s=Self(($large as u64)<<7);
-				s.set_read(r);
-				s.set_write(w);
-				s.set_execute(x);
-				s.set_memory_type(memory_type);
-				s.set_page_base([<page_ $page_size _count>](page_base));
-				s
-			}
-		}
-	};
-}
-
-pub struct EptPml4e(pub u64);
-impl EptPml4e
-{
-	derive_common_ept_fields!();
-	build_int_mut_method!(pdpte_entry,12,40,u64);
-	derive_intermediate_new_method!(pdpte_entry);
-}
-
-pub struct EptHugePdpte(pub u64);
 impl EptHugePdpte
 {
-	derive_common_ept_fields!();
-	derive_last_entry_fields!(30);
-	derive_last_new_method!(1gb,true);
+	#[inline] pub fn construct(r:bool,w:bool,x:bool,memory_type:u64,page_base:u64)->Self
+	{
+		let mut v=Self::new();
+		v.set_read(r);
+		v.set_write(w);
+		v.set_execute(x);
+		v.set_memory_type(memory_type);
+		v.set_page_size(true);
+		v.set_page_base(page_1gb_count(page_base));
+		v
+	}
 }
 
-pub struct EptPdpte(pub u64);
+#[bitfield(u64)] pub struct EptPdpte
+{
+	pub read:bool,
+	pub write:bool,
+	pub execute:bool,
+	#[bits(5)] rsvd0:u64,
+	pub accessed:bool,
+	ignored0:bool,
+	pub user_execute:bool,
+	ignored1:bool,
+	#[bits(40)] pub pde_base:u64,
+	#[bits(12)] ignored2:u64
+}
+
 impl EptPdpte
 {
-	derive_common_ept_fields!();
-	build_int_mut_method!(pde_entry,12,40,u64);
-	derive_intermediate_new_method!(pde_entry);
+	#[inline] pub fn construct(r:bool,w:bool,x:bool,pde_base:u64)->Self
+	{
+		let mut v=Self::new();
+		v.set_read(r);
+		v.set_write(w);
+		v.set_execute(x);
+		v.set_pde_base(page_4kb_count(pde_base));
+		v
+	}
 }
 
-pub struct EptLargePde(pub u64);
+#[bitfield(u64)] pub struct EptLargePde
+{
+	pub read:bool,
+	pub write:bool,
+	pub execute:bool,
+	#[bits(3)] pub memory_type:u64,
+	pub ignore_pat:bool,
+	pub page_size:bool,		/// Must be true to set huge page.
+	pub accessed:bool,
+	pub dirty:bool,
+	pub user_execute:bool,
+	ignored0:bool,
+	#[bits(9)] rsvd0:u64,
+	#[bits(31)] pub page_base:u64,
+	#[bits(8)] rsvd1:u64,
+	pub supervisor_shadow_stack:bool,
+	#[bits(2)] ignored1:u64,
+	pub suppress_ve:bool
+}
+
 impl EptLargePde
 {
-	derive_common_ept_fields!();
-	derive_last_entry_fields!(21);
-	derive_last_new_method!(2mb,true);
+	#[inline] pub fn construct(r:bool,w:bool,x:bool,memory_type:u64,page_base:u64)->Self
+	{
+		let mut v=Self::new();
+		v.set_read(r);
+		v.set_write(w);
+		v.set_execute(x);
+		v.set_memory_type(memory_type);
+		v.set_page_size(true);
+		v.set_page_base(page_2mb_count(page_base));
+		v
+	}
 }
 
-pub struct EptPde(pub u64);
+#[bitfield(u64)] pub struct EptPde
+{
+	pub read:bool,
+	pub write:bool,
+	pub execute:bool,
+	#[bits(5)] rsvd0:u64,
+	pub accessed:bool,
+	ignored0:bool,
+	pub user_execute:bool,
+	ignored1:bool,
+	#[bits(40)] pub pte_base:u64,
+	#[bits(12)] ignored2:u64
+}
+
 impl EptPde
 {
-	derive_common_ept_fields!();
-	build_int_mut_method!(pte_entry,12,40,u64);
-	derive_intermediate_new_method!(pte_entry);
+	#[inline] pub fn construct(r:bool,w:bool,x:bool,pte_base:u64)->Self
+	{
+		let mut v=Self::new();
+		v.set_read(r);
+		v.set_write(w);
+		v.set_execute(x);
+		v.set_pte_base(page_4kb_count(pte_base));
+		v
+	}
 }
 
-pub struct EptPte(pub u64);
+#[bitfield(u64)] pub struct EptPte
+{
+	pub read:bool,
+	pub write:bool,
+	pub execute:bool,
+	#[bits(3)] pub memory_type:u64,
+	pub ignore_pat:bool,
+	pub ignored0:bool,
+	pub accessed:bool,
+	pub dirty:bool,
+	pub user_execute:bool,
+	ignored1:bool,
+	#[bits(40)] pub page_base:u64,
+	#[bits(8)] rsvd1:u64,
+	pub supervisor_shadow_stack:bool,
+	#[bits(2)] ignored2:u64,
+	pub suppress_ve:bool
+}
+
 impl EptPte
 {
-	derive_common_ept_fields!();
-	derive_last_entry_fields!();
-	build_int_mut_method!(page_base,12,40,u64);
-	build_bit_mut_method!(subpage_write,61);
-	derive_last_new_method!(4kb,false);
+	#[inline] pub fn construct(r:bool,w:bool,x:bool,memory_type:u64,page_base:u64)->Self
+	{
+		let mut v=Self::new();
+		v.set_read(r);
+		v.set_write(w);
+		v.set_execute(x);
+		v.set_memory_type(memory_type);
+		v.set_page_base(page_4kb_count(page_base));
+		v
+	}
 }
 
 pub struct VtEptPageTableDescriptor
@@ -198,7 +261,7 @@ impl Default for VtEptManager
 			pde:Vec::new(),
 			pte:Vec::new(),
 			mtrr_mgr:MtrrManager::default(),
-			ept_cap:VmxEptVpidCapMsr(0)
+			ept_cap:VmxEptVpidCapMsr::from_bits(0)
 		}
 	}
 }
@@ -237,16 +300,16 @@ impl VtEptManager
 					unsafe
 					{
 						let pdpte_v=self.locate_pdpte(gpa);
-						let mt=(*pdpte_v).get_memory_type();
+						let mt=(*pdpte_v).memory_type();
 						for i in 0..PAGE_TABLE_ENTRIES64
 						{
-							*pde_p.add(i)=EptLargePde::new(true,true,true,mt,d.gpa_start+page_2mb_mult(i) as u64);
+							*pde_p.add(i)=EptLargePde::construct(true,true,true,mt,d.gpa_start+page_2mb_mult(i) as u64);
 						}
 						// Update PDPTE Entry.
 						(*pdpte_v).set_memory_type(0);
 						(*pdpte_v).set_page_size(false);
 						let pdpte_p:*mut EptPdpte=pdpte_v.cast();
-						(*pdpte_p).set_pde_entry(page_4kb_count(md.phys));
+						(*pdpte_p).set_pde_base(page_4kb_count(md.phys));
 					}
 					// Insert to EPT Manager.
 					self.pde.insert(i,d);
@@ -294,16 +357,16 @@ impl VtEptManager
 					unsafe
 					{
 						let pde_v=self.locate_pde(gpa).unwrap();
-						let mt=(*pde_v).get_memory_type();
+						let mt=(*pde_v).memory_type();
 						for i in 0..PAGE_TABLE_ENTRIES64
 						{
-							*pte_p.add(i)=EptPte::new(true,true,true,mt,d.gpa_start+page_4kb_mult(i) as u64);
+							*pte_p.add(i)=EptPte::construct(true,true,true,mt,d.gpa_start+page_4kb_mult(i) as u64);
 						}
 						// Update PDE Entry.
 						(*pde_v).set_memory_type(0);
 						(*pde_v).set_page_size(false);
 						let pde_p:*mut EptPde=pde_v.cast();
-						(*pde_p).set_pte_entry(page_4kb_count(md.phys));
+						(*pde_p).set_pte_base(page_4kb_count(md.phys));
 					}
 					// Insert to EPT Manager.
 					self.pte.insert(i,d);
@@ -333,7 +396,7 @@ impl VtEptManager
 		let pte_p=self.locate_pte(gpa).unwrap();
 		unsafe
 		{
-			if let Some((new_type,force_update))=memory_type && (new_type<(*pte_p).get_memory_type() || force_update)
+			if let Some((new_type,force_update))=memory_type && (new_type<(*pte_p).memory_type() || force_update)
 			{
 				(*pte_p).set_memory_type(new_type);
 			}
@@ -350,9 +413,9 @@ impl VtEptManager
 		let pde_p=self.locate_pde(gpa).unwrap();
 		unsafe
 		{
-			if (*pde_p).get_page_size()
+			if (*pde_p).page_size()
 			{
-				if let Some((new_type,force_update))=memory_type && (new_type<(*pde_p).get_memory_type() || force_update)
+				if let Some((new_type,force_update))=memory_type && (new_type<(*pde_p).memory_type() || force_update)
 				{
 					(*pde_p).set_memory_type(new_type);
 				}
@@ -376,9 +439,9 @@ impl VtEptManager
 		unsafe
 		{
 			let pdpte_p=self.pdpte.virt.cast::<EptHugePdpte>().add(pdpte_i);
-			if (*pdpte_p).get_page_size()
+			if (*pdpte_p).page_size()
 			{
-				if let Some((new_type,force_update))=memory_type && (new_type<(*pdpte_p).get_memory_type() || force_update)
+				if let Some((new_type,force_update))=memory_type && (new_type<(*pdpte_p).memory_type() || force_update)
 				{
 					(*pdpte_p).set_memory_type(new_type);
 				}
@@ -468,21 +531,21 @@ impl VtEptManager
 			for j in 0..PAGE_TABLE_ENTRIES64
 			{
 				let k=(i<<PAGE_SHIFT_DIFF)+j;
-				let pdpte_v=EptHugePdpte::new(true,true,true,MEMORY_TYPE_WB as u64,page_1gb_mult(k) as u64);
+				let pdpte_v=EptHugePdpte::construct(true,true,true,MEMORY_TYPE_WB as u64,page_1gb_mult(k) as u64);
 				unsafe
 				{
 					let pdpte_p=self.pdpte.virt.cast::<EptHugePdpte>().add(k);
 					pdpte_p.write(pdpte_v);
 				}
 			}
-			let pml4e_v=EptPml4e::new(true,true,true,self.pdpte.phys+page_mult(i) as u64);
+			let pml4e_v=EptPml4e::construct(true,true,true,self.pdpte.phys+page_mult(i) as u64);
 			unsafe
 			{
 				let pml4e_p=self.pml4e.virt.cast::<EptPml4e>().add(i);
 				pml4e_p.write(pml4e_v);
 			}
 		}
-		if !self.ept_cap.get_support_1gb_paging()
+		if !self.ept_cap.support_1gb_paging()
 		{
 			// 1GiB-paging is unsupported in this system. Split all PDPTEs in the lowest 512GiB.
 			// Nested-Virtualization provided by VMware doesn't support 1GiB Paging.

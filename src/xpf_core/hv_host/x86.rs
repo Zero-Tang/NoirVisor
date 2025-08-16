@@ -92,7 +92,7 @@ impl Default for HostPaging
 				{
 					unsafe
 					{
-						let pdpte_v=HugePdpte::new(true,true,false,false,false,page_1gb_mult(i) as u64);
+						let pdpte_v=HugePdpte::construct(true,true,false,page_1gb_mult(i) as u64,false);
 						pdpte_p.add(i).write(pdpte_v);
 					}
 				}
@@ -107,8 +107,8 @@ impl Default for HostPaging
 			let scr3_virt=noir_find_virt_by_phys(scr3_phys);
 			debug!("System CR3 Virt: {scr3_virt:p}, Phys: 0x{scr3_phys:016X}");
 			memcpy(r.cr3.virt,scr3_virt,PAGE_SIZE);
-			let pml4e_v=Pml4e::new(true,true,false,false,false,r.pdpt.phys);
-			debug!("PML4E Pointer: {:p}, PML4E value 0x{:016X}",pml4e_p,pml4e_v.0);
+			let pml4e_v=Pml4e::construct(true,true,false,r.pdpt.phys,false);
+			debug!("PML4E Pointer: {:p}, PML4E value 0x{:016X}",pml4e_p,pml4e_v.into_bits());
 			pml4e_p.write(pml4e_v);
 		}
 		r

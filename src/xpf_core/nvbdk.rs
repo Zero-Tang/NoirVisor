@@ -11,8 +11,9 @@
  */
 
 use core::{arch::x86_64::_bittest64, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut, slice};
-use crate::{build_bit_get_method, xpf_core::{asm::{crdr::*, msr::rdmsr, seg::*}, x86::{descriptors::{DescriptorTable, SegmentFlags}, msr::*}}};
+use super::{asm::{crdr::*, msr::rdmsr, seg::*}, x86::{descriptors::{DescriptorTable, SegmentFlags}, msr::*}};
 use alloc::vec::Vec;
+use bitfield_struct::bitfield;
 use paste::paste;
 use spin::Lazy;
 
@@ -75,11 +76,11 @@ impl SegmentRegister
 				Self
 				{
 					selector,
-					attrib:a.0,
+					attrib:a.into_bits(),
 					limit:lsl(selector),
-					base:if a.get_present()
+					base:if a.present()
 					{
-						if a.get_system_segment()
+						if a.system_segment()
 						{
 							0
 						}
@@ -334,25 +335,27 @@ impl GprState
 	pub debug_ctrl:u64
 }
 
-#[repr(C)] pub struct EnabledFeatures(i64);
+#[bitfield(u64)] pub struct EnabledFeatures
+{
+	pub stealthy_msr_hook:bool,
+	pub stealthy_inline_hook:bool,
+	pub cpuid_hv_presence:bool,
+	pub disable_patchguard:bool,
+	pub nested_virtualization:bool,
+	pub kva_shadow_presence:bool,
+	pub tlfs_passthrough:bool,
+	pub hide_from_pt:bool,
+	pub enable_nsv:bool,
+	pub enable_iommu:bool,
+	#[bits(54)] rsvd:u64
+}
 
 impl EnabledFeatures
 {
 	pub fn get()->Self
 	{
-		Self(unsafe{noir_query_enabled_features_in_system()})
+		Self(unsafe{noir_query_enabled_features_in_system()} as u64)
 	}
-
-	build_bit_get_method!(stealthy_msr_hook,0);
-	build_bit_get_method!(stealthy_inline_hook,1);
-	build_bit_get_method!(cpuid_hv_presence,2);
-	build_bit_get_method!(disable_patchguard,3);
-	build_bit_get_method!(nested_virtualization,4);
-	build_bit_get_method!(kva_shadow_presence,5);
-	build_bit_get_method!(tlfs_passthrough,6);
-	build_bit_get_method!(hide_from_pt,7);
-	build_bit_get_method!(enable_nsv,8);
-	build_bit_get_method!(enable_iommu,9);
 
 	const FEATURE_NAMES:[&'static str;10]=
 	[
@@ -528,107 +531,12 @@ pub const PAGE_TABLE_ENTRIES:usize=if cfg!(target_arch="x86_64") {PAGE_TABLE_ENT
 pub const PAGE_TABLE_ENTRIES64:usize=512;
 pub const PAGE_TABLE_ENTRIES32:usize=1024;
 
-#[inline] pub fn phys_addr_mask(addr:u64)->u64
+#[inline] pub const fn phys_addr_mask(addr:u64)->u64
 {
 	addr&((1<<52)-1)
 }
 
-#[inline] pub fn page_entry_index(addr:usize)->usize
+#[inline] pub const fn page_entry_index(addr:usize)->usize
 {
 	addr&(PAGE_TABLE_ENTRIES-1)
-}
-
-#[macro_export] macro_rules! build_bit_get_method
-{
-	($name:tt,$pos:literal) =>
-	{
-		paste!
-		{
-			#[inline] pub fn [<get_ $name:lower>](&self)->bool
-			{
-				self.0&(1<<$pos)==(1<<$pos)
-			}
-		}
-	};
-	($name:tt,$pos:literal,$pub:tt) =>
-	{
-		paste!
-		{
-			#[inline] fn [<get_ $name:lower>](&self)->bool
-			{
-				self.0&(1<<$pos)==(1<<$pos)
-			}
-		}
-	};
-}
-
-#[macro_export] macro_rules! build_bit_mut_method
-{
-	($name:tt,$pos:literal) =>
-	{
-		build_bit_get_method!($name,$pos);
-		paste!
-		{
-			#[inline] pub fn [<set_ $name:lower>](&mut self,val:bool)
-			{
-				if val
-				{
-					self.0|=1<<$pos;
-				}
-				else
-				{
-					self.0&=!(1<<$pos);
-				}
-			}
-		}
-	};
-	($name:tt,$pos:literal,$pub:tt) =>
-	{
-		build_bit_get_method!($name,$pos,$pub);
-		paste!
-		{
-			#[inline] fn [<set_ $name:lower>](&mut self,val:bool)
-			{
-				if val
-				{
-					self.0|=1<<$pos;
-				}
-				else
-				{
-					self.0&=!(1<<$pos);
-				}
-			}
-		}
-	};
-}
-
-#[macro_export] macro_rules! build_int_get_method
-{
-	($name:tt,$pos:literal,$len:expr,$type:ty) =>
-	{
-		paste!
-		{
-			#[inline] pub fn [<get_ $name:lower>](&self)->$type
-			{
-				((self.0>>$pos)&((1<<$len)-1)) as $type
-			}
-		}
-	};
-}
-
-#[macro_export] macro_rules! build_int_mut_method
-{
-	($name:tt,$pos:literal,$len:expr,$type:ty) =>
-	{
-		build_int_get_method!($name,$pos,$len,$type);
-		paste!
-		{
-			#[inline] pub fn [<set_ $name:lower>](&mut self,value:$type)
-			{
-				let mask:$type=((1<<$len)-1)<<$pos;
-				self.0&=!mask;
-				self.0|=(value<<$pos);
-			}
-		}
-	};
 }

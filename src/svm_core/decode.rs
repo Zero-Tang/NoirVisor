@@ -104,7 +104,7 @@ impl SvmVcpu
 		if let Err(e)=read_virtual_address(rip,self,buff,&mut fault_pa)
 		{
 			let cr3=self.get_cr3();
-			panic!("Page-Fault is triggered by software while fetching instruction! Code: 0x{:08X}, vmcb=0x{:X} rip=0x{rip:016X}, cr3=0x{cr3:016X}",e.0,self.vmcb.phys);
+			panic!("Page-Fault is triggered by software while fetching instruction! Code: 0x{:08X}, vmcb=0x{:X} rip=0x{rip:016X}, cr3=0x{cr3:016X}",e.into_bits(),self.vmcb.phys);
 		}
 	}
 
@@ -224,8 +224,8 @@ impl SvmVcpu
 		{
 			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
 			// We will have to emulate this on our own.
-			let fault_code=PageFaultErrorCode::from_u32(unsafe{vmread(self.vmcb.virt,EXIT_INFO1)});
-			if fault_code.is_execute()
+			let fault_code=PageFaultErrorCode::from_bits(unsafe{vmread(self.vmcb.virt,EXIT_INFO1)});
+			if fault_code.execute()
 			{
 				// Fetching instruction is only needed if the operation is not instruction fetch!
 				self.fetch_instruction();
@@ -285,8 +285,8 @@ impl SvmVcpu
 		{
 			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
 			// We will have to emulate this on our own.
-			let fault_code=NptFaultCode::from_u64(unsafe{vmread(self.vmcb.virt,EXIT_INFO1)});
-			if !fault_code.get_code_read()
+			let fault_code=NptFaultCode::from_bits(unsafe{vmread(self.vmcb.virt,EXIT_INFO1)});
+			if !fault_code.code_fetch()
 			{
 				// Fetching instruction is only needed if the operation is not instruction fetch!
 				self.fetch_instruction();

@@ -62,7 +62,7 @@ impl SvmVcpu
 		let (a,b,c,d)=
 		if (ia&0x40000000)==0x40000000
 		{
-			if hv.features.get_cpuid_hv_presence()
+			if hv.features.cpuid_hv_presence()
 			{
 				// This is Hypervisor's CPUID.
 				let leaf_func=(ia&0x3FFFFFFF) as usize;
@@ -84,7 +84,7 @@ impl SvmVcpu
 			let (mut a,mut b,mut c,mut d)=cpuid2(ia,ic);
 			match ia
 			{
-				CPUID_STD_PROCESSOR_FEATURE=>c|=if hv.features.get_cpuid_hv_presence() {CPUID_UNDER_HYPERVISOR} else {0},
+				CPUID_STD_PROCESSOR_FEATURE=>c|=if hv.features.cpuid_hv_presence() {CPUID_UNDER_HYPERVISOR} else {0},
 				// NoirVisor currently does not support nested virtualization.
 				CPUID_EXT_PROCESSOR_FEATURE=>c&=!CPUID_SVM,
 				CPUID_EXT_SECURE_VIRTUAL_MACHINE_FEATURE=>(a,b,c,d)=(0,0,0,0),
@@ -447,10 +447,10 @@ impl SvmVcpu
 			if let Some(_fwder)=&hv.mshvcall_forwarder
 			{
 				let stack:*mut SvmStackTop=unsafe{self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast()};
-				let hvcall_code=TlfsHypercallCode(gpr_state.rcx);
+				let hvcall_code=TlfsHypercallCode::from_bits(gpr_state.rcx);
 				// Construct the forward stack.
 				let mut fwd_stack=MshvForwardStack::from_context(gpr_state,unsafe{&raw mut (*stack).volatile_xmms});
-				if hvcall_code.get_fast()
+				if hvcall_code.fast()
 				{
 					unsafe
 					{
@@ -462,10 +462,10 @@ impl SvmVcpu
 				else
 				{
 					// FIXME: This sort of hypercall (e.g.: HvPostMessage) only happens in Hyper-V. It seems Windows does not invoke such hypercalls in QEMU/KVM.
-					info!("Microsoft Memory-Mapped Hypercall is intercepted! Code: 0x{:X}, Input GPA: 0x{:X}, Output GPA: 0x{:X}",hvcall_code.0,gpr_state.rdx,gpr_state.r8);
+					info!("Microsoft Memory-Mapped Hypercall is intercepted! Code: 0x{:X}, Input GPA: 0x{:X}, Output GPA: 0x{:X}",hvcall_code.into_bits(),gpr_state.rdx,gpr_state.r8);
 					unsafe
 					{
-						gpr_state.rax=nvc_forward_memory_mapped_hypercall(hvcall_code.0,gpr_state.rdx,gpr_state.r8,gpr_state.rax);
+						gpr_state.rax=nvc_forward_memory_mapped_hypercall(hvcall_code.into_bits(),gpr_state.rdx,gpr_state.r8,gpr_state.rax);
 						info!("Return-Value: 0x{:X}",gpr_state.rax);
 						advance_rip(self.vmcb.virt);
 					}
@@ -529,7 +529,7 @@ impl SvmVcpu
 			debug!("CI-fault Instruction: {:02X?} | {}",&ins_bytes[..ins_info.len()],mnemonic.as_str());
 			unsafe{advance_rip_manually(vmcb,ins_info.len())};
 		}
-		else if !fault.get_code_read()
+		else if !fault.code_fetch()
 		{
 			let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
 			// This could be MMIO Filter.
@@ -545,7 +545,7 @@ impl SvmVcpu
 				Mnemonic::Mov=>
 				{
 					// Decode the operand.
-					if fault.get_write()
+					if fault.write()
 					{
 						let data=match ins_info.op1_kind()
 						{

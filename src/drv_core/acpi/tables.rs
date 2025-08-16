@@ -11,9 +11,9 @@
  */
 
 use paste::paste;
-use core::{fmt::{self,Display}, mem::offset_of, str};
+use bitfield_struct::bitfield;
 
-use crate::*;
+use core::{fmt::{self,Display}, mem::offset_of, str};
 
 #[repr(C)] pub struct AcpiAddressSpaceId(pub u8);
 
@@ -147,14 +147,14 @@ impl SystemDescriptionHeader
 	pub ivdb:[u8;0]
 }
 
-#[repr(C)] pub struct IvInfo(pub u32);
-
-impl IvInfo
+#[bitfield(u32)] pub struct IvInfo
 {
-	build_bit_mut_method!(efr_sup,0);
-	build_bit_mut_method!(dma_remap_sup,1);
-	build_int_mut_method!(gva_size,5,3,u32);
-	build_int_mut_method!(pa_size,8,7,u32);
-	build_int_mut_method!(va_size,15,7,u32);
-	build_bit_mut_method!(ht_ats_reserved,22);
+	pub efr_sup:bool,
+	pub dma_remap_sup:bool,
+	#[bits(3)] rsvd0:u32,
+	#[bits(3)] gva_size:usize,
+	#[bits(7)] pa_size:usize,
+	#[bits(7)] va_size:usize,
+	pub ht_ats_reserved:bool,
+	#[bits(9)] rsvd1:u32
 }

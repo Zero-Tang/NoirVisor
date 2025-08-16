@@ -10,8 +10,9 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_bittest, fmt::{self,Display}};
-use paste::paste;
+use core::{arch::x86_64::_bittest, fmt::{self,Display}, ops::{BitAndAssign, BitOrAssign}};
+
+use bitfield_struct::bitfield;
 
 use crate::{xpf_core::{asm::vt::*, x86::{crdr::DR6_BS, interrupts::EventType, rflags::RFLAGS_TF_BIT}},*};
 
@@ -81,6 +82,7 @@ pub const SPEC_CTRL_MASK:usize=0x204A;
 pub const SPEC_CTRL_SHADOW:usize=0x204C;
 // 64-Bit Read-Only Fields
 pub const GUEST_PHYSICAL_ADDRESS:usize=0x2400;
+pub const GUEST_MSR_LIST_DATA:usize=0x2402;
 // 64-Bit Guest State Fields
 pub const VMCS_LINK_POINTER:usize=0x2800;
 pub const GUEST_MSR_IA32_DEBUG_CTRL:usize=0x2802;
@@ -245,14 +247,6 @@ pub struct VmcsSegment
 	};
 }
 
-#[inline] pub fn vt_attrib(selector:u16,attrib:u16)->u32
-{
-	let mut ar=SegmentAccessRights(attrib as u32);
-	ar.set_unusable(selector==0);
-	ar.set_reserved(0);
-	ar.0
-}
-
 #[inline] pub unsafe fn advance_rip()
 {
 	unsafe
@@ -281,7 +275,7 @@ pub struct VmcsSegment
 		}
 		gip=gip.wrapping_add(length as usize);
 		let cs_ar=SegmentAccessRights(vmread32(GUEST_CS_ACCESS_RIGHTS).unwrap());
-		if !cs_ar.get_long_mode()
+		if !cs_ar.long_mode()
 		{
 			// The rip might overflow if the guest is not in long mode.
 			gip&=u32::MAX as usize;
@@ -293,7 +287,7 @@ pub struct VmcsSegment
 #[inline] pub unsafe fn inject_event(vector:u8,event_type:EventType,error_code:Option<u32>,valid:bool,length:u32)
 {
 	let mut evt=VmxEntryInterruptionInformation(0);
-	evt.set_vector(vector as u32);
+	evt.set_vector(vector);
 	evt.set_interruption_type(event_type as u32);
 	evt.set_valid(valid);
 	unsafe
@@ -387,212 +381,279 @@ impl VmxMsrAutoItem
 	}
 }
 
-pub struct SegmentAccessRights(pub u32);
+#[bitfield(u32)] pub struct SegmentAccessRights
+{
+	#[bits(4)] pub segment_type:u32,
+	pub descriptor_type:bool,
+	#[bits(2)] pub dpl:u32,
+	pub present:bool,
+	#[bits(4)] rsvd0:u32,
+	pub avl:bool,
+	pub long_mode:bool,
+	pub default_size:bool,
+	pub granularity:bool,
+	pub unusable:bool,
+	#[bits(15)] rsvd1:u32
+}
+
 impl SegmentAccessRights
 {
-	build_int_mut_method!(segment_type,0,4,u32);
-	build_bit_mut_method!(descriptor_type,4);
-	build_int_mut_method!(dpl,5,2,u32);
-	build_bit_mut_method!(present,7);
-	build_bit_mut_method!(avl,12);
-	build_int_mut_method!(reserved,8,4,u32);
-	build_bit_mut_method!(long_mode,13);
-	build_bit_mut_method!(default_size,14);
-	build_bit_mut_method!(granularity,15);
-	build_bit_mut_method!(unusable,16);
+	pub fn from_raw(selector:u16,attrib:u16)->Self
+	{
+		let mut v=Self(attrib as u32);
+		v.set_rsvd0(0);
+		if selector==0
+		{
+			v.set_unusable(true);
+		}
+		v
+	}
 }
 
-pub struct InterruptibilityState(pub u32);
-impl InterruptibilityState
+#[bitfield(u32)] pub struct InterruptibilityState
 {
-	build_bit_mut_method!(blocking_by_sti,0);
-	build_bit_mut_method!(blocking_by_mov_ss,1);
-	build_bit_mut_method!(blocking_by_smi,2);
-	build_bit_mut_method!(blocking_by_nmi,3);
-	build_bit_mut_method!(enclave_interruption,4);
+	pub blocking_by_sti:bool,
+	pub blocking_by_mov_ss:bool,
+	pub blocking_by_smi:bool,
+	pub blocking_by_nmi:bool,
+	pub enclave_interruption:bool,
+	#[bits(27)] pub rsvd:u32
 }
 
-pub struct VmxPinBasedControls(pub u32);
-impl VmxPinBasedControls
+macro_rules! derive_bit_ops
 {
-	build_bit_mut_method!(external_interrupt_exiting,0);
-	build_bit_mut_method!(nmi_exiting,3);
-	build_bit_mut_method!(virtual_nmi,5);
-	build_bit_mut_method!(activate_vmx_preemption_timer,6);
-	build_bit_mut_method!(process_posted_interrupts,7);
+	($type_name:tt) =>
+	{
+		impl BitAndAssign for $type_name
+		{
+			fn bitand_assign(&mut self,rhs:Self)
+			{
+				self.0&=rhs.0;
+			}
+		}
+
+		impl BitOrAssign for $type_name
+		{
+			fn bitor_assign(&mut self,rhs:Self)
+			{
+				self.0|=rhs.0;
+			}
+		}
+	};
 }
 
-pub struct VmxPrimaryProcessorControls(pub u32);
-impl VmxPrimaryProcessorControls
+#[bitfield(u32)] pub struct VmxPinBasedControls
 {
-	build_bit_mut_method!(interrupt_window_exiting,2);
-	build_bit_mut_method!(use_tsc_offsetting,3);
-	build_bit_mut_method!(hlt_exiting,7);
-	build_bit_mut_method!(invlpg_exiting,9);
-	build_bit_mut_method!(mwait_exiting,10);
-	build_bit_mut_method!(rdpmc_exiting,11);
-	build_bit_mut_method!(rdtsc_exiting,12);
-	build_bit_mut_method!(cr3_load_exiting,15);
-	build_bit_mut_method!(cr3_store_exiting,16);
-	build_bit_mut_method!(activate_tertiary_controls,17);
-	build_bit_mut_method!(cr8_load_exiting,19);
-	build_bit_mut_method!(cr8_store_exiting,20);
-	build_bit_mut_method!(use_tpr_shadow,21);
-	build_bit_mut_method!(nmi_window_exiting,22);
-	build_bit_mut_method!(mov_dr_exiting,23);
-	build_bit_mut_method!(unconditional_io_exiting,24);
-	build_bit_mut_method!(use_io_bitmap,25);
-	build_bit_mut_method!(monitor_trap_flag,27);
-	build_bit_mut_method!(use_msr_bitmap,28);
-	build_bit_mut_method!(monitor_exiting,29);
-	build_bit_mut_method!(pause_exiting,30);
-	build_bit_mut_method!(activate_secondary_controls,31);
+	pub external_interrupt_exiting:bool,
+	#[bits(2)] rsvd0:u32,
+	pub nmi_exiting:bool,
+	rsvd1:bool,
+	pub virtual_nmi:bool,
+	pub activate_vmx_preemption_timer:bool,
+	pub process_posted_interrupts:bool,
+	#[bits(24)] rsvd2:u32
 }
 
-pub struct VmxSecondaryProcessorControls(pub u32);
-impl VmxSecondaryProcessorControls
+derive_bit_ops!(VmxPinBasedControls);
+
+#[bitfield(u32)] pub struct VmxPrimaryProcessorControls
 {
-	build_bit_mut_method!(virtualize_apic_accesses,0);
-	build_bit_mut_method!(enable_ept,1);
-	build_bit_mut_method!(descriptor_table_exiting,2);
-	build_bit_mut_method!(enable_rdtscp,3);
-	build_bit_mut_method!(virtualize_x2apic_mode,4);
-	build_bit_mut_method!(enable_vpid,5);
-	build_bit_mut_method!(wbinvd_exiting,6);
-	build_bit_mut_method!(unrestricted_guest,7);
-	build_bit_mut_method!(apic_register_virtualization,8);
-	build_bit_mut_method!(virtual_interrupt_delivery,9);
-	build_bit_mut_method!(pause_loop_exiting,10);
-	build_bit_mut_method!(rdrand_exiting,11);
-	build_bit_mut_method!(enable_invpcid,12);
-	build_bit_mut_method!(enable_vm_functions,13);
-	build_bit_mut_method!(vmcs_shadowing,14);
-	build_bit_mut_method!(encls_exiting,15);
-	build_bit_mut_method!(rdseed_exiting,16);
-	build_bit_mut_method!(enable_pml,17);
-	build_bit_mut_method!(ept_violation_to_ve,18);
-	build_bit_mut_method!(conceal_vmx_from_pt,19);
-	build_bit_mut_method!(enable_xsaves_xrstors,20);
-	build_bit_mut_method!(enable_pasid_translation,21);
-	build_bit_mut_method!(ept_mode_based_execution_control,22);
-	build_bit_mut_method!(ept_sub_page_write_permission,23);
-	build_bit_mut_method!(pt_use_gpa,24);
-	build_bit_mut_method!(use_tsc_scaling,25);
-	build_bit_mut_method!(enable_umwait,26);
-	build_bit_mut_method!(enable_pconfig,27);
-	build_bit_mut_method!(enclv_exiting,28);
-	build_bit_mut_method!(vmm_buslock_detection,30);
-	build_bit_mut_method!(instruction_timeout,31);
+	#[bits(2)] rsvd0:u32,
+	pub interrupt_window_exiting:bool,
+	pub use_tsc_offsetting:bool,
+	#[bits(3)] rsvd1:u32,
+	pub hlt_exiting:bool,
+	rsvd2:bool,
+	pub invlpg_exiting:bool,
+	pub mwait_exiting:bool,
+	pub rdpmc_exiting:bool,
+	pub rdtsc_exiting:bool,
+	#[bits(2)] rsvd3:u32,
+	pub cr3_load_exiting:bool,
+	pub cr3_store_exiting:bool,
+	pub activate_tertiary_controls:bool,
+	rsvd4:bool,
+	pub cr8_load_exiting:bool,
+	pub cr8_store_exiting:bool,
+	pub use_tpr_shadow:bool,
+	pub nmi_window_exiting:bool,
+	pub mov_dr_exiting:bool,
+	pub unconditional_io_exiting:bool,
+	pub use_io_bitmap:bool,
+	rsvd5:bool,
+	pub monitor_trap_flag:bool,
+	pub use_msr_bitmap:bool,
+	pub monitor_exiting:bool,
+	pub pause_exiting:bool,
+	pub activate_secondary_controls:bool
 }
 
-pub struct VmxTertiaryProcessorControls(pub u64);
-impl VmxTertiaryProcessorControls
+derive_bit_ops!(VmxPrimaryProcessorControls);
+
+#[bitfield(u32)] pub struct VmxSecondaryProcessorControls
 {
-	build_bit_mut_method!(loadiwkey_exiting,0);
-	build_bit_mut_method!(enable_hlat,1);
-	build_bit_mut_method!(ept_paging_write_control,2);
-	build_bit_mut_method!(guest_paging_verification,3);
-	build_bit_mut_method!(ipi_virtualization,4);
-	build_bit_mut_method!(enable_msr_list_instruction,6);
-	build_bit_mut_method!(virtualize_spec_ctrl,7);
+	pub virtualize_apic_accesses:bool,
+	pub enable_ept:bool,
+	pub descriptor_table_exiting:bool,
+	pub enable_rdtscp:bool,
+	pub virtualize_x2apic_mode:bool,
+	pub enable_vpid:bool,
+	pub wbinvd_exiting:bool,
+	pub unrestricted_guest:bool,
+	pub apic_register_virtualization:bool,
+	pub virtual_interrupt_delivery:bool,
+	pub pause_loop_exiting:bool,
+	pub rdrand_exiting:bool,
+	pub enable_invpcid:bool,
+	pub enable_vmfunc:bool,
+	pub vmcs_shadowing:bool,
+	pub encls_exiting:bool,
+	pub rdseed_exiting:bool,
+	pub enable_pml:bool,
+	pub ept_violation_to_ve:bool,
+	pub conceal_vmx_from_pt:bool,
+	pub enable_xsaves_xrstors:bool,
+	pub enable_pasid_transnlation:bool,
+	pub ept_mbec:bool,
+	pub ept_spp:bool,
+	pub pt_use_gpa:bool,
+	pub use_tsc_scaling:bool,
+	pub enable_umwait:bool,
+	pub enable_pconfig:bool,
+	pub enclv_exiting:bool,
+	rsvd0:bool,
+	pub vmm_buslock_detection:bool,
+	pub instruction_timeout:bool
 }
 
-pub struct VmxEptPointer(pub u64);
-impl VmxEptPointer
+derive_bit_ops!(VmxSecondaryProcessorControls);
+
+#[bitfield(u64)] pub struct VmxTertiaryProcessorControls
 {
-	build_int_mut_method!(ept_memory_type,0,3,u64);
-	build_int_mut_method!(page_walk_length,3,3,u64);
-	build_bit_mut_method!(enable_ad_flags,6);
-	build_bit_mut_method!(enable_sss_enforcement,7);
-	build_int_mut_method!(eptp_pa,12,52,u64);
+	pub loadiwkey_exiting:bool,
+	pub enable_hlat:bool,
+	pub ept_paging_write_control:bool,
+	pub guest_paging_verification:bool,
+	pub ipi_virtualization:bool,
+	rsvd0:bool,
+	pub enable_msr_list_instruction:bool,
+	pub virtualize_spec_ctrl:bool,
+	#[bits(56)] rsvd1:u64
 }
 
-pub struct VmxExitControls(pub u32);
-impl VmxExitControls
+derive_bit_ops!(VmxTertiaryProcessorControls);
+
+#[bitfield(u64)] pub struct VmxEptPointer
 {
-	build_bit_mut_method!(save_debug_controls,2);
-	build_bit_mut_method!(host_address_space_size,9);
-	build_bit_mut_method!(load_perf_global_ctrl,12);
-	build_bit_mut_method!(acknowledge_interrupt_on_exit,15);
-	build_bit_mut_method!(save_pat,18);
-	build_bit_mut_method!(load_pat,19);
-	build_bit_mut_method!(save_efer,20);
-	build_bit_mut_method!(load_efer,21);
-	build_bit_mut_method!(save_vmx_preemption_timer_value,22);
-	build_bit_mut_method!(clear_bndcfgs,23);
-	build_bit_mut_method!(conceal_vmx_from_pt,24);
-	build_bit_mut_method!(clear_rtit_ctrl,25);
-	build_bit_mut_method!(clear_lbr_ctrl,26);
-	build_bit_mut_method!(clear_uinv,27);
-	build_bit_mut_method!(load_cet,28);
-	build_bit_mut_method!(load_pkrs,29);
-	build_bit_mut_method!(save_perf_global_ctrl,30);
-	build_bit_mut_method!(activate_secondary_controls,31);
+	#[bits(3)] pub ept_memory_type:u64,
+	#[bits(3)] pub page_walk_length:u64,
+	pub enable_ad_flags:bool,
+	pub enable_sss_enforcement:bool,
+	#[bits(4)] pub rsvd:u64,
+	#[bits(52)] pub eptp_pa:u64
 }
 
-pub struct VmxExitControls2(pub u64);
-impl VmxExitControls2
+#[bitfield(u32)] pub struct VmxExitControls
 {
-	build_bit_mut_method!(prematurely_busy_shadow_stack,3);
+	#[bits(2)] rsvd0:u32,
+	pub save_debug_controls:bool,
+	#[bits(6)] rsvd1:u32,
+	pub host_address_space_size:bool,
+	#[bits(2)] rsvd2:u32,
+	pub load_perf_global_ctrl:bool,
+	#[bits(2)] rsvd3:u32,
+	pub acknowledge_interrupt_on_exit:bool,
+	#[bits(2)] rsvd4:u32,
+	pub save_pat:bool,
+	pub load_pat:bool,
+	pub save_efer:bool,
+	pub load_efer:bool,
+	pub save_vmx_preemption_timer_value:bool,
+	pub clear_bndcfgs:bool,
+	pub conceal_vmx_from_pt:bool,
+	pub clear_rtit_ctrl:bool,
+	pub clear_lbr_ctrl:bool,
+	pub clear_uinv:bool,
+	pub load_cet:bool,
+	pub load_pkrs:bool,
+	pub save_perf_global_ctrl:bool,
+	pub activate_secondary_controls:bool,
 }
 
-pub struct VmxEntryControls(pub u32);
-impl VmxEntryControls
+derive_bit_ops!(VmxExitControls);
+
+#[bitfield(u64)] pub struct VmxExitControls2
 {
-	build_bit_mut_method!(load_debug_controls,2);
-	build_bit_mut_method!(ia32e_mode_guest,9);
-	build_bit_mut_method!(entry_to_smm,10);
-	build_bit_mut_method!(deactivate_dual_monitor,11);
-	build_bit_mut_method!(load_perf_global_ctrl,13);
-	build_bit_mut_method!(load_pat,14);
-	build_bit_mut_method!(load_efer,15);
-	build_bit_mut_method!(load_bndcfgs,16);
-	build_bit_mut_method!(conceal_vmx_from_pt,17);
-	build_bit_mut_method!(load_rtit_ctrl,18);
-	build_bit_mut_method!(load_uinv,19);
-	build_bit_mut_method!(load_cet_state,20);
-	build_bit_mut_method!(load_guest_lbr_ctrl,21);
-	build_bit_mut_method!(load_pkrs,22);
+	#[bits(3)] rsvd0:u64,
+	pub prematurely_busy_shadow_stack:bool,
+	#[bits(60)] rsvd1:u64
 }
 
-pub struct VmxEntryInterruptionInformation(pub u32);
-impl VmxEntryInterruptionInformation
+derive_bit_ops!(VmxExitControls2);
+
+#[bitfield(u32)] pub struct VmxEntryControls
 {
-	build_int_mut_method!(vector,0,8,u32);
-	build_int_mut_method!(interruption_type,8,3,u32);
-	build_bit_mut_method!(deliver_error_code,11);
-	build_bit_mut_method!(valid,31);
+	#[bits(2)] rsvd0:u32,
+	pub load_debug_controls:bool,
+	#[bits(6)] rsvd1:u32,
+	pub ia32e_mode_guest:bool,
+	pub entry_to_smm:bool,
+	pub deactivate_dual_monitor:bool,
+	rsvd2:bool,
+	pub load_perf_global_ctrl:bool,
+	pub load_pat:bool,
+	pub load_efer:bool,
+	pub load_bndcfgs:bool,
+	pub conceal_vmx_from_pt:bool,
+	pub load_rtit_ctrl:bool,
+	pub load_uinv:bool,
+	pub load_cet:bool,
+	pub load_lbr_ctrl:bool,
+	pub load_pkrs:bool,
+	#[bits(9)] rsvd3:u32
 }
 
-pub struct VmxExitReason(pub u32);
-impl VmxExitReason
+derive_bit_ops!(VmxEntryControls);
+
+#[bitfield(u32)] pub struct VmxEntryInterruptionInformation
 {
-	build_int_mut_method!(basic_exit_reason,0,16,u32);
-	build_bit_mut_method!(exit_causes_prematurely_busy_shadow_stack,25);
-	build_bit_mut_method!(exit_after_buslock_assertion,26);
-	build_bit_mut_method!(exit_in_enclave,27);
-	build_bit_mut_method!(pending_mtf_exit,28);
-	build_bit_mut_method!(exit_from_root_operation,29);
-	build_bit_mut_method!(entry_failure,31);
+	pub vector:u8,
+	#[bits(3)] pub interruption_type:u32,
+	pub deliver_error_code:bool,
+	#[bits(19)] rsvd:u32,
+	pub valid:bool
 }
 
-pub struct VmxExitInterruptionInformation(pub u32);
-impl VmxExitInterruptionInformation
+#[bitfield(u32)] pub struct VmxExitReason
 {
-	build_int_mut_method!(vector,0,8,u32);
-	build_int_mut_method!(interruption_type,8,3,u32);
-	build_bit_mut_method!(error_code_valid,11);
-	build_bit_mut_method!(nmi_unblocking_due_to_iret,12);
-	build_bit_mut_method!(valid,31);
+	pub basic_exit_reason:u16,
+	#[bits(9)] rsvd0:u32,
+	pub exit_causes_prematurely_busy_shadow_stack:bool,
+	pub exit_after_buslock_assertion:bool,
+	pub exit_in_enclave:bool,
+	pub pending_mtf_exit:bool,
+	pub exit_from_root_operation:bool,
+	rsvd1:bool,
+	pub entry_failure:bool
 }
 
-pub struct VmxIdtVectoringInformation(pub u32);
-impl VmxIdtVectoringInformation
+#[bitfield(u32)] pub struct VmxExitInterruptionInformation
 {
-	build_int_mut_method!(vector,0,8,u32);
-	build_int_mut_method!(interruption_type,8,3,u32);
-	build_bit_mut_method!(error_code_valid,11);
-	build_bit_mut_method!(valid,31);
+	pub vector:u8,
+	#[bits(3)] pub interruption_type:u32,
+	pub error_code_valid:bool,
+	pub nmi_unblocking_due_to_iret:bool,
+	#[bits(18)] rsvd:u32,
+	pub valid:bool
+}
+
+#[bitfield(u32)] pub struct VmxIdtVectoringInformation
+{
+	pub vector:u8,
+	#[bits(3)] pub interruption_type:u32,
+	pub error_code_valid:bool,
+	#[bits(19)] rsvd:u32,
+	pub valid:bool
 }
 
 macro_rules! derive_qualification_reader
@@ -603,31 +664,41 @@ macro_rules! derive_qualification_reader
 		{
 			unsafe
 			{
-				Self(vmreadptr(VMEXIT_QUALIFICATION).unwrap())
+				Self::from_bits(vmread32(VMEXIT_QUALIFICATION).unwrap())
 			}
 		}
 	};
 }
 
-pub struct DebugExceptionQualification(pub usize);
+#[bitfield(u32)] pub struct DebugExceptionQualification
+{
+	pub b0:bool,
+	pub b1:bool,
+	pub b2:bool,
+	pub b3:bool,
+	#[bits(9)] rsvd0:u32,
+	pub bd:bool,
+	pub bs:bool,
+	rsvd1:bool,
+	pub rtm:bool,
+	#[bits(15)] rsvd2:u32
+}
+
 impl DebugExceptionQualification
 {
 	derive_qualification_reader!();
-	build_bit_mut_method!(b0,0);
-	build_bit_mut_method!(b1,1);
-	build_bit_mut_method!(b2,2);
-	build_bit_mut_method!(b3,3);
-	build_bit_mut_method!(bd,13);
-	build_bit_mut_method!(bs,14);
-	build_bit_mut_method!(rtm,16);
 }
 
-pub struct TaskSwitchQualification(pub usize);
+#[bitfield(u32)] pub struct TaskSwitchQualification
+{
+	pub tss_selector:u16,
+	#[bits(14)] rsvd:u32,
+	#[bits(2)] pub source:u32
+}
+
 impl TaskSwitchQualification
 {
 	derive_qualification_reader!();
-	build_int_mut_method!(tss_selector,0,16,usize);
-	build_int_mut_method!(source,30,2,usize);
 
 	pub const CALL_INSTRUCTION:usize=0;
 	pub const IRET_INSTRUCTION:usize=1;
@@ -635,15 +706,19 @@ impl TaskSwitchQualification
 	pub const TASK_GATE:usize=3;
 }
 
-pub struct ControlRegisterQualification(pub usize);
+#[bitfield(u32)] pub struct ControlRegisterQualification
+{
+	#[bits(4)] pub cr_index:usize,
+	#[bits(2)] pub access_type:usize,
+	pub is_lmsw_memory_op:bool,
+	rsvd0:bool,
+	#[bits(4)] pub gpr_index:usize,
+	#[bits(4)] rsvd1:usize,
+	pub lmsw_data:u16
+}
 impl ControlRegisterQualification
 {
 	derive_qualification_reader!();
-	build_int_mut_method!(cr_index,0,4,usize);
-	build_int_mut_method!(access_type,4,2,usize);
-	build_bit_mut_method!(is_lmsw_memory_op,6);
-	build_int_mut_method!(gpr_index,8,4,usize);
-	build_int_mut_method!(lmsw_data,16,16,usize);
 
 	pub const WRITE_CR:usize=0;
 	pub const READ_CR:usize=1;
@@ -651,34 +726,47 @@ impl ControlRegisterQualification
 	pub const LMSW_OP:usize=3;
 }
 
-pub struct DebugRegisterQualification(pub usize);
+#[bitfield(u32)] pub struct DebugRegisterQualification
+{
+	#[bits(3)] pub dr_index:usize,
+	pub is_read:bool,
+	#[bits(4)] rsvd0:u32,
+	#[bits(4)] pub gpr_index:usize,
+	#[bits(20)] rsvd1:u32
+}
+
 impl DebugRegisterQualification
 {
 	derive_qualification_reader!();
-	build_int_mut_method!(dr_index,0,3,usize);
-	build_bit_mut_method!(is_read,4);
-	build_int_mut_method!(gpr_index,8,4,usize);
 }
 
-pub struct IoQualification(pub usize);
+#[bitfield(u32)] pub struct IoQualification
+{
+	#[bits(3)] pub access_size:usize,
+	pub is_input:bool,
+	pub is_string:bool,
+	pub is_repeat:bool,
+	pub is_immediate:bool,
+	#[bits(9)] rsvd:u32,
+	pub port_number:u16
+}
+
 impl IoQualification
 {
 	derive_qualification_reader!();
-	build_int_mut_method!(access_size,0,3,usize);
-	build_bit_mut_method!(is_input,3);
-	build_bit_mut_method!(is_string,4);
-	build_bit_mut_method!(is_repeat,5);
-	build_bit_mut_method!(is_immediate,6);
-	build_int_mut_method!(port_number,16,16,usize);
 }
 
-pub struct ApicAccessQualification(pub usize);
+#[bitfield(u32)] pub struct ApicAccessQualification
+{
+	#[bits(12)] pub apic_offset:u64,
+	#[bits(4)] pub access_type:usize,
+	pub async_op:bool,
+	#[bits(15)] rsvd:u32
+}
+
 impl ApicAccessQualification
 {
 	derive_qualification_reader!();
-	build_int_mut_method!(apic_offset,0,12,usize);
-	build_int_mut_method!(access_type,12,4,usize);
-	build_bit_mut_method!(async_op,16);
 
 	pub const LINEAR_READ:usize=0;
 	pub const LINEAR_WRITE:usize=1;
@@ -690,24 +778,28 @@ impl ApicAccessQualification
 	pub const GUEST_PHYSICAL_EXECUTE:usize=15;
 }
 
-pub struct EptViolationQualification(pub usize);
+#[bitfield(u32)] pub struct EptViolationQualification
+{
+	pub is_read:bool,
+	pub is_write:bool,
+	pub is_execute:bool,
+	pub is_readable:bool,
+	pub is_writable:bool,
+	pub is_executable:bool,
+	pub is_user_executable:bool,
+	pub linear_address_valid:bool,
+	pub caused_by_gpa_to_hpa:bool,
+	pub linear_address_is_user:bool,
+	pub linear_address_is_writable:bool,
+	pub linear_address_is_no_execute:bool,
+	pub nmi_unblocking_due_to_iret:bool,
+	pub is_shadow_stack:bool,
+	#[bits(18)] rsvd:u32
+}
+
 impl EptViolationQualification
 {
 	derive_qualification_reader!();
-	build_bit_mut_method!(is_read,0);
-	build_bit_mut_method!(is_write,1);
-	build_bit_mut_method!(is_execute,2);
-	build_bit_mut_method!(is_readable,3);
-	build_bit_mut_method!(is_writable,4);
-	build_bit_mut_method!(is_executable,5);
-	build_bit_mut_method!(is_user_executable,6);
-	build_bit_mut_method!(linear_address_valid,7);
-	build_bit_mut_method!(caused_by_gpa_to_hpa,8);
-	build_bit_mut_method!(linear_address_is_user,9);
-	build_bit_mut_method!(linear_address_is_writable,10);
-	build_bit_mut_method!(linear_address_is_no_execute,11);
-	build_bit_mut_method!(nmi_unblocking_due_to_iret,12);
-	build_bit_mut_method!(is_shadow_stack,13);
 }
 
 pub struct ActivityState(pub u32);

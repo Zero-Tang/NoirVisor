@@ -106,9 +106,9 @@ impl VtVcpu
 			vmwrite32(GUEST_GDTR_LIMIT,0xFFFF);
 			vmwrite32(GUEST_IDTR_LIMIT,0xFFFF);
 			// VM-Entry Controls: Guest is definitely not in IA-32e mode.
-			let mut entry_ctrl=VmxEntryControls(vmread32(VMENTRY_CONTROLS).unwrap());
+			let mut entry_ctrl=VmxEntryControls::from_bits(vmread32(VMENTRY_CONTROLS).unwrap());
 			entry_ctrl.set_ia32e_mode_guest(false);
-			vmwrite32(VMENTRY_CONTROLS,entry_ctrl.0);
+			vmwrite32(VMENTRY_CONTROLS,entry_ctrl.into_bits());
 			// Invalid TLB since paging is switched off.
 			let ivc=InvvpidContext::Single(vmread16(GUEST_VPID).unwrap());
 			invvpid(&ivc);
@@ -126,7 +126,7 @@ impl VtVcpu
 		let (a,b,c,d)=
 		if (ia&0x40000000)==0x40000000
 		{
-			if hv.features.get_cpuid_hv_presence()
+			if hv.features.cpuid_hv_presence()
 			{
 				let leaf_func=(ia&0x3FFFFFFF) as usize;
 				match MSHV_CPUID_HANDLERS.get(leaf_func)
@@ -148,7 +148,7 @@ impl VtVcpu
 			let (mut a,mut b,mut c,mut d)=cpuid2(ia,ic);
 			if ia==CPUID_STD_PROCESSOR_FEATURE
 			{
-				c|=if hv.features.get_cpuid_hv_presence() {CPUID_UNDER_HYPERVISOR} else {0};
+				c|=if hv.features.cpuid_hv_presence() {CPUID_UNDER_HYPERVISOR} else {0};
 				c&=!CPUID_VMX;
 			}
 			(a,b,c,d)
@@ -265,10 +265,10 @@ impl VtVcpu
 			if hv.mshvcall_forwarder.is_some()
 			{
 				let stack:&mut VtStackTop=unsafe{&mut *self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast()};
-				let hvcall_code=TlfsHypercallCode(gpr_state.rcx);
+				let hvcall_code=TlfsHypercallCode::from_bits(gpr_state.rcx);
 				// Construct the forward stack.
 				let mut fwd_stack=MshvForwardStack::from_context(gpr_state,&mut stack.volatile_xmms);
-				if hvcall_code.get_fast()
+				if hvcall_code.fast()
 				{
 					unsafe
 					{
@@ -280,10 +280,10 @@ impl VtVcpu
 				else
 				{
 					// FIXME: This sort of hypercall (e.g.: HvPostMessage) only happens in Hyper-V. It seems Windows does not invoke such hypercalls in QEMU/KVM.
-					info!("Microsoft Memory-Mapped Hypercall is intercepted! Code: 0x{:X}, Input GPA: 0x{:X}, Output GPA: 0x{:X}",hvcall_code.0,gpr_state.rdx,gpr_state.r8);
+					info!("Microsoft Memory-Mapped Hypercall is intercepted! Code: 0x{:X}, Input GPA: 0x{:X}, Output GPA: 0x{:X}",hvcall_code.into_bits(),gpr_state.rdx,gpr_state.r8);
 					unsafe
 					{
-						gpr_state.rax=nvc_forward_memory_mapped_hypercall(hvcall_code.0,gpr_state.rdx,gpr_state.r8,gpr_state.rax);
+						gpr_state.rax=nvc_forward_memory_mapped_hypercall(hvcall_code.into_bits(),gpr_state.rdx,gpr_state.r8,gpr_state.rax);
 						info!("Return-Value: 0x{:X}",gpr_state.rax);
 						advance_rip();
 					}
@@ -300,24 +300,24 @@ impl VtVcpu
 	{
 		let gpr_state=&mut context.gpr_state;
 		let q=ControlRegisterQualification::read();
-		debug!("CR Index: {}, GPR Index: {}, Access: {}",q.get_cr_index(),q.get_access_type(),q.get_gpr_index());
-		match q.get_access_type()
+		debug!("CR Index: {}, GPR Index: {}, Access: {}",q.cr_index(),q.access_type(),q.gpr_index());
+		match q.access_type()
 		{
 			ControlRegisterQualification::WRITE_CR=>
 			{
 				gpr_state.rsp=unsafe{vmread64(GUEST_RSP)}.unwrap();
-				let new_value=gpr_state.read(q.get_gpr_index()).unwrap() as usize;
+				let new_value=gpr_state.read(q.gpr_index()).unwrap() as usize;
 				debug!("New Value: 0x{new_value:X}");
 				unsafe
 				{
-					match q.get_cr_index()
+					match q.cr_index()
 					{
 						4=>vmwriteptr(GUEST_CR4,new_value|CR4_VMXE as usize),
 						x=>panic!("Interception to CR{x} is unsupported!")
 					};
 				}
 			}
-			_=>error!("Unrecognized Access: {}",q.get_access_type())
+			_=>error!("Unrecognized Access: {}",q.access_type())
 		}
 		panic!("CR-Access Exit is not implemented!");
 	}
@@ -414,14 +414,14 @@ impl VtVcpu
 		let hv:&mut VtHypervisor=unsafe{&mut *self.hypervisor.cast()};
 		let p=unsafe{&mut *hv.eptm.locate_pdpte(gpa)};
 		error!("Dumping EPT Page Entries for EPT Misconfiguration...");
-		error!("EPT PDPTE Entry: 0x{:016X}",p.0);
+		error!("EPT PDPTE Entry: 0x{:016X}",p.into_bits());
 		if let Some(p)=hv.eptm.locate_pde(gpa)
 		{
-			error!("EPT PDE Entry: 0x{:016X}",unsafe{(*p).0});
+			error!("EPT PDE Entry: 0x{:016X}",unsafe{(*p).into_bits()});
 		}
 		if let Some(p)=hv.eptm.locate_pte(gpa)
 		{
-			error!("EPT PTE Entry: 0x{:016X}",unsafe{(*p).0});
+			error!("EPT PTE Entry: 0x{:016X}",unsafe{(*p).into_bits()});
 		}
 		panic!("EPT Misconfiguration happened! GPA=0x{gpa:X}");
 	}

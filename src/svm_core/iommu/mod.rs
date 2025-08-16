@@ -13,8 +13,8 @@
 use core::{ffi::c_void, hint::spin_loop, slice};
 use alloc::vec::Vec;
 
+use bitfield_struct::bitfield;
 use log::*;
-use paste::paste;
 
 use acpi::{Ivhd, IvhdLarge};
 use paging::{SvmIommuPmlManager, SvmIommuPte};
@@ -189,16 +189,16 @@ impl SvmIommuManager
 			info!("Activating IOMMU for BAR 0x{:X}...",x.bar.phys);
 			unsafe
 			{
-				mmio_write(x.bar.virt.byte_add(MMIO_BASE_DEVICE_TABLE_BASE).cast(),dev_table_reg.0);
-				mmio_write(x.bar.virt.byte_add(MMIO_BASE_COMMAND_BUFFER_BASE).cast(),cmd_buff_reg.0);
+				mmio_write(x.bar.virt.byte_add(MMIO_BASE_DEVICE_TABLE_BASE).cast(),dev_table_reg.into_bits());
+				mmio_write(x.bar.virt.byte_add(MMIO_BASE_COMMAND_BUFFER_BASE).cast(),cmd_buff_reg.into_bits());
 				mmio_write(x.bar.virt.byte_add(MMIO_BASE_COMMAND_BUFFER_HEAD).cast(),0u64);
 				mmio_write(x.bar.virt.byte_add(MMIO_BASE_COMMAND_BUFFER_TAIL).cast(),0u64);
-				mmio_write(x.bar.virt.byte_add(MMIO_BASE_EVENT_LOG_BUFFER_BASE).cast(),log_buff_reg.0);
+				mmio_write(x.bar.virt.byte_add(MMIO_BASE_EVENT_LOG_BUFFER_BASE).cast(),log_buff_reg.into_bits());
 				mmio_write(x.bar.virt.byte_add(MMIO_BASE_EVENT_LOG_BUFFER_HEAD).cast(),0u64);
 				mmio_write(x.bar.virt.byte_add(MMIO_BASE_EVENT_LOG_BUFFER_TAIL).cast(),0u64);
-				mmio_write(x.bar.virt.byte_add(MMIO_BASE_IOMMU_CONTROL_REGISTER).cast(),iommu_cr.0);
+				mmio_write(x.bar.virt.byte_add(MMIO_BASE_IOMMU_CONTROL_REGISTER).cast(),iommu_cr.into_bits());
 			}
-			info!("Awaiting activation (Log-Base: 0x{:X})...",log_buff_reg.0);
+			info!("Awaiting activation (Log-Base: 0x{:X})...",log_buff_reg.into_bits());
 			let mut signal:u64=0;
 			let signal_phys=unsafe{noir_get_physical_address((&raw mut signal).cast())};
 			let cmd1=SvmIommuCommand::InvalidateIommuAll;
@@ -301,69 +301,69 @@ impl Drop for SvmIommuBar
 	}
 }
 
-#[repr(C)] pub struct SvmIommuDteP1(pub u64);
-#[repr(C)] pub struct SvmIommuDteP2(pub u64);
-#[repr(C)] pub struct SvmIommuDteP3(pub u64);
-#[repr(C)] pub struct SvmIommuDteP4(pub u64);
-
-impl SvmIommuDteP1
+#[bitfield(u64)] pub struct SvmIommuDteP1
 {
-	build_bit_mut_method!(valid,0);
-	build_bit_mut_method!(translation_valid,1);
-	build_bit_mut_method!(host_access,7);
-	build_bit_mut_method!(host_dirty,8);
-	build_int_mut_method!(paging_mode,9,3,u64);
-	build_int_mut_method!(paging_base,12,40,u64);
-	build_bit_mut_method!(periph_page_req,52);
-	build_bit_mut_method!(guest_ppr_resp_pasid,53);
-	build_bit_mut_method!(guest_io_valid,54);
-	build_bit_mut_method!(guest_trans_valid,55);
-	build_int_mut_method!(guest_levels_valid,56,2,u64);
-	build_int_mut_method!(gcr3_trp_lo,58,3,u64);
-	build_bit_mut_method!(io_read_permission,61);
-	build_bit_mut_method!(io_write_permission,62);
+	pub valid:bool,
+	pub translation_valid:bool,
+	#[bits(5)] rsvd0:u64,
+	pub host_access:bool,
+	pub host_dirty:bool,
+	#[bits(3)] pub paging_mode:u64,
+	#[bits(40)] pub paging_base:u64,
+	pub periph_page_req:bool,
+	pub guest_ppr_resp_pasid:bool,
+	pub guest_io_valid:bool,
+	pub guest_trans_valid:bool,
+	#[bits(2)] pub guest_levels_valid:u64,
+	#[bits(3)] pub gcr3_trp_lo:u64,
+	pub io_read_permission:bool,
+	pub io_write_permission:bool,
+	pub rsvd2:bool
 }
 
-impl SvmIommuDteP2
+#[bitfield(u64)] pub struct SvmIommuDteP2
 {
-	build_int_mut_method!(domain_id,0,16,u64);
-	build_int_mut_method!(gcr3_trp_mid,16,16,u64);
-	build_bit_mut_method!(iotlb_enable,32);
-	build_bit_mut_method!(suppress_iopf_events,33);
-	build_bit_mut_method!(suppress_all_iopf_events,34);
-	build_int_mut_method!(port_io_control,35,2,u64);
-	build_bit_mut_method!(iotlb_cache_hint,37);
-	build_bit_mut_method!(snoop_disable,38);
-	build_bit_mut_method!(allow_exclusion,39);
-	build_int_mut_method!(sysmgt_message,40,2,u64);
-	build_bit_mut_method!(secure_ats,42);
-	build_int_mut_method!(gcr3_trp_hi,43,21,u64);
+	pub domain_id:u16,
+	pub gcr3_trp_mid:u16,
+	pub iotlb_enable:bool,
+	pub suppress_iopf_events:bool,
+	pub suppress_all_iopf_events:bool,
+	#[bits(2)] pub port_io_control:u64,
+	pub iotlb_cache_hint:bool,
+	pub snoop_disable:bool,
+	pub allow_exclusion:bool,
+	#[bits(2)] pub sysmgmt_message:u64,
+	pub secure_ats:bool,
+	#[bits(21)] pub gcr3_trp_hi:u64
 }
 
-impl SvmIommuDteP3
+#[bitfield(u64)] pub struct SvmIommuDteP3
 {
-	build_bit_mut_method!(interrupt_map_valid,0);
-	build_int_mut_method!(int_table_length,1,4,u64);
-	build_bit_mut_method!(ignore_unmapped_int,5);
-	build_int_mut_method!(int_table_base,6,46,u64);
-	build_int_mut_method!(guest_paging_mode,54,2,u64);
-	build_bit_mut_method!(init_signal_passthrough,56);
-	build_bit_mut_method!(extint_passthrough,57);
-	build_bit_mut_method!(nmi_passthrough,58);
-	build_bit_mut_method!(host_pt_mode,59);
-	build_int_mut_method!(int_ctrl,60,2,u64);
-	build_bit_mut_method!(lint0_passthrough,62);
-	build_bit_mut_method!(lint1_passthrough,63);
+	pub interrupt_map_valid:bool,
+	#[bits(4)] pub int_table_length:u64,
+	pub ignore_unmapped_int:bool,
+	#[bits(46)] pub int_table_base:u64,
+	#[bits(2)] rsvd:u64,
+	#[bits(2)] pub guest_paging_mode:u64,
+	pub init_signal_passthru:bool,
+	pub extint_passthru:bool,
+	pub nmi_passthru:bool,
+	pub host_pt_mode:bool,
+	#[bits(2)] pub int_ctrl:u64,
+	pub lint0_passthru:bool,
+	pub lint1_passthru:bool
 }
 
-impl SvmIommuDteP4
+#[bitfield(u64)] pub struct SvmIommuDteP4
 {
-	build_bit_mut_method!(viommu_enable,15);
-	build_int_mut_method!(guest_device_id,16,16,u64);
-	build_int_mut_method!(guest_id,32,16,u64);
-	build_bit_mut_method!(attrib_override_valid,54);
-	build_bit_mut_method!(mode0_fc,55);
-	build_int_mut_method!(snoop_attribute,56,8,u64);
+	#[bits(15)] rsvd0:u64,
+	pub viommu_enable:bool,
+	pub guest_device_id:u16,
+	pub guest_id:u16,
+	#[bits(6)] rsvd1:u64,
+	pub attrib_override_valid:bool,
+	pub mode0_fc:bool,
+	pub snoop_attrib:u8
 }
 
 #[repr(C)] pub struct SvmIommuDeviceTableEntry
@@ -392,16 +392,16 @@ impl SvmIommuDeviceTableEntry
 {
 	pub fn get_gcr3_table_trp(&self)->u64
 	{
-		let lo=self.p1.get_gcr3_trp_lo();
-		let mid=self.p2.get_gcr3_trp_mid();
-		let hi=self.p2.get_gcr3_trp_hi();
+		let lo=self.p1.gcr3_trp_lo();
+		let mid=self.p2.gcr3_trp_mid() as u64;
+		let hi=self.p2.gcr3_trp_hi();
 		lo|(mid<<3)|(hi<<19)
 	}
 
 	pub fn set_gcr3_table_trp(&mut self,value:u64)
 	{
 		let lo=value&0x7;
-		let mid=(value>>3)&0xFFFF;
+		let mid=(value>>3) as u16;
 		let hi=(value>>19)&0xFFFFF;
 		self.p1.set_gcr3_trp_lo(lo);
 		self.p2.set_gcr3_trp_mid(mid);

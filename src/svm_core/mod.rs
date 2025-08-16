@@ -157,14 +157,14 @@ impl SvmVcpu
 			let hv=self.hypervisor as *mut SvmHypervisor;
 			let state=ProcessorState::new();
 			// Setup Control Area.
-			let mut iv1=InterceptVector1(0);
+			let mut iv1=InterceptVector1::from_bits(0);
 			iv1.set_cpuid(true);
 			iv1.set_invlpga(true);
 			iv1.set_io(true);
 			iv1.set_msr(true);
 			iv1.set_shutdown(true);
 			iv1.write(self.vmcb.virt);
-			let mut iv2=InterceptVector2(0);
+			let mut iv2=InterceptVector2::from_bits(0);
 			iv2.set_vmrun(true);
 			iv2.set_vmmcall(true);
 			iv2.set_vmload(true);
@@ -217,9 +217,9 @@ impl SvmVcpu
 			vmwrite(self.vmcb.virt,GUEST_CR3,state.cr3);
 			vmwrite(self.vmcb.virt,GUEST_CR4,state.cr4);
 			// Save Task Priority Register (CR8)
-			let mut avic_ctrl=AvicControl(0);
-			avic_ctrl.set_v_tpr(state.cr8);
-			vmwrite(self.vmcb.virt,AVIC_CONTROL,avic_ctrl.0);
+			let mut avic_ctrl=AvicControl::from_bits(0);
+			avic_ctrl.set_v_tpr(state.cr8 as u8);
+			avic_ctrl.write(self.vmcb.virt);
 			// Save Debug Registers.
 			vmwrite(self.vmcb.virt,GUEST_DR6,state.dr6);
 			vmwrite(self.vmcb.virt,GUEST_DR7,state.dr7);
@@ -247,7 +247,7 @@ impl SvmVcpu
 			vmwrite(self.vmcb.virt,MSRPM_PHYSICAL_ADDRESS,(*hv).msrpm.phys);
 			// Setup NPT.
 			vmwrite(self.vmcb.virt,NPT_CR3,(*hv).nptm.pml4e.phys);
-			let mut npt_ctrl=NptControl(0);
+			let mut npt_ctrl=NptControl::from_bits(0);
 			npt_ctrl.set_enable_npt(true);
 			vmwrite(self.vmcb.virt,NPT_CONTROL,npt_ctrl);
 			// ASID is required in AMD-V.
@@ -515,7 +515,7 @@ impl HypervisorEssentials for SvmHypervisor
 		}
 		// Initialize NPT.
 		self.nptm.build_identity_map();
-		if self.features.get_enable_iommu()
+		if self.features.enable_iommu()
 		{
 			match SvmIommuManager::build_manager()
 			{

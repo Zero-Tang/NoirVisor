@@ -10,18 +10,17 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use crate::*;
+use bitfield_struct::bitfield;
 
-use paste::paste;
-
-#[repr(C)] pub struct TlfsHypercallCode(pub u64);
-
-impl TlfsHypercallCode
+#[bitfield(u64)] pub struct TlfsHypercallCode
 {
-	build_int_mut_method!(call_code,0,16,u64);
-	build_bit_mut_method!(fast,16);
-	build_int_mut_method!(var_header_size,17,9,u64);
-	build_bit_mut_method!(is_nested,26);
-	build_int_mut_method!(rep_count,32,12,u64);
-	build_int_mut_method!(rep_start_index,48,12,u64);
+	pub call_code:u16,
+	pub fast:bool,
+	#[bits(9)] pub var_header_size:u64,
+	pub is_nested:bool,
+	#[bits(5)] rsvd0:u64,
+	#[bits(12)] rep_count:u64,
+	#[bits(4)] rsvd1:u64,
+	#[bits(12)] rep_start_index:u64,
+	#[bits(4)] rsvd2:u64
 }

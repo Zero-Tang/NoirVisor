@@ -20,9 +20,11 @@ pub mod cpuid
 
 pub mod msr
 {
-	use crate::{xpf_core::asm::msr::rdmsr, *};
+	use bitfield_struct::bitfield;
+
+	use crate::*;
 	use vt_core::vmcs::*;
-	use paste::paste;
+	use xpf_core::asm::msr::rdmsr;
 
 	pub const MSR_FEATURE_CONTROL:u32=0x3A;
 	pub const MSR_BIOS_UPDATE_TRIGGER:u32=0x79;
@@ -71,15 +73,22 @@ pub mod msr
 		}
 	}
 
-	pub struct VmxBasicMsr(pub u64);
+	#[bitfield(u64)] pub struct VmxBasicMsr
+	{
+		#[bits(31)] pub revision_id:u32,
+		rsvd0:bool,
+		#[bits(12)] pub region_size:u64,
+		#[bits(4)] rsvd1:u64,
+		pub pa_width:bool,
+		pub dual_monitor:bool,
+		#[bits(4)] rsvd2:u64,
+		pub report_io_on_exit:bool,
+		pub use_true_msr:bool,
+		rsvd3:u8
+	}
+
 	impl VmxBasicMsr
 	{
-		build_int_get_method!(revision_id,0,31,u64);
-		build_int_get_method!(region_size,32,12,u64);
-		build_bit_get_method!(pa_width,48);
-		build_bit_get_method!(dual_monitor,49);
-		build_bit_get_method!(report_io_on_exit,54);
-		build_bit_get_method!(use_true_msr,55);
 		build_rdmsr_method!(MSR_VMX_BASIC);
 	}
 
@@ -89,12 +98,12 @@ pub mod msr
 		{
 			#[inline] pub fn get_allowed0(&self)->$type
 			{
-				$type(self.0 as u32)
+				$type::from_bits(self.0 as u32)
 			}
 
 			#[inline] pub fn get_allowed1(&self)->$type
 			{
-				$type((self.0>>32) as u32)
+				$type::from_bits((self.0>>32) as u32)
 			}
 		};
 	}
@@ -105,7 +114,7 @@ pub mod msr
 		{
 			#[inline] pub fn get_allowed(&self)->$type
 			{
-				$type(self.0)
+				$type::from_bits(self.0)
 			}
 		};
 	}
@@ -159,44 +168,60 @@ pub mod msr
 		build_allowed_fields!(VmxEntryControls);
 	}
 
-	pub struct VmxMiscMsr(pub u64);
+	#[bitfield(u64)] pub struct VmxMiscMsr
+	{
+		#[bits(5)] pub tsc_preemption_scale:u64,
+		pub store_lma_to_entry_on_exit:bool,
+		pub support_hlt_state:bool,
+		pub support_shutdown_state:bool,
+		pub support_wait_for_sipi_state:bool,
+		#[bits(5)] rsvd0:u64,
+		pub allow_pt_in_vmx:bool,
+		pub allow_read_smbase_in_smm:bool,
+		#[bits(9)] pub cr3_target_values:usize,
+		#[bits(3)] pub best_msr_store_count:usize,
+		pub allow_unblock_smi:bool,
+		pub allow_vmcs_write_anywhere:bool,
+		pub allow_null_injection:bool,
+		rsvd1:bool,
+		pub mseg_revision_id:u32
+	}
+
 	impl VmxMiscMsr
 	{
-		build_int_get_method!(tsc_preemption_scale,0,5,u64);
-		build_bit_get_method!(store_lma_to_entry_on_exit,5);
-		build_bit_get_method!(support_hlt_state,6);
-		build_bit_get_method!(support_shutdown_state,7);
-		build_bit_get_method!(support_wait_for_sipi_state,8);
-		build_bit_get_method!(allow_pt_in_vmx,14);
-		build_bit_get_method!(allow_read_smbase_in_smm,15);
-		build_int_get_method!(cr3_target_values,16,9,u64);
-		build_int_get_method!(best_msr_store_count,25,3,u64);
-		build_bit_get_method!(allow_unblock_smi,28);
-		build_bit_get_method!(allow_vmcs_write_anywhere,29);
-		build_bit_get_method!(allow_null_injection,30);
-		build_int_get_method!(mseg_revision_id,32,32,u64);
 		build_rdmsr_method!(MSR_VMX_MISC);
 	}
 
-	pub struct VmxEptVpidCapMsr(pub u64);
+	#[bitfield(u64)] pub struct VmxEptVpidCapMsr
+	{
+		pub support_exec_only:bool,
+		#[bits(5)] rsvd0:u64,
+		pub support_lv4_page_walk:bool,
+		pub support_uc_ept:bool,
+		#[bits(6)] rsvd1:u64,
+		pub support_wb_ept:bool,
+		rsvd2:bool,
+		pub support_2mb_paging:bool,
+		pub support_1gb_paging:bool,
+		#[bits(2)] rsvd3:u64,
+		pub support_invept:bool,
+		pub support_ad_flags:bool,
+		pub report_advanced_eptv_exit_info:bool,
+		#[bits(2)] rsvd4:u64,
+		pub support_single_context_invept:bool,
+		pub support_global_context_invept:bool,
+		#[bits(5)] rsvd5:u64,
+		pub support_invvpid:bool,
+		#[bits(7)] rsvd6:u64,
+		pub support_ia_invvpid:bool,
+		pub support_sc_invvpid:bool,
+		pub support_ac_invvpid:bool,
+		pub support_scrg_invvpid:bool,
+		#[bits(20)] rsvd7:u64
+	}
+
 	impl VmxEptVpidCapMsr
 	{
-		build_bit_get_method!(support_exec_only,0);
-		build_bit_get_method!(support_lv4_page_walk,6);
-		build_bit_get_method!(support_uc_ept,7);
-		build_bit_get_method!(support_wb_ept,14);
-		build_bit_get_method!(support_2mb_paging,16);
-		build_bit_get_method!(support_1gb_paging,17);
-		build_bit_get_method!(support_invept,20);
-		build_bit_get_method!(support_ad_flags,21);
-		build_bit_get_method!(report_advanced_eptv_exit_info,22);
-		build_bit_get_method!(support_single_context_invept,25);
-		build_bit_get_method!(support_global_context_invept,26);
-		build_bit_get_method!(support_invvpid,32);
-		build_bit_get_method!(support_ia_invvpid,40);
-		build_bit_get_method!(support_sc_invvpid,41);
-		build_bit_get_method!(support_ac_invvpid,42);
-		build_bit_get_method!(support_scrg_invvpid,43);
 		build_rdmsr_method!(MSR_VMX_EPT_VPID_CAP);
 	}
 }

@@ -12,12 +12,11 @@
 
 pub mod caching
 {
-    use crate::*;
-    use super::msr::*;
-	use xpf_core::{asm::msr::rdmsr, nvbdk::{page_1gb_offset, page_2mb_offset, page_4kb_mult, PAGE_1GB_SIZE, PAGE_2MB_SIZE, PAGE_4KB_SIZE}};
+    use super::{cpuid::*,msr::*};
+	use crate::xpf_core::{asm::{msr::rdmsr,cpuid::cpuid2}, nvbdk::{page_1gb_offset, page_2mb_offset, page_4kb_mult, PAGE_1GB_SIZE, PAGE_2MB_SIZE, PAGE_4KB_SIZE}};
 
 	use log::*;
-	use paste::paste;
+	use bitfield_struct::bitfield;
 
 	pub const MEMORY_TYPE_UC:u8=0;
 	pub const MEMORY_TYPE_WC:u8=1;
@@ -25,53 +24,65 @@ pub mod caching
 	pub const MEMORY_TYPE_WP:u8=5;
 	pub const MEMORY_TYPE_WB:u8=6;
 
-	pub struct MtrrCapMsr(pub u64);
+	#[bitfield(u64)] pub struct MtrrCapMsr
+	{
+		pub var_mtrr_count:u8,
+		pub support_fixed:bool,
+		rsvd0:bool,
+		pub support_wc:bool,
+		pub support_smrr:bool,
+		#[bits(52)] rsvd2:u64
+	}
+
 	impl MtrrCapMsr
 	{
-		build_int_get_method!(var_mtrr_count,0,8,u64);
-		build_bit_get_method!(support_fixed,8);
-		build_bit_get_method!(support_wc,10);
-		build_bit_get_method!(support_smrr,11);
-
 		#[inline] pub fn read()->Self
 		{
 			Self(rdmsr(MSR_MTRR_CAP))
 		}
 	}
 
-	pub struct MtrrDefTypeMsr(pub u64);
+	#[bitfield(u64)] pub struct MtrrDefTypeMsr
+	{
+		pub mtrr_type:u8,
+		#[bits(2)] pub rsvd0:u64,
+		pub fixed_enabled:bool,
+		pub enabled:bool,
+		#[bits(52)] rsvd1:u64
+	}
+
 	impl MtrrDefTypeMsr
 	{
-		build_int_mut_method!(type,0,8,u64);
-		build_bit_mut_method!(fixed_enabled,10);
-		build_bit_mut_method!(enabled,11);
-
 		#[inline] pub fn read()->Self
 		{
 			Self(rdmsr(MSR_MTRR_DEF_TYPE))
 		}
 	}
 
-	#[derive(Clone, Copy)]
-	pub struct MtrrVariableRangeBaseMsr(pub u64);
+	#[bitfield(u64)] pub struct MtrrVariableRangeBaseMsr
+	{
+		pub mtrr_type:u8,
+		#[bits(4)] rsvd:u64,
+		#[bits(52)] pub phys_base:u64,
+	}
+
 	impl MtrrVariableRangeBaseMsr
 	{
-		build_int_mut_method!(type,0,8,u64);
-		build_int_mut_method!(phys_base,12,52,u64);
-
 		#[inline] pub fn read(index:u32)->Self
 		{
 			Self(rdmsr(index))
 		}
 	}
 
-	#[derive(Clone, Copy)]
-	pub struct MtrrVariableRangeMaskMsr(pub u64);
+	#[bitfield(u64)] pub struct MtrrVariableRangeMaskMsr
+	{
+		#[bits(11)] rsvd:u64,
+		pub valid:bool,
+		#[bits(52)] pub phys_mask:u64
+	}
+
 	impl MtrrVariableRangeMaskMsr
 	{
-		build_bit_mut_method!(valid,11);
-		build_int_mut_method!(phys_mask,12,52,u64);
-
 		#[inline] pub fn read(index:u32)->Self
 		{
 			Self(rdmsr(index))
@@ -164,15 +175,15 @@ pub mod caching
 	{
 		pub fn from_var_mtrr(base:MtrrVariableRangeBaseMsr,mask:MtrrVariableRangeMaskMsr,pa_width:u64)->Option<Self>
 		{
-			if mask.get_valid()
+			if mask.valid()
 			{
 				Some
 				(
 					Self
 					{
-						base:page_4kb_mult(base.get_phys_base()),
-						length:(1<<pa_width)-page_4kb_mult(mask.get_phys_mask()),
-						memory_type:base.get_type() as u8,
+						base:page_4kb_mult(base.phys_base()),
+						length:(1<<pa_width)-page_4kb_mult(mask.phys_mask()),
+						memory_type:base.mtrr_type() as u8,
 						source:MtrrSource::VariableRange
 					}
 				)
@@ -316,12 +327,12 @@ pub mod caching
 			let (a,_,_,_)=cpuid2(CPUID_EXT_PROCESSOR_CAPABILITY_PARAMETERS_EXTENDED_ID,0);
 			let pa_width=(a&0xff) as u64;
 			self.max_pa=1<<pa_width;
-			if mtrr_def.get_enabled()
+			if mtrr_def.enabled()
 			{
 				// Setup default type.
-				self.def_type=mtrr_def.get_type() as u8;
+				self.def_type=mtrr_def.mtrr_type() as u8;
 				// Setup Fixed MTRRs.
-				if mtrr_def.get_fixed_enabled()
+				if mtrr_def.fixed_enabled()
 				{
 					self.fixed_mtrrs=Some
 					(
@@ -343,10 +354,10 @@ pub mod caching
 				}
 				// Setup Variable MTRRs.
 				let mtrr_cap=MtrrCapMsr::read();
-				for i in 0..mtrr_cap.get_var_mtrr_count() as usize
+				for i in 0..mtrr_cap.var_mtrr_count() as usize
 				{
 					let mtrr_mask=MtrrVariableRangeMaskMsr::read(MSR_MTRR_PHYS_MASK0+i as u32);
-					if mtrr_mask.get_valid()
+					if mtrr_mask.valid()
 					{
 						let mtrr_base=MtrrVariableRangeBaseMsr::read(MSR_MTRR_PHYS_BASE0+i as u32);
 						self.var_mtrrs[i]=MtrrRange::from_var_mtrr(mtrr_base,mtrr_mask,pa_width);
@@ -354,10 +365,10 @@ pub mod caching
 					}
 				}
 				// Setup SMRR.
-				if mtrr_cap.get_support_smrr()
+				if mtrr_cap.support_smrr()
 				{
 					let mask=MtrrVariableRangeMaskMsr::read(MSR_SMRR_PHYS_MASK);
-					if mask.get_valid()
+					if mask.valid()
 					{
 						let base=MtrrVariableRangeBaseMsr::read(MSR_SMRR_PHYS_BASE);
 						// Note that SMRR uses only 32-bit physical address.
@@ -384,7 +395,10 @@ pub mod caching
 pub mod paging
 {
 	use core::{fmt::{self,Display,Formatter}, slice};	
+
+	use bitfield_struct::bitfield;
 	use paste::paste;
+
 	use crate::*;
 	use svm_core::amd64::msr::MSR_EFER_LMA;
 	use xpf_core::{nvbdk::*, x86::crdr::*};
@@ -401,6 +415,23 @@ pub mod paging
 		};
 	}
 
+	// Page-Map-Level-4 Entry (Bits 39-47)
+	#[bitfield(u64)] pub struct Pml4e
+	{
+		pub present:bool,
+		pub write:bool,
+		pub user:bool,
+		pub pwt:bool,
+		pub pcd:bool,
+		pub accessed:bool,
+		pub ignored0:bool,
+		#[bits(2)] pub rsvd:u64,
+		#[bits(3)] pub avl:u64,
+		#[bits(40)] pub pdpte_base:u64,
+		#[bits(11)] pub available:u64,
+		pub nx:bool
+	}
+
 	build_paging_def!(x86,present,0);
 	build_paging_def!(x86,write,1);
 	build_paging_def!(x86,user,2);
@@ -415,163 +446,213 @@ pub mod paging
 	build_paging_def!(x86,nx,63);
 
 	pub const PAGING_AVL_BIT:u64=9;
-
-	/// ## `build_regular_paging_impl` macro
-	/// This macro implements regular x86 system page table entries. \
-	/// Just use this macro to quickly implement all sorts of entries like PML4E, PDPTE, etc.
-	/// - `$type_name`: Case-sensitive text. This parameter is the new type name.
-	/// - `$page_size`: Case-insensitive text. This paramater defines the size of the level.
-	/// - `$last_level`: Literal. This parameter defines if this is the last entry on traversal.
-	/// - `$ps_bit`: Literal. This parameter defines if constructor should set the page-size bit.
-	macro_rules! build_regular_paging_impl
+	impl Pml4e
 	{
-		($type_name:tt,$page_size:tt,$last_level:literal,$ps_bit:literal) =>
+		pub fn construct(present:bool,write:bool,user:bool,pdpte_base:u64,nx:bool)->Self
 		{
-			paste!
-			{
-				pub struct $type_name(pub u64);
-
-				impl $type_name
-				{
-					pub fn new(present:bool,write:bool,user:bool,global:bool,no_execute:bool,next_phys:u64)->Self
-					{
-						let p:u64=(present as u64)<<X86_PAGING_PRESENT_BIT;
-						let w:u64=(write as u64)<<X86_PAGING_WRITE_BIT;
-						let u:u64=(user as u64)<<X86_PAGING_USER_BIT;
-						let g:u64=(global as u64)<<X86_PAGING_GLOBAL_BIT;
-						let b:u64=phys_page_4kb_base(next_phys);
-						let ps:u64=($ps_bit as u64)<<X86_PAGING_PAGE_SIZE_BIT;
-						let nx:u64=(no_execute as u64)<<X86_PAGING_NX_BIT;
-						Self(p|w|u|ps|g|b|nx)
-					}
-				}
-
-				impl X86PageTableEntryOps for $type_name
-				{
-					build_bit_mut_method!(present,0,false);
-					build_bit_mut_method!(write,1,false);
-					build_bit_mut_method!(user,2,false);
-					build_bit_mut_method!(accessed,5,false);
-					build_bit_mut_method!(nx,63,false);
-
-					#[inline] fn get_next_level_base(&self)->u64
-					{
-						phys_page_4kb_base(self.0)
-					}
-
-					#[inline] fn set_next_level_base(&mut self,v:u64)
-					{
-						self.0&=[<PHYS_PAGE_ $page_size:upper _MASK>] as u64;
-						self.0|=[<phys_page_ $page_size:lower _base>](v);
-					}
-
-					#[inline] fn is_last_level(&self)->bool
-					{
-						$last_level
-					}
-				}
-			}
-		};
+			let mut v=Self::from_bits(0);
+			v.set_present(present);
+			v.set_write(write);
+			v.set_user(user);
+			v.set_nx(nx);
+			v.set_pdpte_base(page_4kb_count(pdpte_base));
+			v
+		}
 	}
 
-	build_regular_paging_impl!(Pml4e,4kb,false,false);
-	build_regular_paging_impl!(HugePdpte,1gb,true,true);
-	build_regular_paging_impl!(Pdpte,4kb,false,false);
-	build_regular_paging_impl!(LargePde,2mb,true,true);
-	build_regular_paging_impl!(Pde,4kb,false,false);
-	build_regular_paging_impl!(Pte,4kb,true,false);
-
-	/// ## `X86PageTableOps`
-	/// This trait should share among System MMU, EPT, NPT and IOMMU in x86 systems. \
-	/// Implement the trait members as defined in the manual. If certain fields are missing, do not implement the corresponding methods.
-	pub trait X86PageTableEntryOps
+	// Page-Directory-Pointer-Table Entry (Bits 30-38)
+	#[bitfield(u64)] pub struct Pdpte
 	{
-		fn get_present(&self)->bool;
-		fn get_write(&self)->bool;
-		fn get_user(&self)->bool;
-		fn get_accessed(&self)->bool;
-		fn get_next_level_base(&self)->u64;
-		fn get_nx(&self)->bool;
-
-		fn set_present(&mut self,v:bool);
-		fn set_write(&mut self,v:bool);
-		fn set_user(&mut self,v:bool);
-		fn set_accessed(&mut self,v:bool);
-		fn set_next_level_base(&mut self,v:u64);
-		fn set_nx(&mut self,v:bool);
-
-		fn is_last_level(&self)->bool;
-
-		#[inline] fn get_caching(&self)->u8 {0}
-		#[inline] fn set_caching(&mut self,_v:u8) {}
-		#[inline] fn get_dirty(&self)->bool {false}
-		#[inline] fn set_dirty(&mut self,_v:bool) {}
+		pub present:bool,
+		pub write:bool,
+		pub user:bool,
+		pub pwt:bool,
+		pub pcd:bool,
+		pub accessed:bool,
+		pub ignored0:bool,
+		pub page_size:bool,
+		pub ignored1:bool,
+		#[bits(3)] pub avl:u64,
+		#[bits(40)] pub pde_base:u64,
+		#[bits(11)] pub available:u64,
+		pub nx:bool
 	}
 
-	pub struct PageFaultErrorCode(pub u32);
-
-	macro_rules! build_page_fault_bit
+	impl Pdpte
 	{
-		($name:tt,$pos:literal) =>
+		pub fn construct(present:bool,write:bool,user:bool,pde_base:u64,nx:bool)->Self
 		{
-			paste!
-			{
-				pub const [<PAGE_FAULT_ $name:upper _BIT>]:u32=$pos;
-				pub const [<PAGE_FAULT_ $name:upper>]:u32=1<<$pos;
-			}
-		};
+			let mut v=Self::from_bits(0);
+			v.set_present(present);
+			v.set_write(write);
+			v.set_user(user);
+			v.set_nx(nx);
+			v.set_pde_base(page_4kb_count(pde_base));
+			v
+		}
 	}
 
-	macro_rules! build_page_fault_bit_checker
+	#[bitfield(u64)] pub struct HugePdpte
 	{
-		($name:tt) =>
-		{
-			paste!
-			{
-				#[inline] pub fn [<is_ $name:lower>](&self)->bool
-				{
-					(self.0&[<PAGE_FAULT_ $name:upper>])!=0
-				}
-			}
-		};
+		pub present:bool,
+		pub write:bool,
+		pub user:bool,
+		pub pwt:bool,
+		pub pcd:bool,
+		pub accessed:bool,
+		pub dirty:bool,
+		pub page_size:bool,
+		pub global:bool,
+		#[bits(3)] pub avl:u64,
+		pub pat:bool,
+		#[bits(17)] rsvd:u64,
+		#[bits(22)] pub page_base:u64,
+		#[bits(7)] pub available:u64,
+		#[bits(4)] pub page_key:u64,
+		pub nx:bool
 	}
 
-	build_page_fault_bit!(present,0);
-	build_page_fault_bit!(write,1);
-	build_page_fault_bit!(user,2);
-	build_page_fault_bit!(reserved,3);
-	build_page_fault_bit!(execute,4);
-	build_page_fault_bit!(protection_key,5);
-	build_page_fault_bit!(shadow_stack,6);
+	impl HugePdpte
+	{
+		pub fn construct(present:bool,write:bool,user:bool,page_base:u64,nx:bool)->Self
+		{
+			let mut v=Self::from_bits(0);
+			v.set_present(present);
+			v.set_write(write);
+			v.set_user(user);
+			v.set_page_size(true);
+			v.set_page_base(page_1gb_count(page_base));
+			v.set_nx(nx);
+			v
+		}
+	}
+
+	// Page-Directory Entry (Bits 21-29)
+	#[bitfield(u64)] pub struct Pde
+	{
+		pub present:bool,
+		pub write:bool,
+		pub user:bool,
+		pub pwt:bool,
+		pub pcd:bool,
+		pub accessed:bool,
+		pub ignored0:bool,
+		pub page_size:bool,
+		pub ignored1:bool,
+		#[bits(3)] pub avl:u64,
+		#[bits(40)] pub pte_base:u64,
+		#[bits(11)] pub available:u64,
+		pub nx:bool
+	}
+
+	impl Pde
+	{
+		pub fn construct(present:bool,write:bool,user:bool,pte_base:u64,nx:bool)->Self
+		{
+			let mut v=Self::from_bits(0);
+			v.set_present(present);
+			v.set_write(write);
+			v.set_user(user);
+			v.set_nx(nx);
+			v.set_pte_base(page_4kb_count(pte_base));
+			v
+		}
+	}
+
+	#[bitfield(u64)] pub struct LargePde
+	{
+		pub present:bool,
+		pub write:bool,
+		pub user:bool,
+		pub pwt:bool,
+		pub pcd:bool,
+		pub accessed:bool,
+		pub dirty:bool,
+		pub page_size:bool,
+		pub global:bool,
+		#[bits(3)] pub avl:u64,
+		pub pat:bool,
+		#[bits(8)] rsvd:u64,
+		#[bits(31)] pub page_base:u64,
+		#[bits(7)] pub available:u64,
+		#[bits(4)] pub page_key:u64,
+		pub nx:bool
+	}
+
+	impl LargePde
+	{
+		pub fn construct(present:bool,write:bool,user:bool,page_base:u64,nx:bool)->Self
+		{
+			let mut v=Self::from_bits(0);
+			v.set_present(present);
+			v.set_write(write);
+			v.set_user(user);
+			v.set_page_size(true);
+			v.set_page_base(page_2mb_count(page_base));
+			v.set_nx(nx);
+			v
+		}
+	}
+
+	// Page-Table Entry (Bits 12-20)
+	#[bitfield(u64)] pub struct Pte
+	{
+		pub present:bool,
+		pub write:bool,
+		pub user:bool,
+		pub pwt:bool,
+		pub pcd:bool,
+		pub accessed:bool,
+		pub dirty:bool,
+		pub pat:bool,
+		pub global:bool,
+		#[bits(3)] pub avl:u64,
+		#[bits(40)] pub page_base:u64,
+		#[bits(7)] pub available:u64,
+		#[bits(4)] pub page_key:u64,
+		pub nx:bool
+	}
+
+	impl Pte
+	{
+		pub fn construct(present:bool,write:bool,user:bool,page_base:u64,nx:bool)->Self
+		{
+			let mut v=Self::from_bits(0);
+			v.set_present(present);
+			v.set_write(write);
+			v.set_user(user);
+			v.set_nx(nx);
+			v.set_page_base(page_4kb_count(page_base));
+			v
+		}
+	}
+
+	#[bitfield(u32)] pub struct PageFaultErrorCode
+	{
+		pub present:bool,
+		pub write:bool,
+		pub user:bool,
+		pub reserved:bool,
+		pub execute:bool,
+		pub protection_key:bool,
+		pub shadow_stack:bool,
+		#[bits(25)] rsvd:u32
+	}
 
 	impl PageFaultErrorCode
 	{
-		fn new(p:bool,w:bool,u:bool,r:bool,x:bool,pk:bool,ss:bool)->Self
+		fn construct(p:bool,w:bool,u:bool,r:bool,x:bool,pk:bool,ss:bool)->Self
 		{
-			Self
-			(
-				(p as u32)|
-				((w as u32)<<1)|
-				((u as u32)<<2)|
-				((r as u32)<<3)|
-				((x as u32)<<4)|
-				((pk as u32)<<5)|
-				((ss as u32)<<6)
-			)
+			let mut v=Self::from_bits(0);
+			v.set_present(p);
+			v.set_write(w);
+			v.set_user(u);
+			v.set_reserved(r);
+			v.set_execute(x);
+			v.set_protection_key(pk);
+			v.set_shadow_stack(ss);
+			v
 		}
-
-		pub fn from_u32(v:u32)->Self
-		{
-			Self(v)
-		}
-
-		build_page_fault_bit_checker!(present);
-		build_page_fault_bit_checker!(write);
-		build_page_fault_bit_checker!(user);
-		build_page_fault_bit_checker!(reserved);
-		build_page_fault_bit_checker!(execute);
-		build_page_fault_bit_checker!(protection_key);
-		build_page_fault_bit_checker!(shadow_stack);
 	}
 
 	impl Display for PageFaultErrorCode
@@ -580,12 +661,12 @@ pub mod paging
 		{
 			write!(f,"Code={:X}. ",self.0)?;
 			// Exhaust all bit definitions.
-			write!(f,"Page is {}",if self.is_present() {"present"} else {"absent"})?;
-			write!(f,", access is {}",if self.is_write() {"write"} else {"not write"})?;
-			write!(f,", {}",if self.is_user() {"user"} else {"supervisor"})?;
-			write!(f,", {} instruction fetch",if self.is_execute() {"is"} else {"is not"})?;
-			write!(f,", {} shadow stack",if self.is_shadow_stack() {"is"} else {"is not"})?;
-			write!(f,", reserved bits {} set",if self.is_reserved() {"are"} else {"are not"})?;
+			write!(f,"Page is {}",if self.present() {"present"} else {"absent"})?;
+			write!(f,", access is {}",if self.write() {"write"} else {"not write"})?;
+			write!(f,", {}",if self.user() {"user"} else {"supervisor"})?;
+			write!(f,", {} instruction fetch",if self.execute() {"is"} else {"is not"})?;
+			write!(f,", {} shadow stack",if self.shadow_stack() {"is"} else {"is not"})?;
+			write!(f,", reserved bits {} set",if self.reserved() {"are"} else {"are not"})?;
 			Ok(())
 		}
 	}
@@ -631,19 +712,19 @@ pub mod paging
 		// Check access rights.
 		if !pml_p
 		{
-			return Err(PageFaultErrorCode::new(false,w,u,false,x,false,false));
+			return Err(PageFaultErrorCode::construct(false,w,u,false,x,false,false));
 		}
 		if !pml_w && w
 		{
-			return Err(PageFaultErrorCode::new(pml_p,w,u,false,x,false,false));
+			return Err(PageFaultErrorCode::construct(pml_p,w,u,false,x,false,false));
 		}
 		if !pml_u && u
 		{
-			return Err(PageFaultErrorCode::new(pml_p,w,u,false,x,false,false));
+			return Err(PageFaultErrorCode::construct(pml_p,w,u,false,x,false,false));
 		}
 		if pml_nx && !x
 		{
-			return Err(PageFaultErrorCode::new(pml_p,w,u,false,x,false,false));
+			return Err(PageFaultErrorCode::construct(pml_p,w,u,false,x,false,false));
 		}
 		if pml_ps || level==1
 		{
@@ -653,7 +734,7 @@ pub mod paging
 			let pml_ss=pml_d&!pml_w;
 			if pml_ss && !ss
 			{
-				Err(PageFaultErrorCode::new(pml_p,w,u,false,x,false,true))
+				Err(PageFaultErrorCode::construct(pml_p,w,u,false,x,false,true))
 			}
 			else
 			{
@@ -779,7 +860,7 @@ pub mod paging
 
 pub mod descriptors
 {
-	use paste::paste;
+	use bitfield_struct::bitfield;
 	use core::fmt::{self,Display};
 	use crate::*;
 	use xpf_core::{hv_host::x86::AsmInterruptHandler, nvbdk::PAGE_SHIFT};
@@ -801,26 +882,21 @@ pub mod descriptors
 		}
 	}
 
-	#[derive(Default, Clone, Copy)]
-	pub struct SegmentFlags(pub u16);
+	#[bitfield(u16)] pub struct SegmentFlags
+	{
+		#[bits(4)] pub segment_type:u16,
+		pub system_segment:bool,
+		#[bits(2)] pub dpl:u16,
+		pub present:bool,
+		#[bits(4)] pub limit_hi:u16,
+		pub avl:bool,
+		pub long_mode:bool,
+		pub default_big:bool,
+		pub granularity:bool
+	}
+
 	impl SegmentFlags
 	{
-		build_int_mut_method!(segment_type,0,4,u16);
-		build_bit_mut_method!(accessed,0);
-		build_bit_mut_method!(data_writable,1);
-		build_bit_mut_method!(code_readable,1);
-		build_bit_mut_method!(data_expand_down,2);
-		build_bit_mut_method!(code_conforming,3);
-		build_bit_mut_method!(code_segment,3);
-		build_bit_mut_method!(system_segment,4);
-		build_int_mut_method!(dpl,5,2,u16);
-		build_bit_mut_method!(present,7);
-		build_int_mut_method!(limit_hi,8,4,u16);
-		build_bit_mut_method!(avl,12);
-		build_bit_mut_method!(long_mode,13);
-		build_bit_mut_method!(default_big,14);
-		build_bit_mut_method!(granularity,15);
-
 		pub const AVAILABLE_TSS_16BIT:u16=0x1;
 		pub const LDT:u16=0x2;
 		pub const BUSY_TSS_16BIT:u16=0x3;
@@ -875,15 +951,14 @@ pub mod descriptors
 		}
 	}
 
-	#[derive(Default,Clone,Copy)]
-	#[repr(C)] pub struct GateFlags(pub u16);
-
-	impl GateFlags
+	#[bitfield(u16)] pub struct GateFlags
 	{
-		build_int_mut_method!(ist,0,3,u16);
-		build_int_mut_method!(gate_type,8,4,u16);
-		build_int_mut_method!(dpl,13,2,u16);
-		build_bit_mut_method!(present,15);
+		#[bits(3)] pub ist:u16,
+		#[bits(5)] rsvd0:u16,
+		#[bits(4)] pub gate_type:u16,
+		pub rsvd1:bool,
+		#[bits(2)] pub dpl:u16,
+		pub present:bool
 	}
 
 	#[derive(Default,Clone,Copy)]
@@ -956,7 +1031,8 @@ pub mod descriptors
 
 pub mod crdr
 {
-	use paste::paste;
+	use bitfield_struct::bitfield;
+use paste::paste;
 	use crate::*;
 
 	#[macro_export] macro_rules! define_bit
@@ -1016,29 +1092,34 @@ pub mod crdr
 	define_bit!(DR6_BS,14);
 	define_bit!(DR6_BT,15);
 
-	pub struct Dr7(pub u64);
+	#[bitfield(u64)] pub struct Dr7
+	{
+		pub l0:bool,
+		pub g0:bool,
+		pub l1:bool,
+		pub g1:bool,
+		pub l2:bool,
+		pub g2:bool,
+		pub l3:bool,
+		pub g3:bool,
+		pub le:bool,
+		pub ge:bool,
+		#[bits(3)] rsvd0:u64,
+		pub gd:bool,
+		#[bits(2)] rsvd1:u64,
+		#[bits(2)] pub rw0:u64,
+		#[bits(2)] pub len0:u64,
+		#[bits(2)] pub rw1:u64,
+		#[bits(2)] pub len1:u64,
+		#[bits(2)] pub rw2:u64,
+		#[bits(2)] pub len2:u64,
+		#[bits(2)] pub rw3:u64,
+		#[bits(2)] pub len3:u64,
+		rsvd2:u32
+	}
+
 	impl Dr7
 	{
-		build_bit_mut_method!(L0,0);
-		build_bit_mut_method!(G0,1);
-		build_bit_mut_method!(L1,2);
-		build_bit_mut_method!(G1,3);
-		build_bit_mut_method!(L2,4);
-		build_bit_mut_method!(G2,5);
-		build_bit_mut_method!(L3,6);
-		build_bit_mut_method!(G3,7);
-		build_bit_mut_method!(LE,8);
-		build_bit_mut_method!(GE,9);
-		build_bit_mut_method!(GD,13);
-		build_int_mut_method!(RW0,16,2,u64);
-		build_int_mut_method!(LEN0,18,2,u64);
-		build_int_mut_method!(RW1,20,2,u64);
-		build_int_mut_method!(LEN1,22,2,u64);
-		build_int_mut_method!(RW2,24,2,u64);
-		build_int_mut_method!(LEN2,26,2,u64);
-		build_int_mut_method!(RW3,28,2,u64);
-		build_int_mut_method!(LEN3,30,2,u64);
-
 		pub const LENGTH_CONVERTER:[u64;4]=[1,2,8,4];
 		pub const INSTRUCTION_EXECUTION:u64=0;
 		pub const DATA_WRITE:u64=1;
@@ -1122,7 +1203,7 @@ pub mod interrupts
 	pub const SIMD_FP_EXCEPTION_FAULT:u8=19;
 	pub const CONTROL_PROTECTION_FAULT:u8=21;
 
-	pub enum EventType
+	#[repr(u8)] pub enum EventType
 	{
 		ExternalInterrupt=0,
 		ReservedEvent=1,

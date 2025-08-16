@@ -190,32 +190,32 @@ impl VtVcpu
 			// Guest State Area - CS Segment
 			vmwrite16(GUEST_CS_SELECTOR,state.cs.selector);
 			vmwrite32(GUEST_CS_LIMIT,state.cs.limit);
-			vmwrite32(GUEST_CS_ACCESS_RIGHTS,vt_attrib(state.cs.selector,state.cs.attrib));
+			vmwrite32(GUEST_CS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.cs.selector,state.cs.attrib).into_bits());
 			vmwriteptr(GUEST_CS_BASE,state.cs.base as usize);
 			// Guest State Area - DS Segment
 			vmwrite16(GUEST_DS_SELECTOR,state.ds.selector);
 			vmwrite32(GUEST_DS_LIMIT,state.ds.limit);
-			vmwrite32(GUEST_DS_ACCESS_RIGHTS,vt_attrib(state.ds.selector,state.ds.attrib));
+			vmwrite32(GUEST_DS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.ds.selector,state.ds.attrib).into_bits());
 			vmwriteptr(GUEST_DS_BASE,state.ds.base as usize);
 			// Guest State Area - ES Segment
 			vmwrite16(GUEST_ES_SELECTOR,state.es.selector);
 			vmwrite32(GUEST_ES_LIMIT,state.es.limit);
-			vmwrite32(GUEST_ES_ACCESS_RIGHTS,vt_attrib(state.es.selector,state.es.attrib));
+			vmwrite32(GUEST_ES_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.es.selector,state.es.attrib).into_bits());
 			vmwriteptr(GUEST_ES_BASE,state.es.base as usize);
 			// Guest State Area - FS Segment
 			vmwrite16(GUEST_FS_SELECTOR,state.fs.selector);
 			vmwrite32(GUEST_FS_LIMIT,state.fs.limit);
-			vmwrite32(GUEST_FS_ACCESS_RIGHTS,vt_attrib(state.fs.selector,state.fs.attrib));
+			vmwrite32(GUEST_FS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.fs.selector,state.fs.attrib).into_bits());
 			vmwriteptr(GUEST_FS_BASE,state.fs.base as usize);
 			// Guest State Area - GS Segment
 			vmwrite16(GUEST_GS_SELECTOR,state.gs.selector);
 			vmwrite32(GUEST_GS_LIMIT,state.gs.limit);
-			vmwrite32(GUEST_GS_ACCESS_RIGHTS,vt_attrib(state.gs.selector,state.gs.attrib));
+			vmwrite32(GUEST_GS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.gs.selector,state.gs.attrib).into_bits());
 			vmwriteptr(GUEST_GS_BASE,state.gs.base as usize);
 			// Guest State Area - SS Segment
 			vmwrite16(GUEST_SS_SELECTOR,state.ss.selector);
 			vmwrite32(GUEST_SS_LIMIT,state.ss.limit);
-			vmwrite32(GUEST_SS_ACCESS_RIGHTS,vt_attrib(state.ss.selector,state.ss.attrib));
+			vmwrite32(GUEST_SS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.ss.selector,state.ss.attrib).into_bits());
 			vmwriteptr(GUEST_SS_BASE,state.ss.base as usize);
 			// Guest State Area - TR Segment
 			vmwrite16(GUEST_TR_SELECTOR,state.tr.selector);
@@ -226,14 +226,14 @@ impl VtVcpu
 			}
 			else
 			{
-				vt_attrib(state.tr.selector,state.tr.attrib)
+				SegmentAccessRights::from_raw(state.tr.selector,state.tr.attrib).into_bits()
 			};
 			vmwrite32(GUEST_TR_ACCESS_RIGHTS,tr_ar);
 			vmwriteptr(GUEST_TR_BASE,state.tr.base as usize);
 			// Guest State Area - LDTR Segment
 			vmwrite16(GUEST_LDTR_SELECTOR,state.ldtr.selector);
 			vmwrite32(GUEST_LDTR_LIMIT,state.ldtr.limit);
-			vmwrite32(GUEST_LDTR_ACCESS_RIGHTS,vt_attrib(state.ldtr.selector,state.ldtr.attrib));
+			vmwrite32(GUEST_LDTR_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.ldtr.selector,state.ldtr.attrib).into_bits());
 			vmwriteptr(GUEST_LDTR_BASE,state.ldtr.base as usize);
 			// Guest State Area - IDTR and GDTR
 			vmwrite32(GUEST_GDTR_LIMIT,state.gdtr.limit);
@@ -266,32 +266,32 @@ impl VtVcpu
 
 	fn setup_pinbased_controls(&self,true_msr:bool)
 	{
-		let mut pin_ctrl=VmxPinBasedControls(0);
+		let mut pin_ctrl=VmxPinBasedControls::from_bits(0);
 		// Setup Pin-Based VM-Execution Controls.
 		// Filter unsupported fields.
 		let pin_ctrl_msr=VmxPinBasedCtrlMsr::read(true_msr);
-		pin_ctrl.0|=pin_ctrl_msr.get_allowed0().0;
-		pin_ctrl.0&=pin_ctrl_msr.get_allowed1().0;
+		pin_ctrl|=pin_ctrl_msr.get_allowed0();
+		pin_ctrl&=pin_ctrl_msr.get_allowed1();
 		// Write to VMCS.
 		unsafe
 		{
-			vmwrite32(PIN_BASED_VM_EXECUTION_CONTROLS,pin_ctrl.0);
+			vmwrite32(PIN_BASED_VM_EXECUTION_CONTROLS,pin_ctrl.into_bits());
 		}
 	}
 
 	fn setup_procbased_controls(&self,true_msr:bool)
 	{
 		// Setup Primary Processor-Based VM-Execution Controls
-		let mut proc_ctrl=VmxPrimaryProcessorControls(0);
+		let mut proc_ctrl=VmxPrimaryProcessorControls::from_bits(0);
 		proc_ctrl.set_use_io_bitmap(true);
 		proc_ctrl.set_use_msr_bitmap(true);
 		proc_ctrl.set_activate_secondary_controls(true);
 		// Filter unsupported fields.
 		let proc_ctrl_msr=VmxPriProcCtrlMsr::read(true_msr);
-		proc_ctrl.0|=proc_ctrl_msr.get_allowed0().0;
-		proc_ctrl.0&=proc_ctrl_msr.get_allowed1().0;
+		proc_ctrl|=proc_ctrl_msr.get_allowed0();
+		proc_ctrl&=proc_ctrl_msr.get_allowed1();
 		// Setup Secondary Processor-Based VM-Execution Controls
-		let mut proc_ctrl2=VmxSecondaryProcessorControls(0);
+		let mut proc_ctrl2=VmxSecondaryProcessorControls::from_bits(0);
 		proc_ctrl2.set_enable_ept(true);
 		proc_ctrl2.set_enable_rdtscp(true);
 		proc_ctrl2.set_enable_vpid(true);
@@ -301,20 +301,20 @@ impl VtVcpu
 		proc_ctrl2.set_enable_umwait(true);
 		// Filter unsupported fields.
 		let proc_ctrl2_msr=VmxSecProcCtrlMsr::read();
-		proc_ctrl2.0|=proc_ctrl2_msr.get_allowed0().0;
-		proc_ctrl2.0&=proc_ctrl2_msr.get_allowed1().0;
+		proc_ctrl2|=proc_ctrl2_msr.get_allowed0();
+		proc_ctrl2&=proc_ctrl2_msr.get_allowed1();
 		// Write to VMCS.
 		unsafe
 		{
-			vmwrite32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,proc_ctrl.0);
-			vmwrite32(SECONDARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,proc_ctrl2.0);
+			vmwrite32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,proc_ctrl.into_bits());
+			vmwrite32(SECONDARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,proc_ctrl2.into_bits());
 		}
 	}
 
 	fn setup_vmexit_controls(&self,true_msr:bool)
 	{
 		// Setup VM-Exit Controls
-		let mut exit_ctrl=VmxExitControls(0);
+		let mut exit_ctrl=VmxExitControls::from_bits(0);
 		exit_ctrl.set_save_debug_controls(true);
 		exit_ctrl.set_host_address_space_size(cfg!(target_arch="x86_64"));
 		exit_ctrl.set_load_efer(true);
@@ -323,36 +323,36 @@ impl VtVcpu
 		exit_ctrl.set_save_pat(true);
 		// Filter unsupported fields.
 		let exit_ctrl_msr=VmxExitCtrlMsr::read(true_msr);
-		exit_ctrl.0|=exit_ctrl_msr.get_allowed0().0;
-		exit_ctrl.0&=exit_ctrl_msr.get_allowed1().0;
+		exit_ctrl|=exit_ctrl_msr.get_allowed0();
+		exit_ctrl&=exit_ctrl_msr.get_allowed1();
 		// Write to VMCS.
 		unsafe
 		{
-			vmwrite32(VMEXIT_CONTROLS,exit_ctrl.0);
+			vmwrite32(VMEXIT_CONTROLS,exit_ctrl.into_bits());
 		}
 	}
 
 	fn setup_vmentry_controls(&self,true_msr:bool)
 	{
 		// Setup VM-Entry Controls
-		let mut entry_ctrl=VmxEntryControls(0);
+		let mut entry_ctrl=VmxEntryControls::from_bits(0);
 		entry_ctrl.set_load_debug_controls(true);
 		entry_ctrl.set_ia32e_mode_guest(cfg!(target_arch="x86_64"));
 		entry_ctrl.set_load_efer(true);
 		entry_ctrl.set_load_pat(true);
 		// Filter unsupported fields.
 		let entry_ctrl_msr=VmxEntryCtrlMsr::read(true_msr);
-		entry_ctrl.0|=entry_ctrl_msr.get_allowed0().0;
-		entry_ctrl.0&=entry_ctrl_msr.get_allowed1().0;
+		entry_ctrl|=entry_ctrl_msr.get_allowed0();
+		entry_ctrl&=entry_ctrl_msr.get_allowed1();
 		unsafe
 		{
-			vmwrite32(VMENTRY_CONTROLS,entry_ctrl.0);
+			vmwrite32(VMENTRY_CONTROLS,entry_ctrl.into_bits());
 		}
 	}
 
 	fn setup_memory_virtualization(&self)
 	{
-		let mut eptp=VmxEptPointer(0);
+		let mut eptp=VmxEptPointer::from(0);
 		eptp.set_page_walk_length(3);
 		eptp.set_ept_memory_type(MEMORY_TYPE_WB as u64);
 		eptp.set_enable_ad_flags(true);
@@ -361,13 +361,13 @@ impl VtVcpu
 			let hv:*const VtHypervisor=self.hypervisor.cast();
 			eptp.set_eptp_pa((*hv).eptm.pml4e.phys>>PAGE_4KB_SHIFT);
 			vmwrite16(GUEST_VPID,1);
-			vmwrite64(EPT_POINTER,eptp.0);
+			vmwrite64(EPT_POINTER,eptp.into_bits());
 		}
 	}
 
 	fn setup_control_area(&self)
 	{
-		let true_msr=VmxBasicMsr::read().get_use_true_msr();
+		let true_msr=VmxBasicMsr::read().use_true_msr();
 		self.setup_pinbased_controls(true_msr);
 		self.setup_procbased_controls(true_msr);
 		self.setup_vmexit_controls(true_msr);
@@ -404,8 +404,8 @@ impl VtVcpu
 		// Setup Revision Identifier.
 		unsafe
 		{
-			self.vmxon.virt.cast::<u32>().write(vt_basic.get_revision_id() as u32);
-			self.vmcs.virt.cast::<u32>().write(vt_basic.get_revision_id() as u32);
+			self.vmxon.virt.cast::<u32>().write(vt_basic.revision_id());
+			self.vmcs.virt.cast::<u32>().write(vt_basic.revision_id());
 		}
 		// Enable VMX in CR0 and CR4.
 		let mut cr0=read_cr0();
@@ -523,36 +523,36 @@ impl HypervisorCapabilities for VtHypervisor
 		{
 			let mut basic_requirement:bool=true;
 			let vt_basic=VmxBasicMsr::read();
-			let use_true_msr=vt_basic.get_use_true_msr();
+			let use_true_msr=vt_basic.use_true_msr();
 			let pri_proc_sup=VmxPriProcCtrlMsr::read(use_true_msr);
-			basic_requirement&=pri_proc_sup.get_allowed1().get_use_msr_bitmap();
+			basic_requirement&=pri_proc_sup.get_allowed1().use_msr_bitmap();
 			let vt_misc=VmxMiscMsr::read();
-			if pri_proc_sup.get_allowed1().get_activate_secondary_controls()
+			if pri_proc_sup.get_allowed1().activate_secondary_controls()
 			{
 				let sec_proc_sup=VmxSecProcCtrlMsr::read();
-				if sec_proc_sup.get_allowed1().get_enable_ept()
+				if sec_proc_sup.get_allowed1().enable_ept()
 				{
 					let ept_sup=VmxEptVpidCapMsr::read();
 					let mut ept_requirement:bool=true;
 					// We have a series of EPT feature requirements.
-					ept_requirement&=ept_sup.get_support_wb_ept();
+					ept_requirement&=ept_sup.support_wb_ept();
 					// 2MiB-paging is NoirVisor's minimum requirement.
 					// 1GiB-paging is preferred, but some processors don't support it (e.g.: vCPU in VMware).
-					ept_requirement&=ept_sup.get_support_2mb_paging();
-					ept_requirement&=ept_sup.get_support_invept();
-					ept_requirement&=ept_sup.get_support_single_context_invept();
-					ept_requirement&=ept_sup.get_support_global_context_invept();
-					ept_requirement&=ept_sup.get_support_invvpid();
-					ept_requirement&=ept_sup.get_support_ia_invvpid();
-					ept_requirement&=ept_sup.get_support_sc_invvpid();
-					ept_requirement&=ept_sup.get_support_ac_invvpid();
+					ept_requirement&=ept_sup.support_2mb_paging();
+					ept_requirement&=ept_sup.support_invept();
+					ept_requirement&=ept_sup.support_single_context_invept();
+					ept_requirement&=ept_sup.support_global_context_invept();
+					ept_requirement&=ept_sup.support_invvpid();
+					ept_requirement&=ept_sup.support_ia_invvpid();
+					ept_requirement&=ept_sup.support_sc_invvpid();
+					ept_requirement&=ept_sup.support_ac_invvpid();
 					if ept_requirement {supportability|=2;}
 				}
-				basic_requirement&=sec_proc_sup.get_allowed1().get_enable_vpid();
-				basic_requirement&=sec_proc_sup.get_allowed1().get_unrestricted_guest();
+				basic_requirement&=sec_proc_sup.get_allowed1().enable_vpid();
+				basic_requirement&=sec_proc_sup.get_allowed1().unrestricted_guest();
 				let mut accel_nvirt_requirement:bool=true;
-				accel_nvirt_requirement&=sec_proc_sup.get_allowed1().get_vmcs_shadowing();
-				accel_nvirt_requirement&=vt_misc.get_allow_vmcs_write_anywhere();
+				accel_nvirt_requirement&=sec_proc_sup.get_allowed1().vmcs_shadowing();
+				accel_nvirt_requirement&=vt_misc.allow_vmcs_write_anywhere();
 				if accel_nvirt_requirement
 				{
 					supportability|=4;
@@ -560,7 +560,7 @@ impl HypervisorCapabilities for VtHypervisor
 			}
 			#[cfg(target_os="uefi")]
 			{
-				basic_requirement&=vt_misc.get_support_wait_for_sipi_state();
+				basic_requirement&=vt_misc.support_wait_for_sipi_state();
 			}
 			if basic_requirement {supportability|=1;}
 		}
