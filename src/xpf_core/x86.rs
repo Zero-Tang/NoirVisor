@@ -183,7 +183,7 @@ pub mod caching
 					{
 						base:page_4kb_mult(base.phys_base()),
 						length:(1<<pa_width)-page_4kb_mult(mask.phys_mask()),
-						memory_type:base.mtrr_type() as u8,
+						memory_type:base.mtrr_type(),
 						source:MtrrSource::VariableRange
 					}
 				)
@@ -330,7 +330,7 @@ pub mod caching
 			if mtrr_def.enabled()
 			{
 				// Setup default type.
-				self.def_type=mtrr_def.mtrr_type() as u8;
+				self.def_type=mtrr_def.mtrr_type();
 				// Setup Fixed MTRRs.
 				if mtrr_def.fixed_enabled()
 				{

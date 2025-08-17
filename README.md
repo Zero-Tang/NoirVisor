@@ -112,6 +112,26 @@ You may use `mtools` in order to make a virtual disk image. The pre-built `mtool
 
 Build script for NoirVisor on UEFI includes above commands. Add `NoirVisor-Uefi.img` as a floppy image in your virtual machine.
 
+### Running on Emulator
+**QEMU**: In the `tests` directory, execute the `run_qemu.py` script. Note that QEMU TCG accelerator only supports AMD-V!
+```
+python run_qemu.py
+```
+If KVM is available:
+```
+python run_qemu.py -accel kvm
+```
+
+**Bochs**: In the `tests` directory, execute the `run_bochs.py` script. Note that only [Bochs-3.0](https://sourceforge.net/projects/bochs/files/bochs/3.0/) is supported. \
+To emulate Intel VT-x in Bochs:
+```
+python run_bochs.py --cpu-model corei7_icelake_u
+```
+To emulate AMD-V in Bochs:
+```
+python run_bochs.py --cpu-model ryzen
+```
+
 # Documents
 This repository provides [additional documents](/doc/readme.md) which help new developers to join development.
 

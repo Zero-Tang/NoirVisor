@@ -19,10 +19,10 @@ use iced_x86::MasmFormatter;
 use iommu::{svm_iommu_output_handler, SvmIommuManager};
 use log::*;
 use npt::SvmNptManager;
-use xpf_core::{bitmap::set_bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
+use xpf_core::{bitmap::Bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 
-use crate::{xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::*, seg::*, svm::*}, allocator::*, nvbdk::*, nvstatus::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
+use crate::{xpf_core::{allocator::*, asm::{cpuid::cpuid, crdr::*, msr::*, seg::*, svm::*}, nvbdk::*, nvstatus::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
@@ -416,50 +416,36 @@ impl HypervisorEssentials for SvmHypervisor
 			Some(md)=>
 			{
 				self.msrpm=md;
+				let msrpm:&mut Bitmap<65536>=unsafe{Bitmap::from_raw_parts_mut(self.msrpm.virt)};
 				// Setup basic interceptions to MSRs that may interfere with SVM normal operations.
 				// This is also for nested virtualization.
-				unsafe
+				let mut set_interception=|index:u32,read:bool,write:bool|
 				{
-					// Use macros to build MSR Permission Map more elegantly.
-					macro_rules! intercept_read
+					let base=match index
 					{
-						($index:expr) =>
-						{
-							match svm_msrpm_bit($index,false)
-							{
-								Some(i)=>set_bitmap(self.msrpm.virt,0x2000,i as usize),
-								None=>warn!("Warning: MSR 0x{:X} is invalid!",$index)
-							}
-						};
-					}
-					macro_rules! intercept_write
+						0..0x2000=>Some((index<<1) as usize),
+						0xC0000000..0xC0002000=>Some(((index-0xC0000000)<<1) as usize+0x4000),
+						0xC0010000..0xC0012000=>Some(((index-0xC0010000)<<1) as usize+0x8000),
+						_=>None
+					};
+					match base
 					{
-						($index:expr) =>
+						Some(i)=>
 						{
-							match svm_msrpm_bit($index,true)
-							{
-								Some(i)=>set_bitmap(self.msrpm.virt,0x2000,i as usize),
-								None=>warn!("Warning: MSR 0x{:X} is invalid!",$index)
-							}
-						};
+							msrpm.assign(i,read);
+							msrpm.assign(i+1,write);
+						}
+						None=>warn!("MSR 0x{index:X} is invalid!")
 					}
-					macro_rules! intercept_any
-					{
-						($index:expr) =>
-						{
-							intercept_read!($index);
-							intercept_write!($index);
-						};
-					}
-					intercept_any!(MSR_EFER);
-					intercept_any!(MSR_TSC_RATIO);
-					intercept_any!(MSR_VMCR);
-					intercept_any!(MSR_IGNNE);
-					intercept_any!(MSR_SMM_CTRL);
-					intercept_any!(MSR_HSAVE_PA);
-					// There is no need to intercept read because the processor will always return zero on reads.
-					intercept_write!(MSR_SVM_KEY);
-				}
+				};
+				set_interception(MSR_EFER,true,true);
+				set_interception(MSR_TSC_RATIO,true,true);
+				set_interception(MSR_VMCR,true,true);
+				set_interception(MSR_IGNNE,true,true);
+				set_interception(MSR_SMM_CTRL,true,true);
+				set_interception(MSR_HSAVE_PA,true,true);
+				// There is no need to intercept read because the processor will always return zero on reads.
+				set_interception(MSR_SVM_KEY,false,true);
 			}
 			None=>fail_cleanup!("Failed to allocate MSR Permission-Map!")
 		}

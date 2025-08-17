@@ -12,11 +12,12 @@
 
 use core::{ffi::c_void, fmt::{self,Display}, sync::atomic::*};
 
+#[cfg(not(test))]
 use portable_dlmalloc::raw::*;
 use paste::paste;
 use spin::Mutex;
 
-use super::{bitmap::{set_bitmap, reset_bitmap, test_bitmap}, nvbdk::*};
+use super::{bitmap::Bitmap, nvbdk::*};
 use crate::{system_print, sysdprint, sysdprintln};
 
 static CHECK_ALLOC:AtomicBool=AtomicBool::new(false);
@@ -151,6 +152,7 @@ mod dlmalloc
 	}
 }
 
+#[cfg(not(test))]
 pub fn get_used()->usize
 {
 	unsafe
@@ -159,6 +161,7 @@ pub fn get_used()->usize
 	}
 }
 
+#[cfg(not(test))]
 pub fn get_free()->usize
 {
 	unsafe 
@@ -247,11 +250,11 @@ impl PageAllocationInformation
 		{
 			PageAllocationType::Blank(info)=>
 			{
-				let bmp=info.as_mut_ptr() as *mut c_void;
+				let bmp:&mut Bitmap<PAGE_TABLE_ENTRIES64>=unsafe{Bitmap::from_raw_parts_mut(info.as_mut_ptr().cast())};
 				let mut i:usize=0;
 				while i<PAGE_TABLE_ENTRIES64
 				{
-					if !unsafe{test_bitmap(bmp,PAGE_TABLE_ENTRIES64>>3,i)}
+					if !bmp.test(i)
 					{
 						let mut is_free=true;
 						for j in i+1..i+pages
@@ -261,7 +264,7 @@ impl PageAllocationInformation
 								is_free=false;
 								break;
 							}
-							if unsafe{test_bitmap(bmp,PAGE_TABLE_ENTRIES64>>3,j)}
+							if bmp.test(j)
 							{
 								is_free=false;
 								break;
@@ -275,7 +278,7 @@ impl PageAllocationInformation
 								// Set the bitmap.
 								for j in i..i+pages
 								{
-									set_bitmap(bmp,PAGE_TABLE_ENTRIES64>>3,j);
+									bmp.set(j);
 								}
 								// println!("[alloc] Allocated Page {s:p} to {:p}! Allocation Info: {self}",s.byte_add(pages));
 								return Some
@@ -394,10 +397,11 @@ impl PageAllocationManager
 						PageAllocationType::Invalid=>panic!("Freeing invalid entry!"),
 						PageAllocationType::Blank(info)=>
 						{
+							let bmp:&mut Bitmap<64>=Bitmap::from_raw_parts_mut(info.as_mut_ptr().cast());
 							let start=page_count(virt.offset_from(v) as usize);
 							for j in start..start+pages
 							{
-								reset_bitmap(info.as_mut_ptr().cast(),64,j);
+								bmp.reset(j);
 							}
 						}
 					}

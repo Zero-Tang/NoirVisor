@@ -46,7 +46,10 @@ unsafe extern "C"
 /// Any exceptions happened within the `procedure` function will be captured and be returned as Err(FailResult).
 /// 
 /// The `context` argument will be directly passed to `procedure` function.
-pub fn try_task(procedure:extern "C" fn(*mut c_void),context:*mut c_void)->Result<(),FailResult>
+/// 
+/// ## Safety
+/// You should guarantee `context` is valid so that `procedure` receives correct context.
+pub unsafe fn try_task(procedure:extern "C" fn(*mut c_void),context:*mut c_void)->Result<(),FailResult>
 {
 	let gs_ctxt=unsafe{&mut *(rdmsr(MSR_GS_BASE) as *mut PerCpuGsException)};
 	gs_ctxt.reset();

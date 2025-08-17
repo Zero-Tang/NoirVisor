@@ -450,6 +450,11 @@ unsafe extern "C"
 	#[cfg(windows)] pub fn nvc_forward_memory_mapped_hypercall(code:u64,input_gpa:u64,output_gpa:u64,source_rax:u64)->u64;
 }
 
+/// ## `nulstr_from_ptr` function
+/// Returns a string slice. The length depends on the position of the null-terminator.
+/// 
+/// ## Safety
+/// The `ptr` must point to a valid UTF-8 string that ends with a null-terminator.
 pub unsafe fn nulstr_from_ptr<'a>(ptr:*const u8)->&'a str
 {
 	unsafe

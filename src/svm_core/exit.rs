@@ -122,7 +122,7 @@ impl SvmVcpu
 		{
 			// If NoirVisor is running under a hypervisor (e.g.: Hyper-V), we may pass-thru this MSR to upper hypervisor.
 			let mut x=MsrContext{index,value:MaybeUninit::uninit()};
-			match try_task(try_rdmsr,(&raw mut x).cast())
+			match unsafe{try_task(try_rdmsr,(&raw mut x).cast())}
 			{
 				Ok(_)=>return Some(unsafe{x.value.assume_init()}),
 				Err(e)=>
@@ -177,7 +177,7 @@ impl SvmVcpu
 			{
 				let mut x:MsrContext=MsrContext{index,value:MaybeUninit::uninit()};
 				warn!("Unexpected rdmsr is intercepted! Index=0x{index:X}");
-				match try_task(try_rdmsr,(&raw mut x).cast())
+				match unsafe{try_task(try_rdmsr,(&raw mut x).cast())}
 				{
 					Ok(_)=>
 					{
@@ -220,7 +220,7 @@ impl SvmVcpu
 			// If NoirVisor is running under a hypervisor (e.g.: Hyper-V), we may pass-thru this MSR to upper hypervisor.
 			let mut x=MsrContext{index,value};
 			// It's not guaranteed this MSR is valid.
-			match try_task(try_wrmsr,(&raw mut x).cast())
+			match unsafe{try_task(try_wrmsr,(&raw mut x).cast())}
 			{
 				Ok(_)=>return true,
 				Err(e)=>
@@ -298,7 +298,7 @@ impl SvmVcpu
 			{
 				let mut x:MsrContext=MsrContext{index,value};
 				warn!("Unexpected wrmsr is intercepted! Index=0x{index:X}");
-				match try_task(try_wrmsr,(&raw mut x).cast())
+				match unsafe{try_task(try_wrmsr,(&raw mut x).cast())}
 				{
 					Ok(_)=>true,
 					Err(e)=>
@@ -604,13 +604,13 @@ impl SvmVcpu
 			let decoder=dispatch_decoder(intercept_code as i64);
 			let handler=dispatch_handler(intercept_code as i64);
 			// If VMCB-Clean-Bits is supported, we may cache the VMCB fields.
-			if (*vcpu).vmcb_clean {vmwrite(vcpu.vmcb.virt,VMCB_CLEAN_BITS,u32::MAX)};
+			if vcpu.vmcb_clean {vmwrite(vcpu.vmcb.virt,VMCB_CLEAN_BITS,u32::MAX)};
 			// Handle the VM-Exit!
 			gpr.rax=vmread(cur_vmcb,GUEST_RAX);
 			gpr.rsp=vmread(cur_vmcb,GUEST_RSP);
 			decoder(vcpu);
 			handler(vcpu,&mut *stack);
-			vmwrite((*vcpu).vmcb.virt,GUEST_RAX,gpr.rax);
+			vmwrite(vcpu.vmcb.virt,GUEST_RAX,gpr.rax);
 			// The rax in GPR state should be the physical address of VMCB
 			// in order to execute the vmrun instruction properly.
 			// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.

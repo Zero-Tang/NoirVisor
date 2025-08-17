@@ -70,3 +70,5 @@ target/
 __pycache__/
 
 bin/
+tests/*.bxrc
+tests/ovmf*

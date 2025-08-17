@@ -212,6 +212,7 @@ impl SvmIommuManager
 			};
 			x.issue_cmd(cmd1);
 			x.issue_cmd(cmd2);
+			#[allow(clippy::while_immutable_condition)]
 			while signal==0
 			{
 				spin_loop();

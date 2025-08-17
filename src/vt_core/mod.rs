@@ -604,47 +604,44 @@ impl HypervisorEssentials for VtHypervisor
 			Some(md)=>
 			{
 				self.msr_bitmap=md;
-				unsafe
+				let set_interception=|index:u32,read:bool,write:bool|
 				{
-					let set_interception=|index:u32,write:bool|
-					{
-						let bmp=self.msr_bitmap.virt
-							.byte_add(if write {0x800} else {0})
-							.byte_add(if index>=0xC0000000 {0x400} else {0});
-						let i=if (0..0x2000).contains(&index) {index}
-							else if (0xC0000000..0xC0002000).contains(&index) {index-0xC0000000}
-							else
-							{
-								warn!("MSR (0x{index:X}) can't be intercepted via bitmap!");
-								return;
-							} as usize;
-						set_bitmap(bmp,0x400,i);
-					};
-					// Intercept accesses to the microcode updater.
-					set_interception(MSR_BIOS_UPDATE_TRIGGER,false);
-					set_interception(MSR_BIOS_UPDATE_TRIGGER,true);
-					// Intercept accesses to VMX MSRs.
-					set_interception(MSR_VMX_BASIC,false);
-					set_interception(MSR_VMX_PIN_BASED_CTLS,false);
-					set_interception(MSR_VMX_PROC_BASED_CTLS,false);
-					set_interception(MSR_VMX_EXIT_CTLS,false);
-					set_interception(MSR_VMX_ENTRY_CTLS,false);
-					set_interception(MSR_VMX_MISC,false);
-					set_interception(MSR_VMX_CR0_FIXED0,false);
-					set_interception(MSR_VMX_CR0_FIXED1,false);
-					set_interception(MSR_VMX_CR4_FIXED0,false);
-					set_interception(MSR_VMX_CR4_FIXED1,false);
-					set_interception(MSR_VMX_VMCS_ENUM,false);
-					set_interception(MSR_VMX_PROC_BASED_CTLS2,false);
-					set_interception(MSR_VMX_EPT_VPID_CAP,false);
-					set_interception(MSR_VMX_TRUE_PIN_BASED_CTLS,false);
-					set_interception(MSR_VMX_TRUE_PROC_BASED_CTLS,false);
-					set_interception(MSR_VMX_TRUE_EXIT_CTLS,false);
-					set_interception(MSR_VMX_TRUE_ENTRY_CTLS,false);
-					set_interception(MSR_VMX_VMFUNC,false);
-					set_interception(MSR_VMX_PROC_BASED_CTLS3,false);
-					set_interception(MSR_VMX_EXIT_CTLS2,false);
-				}
+					// Get bitmap position.
+					let i=if (0..0x2000).contains(&index) {index}
+						else if (0xC0000000..0xC0002000).contains(&index) {index-0xC0000000}
+						else
+						{
+							warn!("MSR (0x{index:X}) can't be intercepted via bitmap!");
+							return;
+						} as usize;
+					let bmp_r:&mut Bitmap<8192>=unsafe{Bitmap::from_raw_parts_mut(self.msr_bitmap.virt.byte_add(if index>=0xC0000000 {0x400} else {0}))};
+					let bmp_w:&mut Bitmap<8192>=unsafe{Bitmap::from_raw_parts_mut(self.msr_bitmap.virt.byte_add(if index>=0xC0000000 {0xC00} else {0x800}))};
+					bmp_r.assign(i,read);
+					bmp_w.assign(i,write);
+				};
+				// Intercept accesses to the microcode updater.
+				set_interception(MSR_BIOS_UPDATE_TRIGGER,true,true);
+				// Intercept accesses to VMX MSRs.
+				set_interception(MSR_VMX_BASIC,true,false);
+				set_interception(MSR_VMX_PIN_BASED_CTLS,true,false);
+				set_interception(MSR_VMX_PROC_BASED_CTLS,true,false);
+				set_interception(MSR_VMX_EXIT_CTLS,true,false);
+				set_interception(MSR_VMX_ENTRY_CTLS,true,false);
+				set_interception(MSR_VMX_MISC,true,false);
+				set_interception(MSR_VMX_CR0_FIXED0,true,false);
+				set_interception(MSR_VMX_CR0_FIXED1,true,false);
+				set_interception(MSR_VMX_CR4_FIXED0,true,false);
+				set_interception(MSR_VMX_CR4_FIXED1,true,false);
+				set_interception(MSR_VMX_VMCS_ENUM,true,false);
+				set_interception(MSR_VMX_PROC_BASED_CTLS2,true,false);
+				set_interception(MSR_VMX_EPT_VPID_CAP,true,false);
+				set_interception(MSR_VMX_TRUE_PIN_BASED_CTLS,true,false);
+				set_interception(MSR_VMX_TRUE_PROC_BASED_CTLS,true,false);
+				set_interception(MSR_VMX_TRUE_EXIT_CTLS,true,false);
+				set_interception(MSR_VMX_TRUE_ENTRY_CTLS,true,false);
+				set_interception(MSR_VMX_VMFUNC,true,false);
+				set_interception(MSR_VMX_PROC_BASED_CTLS3,true,false);
+				set_interception(MSR_VMX_EXIT_CTLS2,true,false);
 			}
 			None=>fail_cleanup!("Failed to alloate MSR-Bitmap!")
 		}

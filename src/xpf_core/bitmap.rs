@@ -10,43 +10,139 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::ffi::c_void;
+use core::{ffi::c_void,arch::asm};
+#[cfg(target_arch="x86_64")]
+use core::arch::x86_64::{_bittest64,_bittestandcomplement64,_bittestandreset64,_bittestandset64};
 
-/// # `set_bitmap` function
-/// This function sets a bit to 1 in a wide range of bitmap.
-/// # Safety
-/// Panics if the bit position exceeds the limit.
-pub unsafe fn set_bitmap(bitmap:*mut c_void,limit:usize,bit_position:usize)
+pub struct Bitmap<const N:usize>;
+
+impl<'a,const N:usize> Bitmap<N>
 {
-	assert!((bit_position>>3)<limit,"The set-bitmap operation exceeded the limit! Bit Position: {bit_position}, Limit: {limit} bytes");
-	let bmp:*mut u32=bitmap.cast();
-	let i=bit_position>>5;
-	let j=bit_position&0x1F;
-	unsafe{*bmp.add(i)|=1<<j;}
+	/// ## `from_raw_parts` method
+	/// `ptr` specifies the pointer to the bitmap base.
+	/// 
+	/// ## Safety
+	/// You should guarantee `ptr` is at least aligned to pointer granularity. \
+	/// Otherwise, panic may happen during bitmap operations.
+	pub const unsafe fn from_raw_parts(ptr:*const c_void)->&'a Self
+	{
+		unsafe
+		{
+			&*ptr.cast()
+		}
+	}
+
+	/// ## `from_raw_parts_mut` method
+	/// `ptr` specifies the pointer to the bitmap base.
+	/// 
+	/// ## Safety
+	/// You should guarantee `ptr` is at least aligned to pointer granularity. \
+	/// Otherwise, panic may happen during bitmap operations.
+	pub const unsafe fn from_raw_parts_mut(ptr:*mut c_void)->&'a mut Self
+	{
+		unsafe
+		{
+			&mut *ptr.cast()
+		}
+	}
 }
 
-/// # `reset_bitmap` function
-/// This function resets a bit to 0 in a wide range of bitmap.
-/// # Safety
-/// Panics if the bit position exceeds the limit.
-pub unsafe fn reset_bitmap(bitmap:*mut c_void,limit:usize,bit_position:usize)
+impl<const N:usize> Bitmap<N>
 {
-	assert!((bit_position>>3)<limit,"The reset-bitmap operation exceeded the limit! Bit Position: {bit_position}, Limit: {limit} bytes");
-	let bmp:*mut u32=bitmap.cast();
-	let i=bit_position>>5;
-	let j=bit_position&0x1F;
-	unsafe{*bmp.add(i)&=!(1<<j);}
-}
+	pub fn test(&self,position:usize)->bool
+	{
+		#[cfg(target_arch="x86_64")]
+		{
+			let bmp:*const i64=(&raw const *self).cast();
+			unsafe
+			{
+				_bittest64(bmp,position as i64)!=0
+			}
+		}
+	}
 
-/// # `test_bitmap` function
-/// This function tests a bit in a wide range of bitmap.
-/// # Safety
-/// Panics if the bit position exceeds the limit.
-pub unsafe fn test_bitmap(bitmap:*const c_void,limit:usize,bit_position:usize)->bool
-{
-	assert!((bit_position>>3)<limit,"The test-bitmap operation exceeded the limit! Bit Position: {bit_position}, Limit: {limit} bytes");
-	let bmp:*const u32=bitmap.cast();
-	let i=bit_position>>5;
-	let j=bit_position&0x1F;
-	unsafe{bmp.add(i).read()&(1<<j)!=0}
+	pub fn set(&mut self,position:usize)->bool
+	{
+		#[cfg(target_arch="x86_64")]
+		{
+			let bmp:*mut i64=(&raw mut *self).cast();
+			unsafe
+			{
+				_bittestandset64(bmp,position as i64)!=0
+			}
+		}
+	}
+
+	pub fn reset(&mut self,position:usize)->bool
+	{
+		#[cfg(target_arch="x86_64")]
+		{
+			let bmp:*mut i64=(&raw mut *self).cast();
+			unsafe
+			{
+				_bittestandreset64(bmp,position as i64)!=0
+			}
+		}
+	}
+
+	pub fn complement(&mut self,position:usize)->bool
+	{
+		#[cfg(target_arch="x86_64")]
+		{
+			let bmp:*mut i64=(&raw mut *self).cast();
+			unsafe
+			{
+				_bittestandcomplement64(bmp,position as i64)!=0
+			}
+		}
+	}
+
+	pub fn assign(&mut self,position:usize,value:bool)->bool
+	{
+		#[cfg(target_arch="x86_64")]
+		{
+			let bmp:*mut i64=(&raw mut *self).cast();
+			unsafe
+			{
+				if value
+				{
+					_bittestandset64(bmp,position as i64)!=0
+				}
+				else
+				{
+					_bittestandreset64(bmp,position as i64)!=0
+				}
+			}
+		}
+	}
+
+	pub fn search_cleared_forward(&self)->Option<usize>
+	{
+		#[cfg(target_arch="x86_64")]
+		{
+			let bmp:*const u64=(&raw const *self).cast();
+			let lim=N>>6;
+			for i in 0..lim
+			{
+				let j:u64;
+				let b:u8;
+				unsafe
+				{
+					asm!
+					(
+						"bsf {r},{v}",
+						"setz {zf}",
+						v=in(reg) !bmp.add(i).read(),
+						r=out(reg) j,
+						zf=out(reg_byte) b
+					);
+				}
+				if b==0
+				{
+					return Some(j as usize);
+				}
+			}
+			None
+		}
+	}
 }
