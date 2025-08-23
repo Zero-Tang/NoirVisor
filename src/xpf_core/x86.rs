@@ -13,7 +13,7 @@
 pub mod caching
 {
     use super::{cpuid::*,msr::*};
-	use crate::xpf_core::{asm::{msr::rdmsr,cpuid::cpuid2}, nvbdk::{page_1gb_offset, page_2mb_offset, page_4kb_mult, PAGE_1GB_SIZE, PAGE_2MB_SIZE, PAGE_4KB_SIZE}};
+	use crate::xpf_core::{asm::msr::rdmsr, nvbdk::{page_1gb_offset, page_2mb_offset, page_4kb_mult, PAGE_1GB_SIZE, PAGE_2MB_SIZE, PAGE_4KB_SIZE}};
 
 	use log::*;
 	use bitfield_struct::bitfield;
@@ -324,8 +324,8 @@ pub mod caching
 			self.fixed_mtrrs=None;
 			self.var_mtrrs=[const{None};16];
 			self.smrr=None;
-			let (a,_,_,_)=cpuid2(CPUID_EXT_PROCESSOR_CAPABILITY_PARAMETERS_EXTENDED_ID,0);
-			let pa_width=(a&0xff) as u64;
+			let cap_params=ProcessorCapabilityParameters::cpuid();
+			let pa_width=cap_params.phys_addr_size() as u64;
 			self.max_pa=1<<pa_width;
 			if mtrr_def.enabled()
 			{
@@ -1130,6 +1130,11 @@ use paste::paste;
 
 pub mod cpuid
 {
+    use core::{arch::x86_64::{CpuidResult, __cpuid, __cpuid_count}, mem::MaybeUninit, slice};
+
+	use bitfield_struct::bitfield;
+	use log::*;
+
 	// Standard Leaf
 	pub const CPUID_STD_MAX_NUMBER_VENDOR_STRING:u32=0x0;
 	pub const CPUID_STD_PROCESSOR_FEATURE:u32=0x1;
@@ -1156,6 +1161,774 @@ pub mod cpuid
 	pub const CPUID_SSE:u32=1<<25;
 	/// Use this flag for CPUID[EAX=0x80000001].EDX
 	pub const CPUID_1GB_PAGE:u32=0x4000000;
+
+
+	/// The `CpuidLeaf` trait abstracts a certain `cpuid` leaf of the CPU. \
+	/// You must implement `LEAF_INDEX`, `SUBLEAF_INDEX` and `init` method.
+	/// 
+	/// The `cpuid` method is provided by this trait so that you may obtain info from the current processor. \
+	/// You must not implement the `cpuid` method on your own!
+	/// 
+	/// You may derive required constants and method with `derive_cpuid_trait!` macro,
+	/// albeit there're certain requirements to derive implementation of this trait.
+	pub trait CpuidLeaf
+	{
+		const LEAF_INDEX:u32;
+		const SUBLEAF_INDEX:Option<u32>;
+
+		/// The `init` method is a required method to initialize the leaf. \
+		/// This method will be called only once per `cpuid` method. \
+		/// All fields in `self` before the `init` method is called are undefined. \
+		/// You must ensure no fields of `self` are still undefined after `init`.
+		fn init(&mut self,result:&CpuidResult);
+		/// The `as_result` will convert the leaf back to the four raw registers.
+		fn as_result(&self)->CpuidResult;
+
+		/// The `cpuid` method queries the processor info with the given `LEAF_INDEX` and `SUBLEAF_INDEX`. \
+		/// Do not implement this method. You must always use the provided method!
+		fn cpuid()->Self where Self:Sized
+		{
+			let r:CpuidResult=unsafe
+			{
+				match Self::SUBLEAF_INDEX
+				{
+					Some(subleaf)=>__cpuid_count(Self::LEAF_INDEX,subleaf),
+					None=>__cpuid(Self::LEAF_INDEX)
+				}
+			};
+			let mut s:MaybeUninit<Self>=MaybeUninit::uninit();
+			unsafe
+			{
+				s.assume_init_mut().init(&r);
+				s.assume_init()
+			}
+		}
+	}
+
+	/// The `CoalescedCpuidLeaf` trait abstracts information that must be queried via multiple leaves. \
+	/// You must implement `LEAF_INDICES` and `init` method. `pre_init` and `post_init` are not required.
+	pub trait CoalescedCpuidLeaf<const N:usize>
+	{
+		const LEAF_INDICES:[(u32,Option<u32>);N];
+
+		/// The `init` method is a required method to intiailize the leaf. \
+		/// This method will be called for `N` times per `cpuid` method. \
+		/// All fields in `self` before `init` method is called are initialized
+		/// to the extent of how `pre_init` method is implemented.
+		fn init(&mut self,index:usize,result:&CpuidResult);
+		/// The `pre_init` method is an optioal method to initialize the leaf. \
+		/// The method will be called only once per `cpuid` method and it's called before any `init`. \
+		/// All fields in `self` before `init` method is called are undefined. \
+		/// You must ensure fields are initialized to the extent that `init` can run properly.
+		fn pre_init(&mut self) {}
+		/// The `post_init` method is an optional method to initialize the leaf. \
+		/// The method will be called only once per `cpuid` method and it's called after any `init`. \
+		/// You must ensure no fields in `self` are undefined after `post_init`!
+		fn post_init(&mut self) {}
+		/// The `as_results` method will convert the leaves back to raw registers.
+		fn as_results(&self)->[CpuidResult;N];
+
+		/// The `cpuid` method queries the processor info with the given `LEAF_INDICES`. \
+		/// Do not implement this method. You must always use the provided method!
+		fn cpuid()->Self where Self:Sized
+		{
+			let mut s:MaybeUninit<Self>=MaybeUninit::uninit();
+			unsafe
+			{
+				s.assume_init_mut().pre_init();
+			}
+			for (i,(a,c)) in Self::LEAF_INDICES.iter().enumerate()
+			{
+				unsafe
+				{
+					let r:CpuidResult=match c
+					{
+						Some(c)=>__cpuid_count(*a,*c),
+						None=>__cpuid(*a)
+					};
+					s.assume_init_mut().init(i,&r);
+				}
+			}
+			unsafe
+			{
+				s.assume_init_mut().post_init();
+				s.assume_init()
+			}
+		}
+	}
+
+	/// To derive `CpuidLeaf` trait with `derive_cpuid_trait` macro, your structure must
+	/// have `a`, `b` `c`, `d` being defined as `bitfield_struct(u32)`. \
+	/// You must also import `core::{slice,arch::x86_64::CpuidResult}` to use this macro!
+	#[macro_export] macro_rules! derive_cpuid_trait
+	{
+		($type:ty,$leaf:expr,$subleaf:expr)=>
+		{
+			impl CpuidLeaf for $type
+			{
+				const LEAF_INDEX:u32=$leaf;
+				const SUBLEAF_INDEX:Option<u32>=$subleaf;
+
+				fn init(&mut self,result:&CpuidResult)
+				{
+					let s:&mut [u32]=unsafe{slice::from_raw_parts_mut((&raw mut self.0).cast(),4)};
+					s[0]=result.eax;
+					s[1]=result.ebx;
+					s[2]=result.ecx;
+					s[3]=result.edx;
+				}
+
+				fn as_result(&self)->CpuidResult
+				{
+					let s:&[u32]=unsafe{slice::from_raw_parts((&raw const self.0).cast(),4)};
+					CpuidResult
+					{
+						eax:s[0],
+						ebx:s[1],
+						ecx:s[2],
+						edx:s[3]
+					}
+				}
+			}
+		};
+	}
+
+	pub struct MaxStandardLeafAndVendorString
+	{
+		pub max_leaf:u32,
+		vendor_string:[u8;12]
+	}
+
+	impl MaxStandardLeafAndVendorString
+	{
+		pub fn vendor_name(&self)->&str
+		{
+			unsafe
+			{
+				str::from_utf8_unchecked(&self.vendor_string)
+			}
+		}
+	}
+
+	impl CpuidLeaf for MaxStandardLeafAndVendorString
+	{
+		const LEAF_INDEX:u32=0x00000000;
+		const SUBLEAF_INDEX:Option<u32>=None;
+		
+		fn init(&mut self,result:&CpuidResult)
+		{
+			self.max_leaf=result.eax;
+			self.vendor_string[0..0x4].copy_from_slice(&result.ebx.to_le_bytes());
+			self.vendor_string[4..0x8].copy_from_slice(&result.edx.to_le_bytes());
+			self.vendor_string[8..0xC].copy_from_slice(&result.ecx.to_le_bytes());
+		}
+
+		fn as_result(&self)->CpuidResult
+		{
+			let s:&[u32]=unsafe{slice::from_raw_parts(self.vendor_string.as_ptr().cast(),3)};
+			CpuidResult
+			{
+				eax:self.max_leaf,
+				ebx:s[0],
+				ecx:s[1],
+				edx:s[2]
+			}
+		}
+	}
+
+	#[bitfield(u128)] pub struct StandardProcessorFeatureIdentifiers
+	{
+		#[bits(4)] pub stepping:u32,
+		#[bits(4)] pub base_model:u32,
+		#[bits(4)] pub base_family:u32,
+		#[bits(4)] rsvd0:u32,
+		#[bits(4)] pub ext_model:u32,
+		pub ext_family:u8,
+		#[bits(4)] rsvd1:u32,
+		pub brand_id:u8,
+		pub clflush_size:u8,
+		pub logical_cpu_count:u8,
+		pub local_apic_id:u8,
+		pub sse3:bool,
+		pub pclmulqdq:bool,
+		pub dtes64:bool,
+		pub monitor:bool,
+		pub ds_cpl:bool,
+		pub vmx:bool,
+		pub smx:bool,
+		pub eist:bool,
+		pub tm2:bool,
+		pub ssse3:bool,
+		pub l1_ctxt_id:bool,
+		pub sdbg:bool,
+		pub fma:bool,
+		pub cmpxchg16b:bool,
+		pub xtpr_update_ctrl:bool,
+		pub pdcm:bool,
+		rsvd2:bool,
+		pub pcid:bool,
+		pub dca:bool,
+		pub sse41:bool,
+		pub sse42:bool,
+		pub x2apic:bool,
+		pub movbe:bool,
+		pub popcnt:bool,
+		pub tsc_deadline:bool,
+		pub aes:bool,
+		pub xsave:bool,
+		pub osxsave:bool,
+		pub avx:bool,
+		pub f16c:bool,
+		pub rdrand:bool,
+		pub hypervisor:bool,
+		pub fpu:bool,
+		pub vme:bool,
+		pub de:bool,
+		pub pse:bool,
+		pub tsc:bool,
+		pub msr:bool,
+		pub pae:bool,
+		pub mce:bool,
+		pub cmpxchg8b:bool,
+		pub apic:bool,
+		rsvd3:bool,
+		pub sysenter_sysexit:bool,
+		pub mtrr:bool,
+		pub pge:bool,
+		pub mca:bool,
+		pub cmov:bool,
+		pub pat:bool,
+		pub pse36:bool,
+		rsvd6:bool,
+		pub clflush:bool,
+		#[bits(3)] rsvd4:u32,
+		pub mmx:bool,
+		pub fxsr:bool,
+		pub sse:bool,
+		pub sse2:bool,
+		rsvd8:bool,
+		pub htt:bool,
+		#[bits(3)] rsvd5:u32
+	}
+
+	derive_cpuid_trait!(StandardProcessorFeatureIdentifiers,1,None);
+
+	#[bitfield(u128)] pub struct MonitorMwaitIdentifiers
+	{
+		pub smallest_monitor_line_size:u16,
+		rsvd0:u16,
+		pub largest_monitor_line_size:u16,
+		rsvd1:u16,
+		pub emx:bool,
+		pub ibe:bool,
+		#[bits(62)] rsvd2:u128
+	}
+
+	derive_cpuid_trait!(MonitorMwaitIdentifiers,5,None);
+
+	#[bitfield(u128)] pub struct PowerManagementFeatures
+	{
+		#[bits(2)] rsvd0:u128,
+		pub arat:bool,
+		#[bits(61)] rsvd1:u128,
+		pub eff_freq:bool,
+		#[bits(63)] rsvd2:u128,
+	}
+
+	derive_cpuid_trait!(PowerManagementFeatures,6,None);
+
+	#[bitfield(u128)] pub struct StructuredExtendedFeatures0
+	{
+		pub max_sub_fn:u32,
+		pub fsgsbase:bool,
+		pub tsc_adjust:bool,
+		rsvd0:bool,
+		pub bmi1:bool,
+		rsvd1:bool,
+		pub avx2:bool,
+		rsvd2:bool,
+		pub smep:bool,
+		pub bmi2:bool,
+		pub erms:bool,
+		pub invpcid:bool,
+		rsvd3:bool,
+		pub pqm:bool,
+		#[bits(2)] rsvd4:u32,
+		pub pqe:bool,
+		pub avx512f:bool,
+		pub avx512dq:bool,
+		pub rdseed:bool,
+		pub adx:bool,
+		pub smap:bool,
+		pub avx512_ifma:bool,
+		rsvd5:bool,
+		pub clflushopt:bool,
+		pub clwb:bool,
+		#[bits(3)] rsvd6:u32,
+		pub avx512cd:bool,
+		pub sha:bool,
+		pub avx512bw:bool,
+		pub avx512vl:bool,
+		rsvd7:bool,
+		pub avx512_vbmi:bool,
+		pub umip:bool,
+		pub pku:bool,
+		pub ospke:bool,
+		rsvd8:bool,
+		pub avx512_vbmi2:bool,
+		pub cet_ss:bool,
+		pub gfni:bool,
+		pub vaes:bool,
+		pub vpcmulqdq:bool,
+		pub avx512_vnni:bool,
+		pub avx512_bitalg:bool,
+		rsvd9:bool,
+		pub avx512_vpopcntdq:bool,
+		rsvd10:bool,
+		pub la57:bool,
+		#[bits(5)] rsvd11:u32,
+		pub rdpid:bool,
+		rsvd12:bool,
+		pub buslock_trap:bool,
+		#[bits(2)] rsvd13:u32,
+		pub movdiri:bool,
+		pub movdir64b:bool,
+		#[bits(3)] rsvd14:u32,
+		rsvd15:u32
+	}
+
+	derive_cpuid_trait!(StructuredExtendedFeatures0,7,Some(0));
+	
+	#[bitfield(u128)] pub struct StructuredExtendedFeatures1
+	{
+		#[bits(4)] rsvd0:u32,
+		pub avx_vnni:bool,
+		pub avx512_bf16:bool,
+		#[bits(122)] rsvd1:u128
+	}
+
+	derive_cpuid_trait!(StructuredExtendedFeatures1,7,Some(1));
+
+	#[bitfield(u32)] pub struct ExtendedTopologyEnumerationEax
+	{
+		#[bits(5)] pub mask_width:u32,
+		#[bits(27)] rsvd:u32
+	}
+
+	#[bitfield(u32)] pub struct ExtendedTopologyEnumerationEbx
+	{
+		pub logical_units:u16,
+		rsvd:u16
+	}
+
+	#[bitfield(u32)] pub struct ExtendedTopologyEnumerationEcx
+	{
+		pub input_ecx:u8,
+		pub hierarchy_level:u8,
+		rsvd:u16
+	}
+	
+	#[bitfield(u32)] pub struct ExtendedTopologyEnumerationEdx
+	{
+		pub x2apic_id:u32
+	}
+
+	pub struct ExtendedTopologyEnumeration<const N:u32>
+	{
+		pub a:ExtendedTopologyEnumerationEax,
+		pub b:ExtendedTopologyEnumerationEbx,
+		pub c:ExtendedTopologyEnumerationEcx,
+		pub d:ExtendedTopologyEnumerationEdx
+	}
+
+	impl<const N:u32> CpuidLeaf for ExtendedTopologyEnumeration<N>
+	{
+		const LEAF_INDEX:u32=0xB;
+		const SUBLEAF_INDEX:Option<u32>=Some(N);
+
+		fn init(&mut self,result:&CpuidResult)
+		{
+			self.a.0=result.eax;
+			self.b.0=result.ebx;
+			self.c.0=result.ecx;
+			self.d.0=result.edx;
+		}
+
+		fn as_result(&self)->CpuidResult
+		{
+			CpuidResult
+			{
+				eax:self.a.0,
+				ebx:self.b.0,
+				ecx:self.c.0,
+				edx:self.d.0
+			}
+		}
+	}
+
+	#[bitfield(u128)] pub struct ExtendedStateEnumeration0
+	{
+		pub mask:u64,
+		pub size:u64
+	}
+
+	derive_cpuid_trait!(ExtendedStateEnumeration0,0xD,Some(0));
+
+	#[bitfield(u128)] pub struct ExtendedStateEnumeration1
+	{
+		pub xsaveopt:bool,
+		pub xsavec:bool,
+		pub xgetbv:bool,
+		pub xsaves:bool,
+		#[bits(28)] rsvd0:u32,
+		pub fixed_xstate_size:u32,
+		#[bits(11)] rsvd1:u32,
+		pub cet_u:bool,
+		pub cet_s:bool,
+		#[bits(19)] rsvd2:u32,
+		pub rsvd3:u32
+	}
+
+	derive_cpuid_trait!(ExtendedStateEnumeration1,0xD,Some(1));
+
+	pub struct ExtendedStateEnumerationN<const N:u32>
+	{
+		pub size:u32,
+		pub offset:u32,
+		pub rsvd_c:u32,
+		pub rsvd_d:u32
+	}
+
+	impl<const N:u32> CpuidLeaf for ExtendedStateEnumerationN<N>
+	{
+		const LEAF_INDEX:u32=0xD;
+		const SUBLEAF_INDEX:Option<u32>=Some(N);
+		
+		fn init(&mut self,result:&CpuidResult)
+		{
+			assert!(N>=0x2 && N<=0x3E);
+			self.size=result.eax;
+			self.offset=result.ebx;
+			self.rsvd_c=result.ecx;
+			self.rsvd_d=result.edx;
+		}
+
+		fn as_result(&self)->CpuidResult
+		{
+			CpuidResult
+			{
+				eax:self.size,
+				ebx:self.offset,
+				ecx:self.rsvd_c,
+				edx:self.rsvd_d
+			}
+		}
+	}
+
+	pub struct MaxExtendedLeafAndVendorString
+	{
+		pub max_leaf:u32,
+		vendor_string:[u8;12]
+	}
+
+	impl MaxExtendedLeafAndVendorString
+	{
+		pub fn vendor_name(&self)->&str
+		{
+			unsafe
+			{
+				str::from_utf8_unchecked(&self.vendor_string)
+			}
+		}
+	}
+
+	impl CpuidLeaf for MaxExtendedLeafAndVendorString
+	{
+		const LEAF_INDEX:u32=0x80000000;
+		const SUBLEAF_INDEX:Option<u32>=None;
+		
+		fn init(&mut self,result:&CpuidResult)
+		{
+			self.max_leaf=result.eax;
+			self.vendor_string[0..0x4].copy_from_slice(&result.ebx.to_le_bytes());
+			self.vendor_string[4..0x8].copy_from_slice(&result.edx.to_le_bytes());
+			self.vendor_string[8..0xC].copy_from_slice(&result.ecx.to_le_bytes());
+		}
+
+		fn as_result(&self)->CpuidResult
+		{
+			let s:&[u32]=unsafe{slice::from_raw_parts(self.vendor_string.as_ptr().cast(),3)};
+			CpuidResult
+			{
+				eax:self.max_leaf,
+				ebx:s[0],
+				ecx:s[1],
+				edx:s[2]
+			}
+		}
+	}
+
+	#[bitfield(u128)] pub struct ExtendedFeatureIdentifier
+	{
+		#[bits(4)] pub stepping:u32,
+		#[bits(4)] pub base_model:u32,
+		#[bits(4)] pub base_family:u32,
+		#[bits(4)] rsvd0:u32,
+		#[bits(4)] pub ext_model:u32,
+		pub ext_family:u8,
+		#[bits(4)] rsvd1:u32,
+		pub brand_id:u16,
+		#[bits(12)] rsvd2:u32,
+		#[bits(4)] pub pkg_type:u32,
+		pub lahf_sahf:bool,
+		pub cmp_legacy:bool,
+		pub svm:bool,
+		pub ext_apic_space:bool,
+		pub alt_mov_cr8:bool,
+		pub abm:bool,
+		pub sse4a:bool,
+		pub misalign_sse:bool,
+		pub prefetch_3dnow:bool,
+		pub osvw:bool,
+		pub ibs:bool,
+		pub xop:bool,
+		pub skinit:bool,
+		pub wdt:bool,
+		rsvd3:bool,
+		pub lwp:bool,
+		pub fma4:bool,
+		pub tce:bool,
+		#[bits(3)] rsvd4:u32,
+		pub tbm:bool,
+		pub topology_extensions:bool,
+		pub perf_ctrl_ext_core:bool,
+		pub perf_crtl_ext_nb:bool,
+		rsvd5:bool,
+		pub data_bkpt_ext:bool,
+		pub perf_tsc:bool,
+		pub perf_ctrl_ext_llc:bool,
+		pub monitorx:bool,
+		pub addr_mask_ext:bool,
+		rsvd6:bool,
+		pub fpu:bool,
+		pub vme:bool,
+		pub de:bool,
+		pub pse:bool,
+		pub tsc:bool,
+		pub msr:bool,
+		pub pae:bool,
+		pub mce:bool,
+		pub cmpxchg8b:bool,
+		pub apic:bool,
+		rsvd7:bool,
+		pub syscall_sysret:bool,
+		pub mtrr:bool,
+		pub pge:bool,
+		pub mca:bool,
+		pub cmov:bool,
+		pub pat:bool,
+		pub pse36:bool,
+		#[bits(2)] rsvd8:u32,
+		pub nx:bool,
+		rsvd9:bool,
+		pub mmx_ext:bool,
+		pub mmx:bool,
+		pub fxsr:bool,
+		pub fast_fxsr:bool,
+		pub page_1gb:bool,
+		pub rdtscp:bool,
+		rsvd10:bool,
+		pub long_mode:bool,
+		pub amd_3dnow_ext:bool,
+		pub amd_3dnow:bool
+	}
+
+	derive_cpuid_trait!(ExtendedFeatureIdentifier,0x80000001,None);
+
+	pub struct ProcessorBrandString
+	{
+		len:usize,
+		pub buffer:[u8;0x30]
+	}
+
+	impl ProcessorBrandString
+	{
+		pub fn brand_string(&self)->&str
+		{
+			unsafe
+			{
+				str::from_utf8_unchecked(&self.buffer[..self.len])
+			}
+		}
+	}
+
+	impl CoalescedCpuidLeaf<3> for ProcessorBrandString
+	{
+		const LEAF_INDICES:[(u32,Option<u32>);3]=[(0x80000002,None),(0x80000003,None),(0x80000004,None)];
+
+		fn init(&mut self,index:usize,result:&CpuidResult)
+		{
+			let s:&mut [u32]=unsafe{slice::from_raw_parts_mut(self.buffer.as_mut_ptr().cast(),12)};
+			s[index<<2]=result.eax;
+			s[(index<<2)+1]=result.ebx;
+			s[(index<<2)+2]=result.ecx;
+			s[(index<<2)+3]=result.edx;
+		}
+
+		fn post_init(&mut self)
+		{
+			self.len=match self.buffer.iter().position(|&x| x==0)
+			{
+				Some(l)=>l,
+				None=>self.buffer.len()
+			};
+		}
+
+		fn as_results(&self)->[CpuidResult;3]
+		{
+			let s:&[u32]=unsafe{slice::from_raw_parts(self.buffer.as_ptr().cast(),12)};
+			[
+				CpuidResult{eax:s[0x0],ebx:s[0x1],ecx:s[0x2],edx:s[0x3]},
+				CpuidResult{eax:s[0x5],ebx:s[0x6],ecx:s[0x6],edx:s[0x7]},
+				CpuidResult{eax:s[0x9],ebx:s[0xA],ecx:s[0xB],edx:s[0xB]}
+			]
+		}
+	}
+
+	#[bitfield(u32)] pub struct L1TlbInfo
+	{
+		pub i_entries:u8,
+		pub i_associativity:u8,
+		pub d_entries:u8,
+		pub d_associativity:u8
+	}
+
+	#[bitfield(u32)] pub struct L1CacheInfo
+	{
+		pub line_size:u8,
+		pub lines_per_tag:u8,
+		pub associativity:u8,
+		pub size_kb:u8,
+	}
+
+	#[bitfield(u32)] pub struct L2TlbInfo
+	{
+		#[bits(12)] pub i_entries:u32,
+		#[bits(4)] pub i_associativity:u32,
+		#[bits(12)] pub d_entries:u32,
+		#[bits(4)] pub d_associativity:u32,
+	}
+
+	#[bitfield(u32)] pub struct L2CacheInfo
+	{
+		pub line_size:u8,
+		#[bits(4)] lines_per_tag:u32,
+		#[bits(4)] associativity:u32,
+		pub size_kb:u16
+	}
+
+	#[bitfield(u32)] pub struct L3CacheInfo
+	{
+		pub line_size:u8,
+		#[bits(4)] lines_per_tag:u32,
+		#[bits(4)] associativity:u32,
+		#[bits(2)] rsvd:u32,
+		#[bits(14)] pub size_kb:u32
+	}
+
+	pub struct CacheAndTlbInformation
+	{
+		pub l1_large_tlb:L1TlbInfo,
+		pub l1_small_tlb:L1TlbInfo,
+		pub l1d_cache:L1CacheInfo,
+		pub l1i_cache:L1CacheInfo,
+		pub l2_large_tlb:L2TlbInfo,
+		pub l2_small_tlb:L2TlbInfo,
+		pub l2_cache:L2CacheInfo,
+		pub l3_cache:L3CacheInfo
+	}
+
+	impl CoalescedCpuidLeaf<2> for CacheAndTlbInformation
+	{
+		const LEAF_INDICES:[(u32,Option<u32>);2]=[(0x80000005,None),(0x80000006,None)];
+
+		fn init(&mut self,index:usize,result:&CpuidResult)
+		{
+			match index
+			{
+				0=>
+				{
+					self.l1_large_tlb.0=result.eax;
+					self.l1_small_tlb.0=result.ebx;
+					self.l1d_cache.0=result.ecx;
+					self.l1i_cache.0=result.edx;
+				}
+				1=>
+				{
+					self.l2_large_tlb.0=result.eax;
+					self.l2_small_tlb.0=result.ebx;
+					self.l2_cache.0=result.ecx;
+					self.l3_cache.0=result.edx;
+				}
+				_=>warn!("Unrecognized index 0x{index:X} while enumerating Cache and TLB Information in CPUID!")
+			}
+		}
+
+		fn as_results(&self)->[CpuidResult;2]
+		{
+			[
+				CpuidResult{eax:self.l1_large_tlb.0,ebx:self.l1_small_tlb.0,ecx:self.l1d_cache.0,edx:self.l1i_cache.0},
+				CpuidResult{eax:self.l2_large_tlb.0,ebx:self.l2_small_tlb.0,ecx:self.l2_cache.0,edx:self.l3_cache.0}
+			]
+		}
+	}
+
+	#[bitfield(u128)] pub struct ProcessorCapabilityParameters
+	{
+		pub phys_addr_size:u8,
+		pub virt_addr_size:u8,
+		pub guest_phys_addr_size:u8,
+		rsvd0:u8,
+		pub clzero:bool,
+		pub inst_retire_count_msr:bool,
+		pub restore_fp_err_ptr:bool,
+		pub invlpgb:bool,
+		pub rdpru:bool,
+		rsvd1:bool,
+		pub be:bool,
+		rsvd2:bool,
+		pub mcommit:bool,
+		pub wbnoinvd:bool,
+		#[bits(2)] rsvd3:u128,
+		pub ibpb:bool,
+		pub int_wbinvd:bool,
+		pub ibrs:bool,
+		pub stibp:bool,
+		pub ibrs_always_on:bool,
+		pub stibp_always_on:bool,
+		pub ibrs_preferred:bool,
+		pub ibrs_same_mode:bool,
+		pub efer_lmsle_unsupported:bool,
+		pub invlpgb_nested:bool,
+		#[bits(2)] rsvd4:u128,
+		pub ssbd:bool,
+		pub ssbd_virt_spec_ctrl:bool,
+		pub ssbd_not_required:bool,
+		pub cppc:bool,
+		pub psfd:bool,
+		pub btc_no:bool,
+		pub ibpb_ret:bool,
+		rsvd5:bool,
+		pub phys_threads:u8,
+		#[bits(4)] rsvd6:u128,
+		#[bits(4)] pub apic_id_size:u8,
+		#[bits(2)] pub perf_tsc_size:u32,
+		#[bits(14)] rsvd7:u128,
+		pub invlpgb_count_max:u16,
+		pub max_rdpru_id:u16
+	}
+
+	derive_cpuid_trait!(ProcessorCapabilityParameters,0x80000008,None);
 }
 
 pub mod rflags

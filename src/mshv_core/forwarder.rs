@@ -10,12 +10,12 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{str, sync::atomic::{AtomicU64, Ordering}};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use log::*;
 
 use super::{msr::HV_X64_MSR_HYPERCALL,cpuid::*};
-use crate::xpf_core::{asm::{cpuid::cpuid2, msr::rdmsr}, nvbdk::{noir_find_virt_by_phys, page_4kb_base, GprState, VolatileXmmState, PAGE_SIZE}, x86::cpuid::CPUID_STD_PROCESSOR_FEATURE};
+use crate::xpf_core::{asm::msr::rdmsr, nvbdk::{noir_find_virt_by_phys, page_4kb_base, GprState, VolatileXmmState, PAGE_SIZE}, x86::cpuid::{CpuidLeaf, StandardProcessorFeatureIdentifiers}};
 
 #[unsafe(no_mangle)] static MSHV_HVCALL_VA:AtomicU64=AtomicU64::new(0);
 
@@ -60,19 +60,14 @@ impl MshvCallForwarder
 {
 	pub fn new()->Option<Self>
 	{
-		let (_,_,c,_)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
-		if (c&0x80000000)==0x80000000
+		let cpu_feat_id=StandardProcessorFeatureIdentifiers::cpuid();
+		if cpu_feat_id.hypervisor()
 		{
-			let (_,b,c,d)=cpuid2(CPUID_LEAF_RANGE_AND_VENDOR_STRING,0);
-			let mut hv_vendor:[u8;12]=[0;12];
-			hv_vendor[..4].copy_from_slice(&b.to_le_bytes());
-			hv_vendor[4..8].copy_from_slice(&c.to_le_bytes());
-			hv_vendor[8..].copy_from_slice(&d.to_le_bytes());
-			let hv_vendor_name=unsafe{str::from_utf8_unchecked(&hv_vendor)};
-			let (a,_,_,_)=cpuid2(CPUID_VENDOR_NEUTRAL_INTERFACE_ID,0);
-			let sig_buff:[u8;4]=a.to_le_bytes();
-			let sig_name=unsafe{str::from_utf8_unchecked(&sig_buff)};
-			debug!("Higher-Level Hypervisor is detected from CPUID! Vendor: {hv_vendor_name}, Signature: {sig_name}/{sig_buff:02X?}");
+			let hv_vendor=MaxHypervisorLeafAndVendorString::cpuid();
+			let hv_vendor_name=hv_vendor.vendor_name();
+			let if_name=HypervisorVendorNeutralInterface::cpuid();
+			let sig_name=if_name.interface_name();
+			debug!("Higher-Level Hypervisor is detected from CPUID! Vendor: {hv_vendor_name}, Signature: {sig_name}");
 			if sig_name=="Hv#1"
 			{
 				let phys=page_4kb_base(rdmsr(HV_X64_MSR_HYPERCALL));

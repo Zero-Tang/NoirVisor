@@ -13,8 +13,9 @@
 use core::{arch::x86_64::_bittest, fmt::{self,Display}, ops::{BitAndAssign, BitOrAssign}};
 
 use bitfield_struct::bitfield;
+use paste::paste;
 
-use crate::{xpf_core::{asm::vt::*, x86::{crdr::DR6_BS, interrupts::EventType, rflags::RFLAGS_TF_BIT}},*};
+use crate::{vt_core::VtVcpu, xpf_core::{asm::vt::*, x86::{crdr::DR6_BS, interrupts::EventType, rflags::RFLAGS_TF_BIT}}, *};
 
 // 16-Bit Control Fields
 pub const GUEST_VPID:usize=0x0;
@@ -247,40 +248,111 @@ pub struct VmcsSegment
 	};
 }
 
-#[inline] pub unsafe fn advance_rip()
+// Used as LazyCell-like indicators.
+#[bitfield(u64)] struct ValidExitFields
 {
-	unsafe
-	{
-		let ins_len=vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap();
-		advance_rip_manually(ins_len);
-	}
+	rflags:bool,
+	cs_ar:bool,
+	exit_instruction_length:bool,
+	#[bits(61)] rsvd:u64
 }
 
-#[inline] pub unsafe fn advance_rip_manually(length:u32)
+#[derive(Default)]
+pub struct CachedExitContext
 {
-	unsafe
+	valid_fields:ValidExitFields,
+	pub rip:u64,
+	pub rsp:u64,
+	rflags:u64,
+	cs_ar:SegmentAccessRights,
+	pub exit_reason:VmxExitReason,
+	exit_instruction_length:u32
+}
+
+macro_rules! build_cache_method
+{
+	($name:tt,$const:expr,$type:ty,$bitness:tt)=>
 	{
-		let mut gip=vmreadptr(GUEST_RIP).unwrap();
-		let rflags=vmread32(GUEST_RFLAGS).unwrap() as i32;
-		if _bittest(&raw const rflags,RFLAGS_TF_BIT as i32)!=0
+		paste!
 		{
-			// Single-Stepping is enabled! Inject #DB exception...
-			let pending_de=vmreadptr(GUEST_PENDING_DEBUG_EXCEPTIONS).unwrap();
-			vmwriteptr(GUEST_PENDING_DEBUG_EXCEPTIONS,pending_de|DR6_BS as usize);
-			// Remove the interrupt shadowing.
-			let mut interruptibility=InterruptibilityState(vmread32(GUEST_INTERRUPTIBILITY_STATE).unwrap());
-			interruptibility.set_blocking_by_sti(false);
-			interruptibility.set_blocking_by_mov_ss(false);
-			vmwrite32(GUEST_INTERRUPTIBILITY_STATE,interruptibility.0);
+			#[inline(always)] pub fn [<force_eval_ $name>](&mut self)
+			{
+				if !self.valid_fields.$name()
+				{
+					self.valid_fields.[<set_ $name>](true);
+					self.$name=$type::from(unsafe{[<vmread $bitness>]($const).unwrap()});
+				}
+			}
+
+			#[inline(always)] pub fn $name(&mut self)->$type
+			{
+				self.[<force_eval_ $name>]();
+				self.$name
+			}
 		}
-		gip=gip.wrapping_add(length as usize);
-		let cs_ar=SegmentAccessRights(vmread32(GUEST_CS_ACCESS_RIGHTS).unwrap());
-		if !cs_ar.long_mode()
+	};
+}
+
+impl CachedExitContext
+{
+	pub fn reset(&mut self)
+	{
+		self.valid_fields=ValidExitFields::new();
+		unsafe
 		{
-			// The rip might overflow if the guest is not in long mode.
-			gip&=u32::MAX as usize;
+			// The following fields are forced to reevaluate on every VM-Exit!
+			self.rip=vmread64(GUEST_RIP).unwrap();
+			self.rsp=vmread64(GUEST_RSP).unwrap();
+			self.exit_reason=VmxExitReason::from_bits(vmread32(VMEXIT_REASON).unwrap());
 		}
-		vmwriteptr(GUEST_RIP,gip);
+	}
+
+	build_cache_method!(cs_ar,GUEST_CS_ACCESS_RIGHTS,SegmentAccessRights,32);
+	build_cache_method!(rflags,GUEST_RFLAGS,u64,64);
+	build_cache_method!(exit_instruction_length,VMEXIT_INSTRUCTION_LENGTH,u32,32);
+}
+
+impl VtVcpu
+{
+	/// ## `advance_rip_manually` method
+	/// This method advances `rip` with a specified instruction length.
+	/// 
+	/// This method **will not modify** the `rip` in the `CachedExitContext`.
+	#[inline(always)] pub fn advance_rip_manually(&mut self,length:u32)
+	{
+		let rflags:i32=self.cached_ctxt.rflags() as i32;
+		let mut rip=self.cached_ctxt.rip+length as u64;
+		unsafe
+		{
+			if _bittest(&raw const rflags,RFLAGS_TF_BIT as i32)!=0
+			{
+				// Single-Stepping is enabled! Injecting #DB exception...
+				let pending_de=vmreadptr(GUEST_PENDING_DEBUG_EXCEPTIONS).unwrap();
+				vmwriteptr(GUEST_PENDING_DEBUG_EXCEPTIONS,pending_de|DR6_BS as usize);
+				// Remove the interrupt shadowing.
+				let mut interruptibility=InterruptibilityState(vmread32(GUEST_INTERRUPTIBILITY_STATE).unwrap());
+				interruptibility.set_blocking_by_sti(false);
+				interruptibility.set_blocking_by_mov_ss(false);
+				vmwrite32(GUEST_INTERRUPTIBILITY_STATE,interruptibility.0);
+			}
+			let cs_ar=self.cached_ctxt.cs_ar();
+			if !cs_ar.long_mode()
+			{
+				// The rip might overflow if the guest is not in long mode.
+				rip&=u32::MAX as u64;
+			}
+			vmwrite64(GUEST_RIP,rip);
+		}
+	}
+
+	/// ## `advance_rip` method
+	/// This method advances `rip` with instruction length specified in VMCS.
+	/// 
+	/// This method **will not modify** the `rip` in the `CachedExitContext`.
+	pub fn advance_rip(&mut self)
+	{
+		let len=self.cached_ctxt.exit_instruction_length();
+		self.advance_rip_manually(len);
 	}
 }
 

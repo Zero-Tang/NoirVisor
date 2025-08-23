@@ -51,6 +51,10 @@ impl<const N:usize> Bitmap<N>
 {
 	pub fn test(&self,position:usize)->bool
 	{
+		if position>=N
+		{
+			panic!("Bit position {position} exceeds the limit {N}!");
+		}
 		#[cfg(target_arch="x86_64")]
 		{
 			let bmp:*const i64=(&raw const *self).cast();
@@ -63,6 +67,10 @@ impl<const N:usize> Bitmap<N>
 
 	pub fn set(&mut self,position:usize)->bool
 	{
+		if position>=N
+		{
+			panic!("Bit position {position} exceeds the limit {N}!");
+		}
 		#[cfg(target_arch="x86_64")]
 		{
 			let bmp:*mut i64=(&raw mut *self).cast();
@@ -75,6 +83,10 @@ impl<const N:usize> Bitmap<N>
 
 	pub fn reset(&mut self,position:usize)->bool
 	{
+		if position>=N
+		{
+			panic!("Bit position {position} exceeds the limit {N}!");
+		}
 		#[cfg(target_arch="x86_64")]
 		{
 			let bmp:*mut i64=(&raw mut *self).cast();
@@ -87,6 +99,10 @@ impl<const N:usize> Bitmap<N>
 
 	pub fn complement(&mut self,position:usize)->bool
 	{
+		if position>=N
+		{
+			panic!("Bit position {position} exceeds the limit {N}!");
+		}
 		#[cfg(target_arch="x86_64")]
 		{
 			let bmp:*mut i64=(&raw mut *self).cast();
@@ -99,6 +115,10 @@ impl<const N:usize> Bitmap<N>
 
 	pub fn assign(&mut self,position:usize,value:bool)->bool
 	{
+		if position>=N
+		{
+			panic!("Bit position {position} exceeds the limit {N}!");
+		}
 		#[cfg(target_arch="x86_64")]
 		{
 			let bmp:*mut i64=(&raw mut *self).cast();
@@ -121,7 +141,7 @@ impl<const N:usize> Bitmap<N>
 		#[cfg(target_arch="x86_64")]
 		{
 			let bmp:*const u64=(&raw const *self).cast();
-			let lim=N>>6;
+			let lim=(N>>6)+if (N&0x3F)!=0 {1} else {0};
 			for i in 0..lim
 			{
 				let j:u64;
@@ -130,19 +150,57 @@ impl<const N:usize> Bitmap<N>
 				{
 					asm!
 					(
+						"mov {v},qword ptr [{p}]",
+						"not {v}",
 						"bsf {r},{v}",
 						"setz {zf}",
-						v=in(reg) !bmp.add(i).read(),
+						p=in(reg) bmp.add(i),
+						v=out(reg) _,
 						r=out(reg) j,
 						zf=out(reg_byte) b
 					);
 				}
 				if b==0
 				{
-					return Some(j as usize);
+					let pos=(i<<6)+j as usize;
+					return if pos<N {Some(pos)} else {None};
 				}
 			}
 			None
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests
+{
+	extern crate std;
+
+	use std::println;
+	use super::Bitmap;
+	
+	#[test] fn set_and_test()
+	{
+		let mut bmp_raw:[u64;8]=[0;8];
+		let bmp:&mut Bitmap<512>=unsafe{Bitmap::from_raw_parts_mut(bmp_raw.as_mut_ptr().cast())};
+		assert_eq!(bmp.test(123),false);
+		bmp.set(123);
+		assert_eq!(bmp.test(123),true);
+		assert_eq!(bmp.test(233),false);
+	}
+
+	#[test] fn search_cleared_forward()
+	{
+		let mut bmp_raw:[u64;8]=[0;8];
+		bmp_raw[0]=u64::MAX;
+		bmp_raw[1]=0x207;
+		let bmp:&mut Bitmap<512>=unsafe{Bitmap::from_raw_parts_mut(bmp_raw.as_mut_ptr().cast())};
+		let pos=bmp.search_cleared_forward();
+		println!("Searched! Result is {pos:?}");
+		assert!(pos.is_some());
+		let pos=pos.unwrap();
+		assert_eq!(pos,67);
+		bmp.set(pos);
+		assert_eq!(bmp_raw[1],0x20F);
 	}
 }

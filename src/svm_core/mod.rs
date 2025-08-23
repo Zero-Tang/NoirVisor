@@ -22,7 +22,7 @@ use npt::SvmNptManager;
 use xpf_core::{bitmap::Bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 
-use crate::{xpf_core::{allocator::*, asm::{cpuid::cpuid, crdr::*, msr::*, seg::*, svm::*}, nvbdk::*, nvstatus::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
+use crate::{xpf_core::{allocator::*, asm::{crdr::*, msr::*, seg::*, svm::*}, nvbdk::*, nvstatus::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
@@ -77,9 +77,7 @@ pub struct SvmVcpu
 	pub nested_hvm:SvmNestedVcpu,
 	pub under_hvm:bool,
 	// Features supported by the processors.
-	pub decode_assists:bool,
-	pub nrip_saving:bool,
-	pub vmcb_clean:bool,
+	pub svm_feats:SvmFeatureIdentifier,
 	// Always use this member to format the mnemonic of an instruction.
 	// Do not use `MasmFormatter::new()` on your own because it will cause runtime allocation!
 	pub disasm_fmter:MasmFormatter,
@@ -113,9 +111,7 @@ impl SvmVcpu
 				svm_key:0
 			},
 			under_hvm:false,
-			decode_assists:false,
-			nrip_saving:false,
-			vmcb_clean:false,
+			svm_feats:SvmFeatureIdentifier::new(),
 			disasm_fmter:MasmFormatter::new(),
 			gs_context:PerCpuGsException::default()
 		}
@@ -148,12 +144,8 @@ impl SvmVcpu
 		unsafe
 		{
 			let stack:&mut SvmStackTop=&mut *self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast();
-			let mut d=0;
-			cpuid(CPUID_EXT_SECURE_VIRTUAL_MACHINE_FEATURE,0,None,None,None,Some(&mut d));
 			// Setup supported features.
-			self.decode_assists=(d&CPUID_SVM_DECODE_ASSIST)==CPUID_SVM_DECODE_ASSIST;
-			self.nrip_saving=(d&CPUID_SVM_NEXT_RIP_SAVING)==CPUID_SVM_NEXT_RIP_SAVING;
-			self.vmcb_clean=(d&CPUID_SVM_VMCB_CLEAN)==CPUID_SVM_VMCB_CLEAN;
+			self.svm_feats=SvmFeatureIdentifier::cpuid();
 			let hv=self.hypervisor as *mut SvmHypervisor;
 			let state=ProcessorState::new();
 			// Setup Control Area.
@@ -187,17 +179,19 @@ impl SvmVcpu
 			// The FXSR and XSAVE features must be required for CVM features.
 			write_cr4(state.cr4 as u64|CR4_OSFXSR|CR4_OSXSAVE);
 			// Setup APIC ID.
-			let (_,xid,c,d)=cpuid2(CPUID_STD_PROCESSOR_FEATURE,0);
-			let (_,_,_,x2id)=cpuid2(CPUID_STD_EXTENDED_TOPOLOGY_INFORMATION,0);
-			self.apic_id=(xid&0xFF) as u8;
-			self.x2apic_id=x2id;
+			let cpu_feat_id=StandardProcessorFeatureIdentifiers::cpuid();
+			let ext_topo_enum:ExtendedTopologyEnumeration<0>=ExtendedTopologyEnumeration::cpuid();
+			self.apic_id=cpu_feat_id.local_apic_id();
+			self.x2apic_id=ext_topo_enum.d.x2apic_id();
+			// Setup Family-Model-Stepping.
+			self.cpuid_fms=cpu_feat_id.into_bits() as u32;
 			// Check if we are under nested hypervisor.
-			self.under_hvm=(c&CPUID_UNDER_HYPERVISOR)!=0;
+			self.under_hvm=cpu_feat_id.hypervisor();
 			// Set to the maximum XCR0.
 			// Current implementation would only support up to AVX, AVX512 excluded.
 			stack.host_xcr0=1;
-			stack.host_xcr0|=(((d&CPUID_SSE)!=0) as u64)<<1;
-			stack.host_xcr0|=(((c&CPUID_AVX)!=0) as u64)<<2;
+			stack.host_xcr0|=(cpu_feat_id.sse() as u64)<<1;
+			stack.host_xcr0|=(cpu_feat_id.avx() as u64)<<2;
 			stack.guest_xcr0=_xgetbv(0);
 			trace!("Using Guest XCR0 as 0x{:X}, Host XCR0 as 0x{:X}...",stack.guest_xcr0,stack.host_xcr0);
 			// Save Segment States.
@@ -274,8 +268,6 @@ impl SvmVcpu
 		wrmsr(MSR_VMCR,vmcr);
 		// Set the HSAVE Area.
 		wrmsr(MSR_HSAVE_PA,self.hsave.phys);
-		// Cache the Family-Model-Stepping Information. We'll use it for INIT-Signal Emulation.
-		cpuid(CPUID_STD_PROCESSOR_FEATURE,0,Some(&mut self.cpuid_fms),None,None,None);
 		// Initialize Hypervisor Context stack.
 		unsafe
 		{
@@ -363,21 +355,18 @@ impl HypervisorCapabilities for SvmHypervisor
 {
 	fn check_support()->u32
 	{
-		let mut c:u32=0;
-		cpuid(CPUID_EXT_PROCESSOR_FEATURE,0,None,None,Some(&mut c),None);
-		if c&CPUID_SVM==CPUID_SVM
+		let proc_feat=ExtendedFeatureIdentifier::cpuid();
+		if proc_feat.svm()
 		{
-			let mut b:u32=0;
-			let mut d:u32=0;
-			cpuid(CPUID_EXT_SECURE_VIRTUAL_MACHINE_FEATURE,0,None,Some(&mut b),None,Some(&mut d));
+			let svm_feat=SvmFeatureIdentifier::cpuid();
 			// At least one ASID should be available.
-			if b>0
+			if svm_feat.asid()>0
 			{
 				let mut ret:u32=1;
 				// Nested Paging
-				ret|=if (d&CPUID_SVM_NPT)==CPUID_SVM_NPT {2} else {0};
+				ret|=if svm_feat.npt() {2} else {0};
 				// Accelerated Nested Virtualization
-				ret|=if (d&(CPUID_SVM_NESTED_VMLOAD_VMSAVE|CPUID_SVM_VGIF))==(CPUID_SVM_NESTED_VMLOAD_VMSAVE|CPUID_SVM_VGIF) {4} else {0};
+				ret|=if svm_feat.vmsave_virt() && svm_feat.vgif() {4} else {0};
 				return ret;
 			}
 		}

@@ -96,13 +96,13 @@ static INTERNAL_LOGGER:InternalLogger=InternalLogger;
 }
 
 // We need to implement a formatter without alloc!
-pub struct FormatBuffer
+pub struct FormatBuffer<const N:usize>
 {
-	buffer:MaybeUninit<[u8;512]>,
+	buffer:MaybeUninit<[u8;N]>,
 	used:usize
 }
 
-impl FormatBuffer
+impl<const N:usize> FormatBuffer<N>
 {
 	pub fn as_str(&self)->&str
 	{
@@ -113,7 +113,7 @@ impl FormatBuffer
 	}
 }
 
-impl Default for FormatBuffer
+impl<const N:usize> Default for FormatBuffer<N>
 {
 	fn default() -> Self
 	{
@@ -125,7 +125,7 @@ impl Default for FormatBuffer
 	}
 }
 
-impl fmt::Write for FormatBuffer
+impl<const N:usize> fmt::Write for FormatBuffer<N>
 {
 	fn write_str(&mut self, s: &str) -> fmt::Result
 	{
@@ -141,7 +141,7 @@ impl fmt::Write for FormatBuffer
 	}
 }
 
-impl FormatterOutput for FormatBuffer
+impl<const N:usize> FormatterOutput for FormatBuffer<N>
 {
 	fn write(&mut self, text: &str, _kind: FormatterTextKind)
 	{
@@ -184,7 +184,7 @@ static DEBUGGER:Mutex<LazyCell<Box<dyn DebuggerBackend>>>=Mutex::new(
 
 pub fn dbg_print(args: fmt::Arguments)
 {
-	let mut w=FormatBuffer::default();
+	let mut w:FormatBuffer<512>=FormatBuffer::default();
 	let r=fmt::write(&mut w, args);
 	if r.is_ok()
 	{
@@ -197,7 +197,7 @@ pub fn dbg_print(args: fmt::Arguments)
 
 pub fn system_print(args: fmt::Arguments)
 {
-	let mut w=FormatBuffer::default();
+	let mut w:FormatBuffer<512>=FormatBuffer::default();
 	let r=fmt::write(&mut w,args);
 	if r.is_ok()
 	{

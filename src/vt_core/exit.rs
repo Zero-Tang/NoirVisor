@@ -153,22 +153,19 @@ impl VtVcpu
 			}
 			(a,b,c,d)
 		};
-		unsafe
-		{
-			// Write the results back to eax, ebx, ecx and edx and clear the higher 32 bits.
-			gpr_state.rax=a as u64;
-			gpr_state.rbx=b as u64;
-			gpr_state.rcx=c as u64;
-			gpr_state.rdx=d as u64;
-			// Advance the rip.
-			advance_rip();
-		}
+		// Write the results back to eax, ebx, ecx and edx and clear the higher 32 bits.
+		gpr_state.rax=a as u64;
+		gpr_state.rbx=b as u64;
+		gpr_state.rcx=c as u64;
+		gpr_state.rdx=d as u64;
+		// Advance the rip.
+		self.advance_rip();
 	}
 
 	fn handle_getsec(&mut self,_context:&mut VtStackTop)
 	{
 		error!("SMX Virtualization is not supported!");
-		unsafe{advance_rip()};
+		self.advance_rip();
 	}
 
 	fn handle_invd(&mut self,_context:&mut VtStackTop)
@@ -176,7 +173,7 @@ impl VtVcpu
 		trace!("The invd instruction is executed!");
 		// In Hyper-V, it invoked wbinvd at invd exit.
 		wbinvd();
-		unsafe{advance_rip()};
+		self.advance_rip();
 	}
 
 	fn handle_vmcall(&mut self,context:&mut VtStackTop)
@@ -274,7 +271,7 @@ impl VtVcpu
 					{
 						nvc_forward_fast_hypercall(&raw mut fwd_stack);
 						fwd_stack.to_context(gpr_state);
-						advance_rip();
+						self.advance_rip();
 					}
 				}
 				else
@@ -285,7 +282,7 @@ impl VtVcpu
 					{
 						gpr_state.rax=nvc_forward_memory_mapped_hypercall(hvcall_code.into_bits(),gpr_state.rdx,gpr_state.r8,gpr_state.rax);
 						info!("Return-Value: 0x{:X}",gpr_state.rax);
-						advance_rip();
+						self.advance_rip();
 					}
 				}
 			}
@@ -339,7 +336,7 @@ impl VtVcpu
 			{
 				context.gpr_state.rax=v&u32::MAX as u64;
 				context.gpr_state.rdx=v>>32;
-				unsafe{advance_rip()};
+				self.advance_rip();
 			}
 			None=>unsafe{inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true,0)}
 		}
@@ -363,7 +360,7 @@ impl VtVcpu
 			}
 			else
 			{
-				advance_rip();
+				self.advance_rip();
 			}
 		};
 	}
@@ -385,7 +382,7 @@ impl VtVcpu
 		let rip=unsafe{vmreadptr(GUEST_RIP).unwrap()};
 		if is_ci_phys_page(gpa)
 		{
-			let mut inslen=unsafe{vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap()};
+			let mut inslen=self.cached_ctxt.exit_instruction_length();
 			error!("CI-fault for GPA=0x{gpa:X} is intercepted! rip=0x{rip:X}, Instruction-Length: {inslen}");
 			if inslen==0
 			{
@@ -396,11 +393,11 @@ impl VtVcpu
 				let mut decoder=Decoder::with_ip(self.get_current_bitness(),&instruction_bytes,rip as u64,0);
 				let ins=decoder.decode();
 				inslen=ins.len() as u32;
-				let mut mnemonic=FormatBuffer::default();
+				let mut mnemonic:FormatBuffer<64>=FormatBuffer::default();
 				self.disasm_fmter.format(&ins,&mut mnemonic);
 				debug!("CI-fault instruction bytes: {:02X?} | {}",&instruction_bytes[..ins.len()],mnemonic.as_str());
 			}
-			unsafe{advance_rip_manually(inslen)};
+			self.advance_rip_manually(inslen);
 		}
 		else
 		{
@@ -448,7 +445,7 @@ impl VtVcpu
 			// Expect an exception may come.
 			match try_task(try_xsetbv,(&raw mut x).cast())
 			{
-				Ok(_)=>advance_rip(),
+				Ok(_)=>self.advance_rip(),
 				Err(e)=>
 				{
 					error!("The xsetbv task failed! Vector={}, Error-Code: {:X?}",e.vector,e.error_code);
@@ -468,11 +465,12 @@ impl VtVcpu
 #[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_exit_handler(context:*mut VtStackTop)
 {
 	let ctxt=unsafe{&mut *context};
-	ctxt.guest_frame.return_rsp=unsafe{vmreadptr(GUEST_RSP).unwrap() as u64};
-	ctxt.guest_frame.return_rip=unsafe{vmreadptr(GUEST_RIP).unwrap() as u64};
-	let exit_reason=unsafe{vmread32(VMEXIT_REASON).unwrap()};
-	ctxt.gpr_state.rsp=ctxt.guest_frame.return_rsp;
-	let handler=dispatch_handler(exit_reason);
+	let vcpu=unsafe{&mut *ctxt.vcpu};
+	vcpu.cached_ctxt.reset();
+	ctxt.gpr_state.rsp=vcpu.cached_ctxt.rsp;
+	ctxt.guest_frame.return_rsp=vcpu.cached_ctxt.rsp;
+	ctxt.guest_frame.return_rip=vcpu.cached_ctxt.rip;
+	let handler=dispatch_handler(vcpu.cached_ctxt.exit_reason);
 	handler(unsafe{&mut *ctxt.vcpu},ctxt);
 }
 
@@ -583,9 +581,9 @@ const VT_EXIT_HANDLERS:[VtExitHandler;VT_MAXIMUM_CODE]=
 	array
 };
 
-#[inline] fn dispatch_handler(exit_reason:u32)->VtExitHandler
+#[inline] fn dispatch_handler(exit_reason:VmxExitReason)->VtExitHandler
 {
-	match VT_EXIT_HANDLERS.get((exit_reason&0xFFFF)as usize)
+	match VT_EXIT_HANDLERS.get(exit_reason.basic_exit_reason() as usize)
 	{
 		Some(f)=>*f,
 		None=>VtVcpu::handle_unknown

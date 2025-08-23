@@ -33,7 +33,7 @@ static EXAMPLE_CODE: &[u8] = &[
 	let mut fmter=MasmFormatter::new();
 	while decoder.can_decode()
 	{
-		let mut mnemonic=FormatBuffer::default();
+		let mut mnemonic:FormatBuffer<64>=FormatBuffer::default();
 		let ins_info=decoder.decode();
 		let _=ins_info.op_code();
 		fmter.format(&ins_info,&mut mnemonic);

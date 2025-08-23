@@ -22,12 +22,12 @@ pub mod cvm_core;
 pub mod mshv_core;
 pub mod disasm;
 
-use core::str;
+use core::{slice, str};
 use alloc::boxed::Box;
 
 use log::*;
 
-use xpf_core::{asm::cpuid::cpuid2, allocator::set_alloc_checker, nvstatus::*, x86::cpuid::*, nvbdk::PAGE_SIZE};
+use xpf_core::{allocator::set_alloc_checker, nvstatus::*, x86::cpuid::*, nvbdk::PAGE_SIZE};
 pub use xpf_core::debug::*;
 use vt_core::VtHypervisor;
 use svm_core::SvmHypervisor;
@@ -57,70 +57,48 @@ pub enum ProcessorManufacturer
 
 #[unsafe(no_mangle)] unsafe extern "C" fn noir_get_vendor_string(vstr:*mut u8)
 {
-	let (_,b,c,d)=cpuid2(0,0);
-	unsafe
-	{
-		*vstr.cast()=b;
-		*vstr.byte_add(4).cast()=d;
-		*vstr.byte_add(8).cast()=c;
-	}
+	let vendor_id=MaxStandardLeafAndVendorString::cpuid();
+	let s=unsafe{slice::from_raw_parts_mut(vstr,12)};
+	s.copy_from_slice(vendor_id.vendor_name().as_bytes());
 }
 
-#[unsafe(no_mangle)] unsafe extern "C" fn noir_get_processor_name(pstr:*mut u32)
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_get_processor_name(pstr:*mut u8)
 {
-	unsafe
-	{
-		(*pstr.add(0x0),*pstr.add(0x1),*pstr.add(0x2),*pstr.add(0x3))=cpuid2(CPUID_EXT_BRAND_STRING_P1,0);
-		(*pstr.add(0x4),*pstr.add(0x5),*pstr.add(0x6),*pstr.add(0x7))=cpuid2(CPUID_EXT_BRAND_STRING_P2,0);
-		(*pstr.add(0x8),*pstr.add(0x9),*pstr.add(0xA),*pstr.add(0xB))=cpuid2(CPUID_EXT_BRAND_STRING_P3,0);
-	}
+	let brand_str=ProcessorBrandString::cpuid();
+	let s=unsafe{slice::from_raw_parts_mut(pstr,48)};
+	s.copy_from_slice(&brand_str.buffer);
 }
 
 impl ProcessorManufacturer
 {
 	fn query(vendor_string:&mut [u8;12])->Self
 	{
-		let (_,b,c,d)=cpuid2(0,0);
-		let mut str_raw:[u8;12]=[0;12];
-		str_raw[..4].copy_from_slice(&b.to_le_bytes());
-		str_raw[4..8].copy_from_slice(&d.to_le_bytes());
-		str_raw[8..].copy_from_slice(&c.to_le_bytes());
-		*vendor_string=str_raw;
-		let r=str::from_utf8(&str_raw);
-		match r
+		let vendor_id=MaxStandardLeafAndVendorString::cpuid();
+		// Let's hope Rust's string match has O(logn) or better performance...
+		// Otherwise, we will setup a pair of sorted lists and do binary search.
+		// Note: Zhaoxin CPUs might use three different CPUID vendor names.
+		// It can be one of Centaur, VIA and Zhaoxin.
+		// Note: Montage Jintide CPUs will use Intel's vendor name.
+		let s:&str=vendor_id.vendor_name();
+		vendor_string.copy_from_slice(s.as_bytes());
+		match s
 		{
-			Ok(s)=>
-			{
-				// Let's hope Rust's string match has O(logn) or better performance...
-				// Otherwise, we will setup a pair of sorted lists and do binary search.
-				// Note: Zhaoxin CPUs might use three different CPUID vendor names.
-				// It can be one of Centaur, VIA and Zhaoxin.
-				// Note: Montage Jintide CPUs will use Intel's vendor name.
-				match s.trim_matches('\0')
-				{
-					"GenuineIntel"=>Self::Intel,
-					"AuthenticAMD"=>Self::AMD,
-					"AMDisbetter!"=>Self::AMD,
-					"VIA VIA VIA "=>Self::VIA,
-					"  Shanghai  "=>Self::ZhaoXin,
-					"HygonGenuine"=>Self::Hygon,
-					"CentaurHauls"=>Self::Centaur,
-					"CyrixInstead"=>Self::Cyrix,
-					"GenuineTMx86"=>Self::Transmeta,
-					"NexGenDriven"=>Self::NexGen,
-					"SiS SiS SiS "=>Self::SiS,
-					"Geode by NSC"=>Self::NationalSemiconductor,
-					"RiseRiseRise"=>Self::Rise,
-					"UMC UMC UMC "=>Self::UMC,
-					"Vortex86 SoC"=>Self::Vortex,
-					_=>Self::Unknown
-				}
-			}
-			Err(e)=>
-			{
-				warn!("Encountered UTF-8 Exception! Reason: {e}");
-				Self::Unknown
-			}
+			"GenuineIntel"=>Self::Intel,
+			"AuthenticAMD"=>Self::AMD,
+			"AMDisbetter!"=>Self::AMD,
+			"VIA VIA VIA "=>Self::VIA,
+			"  Shanghai  "=>Self::ZhaoXin,
+			"HygonGenuine"=>Self::Hygon,
+			"CentaurHauls"=>Self::Centaur,
+			"CyrixInstead"=>Self::Cyrix,
+			"GenuineTMx86"=>Self::Transmeta,
+			"NexGenDriven"=>Self::NexGen,
+			"SiS SiS SiS "=>Self::SiS,
+			"Geode by NSC"=>Self::NationalSemiconductor,
+			"RiseRiseRise"=>Self::Rise,
+			"UMC UMC UMC "=>Self::UMC,
+			"Vortex86 SoC"=>Self::Vortex,
+			_=>Self::Unknown
 		}
 	}
 }

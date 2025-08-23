@@ -13,6 +13,12 @@
 // CPUID
 pub mod cpuid
 {
+	use core::{slice,arch::x86_64::CpuidResult};
+
+	use bitfield_struct::bitfield;
+
+	use crate::{derive_cpuid_trait,xpf_core::x86::cpuid::CpuidLeaf};
+
 	// List all indices of CPUID.
 	pub const CPUID_STD_PLATFORM_QOS_MONITORING:u32=0xF;
 	pub const CPUID_STD_PLATFORM_QOS_ENFORCEMENT:u32=0x10;
@@ -66,6 +72,50 @@ pub mod cpuid
 	pub const CPUID_SVM_NESTED_VMCB_ADDRESS_CHECK:u32=0x10000000;
 	pub const CPUID_SVM_BUS_LOCK_THRESHOLD:u32=0x20000000;
 	pub const CPUID_SVM_IDLE_HALT_INTERCEPTION:u32=0x40000000;
+
+	#[bitfield(u128)] pub struct SvmFeatureIdentifier
+	{
+		pub revision_id:u8,
+		#[bits(24)] rsvd0:u128,
+		pub asid:u32,
+		#[bits(6)] rsvd1:u128,
+		pub x2avic_ext:bool,
+		#[bits(25)] rsvd2:u128,
+		pub npt:bool,
+		pub lbr_virt:bool,
+		pub svm_lock:bool,
+		pub nrips:bool,
+		pub tsc_rate_msr:bool,
+		pub vmcb_clean:bool,
+		pub flush_by_asid:bool,
+		pub decode_assists:bool,
+		pub pmc_virt:bool,
+		rsvd3:bool,
+		pub pause_filter:bool,
+		rsvd4:bool,
+		pub pause_filter_threshold:bool,
+		pub avic:bool,
+		rsvd5:bool,
+		pub vmsave_virt:bool,
+		pub vgif:bool,
+		pub gmet:bool,
+		pub x2avic:bool,
+		pub sss_check:bool,
+		pub spec_ctrl:bool,
+		pub ro_gpt:bool,
+		rsvd6:bool,
+		pub host_mce_override:bool,
+		pub tlbi_ctrl:bool,
+		pub vnmi:bool,
+		pub ibs_virt:bool,
+		pub ext_lvt_access_changes:bool,
+		pub nested_virt_vmcb_addr_check:bool,
+		pub buslock_threshold:bool,
+		pub idle_hlt_intercept:bool,
+		rsvd7:bool
+	}
+
+	derive_cpuid_trait!(SvmFeatureIdentifier,0x8000000A,None);
 }
 
 pub mod msr

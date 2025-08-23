@@ -140,7 +140,7 @@ impl SvmVcpu
 	{
 		// This interception does not involve assisting decodings.
 		// However, it still helps if Next-RIP Saving is unsupported by the processor.
-		if !self.nrip_saving
+		if !self.svm_feats.nrips()
 		{
 			self.decode_instruction_internal();
 		}
@@ -154,7 +154,7 @@ impl SvmVcpu
 
 	fn decode_cr(&mut self)
 	{
-		if !self.decode_assists
+		if !self.svm_feats.decode_assists()
 		{
 			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
 			// We will have to emulate this on our own.
@@ -189,7 +189,7 @@ impl SvmVcpu
 
 	fn decode_dr(&mut self)
 	{
-		if !self.decode_assists
+		if !self.svm_feats.decode_assists()
 		{
 			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
 			// We will have to emulate this on our own.
@@ -220,7 +220,7 @@ impl SvmVcpu
 
 	fn decode_pf(&mut self)
 	{
-		if !self.decode_assists
+		if !self.svm_feats.decode_assists()
 		{
 			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
 			// We will have to emulate this on our own.
@@ -235,7 +235,7 @@ impl SvmVcpu
 
 	fn decode_int(&mut self)
 	{
-		if !self.decode_assists
+		if !self.svm_feats.decode_assists()
 		{
 			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
 			// We will have to emulate this on our own.
@@ -257,7 +257,7 @@ impl SvmVcpu
 
 	fn decode_invlpg(&mut self)
 	{
-		if !self.decode_assists
+		if !self.svm_feats.decode_assists()
 		{
 			// FIXME: load registers to obtain the target address.
 			todo!("Software-emulated decode-assists for invlpg is not supported yet!");
@@ -269,7 +269,7 @@ impl SvmVcpu
 		// I/O instruction is a special case, since the next rip is saved in the EXIT_INFO2
 		// field, even if the next-rip-saving feature is not supported by the processor.
 		// Therefore, there is no need to fetch-and-decode the intercepted I/O instructions!
-		if !self.nrip_saving
+		if !self.svm_feats.nrips()
 		{
 			unsafe
 			{
@@ -281,7 +281,7 @@ impl SvmVcpu
 
 	fn decode_npf(&mut self)
 	{
-		if !self.decode_assists
+		if !self.svm_feats.decode_assists()
 		{
 			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
 			// We will have to emulate this on our own.

@@ -17,7 +17,7 @@ use iced_x86::*;
 
 use decode::dispatch_decoder;
 use npt::NptFaultCode;
-use xpf_core::{ci::is_ci_phys_page, x86::{descriptors::DescriptorTable, interrupts::*}};
+use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::{descriptors::DescriptorTable, interrupts::*}};
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall,nvc_forward_memory_mapped_hypercall};
 
 use crate::xpf_core::trytask::try_task;
@@ -524,7 +524,7 @@ impl SvmVcpu
 			assert!(decoder.can_decode());
 			let ins_info=decoder.decode();
 			error!("CI-fault for GPA=0x{gpa:016X} is intercepted! rip=0x{rip:016X}, Fault-Reason: {fault}, Instruction-Length: {}",ins_info.len());
-			let mut mnemonic=FormatBuffer::default();
+			let mut mnemonic:FormatBuffer<64>=FormatBuffer::default();
 			self.disasm_fmter.format(&ins_info,&mut mnemonic);
 			debug!("CI-fault Instruction: {:02X?} | {}",&ins_bytes[..ins_info.len()],mnemonic.as_str());
 			unsafe{advance_rip_manually(vmcb,ins_info.len())};
@@ -604,7 +604,7 @@ impl SvmVcpu
 			let decoder=dispatch_decoder(intercept_code as i64);
 			let handler=dispatch_handler(intercept_code as i64);
 			// If VMCB-Clean-Bits is supported, we may cache the VMCB fields.
-			if vcpu.vmcb_clean {vmwrite(vcpu.vmcb.virt,VMCB_CLEAN_BITS,u32::MAX)};
+			if vcpu.svm_feats.vmcb_clean() {vmwrite(vcpu.vmcb.virt,VMCB_CLEAN_BITS,u32::MAX)};
 			// Handle the VM-Exit!
 			gpr.rax=vmread(cur_vmcb,GUEST_RAX);
 			gpr.rsp=vmread(cur_vmcb,GUEST_RSP);

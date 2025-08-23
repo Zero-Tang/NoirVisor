@@ -309,16 +309,7 @@ pub mod crdr
 
 pub mod cpuid
 {
-	use core::arch::x86_64::*;
-	
-	#[inline] pub fn cpuid(ia:u32,ic:u32,a:Option<&mut u32>,b:Option<&mut u32>,c:Option<&mut u32>,d:Option<&mut u32>)
-	{
-		let r=unsafe{__cpuid_count(ia,ic)};
-		if let Some(a)=a {*a=r.eax};
-		if let Some(b)=b {*b=r.ebx};
-		if let Some(c)=c {*c=r.ecx};
-		if let Some(d)=d {*d=r.edx};
-	}
+	use core::arch::x86_64::__cpuid_count;
 
 	#[inline] pub fn cpuid2(ia:u32,ic:u32)->(u32,u32,u32,u32)
 	{

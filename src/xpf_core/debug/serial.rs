@@ -62,8 +62,14 @@ impl DebuggerBackend for SerialPort
 
 impl SerialPort
 {
-	pub fn new(port_base:u16,_baud_rate:u32)->Option<Self>
+	pub fn new(port_base:u16,baud_rate:u32)->Option<Self>
 	{
+		let baud_remainder=115200%baud_rate;
+		if baud_remainder!=0
+		{
+			return None;
+		}
+		let baud_quotient=115200/baud_remainder;
 		unsafe
 		{
 			// Disable all interrupts.
@@ -71,8 +77,8 @@ impl SerialPort
 			// Enable DLAB to set up baud rate.
 			out_byte(port_base+COM_PORT_OFFSET_LINE_CTRL,0x80);
 			// Set Divisor to 1 for 115200 baud rate.
-			out_byte(port_base+COM_PORT_OFFSET_BAUDRATE_LSB,1);
-			out_byte(port_base+COM_PORT_OFFSET_BAUDRATE_MSB,0);
+			out_byte(port_base+COM_PORT_OFFSET_BAUDRATE_LSB,baud_quotient as u8);
+			out_byte(port_base+COM_PORT_OFFSET_BAUDRATE_MSB,(baud_quotient>>8) as u8);
 			// Disable DLAB. Use 8-bit data, no parity, one stop bit.
 			out_byte(port_base+COM_PORT_OFFSET_LINE_CTRL,3);
 			// Enable FIFO, clear them, and use 1-byte interrupt threshold.

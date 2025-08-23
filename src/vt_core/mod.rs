@@ -14,12 +14,12 @@ use alloc::vec::Vec;
 use iced_x86::MasmFormatter;
 use core::{ffi::c_void, ptr::null_mut};
 
-use ia32::{cpuid::CPUID_VMX, msr::*};
+use ia32::msr::*;
 use vmcs::*;
 use ept::VtEptManager;
 use crate::*;
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
-use xpf_core::{asm::{cpuid::cpuid, crdr::*, msr::*, seg::*, vt::*}, bitmap::*, allocator::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
+use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, bitmap::*, allocator::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
@@ -56,6 +56,7 @@ pub struct VtVcpu
 	pub host_cpu:HostProcessor,
 	pub msr_auto_host:[VmxMsrAutoItem;5],
 	pub msr_auto_guest:[VmxMsrAutoItem;5],
+	pub cached_ctxt:CachedExitContext,
 	// Always use this member to format the mnemonic of an instruction.
 	// Do not use `MasmFormatter::new()` on your own because it will cause runtime allocation!
 	pub disasm_fmter:MasmFormatter,
@@ -82,6 +83,7 @@ impl Default for VtVcpu
 			host_cpu:HostProcessor::default(),
 			msr_auto_host:[VmxMsrAutoItem::default();5],
 			msr_auto_guest:[VmxMsrAutoItem::default();5],
+			cached_ctxt:CachedExitContext::default(),
 			disasm_fmter:MasmFormatter::new(),
 			gs_context:PerCpuGsException::default()
 		}
@@ -516,10 +518,9 @@ impl HypervisorCapabilities for VtHypervisor
 {
 	fn check_support()->u32
 	{
-		let mut c:u32=0;
+		let cpu_feat_id=StandardProcessorFeatureIdentifiers::cpuid();
 		let mut supportability:u32=0;
-		cpuid(CPUID_STD_PROCESSOR_FEATURE,0,None,None,Some(&mut c),None);
-		if c&CPUID_VMX==CPUID_VMX
+		if cpu_feat_id.vmx()
 		{
 			let mut basic_requirement:bool=true;
 			let vt_basic=VmxBasicMsr::read();

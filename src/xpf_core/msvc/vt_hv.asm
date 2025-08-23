@@ -56,7 +56,7 @@ nvc_vt_exit_handler_a proc frame
 	.pushframe code
 	; Save all GPRs, and pass to Exit Handler.
 	pushaq_fast stacktop_offset_guest_gpr
-	; Save XMM States.
+	; Save volatile XMM State.
 	pushax_volatile_fast stacktop_offset_volatile_xmms
 	.allocstack 20h
 	.endprolog
@@ -65,11 +65,10 @@ nvc_vt_exit_handler_a proc frame
 	; Call exit handler
 	call nvc_vt_exit_handler
 resume_guest:
-	; Restore XMM & GPR State
+	; Restore volatile XMM State.
 	popax_volatile_fast stacktop_offset_volatile_xmms
+	; Restore all GPRs.
 	popaq_fast stacktop_offset_guest_gpr
-	; We don't have to increment stack here in
-	; that the host rsp is always loaded from VMCS.
 	; Check if the VMCS is launched.
 	btr dword ptr [rsp+stacktop_offset_flags],0
 	jc launch_initial_vmcs

@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-import os
 import subprocess
 import sys
 
@@ -24,7 +23,7 @@ if __name__=="__main__":
 		# Parse arguments
 		i=1
 		image_size:int=2880<<10
-		img_size_str:str="2880K"
+		sector_num:int=image_size>>9
 		output_file:str=None
 		mkdir_orders:list[str]=[]
 		copy_orders:dict[str,str]=dict()
@@ -57,15 +56,16 @@ if __name__=="__main__":
 					mult=1024**1
 					size=size[:-1]
 				image_size=int(float(size)*mult)
+				sector_num=image_size>>9
 			else:
 				print("Ignoring unknown argument {}!".format(sys.argv[i]))
 			i+=1
 		# Create Disk Image.
-		if os.path.exists(output_file):
-			os.remove(output_file)
-		subprocess.call(["fsutil","file","createnew",output_file,str(image_size)])
+		with open(output_file,'wb') as f:
+			f.write(b'\0'*image_size)
+			f.close()
 		# Format Disk Image.
-		subprocess.call(["mformat","-i",output_file,"-v","NoirVisor","-f",img_size_str,"::"])
+		subprocess.call(["mformat","-i",output_file,"-v","NoirVisor","-T",str(sector_num),"::"])
 		# Make Directories.
 		for md in mkdir_orders:
 			subprocess.call(["mmd","-i",output_file,md])
