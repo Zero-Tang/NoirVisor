@@ -11,6 +11,10 @@
  */
 
 #![no_std]
+// We will use the unstable allocator_api feature for two things:
+// 1. alternate allocator (i.e. the `Allocator` trait)
+// 2. try-allocate (e.g.: `Box::try_new`, `Vec::try_reserve`)
+#![feature(allocator_api)]
 
 extern crate alloc;
 
@@ -27,7 +31,9 @@ use alloc::boxed::Box;
 
 use log::*;
 
-use xpf_core::{allocator::set_alloc_checker, nvstatus::*, x86::cpuid::*, nvbdk::PAGE_SIZE};
+use nvcvm::status::Status;
+
+use xpf_core::{allocator::set_alloc_checker, x86::cpuid::*, nvbdk::PAGE_SIZE};
 pub use xpf_core::debug::*;
 use vt_core::VtHypervisor;
 use svm_core::SvmHypervisor;
@@ -157,6 +163,8 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 		{
 			hypervisor.restore_system();
 		}
+		// Setting it to None will call the drop method.
+		HVM=None;
 	}
 }
 
@@ -202,7 +210,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 	}
 	else
 	{
-		NOIR_NOT_IMPLEMENTED
+		Status::NOT_IMPLEMENTED
 	}
 }
 

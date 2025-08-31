@@ -13,8 +13,9 @@
 use alloc::{vec::Vec,boxed::Box};
 // use nvcvm::interface::Vpcb;
 
-use crate::{cvm_core::*, xpf_core::{nvbdk::MemoryDescriptor, nvstatus::*}};
+use nvcvm::status::Status;
 
+use crate::{cvm_core::*, xpf_core::nvbdk::MemoryDescriptor};
 use super::SvmHypervisor;
 
 pub struct SvmCustomVcpu
@@ -48,7 +49,7 @@ impl CvmVcpuOps for SvmCustomVcpu
 {
 	fn run(&mut self)->Status
 	{
-		NOIR_NOT_IMPLEMENTED
+		Status::NOT_IMPLEMENTED
 	}
 }
 
@@ -73,7 +74,7 @@ impl CvmVmOps for SvmCustomVm
 	{
 		let p=Box::new(SvmCustomVcpu::new());
 		self.vcpus[index]=Some(p);
-		NOIR_SUCCESS
+		Status::SUCCESS
 	}
 
 	fn release_vcpu(&mut self,_index:usize)
@@ -83,7 +84,7 @@ impl CvmVmOps for SvmCustomVm
 
 	fn set_mapping(&mut self)->Status
 	{
-		NOIR_NOT_IMPLEMENTED
+		Status::NOT_IMPLEMENTED
 	}
 
 	fn reference_vcpu(&self,index:usize)->Option<&impl CvmVcpuOps>
@@ -109,12 +110,12 @@ impl CvmHvOps for SvmHypervisor
 {
 	fn check_cap(&self,_code:u32,_buffer:&mut [u8])->Status
 	{
-		NOIR_NOT_IMPLEMENTED
+		Status::NOT_IMPLEMENTED
 	}
 
 	fn create_vm(&mut self)->Result<CvmHandle,Status>
 	{
-		Err(NOIR_NOT_IMPLEMENTED)
+		Err(Status::NOT_IMPLEMENTED)
 	}
 
 	fn release_vm(&mut self,_vm:CvmHandle)

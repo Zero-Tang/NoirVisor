@@ -187,6 +187,8 @@ mod tests
 		bmp.set(123);
 		assert_eq!(bmp.test(123),true);
 		assert_eq!(bmp.test(233),false);
+		assert_eq!(bmp_raw[0],0);
+		assert_eq!(bmp_raw[1],1<<(123-64));
 	}
 
 	#[test] fn search_cleared_forward()

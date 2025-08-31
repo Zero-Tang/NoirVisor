@@ -1,7 +1,6 @@
 pub mod debug;
 pub mod asm;
 pub mod allocator;
-pub mod nvstatus;
 pub mod ci;
 pub mod bitmap;
 pub mod ioflt;

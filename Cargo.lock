@@ -103,6 +103,9 @@ dependencies = [
 [[package]]
 name = "nvcvm"
 version = "0.1.0"
+dependencies = [
+ "bitfield-struct",
+]
 
 [[package]]
 name = "paste"

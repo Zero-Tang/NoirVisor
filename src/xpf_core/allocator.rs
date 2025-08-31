@@ -27,6 +27,46 @@ pub fn set_alloc_checker(v:bool)
 	CHECK_ALLOC.store(v,Ordering::SeqCst);
 }
 
+/// ## The `kmalloc` module
+/// This module wraps the OS kernel's memory allocator and implements `Allocator` trait.
+pub mod kmalloc
+{
+    use core::{alloc::*,ptr::NonNull,slice};
+
+	unsafe extern "C"
+	{
+		fn noir_kmalloc(length:usize,alignment:usize)->*mut u8;
+		fn noir_kfree(ptr:*mut u8,length:usize,alignment:usize);
+	}
+
+	#[derive(Clone, Copy)]
+	pub struct KernelAllocator;
+
+	unsafe impl Allocator for KernelAllocator
+	{
+		fn allocate(&self,layout:Layout)->Result<NonNull<[u8]>,AllocError>
+		{
+			let ptr=unsafe{noir_kmalloc(layout.size(),layout.align())};
+			let s=unsafe{slice::from_raw_parts_mut(ptr,layout.size())};
+			match NonNull::new(&raw mut *s)
+			{
+				Some(nn)=>Ok(nn),
+				None=>Err(AllocError)
+			}
+		}
+
+		unsafe fn deallocate(&self,ptr:NonNull<u8>,layout:Layout)
+		{
+			unsafe
+			{
+				noir_kfree(ptr.as_ptr(),layout.size(),layout.align());
+			}
+		}
+	}
+
+	pub static KERNEL_ALLOCATOR:KernelAllocator=KernelAllocator;
+}
+
 #[cfg(not(test))]
 mod dlmalloc
 {

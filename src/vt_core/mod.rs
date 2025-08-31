@@ -19,7 +19,7 @@ use vmcs::*;
 use ept::VtEptManager;
 use crate::*;
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
-use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, bitmap::*, allocator::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, nvstatus::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
+use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, bitmap::*, allocator::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
@@ -583,6 +583,14 @@ impl HypervisorCapabilities for VtHypervisor
 	}
 }
 
+impl Drop for VtHypervisor
+{
+	fn drop(&mut self)
+	{
+		
+	}
+}
+
 impl HypervisorEssentials for VtHypervisor
 {
 	fn subvert_system(&mut self)->Status
@@ -594,7 +602,7 @@ impl HypervisorEssentials for VtHypervisor
 			{
 				{
 					error!("{}",format_args!($($arg)*));
-					return NOIR_INSUFFICIENT_RESOURCES;
+					return Status::INSUFFICIENT_RESOURCES;
 				}
 			};
 		}
@@ -698,7 +706,7 @@ impl HypervisorEssentials for VtHypervisor
 			noir_generic_call(nvc_vt_subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
 		info!("System Subversion Completed!");
-		NOIR_SUCCESS
+		Status::SUCCESS
 	}
 
 	fn restore_system(&mut self)->Status
@@ -708,7 +716,7 @@ impl HypervisorEssentials for VtHypervisor
 			noir_generic_call(nvc_vt_restore_processor_thunk,self as *mut Self as *mut c_void);
 		}
 		info!("System Restoration Completed!");
-		NOIR_SUCCESS
+		Status::SUCCESS
 	}
 }
 

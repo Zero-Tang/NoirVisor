@@ -120,6 +120,7 @@ class Pipeline:
 			"outdir":self.internal_variables["outdir_"+("rel" if opt else "dev")] if outdir is None else outdir,
 			"cargo_preset":"release" if opt else "debug",
 			"cd":os.getcwd()}|os.environ|extra_vars
+		os.makedirs(self.global_variable["objpath"],exist_ok=True)
 		self.instructions:dict[str,PipelineInstruction]=dict()
 		mtimes_fn=os.path.join("bin",self.global_variable["outdir"],"mtimes.json")
 		try:

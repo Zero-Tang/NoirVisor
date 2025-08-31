@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use crate::xpf_core::nvstatus::Status;
+use nvcvm::status::Status;
 
 mod ffi;
 #[cfg(target_arch="x86_64")] pub mod x86;

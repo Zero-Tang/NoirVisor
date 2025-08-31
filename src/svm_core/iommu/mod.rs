@@ -20,7 +20,7 @@ use acpi::{Ivhd, IvhdLarge};
 use paging::{SvmIommuPmlManager, SvmIommuPte};
 use crate::{svm_core::iommu::mmio::*, xpf_core::{asm::io::{mmio_read, mmio_write}, ci::CI_MANAGER}, *};
 use drv_core::acpi::{search_acpi_table, tables::{AcpiSystemDescriptorSignature, IoVirtualizationReportingStructure}};
-use xpf_core::{nvbdk::*, nvstatus::*, ioflt::IoRegion, allocator::{alloc_2mb_page, alloc_contd_pages, free_contd_pages}};
+use xpf_core::{nvbdk::*, ioflt::IoRegion, allocator::{alloc_2mb_page, alloc_contd_pages, free_contd_pages}};
 use mmio::DeviceTableBaseRegister;
 
 mod acpi;
@@ -108,7 +108,7 @@ impl SvmIommuManager
 		// If we have BARs, we may initialize paging.
 		if mgr.iommu_bars.is_empty()
 		{
-			Err(NOIR_IVRS_NOT_SUPPROTED)
+			Err(Status::IVRS_NOT_SUPPROTED)
 		}
 		else
 		{

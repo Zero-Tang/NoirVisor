@@ -13,7 +13,7 @@
 use core::{ffi::c_void,cmp::Ordering,ops::Add};
 use alloc::{string::String,vec::Vec};
 
-use crate::{Status, NOIR_DISPATCH_FAILURE};
+use nvcvm::status::Status;
 
 pub type IoInputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*mut c_void,context:*mut c_void);
 pub type IoOutputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*const c_void,context:*mut c_void);
@@ -162,10 +162,10 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoAddressSpace<T>
 						f(r,addr,size,value,context);
 						Ok(())
 					}
-					None=>Err(NOIR_DISPATCH_FAILURE)
+					None=>Err(Status::DISPATCH_FAILURE)
 				}
 			}
-			None=>Err(NOIR_DISPATCH_FAILURE)
+			None=>Err(Status::DISPATCH_FAILURE)
 		}
 	}
 
@@ -181,7 +181,7 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoAddressSpace<T>
 				(r.output_handler)(r,addr,size,value,context);
 				Ok(())
 			}
-			None=>Err(NOIR_DISPATCH_FAILURE)
+			None=>Err(Status::DISPATCH_FAILURE)
 		}
 	}
 }

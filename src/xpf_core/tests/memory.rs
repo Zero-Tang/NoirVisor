@@ -65,3 +65,13 @@ pub type PhysicalRangeCallback=extern "C" fn(start:u64,length:u64,context:*mut c
 {
 
 }
+
+#[unsafe(no_mangle)] extern "C" fn noir_kmalloc(_length:usize,_alignment:usize)->*mut u8
+{
+	null_mut()
+}
+
+#[unsafe(no_mangle)] extern "C" fn noir_kfree(_ptr:*mut u8,_length:usize,_alignment:usize)
+{
+
+}

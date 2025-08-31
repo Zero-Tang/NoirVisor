@@ -22,7 +22,7 @@ use npt::SvmNptManager;
 use xpf_core::{bitmap::Bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 
-use crate::{xpf_core::{allocator::*, asm::{crdr::*, msr::*, seg::*, svm::*}, nvbdk::*, nvstatus::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
+use crate::{xpf_core::{allocator::{kmalloc::{KernelAllocator, KERNEL_ALLOCATOR}, *}, asm::{crdr::*, msr::*, seg::*, svm::*}, nvbdk::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
@@ -311,7 +311,7 @@ pub struct SvmHypervisor
 	pub iommu_manager:Option<SvmIommuManager>,
 	pub pio_space:IoAddressSpace<u16>,
 	pub mmio_space:IoAddressSpace<u64>,
-	pub cvm_list:Vec<Option<Box<SvmCustomVm>>>,
+	pub cvm_list:Vec<Option<Box<SvmCustomVm>>,KernelAllocator>,
 	pub image_base:*mut c_void,
 	pub image_size:u32,
 	pub features:EnabledFeatures,
@@ -342,7 +342,7 @@ impl Default for SvmHypervisor
 			iommu_manager:None,
 			pio_space:IoAddressSpace{regions:Vec::new()},
 			mmio_space:IoAddressSpace{regions:Vec::new()},
-			cvm_list:Vec::with_capacity(8),
+			cvm_list:Vec::with_capacity_in(8,KERNEL_ALLOCATOR),
 			image_base:null_mut(),
 			image_size:0,
 			features:EnabledFeatures::get(),
@@ -380,6 +380,14 @@ impl HypervisorCapabilities for SvmHypervisor
 	}
 }
 
+impl Drop for SvmHypervisor
+{
+	fn drop(&mut self)
+	{
+		
+	}
+}
+
 impl HypervisorEssentials for SvmHypervisor
 {
 	fn subvert_system(&mut self)->Status
@@ -391,7 +399,7 @@ impl HypervisorEssentials for SvmHypervisor
 			{
 				{
 					error!("{}\n",format_args!($($arg)*));
-					return NOIR_INSUFFICIENT_RESOURCES;
+					return Status::INSUFFICIENT_RESOURCES;
 				}
 			};
 		}
@@ -516,7 +524,7 @@ impl HypervisorEssentials for SvmHypervisor
 			noir_generic_call(nvc_svm_subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
 		info!("System subversion completed!");
-		NOIR_SUCCESS
+		Status::SUCCESS
 	}
 
 	fn restore_system(&mut self)->Status
@@ -526,7 +534,7 @@ impl HypervisorEssentials for SvmHypervisor
 			noir_generic_call(nvc_svm_restore_processor_thunk,self as *mut Self as *mut c_void);
 		}
 		info!("System restoration completed!");
-		NOIR_SUCCESS
+		Status::SUCCESS
 	}
 }
 

@@ -13,6 +13,9 @@
 use iced_x86::*;
 use log::*;
 use spin::Mutex;
+
+use nvcvm::status::Status;
+
 use core::{cell::LazyCell, fmt, mem::MaybeUninit, str};
 use alloc::boxed::Box;
 
@@ -20,7 +23,7 @@ use qemu_debugcon::*;
 use serial::*;
 use unknown::*;
 
-use crate::{xpf_core::nvstatus::{NOIR_SUCCESS,Status},print,println,sysdprint,sysdprintln};
+use crate::{print,println,sysdprint,sysdprintln};
 
 mod qemu_debugcon;
 #[allow(dead_code)] mod serial;
@@ -287,7 +290,7 @@ static mut DEBUGGER_CONFIG:DebuggerConfig=DebuggerConfig::Unknown;
 		DEBUGGER_CONFIG=DebuggerConfig::Serial(port_base,baud_rate);
 	}
 	println!("Internal Debugger is configured to Serial Port! Port=0x{:04X}",port_base);
-	NOIR_SUCCESS
+	Status::SUCCESS
 }
 
 #[unsafe(no_mangle)] extern "C" fn noir_configure_qemu_debug_console(port:u16)->Status
@@ -297,5 +300,5 @@ static mut DEBUGGER_CONFIG:DebuggerConfig=DebuggerConfig::Unknown;
 		DEBUGGER_CONFIG=DebuggerConfig::QemuDebugCon(port);
 	}
 	println!("Internal Debugger is configured to QEMU ISA-DebugCon! Port=0x{:04X}",port);
-	NOIR_SUCCESS
+	Status::SUCCESS
 }

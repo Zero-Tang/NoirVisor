@@ -14,7 +14,9 @@ use core::{ptr::null_mut,sync::atomic::{AtomicU64, AtomicU32, Ordering}};
 
 use log::*;
 
-use crate::xpf_core::{asm::io::mmio_read, nvstatus::*};
+use nvcvm::status::Status;
+
+use crate::xpf_core::asm::io::mmio_read;
 use super::acpi::{search_acpi_table,tables::{AcpiSystemDescriptorSignature,HighPrecisionEventTimerTable}};
 
 const HPET_GENRERAL_COUNTER_CLOCK_PERIOD:usize=0x4;
@@ -40,12 +42,12 @@ pub fn hpet_read_counter()->u64
 	if hpet_acpi_ptr.is_null()
 	{
 		warn!("No HPET Hardware is detected!");
-		NOIR_ACPI_NO_SUCH_TABLE
+		Status::ACPI_NO_SUCH_TABLE
 	}
 	else
 	{
 		HPET_BASE_ADDRESS.store(unsafe{(*hpet_acpi_ptr).block.address},Ordering::Relaxed);
 		HPET_PERIOD.store(hpet_read_register(HPET_GENRERAL_COUNTER_CLOCK_PERIOD),Ordering::Relaxed);
-		NOIR_SUCCESS
+		Status::SUCCESS
 	}
 }

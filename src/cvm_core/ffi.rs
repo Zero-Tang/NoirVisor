@@ -12,7 +12,7 @@
 
 use core::{ffi::c_void,ptr::null_mut};
 
-use crate::xpf_core::nvstatus::*;
+use nvcvm::status::Status;
 
 #[repr(C)] pub struct CvmFfiExitContext
 {
@@ -24,72 +24,72 @@ use crate::xpf_core::nvstatus::*;
 
 #[unsafe(no_mangle)] extern "C" fn nvc_query_hypervisor_status(_status_type:u64,_result:*mut c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_set_guest_vcpu_options(_vcpu:*mut c_void,_option_type:u32,_data:u32)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_edit_vcpu_registers2(_vcpu:*mut c_void,_register_names:*const c_void,_register_count:u32,_register_size:u32,_buffer:*const c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_view_vcpu_registers2(_vcpu:*mut c_void,_register_names:*const c_void,_register_count:u32,_register_size:u32,_buffer:*mut c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_edit_vcpu_registers(_vcpu:*mut c_void,_register_type:u64,_buffer:*const c_void,_buffer_size:u32)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_view_vcpu_registers(_vcpu:*mut c_void,_register_type:u32,_buffer:*mut c_void,_buffer_size:u32)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_set_event_injection(_vcpu:*mut c_void,_event:u64)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_query_vcpu_statistics(_vcpu:*mut c_void,_buffer:*mut c_void,_buffer_size:u32)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_run_vcpu(_vcpu:*mut c_void,_exit_context:*mut c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_rescind_vcpu(_vcpu:*mut c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_release_vcpu(_vcpu:*mut c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_create_vcpu(_vm:*mut c_void,_vcpu:*mut *mut c_void,_vcpu_id:u32)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_ref_vcpu(_vcpu:*mut c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_deref_vcpu(_vcpu:*mut c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_reference_vcpu(_vm:*mut c_void,_vcpu_id:u32)->*mut c_void
@@ -99,42 +99,42 @@ use crate::xpf_core::nvstatus::*;
 
 #[unsafe(no_mangle)] extern "C" fn nvc_set_mapping(_vm:*mut c_void,_mapping_info:*const c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_query_gpa_accessing_bitmap(_vm:*mut c_void,_gpa_start:u64,_page_count:u32,_bitmap:*mut c_void,_bitmap_size:u32)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_clear_gpa_accessing_bits(_vm:*mut c_void,_gpa_start:u64,_page_count:u32)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_release_vm(_vm:*mut c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_create_vm_ex(_vm:*mut c_void,_process_id:u32,_properties:u64)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_create_vm(_vm:*mut c_void,_process_id:u32)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_deref_vm(_vm:*mut c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_ref_vm(_vm:*mut c_void)->Status
 {
-	NOIR_NOT_IMPLEMENTED
+	Status::NOT_IMPLEMENTED
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_get_vm_pid(_vm:*mut c_void)->u32

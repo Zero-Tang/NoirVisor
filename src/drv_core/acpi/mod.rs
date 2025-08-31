@@ -16,8 +16,10 @@ use alloc::vec::Vec;
 use spin::RwLock;
 use log::*;
 
+use nvcvm::status::Status;
+
 use tables::{AcpiSystemDescriptorSignature, ExtendedSystemDescriptorTable, RootSystemDescriptionTable, SystemDescriptionHeader};
-use crate::xpf_core::{nvbdk::{noir_map_physical_memory, noir_unmap_physical_memory}, nvstatus::*};
+use crate::xpf_core::nvbdk::{noir_map_physical_memory, noir_unmap_physical_memory};
 
 pub mod tables;
 
@@ -121,7 +123,7 @@ pub fn search_acpi_table(signature:AcpiSystemDescriptorSignature,f:impl FnMut(*m
 			_=>acpi_mgr.init_empty()
 		};
 	}
-	NOIR_SUCCESS
+	Status::SUCCESS
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_acpi_finalize()
