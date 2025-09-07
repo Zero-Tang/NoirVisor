@@ -10,12 +10,11 @@
   or fitness for a particular purpose, etc.).
 */
 
-use core::slice;
+use core::{slice,fmt};
 
 use iced_x86::*;
 use paste::paste;
-
-use crate::FormatBuffer;
+use static_collections::string::StaticString;
 
 static EXAMPLE_CODE: &[u8] = &[
     0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x55, 0x57, 0x41, 0x56, 0x48, 0x8D,
@@ -23,6 +22,25 @@ static EXAMPLE_CODE: &[u8] = &[
     0x18, 0x57, 0x0A, 0x00, 0x48, 0x33, 0xC4, 0x48, 0x89, 0x85, 0xF0, 0x00, 0x00, 0x00, 0x4C, 0x8B,
     0x05, 0x2F, 0x24, 0x0A, 0x00, 0x48, 0x8D, 0x05, 0x78, 0x7C, 0x04, 0x00, 0x33, 0xFF,
 ];
+
+#[derive(Default)]
+pub struct MnemonicString(StaticString<64>);
+
+impl FormatterOutput for MnemonicString
+{
+	fn write(&mut self, text: &str, _kind: FormatterTextKind)
+	{
+		let _=self.0.push_str(text);
+	}
+}
+
+impl fmt::Display for MnemonicString
+{
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+	{
+		f.write_str(self.0.as_str())
+	}
+}
 
 // This routine is intended for eagerly initializing the iced-x86 crate
 // so that all `lazy_static` items are initialized.
@@ -33,7 +51,7 @@ static EXAMPLE_CODE: &[u8] = &[
 	let mut fmter=MasmFormatter::new();
 	while decoder.can_decode()
 	{
-		let mut mnemonic:FormatBuffer<64>=FormatBuffer::default();
+		let mut mnemonic:MnemonicString=MnemonicString::default();
 		let ins_info=decoder.decode();
 		let _=ins_info.op_code();
 		fmter.format(&ins_info,&mut mnemonic);

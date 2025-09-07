@@ -69,14 +69,14 @@ impl SerialPort
 		{
 			return None;
 		}
-		let baud_quotient=115200/baud_remainder;
+		let baud_quotient=115200/baud_rate;
 		unsafe
 		{
 			// Disable all interrupts.
 			out_byte(port_base+COM_PORT_OFFSET_INT_EN,0);
 			// Enable DLAB to set up baud rate.
 			out_byte(port_base+COM_PORT_OFFSET_LINE_CTRL,0x80);
-			// Set Divisor to 1 for 115200 baud rate.
+			// Set baud rate. We need to use quotient.
 			out_byte(port_base+COM_PORT_OFFSET_BAUDRATE_LSB,baud_quotient as u8);
 			out_byte(port_base+COM_PORT_OFFSET_BAUDRATE_MSB,(baud_quotient>>8) as u8);
 			// Disable DLAB. Use 8-bit data, no parity, one stop bit.

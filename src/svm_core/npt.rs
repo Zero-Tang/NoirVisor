@@ -19,6 +19,37 @@ use log::*;
 use crate::*;
 use xpf_core::{ci::CI_MANAGER, ioflt::IoAddressSpace, nvbdk::*,allocator::*};
 
+// Page-Map-Level-5 Entry (Bits 48-56)
+#[bitfield(u64)] pub struct NptPml5e
+{
+	pub present:bool,
+	pub write:bool,
+	pub user:bool,
+	pub pwt:bool,
+	pub pcd:bool,
+	pub accessed:bool,
+	pub ignored0:bool,
+	#[bits(2)] pub rsvd:u64,
+	#[bits(3)] pub avl:u64,
+	#[bits(40)] pub pml4e_base:u64,
+	#[bits(11)] pub available:u64,
+	pub nx:bool
+}
+
+impl NptPml5e
+{
+	pub fn construct(present:bool,write:bool,user:bool,pml4e_base:u64,nx:bool)->Self
+	{
+		let mut v=Self::from_bits(0);
+		v.set_present(present);
+		v.set_write(write);
+		v.set_user(user);
+		v.set_nx(nx);
+		v.set_pml4e_base(page_4kb_count(pml4e_base));
+		v
+	}
+}
+
 // Page-Map-Level-4 Entry (Bits 39-47)
 #[bitfield(u64)] pub struct NptPml4e
 {
@@ -217,13 +248,13 @@ impl NptPte
 	}
 }
 
-pub struct SvmNptPageTableDescriptor
+pub struct SvmNptPageTableDescriptor<T:Sized>
 {
-	pub table:MemoryDescriptor,
+	pub table:MemoryDescriptor<1,T>,
 	pub gpa_start:u64
 }
 
-impl Default for SvmNptPageTableDescriptor
+impl<T:Sized> Default for SvmNptPageTableDescriptor<T>
 {
 	fn default() -> Self
 	{
@@ -237,10 +268,11 @@ impl Default for SvmNptPageTableDescriptor
 
 pub struct SvmNptManager
 {
-	pub pml4e:MemoryDescriptor,
-	pub pdpte:MemoryDescriptor,
-	pub pde:Vec<SvmNptPageTableDescriptor>,
-	pub pte:Vec<SvmNptPageTableDescriptor>
+	pub pml5e:MemoryDescriptor<1,NptPml5e>,
+	pub pml4e:MemoryDescriptor<1,NptPml4e>,
+	pub pdpte:MemoryDescriptor<1,NptHugePdpte>,
+	pub pde:Vec<SvmNptPageTableDescriptor<NptLargePde>>,
+	pub pte:Vec<SvmNptPageTableDescriptor<NptPte>>
 }
 
 impl Default for SvmNptManager
@@ -249,6 +281,7 @@ impl Default for SvmNptManager
 	{
 		Self
 		{
+			pml5e:MemoryDescriptor::null(),
 			pml4e:MemoryDescriptor::null(),
 			pdpte:MemoryDescriptor::null(),
 			pde:Vec::new(),
@@ -261,15 +294,18 @@ impl SvmNptManager
 {
 	pub fn build_identity_map(&mut self)
 	{
-		let pml4e=alloc_contd_pages(PAGE_SIZE);
-		match pml4e
+		match MemoryDescriptor::alloc()
+		{
+			Some(md)=>self.pml5e=md,
+			None=>panic!("Failed to allocate PML5E!")
+		}
+		match MemoryDescriptor::alloc()
 		{
 			Some(md)=>self.pml4e=md,
 			None=>panic!("Failed to allocate PML4E!")
 		}
 		debug!("PML4E is allocated at {:p}",self.pml4e.virt);
-		let pdpte=alloc_2mb_page();
-		match pdpte
+		match MemoryDescriptor::alloc()
 		{
 			Some(md)=>self.pdpte=md,
 			None=>panic!("Failed to allocate PDPTE!")
@@ -291,9 +327,14 @@ impl SvmNptManager
 			let pml4e_v=NptPml4e::construct(true,true,true,self.pdpte.phys+page_mult(i) as u64,false);
 			unsafe
 			{
-				let pml4e_p=(self.pml4e.virt as *mut NptPml4e).add(i);
+				let pml4e_p=self.pml4e.virt.add(i);
 				pml4e_p.write(pml4e_v);
+				self.pml5e.virt.add(i).write(NptPml5e::from_bits(0));
 			}
+		}
+		unsafe
+		{
+			*self.pml5e.virt=NptPml5e::construct(true,true,true,self.pml4e.phys,false);
 		}
 	}
 
@@ -329,13 +370,12 @@ impl SvmNptManager
 		if self.locate_pde_mut(gpa).is_none()
 		{
 			// Target PDE is absent.
-			let pde_md=alloc_contd_pages(PAGE_SIZE);
-			match pde_md
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>
 				{
 					let gpa_start=page_1gb_base(gpa);
-					let pde_array=md.virt as *mut NptLargePde;
+					let pde_array:*mut NptLargePde=md.virt;
 					let pde_d=SvmNptPageTableDescriptor
 					{
 						gpa_start,
@@ -352,7 +392,7 @@ impl SvmNptManager
 					}
 					debug!("Splitted PDPTE Entry: {pdpte_p:p} for GPA 0x{gpa:016X}");
 					pdpte_p.set_page_size(false);
-					pdpte_p.set_pde_base(page_count(md.phys));
+					pdpte_p.set_pde_base(page_count(pde_d.table.phys));
 					self.pde.push(pde_d);
 				}
 				None=>panic!("Failed to split PDPTE while allocating PDE!")
@@ -360,7 +400,7 @@ impl SvmNptManager
 		}
 	}
 
-	fn locate_pde_mut(&mut self,gpa:u64)->Option<&mut SvmNptPageTableDescriptor>
+	fn locate_pde_mut(&mut self,gpa:u64)->Option<&mut SvmNptPageTableDescriptor<NptLargePde>>
 	{
 		self.pde.iter_mut().find(|pde_p| gpa>=pde_p.gpa_start && gpa<pde_p.gpa_start+PAGE_1GB_SIZE as u64)
 	}
@@ -406,8 +446,7 @@ impl SvmNptManager
 		if self.locate_pte_mut(gpa).is_none()
 		{
 			// This 2MiB page has not been described yet.
-			let pte_md=alloc_contd_pages(PAGE_SIZE);
-			match pte_md
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>
 				{
@@ -425,7 +464,7 @@ impl SvmNptManager
 							gpa_start:page_2mb_base(gpa),
 							table:md
 						};
-						let pte_array=md.virt as *mut NptPte;
+						let pte_array:*mut NptPte=pte_d.table.virt;
 						for i in 0..512
 						{
 							unsafe
@@ -438,7 +477,7 @@ impl SvmNptManager
 						unsafe
 						{
 							(*pde_p).set_page_size(false);
-							(*pde_p).set_pte_base(page_count(md.phys));
+							(*pde_p).set_pte_base(page_count(pte_d.table.phys));
 						}
 						self.pte.push(pte_d);
 					}
@@ -448,7 +487,7 @@ impl SvmNptManager
 		}
 	}
 
-	fn locate_pte_mut(&mut self,gpa:u64)->Option<&mut SvmNptPageTableDescriptor>
+	fn locate_pte_mut(&mut self,gpa:u64)->Option<&mut SvmNptPageTableDescriptor<NptPte>>
 	{
 		self.pte.iter_mut().find(|pte_p| gpa>=pte_p.gpa_start && gpa<pte_p.gpa_start+PAGE_2MB_SIZE as u64)
 	}
@@ -466,7 +505,7 @@ impl SvmNptManager
 		{
 			Some(pte_d)=>
 			{
-				let pte_array=pte_d.table.virt as *mut NptPte;
+				let pte_array=pte_d.table.virt;
 				let index=page_entry_index(page_4kb_count(gpa as usize));
 				unsafe
 				{

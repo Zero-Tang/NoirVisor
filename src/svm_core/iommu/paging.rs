@@ -15,7 +15,7 @@ use core::{cmp::Ordering, slice};
 use bitfield_struct::bitfield;
 use log::*;
 
-use crate::xpf_core::{allocator::{alloc_contd_pages, free_contd_pages}, nvbdk::*};
+use crate::xpf_core::nvbdk::*;
 use super::SvmIommuManager;
 
 /// ## SvmIommuPde
@@ -84,7 +84,7 @@ impl SvmIommuPte
 
 pub struct SvmIommuPmlManager
 {
-	pub pxe:MemoryDescriptor,
+	pub pxe:MemoryDescriptor<1,SvmIommuPte>,
 	pub gpa_start:u64,
 	pub length:u64
 }
@@ -96,11 +96,11 @@ impl SvmIommuPmlManager
 	/// This method initializes the all entries with PTEs (i.e.: terminal level)
 	pub fn new(gpa_base:u64,page_size:usize)->Self
 	{
-		match alloc_contd_pages(PAGE_SIZE)
+		match MemoryDescriptor::alloc()
 		{
 			Some(md)=>
 			{
-				let pte_p:*mut SvmIommuPte=md.virt.cast();
+				let pte_p:*mut SvmIommuPte=md.virt;
 				debug!("Allocated PML at {pte_p:p} with page-size of 0x{page_size:X}...");
 				for i in 0..512
 				{
@@ -134,14 +134,6 @@ impl SvmIommuPmlManager
 	}
 }
 
-impl Drop for SvmIommuPmlManager
-{
-	fn drop(&mut self)
-	{
-		free_contd_pages(self.pxe.virt,PAGE_SIZE);
-	}
-}
-
 impl SvmIommuManager
 {
 	pub fn split_pml4e(&mut self,gpa:u64)
@@ -150,12 +142,12 @@ impl SvmIommuManager
 		if let Err(i)=self.pml3e.binary_search_by(|m| m.compare_gpa(gpa))
 		{
 			// Not described yet.
-			match alloc_contd_pages(PAGE_SIZE)
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>
 				{
 					let gpa_start=page_512gb_base(gpa);
-					let pml3e_array=unsafe{slice::from_raw_parts_mut(md.virt as *mut SvmIommuPte,PAGE_TABLE_ENTRIES)};
+					let pml3e_array=unsafe{slice::from_raw_parts_mut(md.virt,PAGE_TABLE_ENTRIES)};
 					let pml3e_d=SvmIommuPmlManager
 					{
 						gpa_start,
@@ -170,7 +162,7 @@ impl SvmIommuManager
 					// Locate and set the PDE.
 					let pml4e_p=unsafe{&mut *self.locate_pml4e_mut(gpa).unwrap().cast::<SvmIommuPde>()};
 					pml4e_p.set_next_level(3);
-					pml4e_p.set_pte(page_count(md.phys));
+					pml4e_p.set_pte(page_count(pml3e_d.pxe.phys));
 					// Insert to the manager.
 					self.pml3e.insert(i,pml3e_d);
 				}
@@ -185,14 +177,14 @@ impl SvmIommuManager
 		if let Err(i)=self.pml2e.binary_search_by(|m| m.compare_gpa(gpa))
 		{
 			// Not described yet.
-			match alloc_contd_pages(PAGE_SIZE)
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>
 				{
 					// Also split the PML4E.
 					self.split_pml4e(gpa);
 					let gpa_start=page_1gb_base(gpa);
-					let pml2e_array=unsafe{slice::from_raw_parts_mut(md.virt as *mut SvmIommuPte,PAGE_TABLE_ENTRIES)};
+					let pml2e_array=unsafe{slice::from_raw_parts_mut(md.virt,PAGE_TABLE_ENTRIES)};
 					let pml2e_d=SvmIommuPmlManager
 					{
 						gpa_start,
@@ -207,7 +199,7 @@ impl SvmIommuManager
 					// Locate and set the PDE.
 					let pml3e_p=unsafe{&mut *self.locate_pml3e_mut(gpa).unwrap().cast::<SvmIommuPde>()};
 					pml3e_p.set_next_level(2);
-					pml3e_p.set_pte(page_count(md.phys));
+					pml3e_p.set_pte(page_count(pml2e_d.pxe.phys));
 					// Insert to the manager.
 					self.pml2e.insert(i,pml2e_d);
 				}
@@ -222,14 +214,14 @@ impl SvmIommuManager
 		if let Err(i)=self.pml1e.binary_search_by(|m| m.compare_gpa(gpa))
 		{
 			// Not described yet.
-			match alloc_contd_pages(PAGE_SIZE)
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>
 				{
 					// Also split the PML3E.
 					self.split_pml3e(gpa);
 					let gpa_start=page_2mb_base(gpa);
-					let pml1e_array=unsafe{slice::from_raw_parts_mut(md.virt as *mut SvmIommuPte,PAGE_TABLE_ENTRIES)};
+					let pml1e_array=unsafe{slice::from_raw_parts_mut(md.virt,PAGE_TABLE_ENTRIES)};
 					let pml1e_d=SvmIommuPmlManager
 					{
 						gpa_start,
@@ -244,7 +236,7 @@ impl SvmIommuManager
 					// Locate and set the PDE.
 					let pml2e_p=unsafe{&mut *self.locate_pml2e_mut(gpa).unwrap().cast::<SvmIommuPde>()};
 					pml2e_p.set_next_level(1);
-					pml2e_p.set_pte(page_count(md.phys));
+					pml2e_p.set_pte(page_count(pml1e_d.pxe.phys));
 					// Insert to the manager.
 					self.pml1e.insert(i,pml1e_d);
 				}

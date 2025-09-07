@@ -18,9 +18,9 @@ use log::*;
 
 use acpi::{Ivhd, IvhdLarge};
 use paging::{SvmIommuPmlManager, SvmIommuPte};
-use crate::{svm_core::iommu::mmio::*, xpf_core::{asm::io::{mmio_read, mmio_write}, ci::CI_MANAGER}, *};
+use crate::{svm_core::iommu::{mmio::*, paging::SvmIommuPde}, xpf_core::{asm::io::{mmio_read, mmio_write}, ci::CI_MANAGER}, *};
 use drv_core::acpi::{search_acpi_table, tables::{AcpiSystemDescriptorSignature, IoVirtualizationReportingStructure}};
-use xpf_core::{nvbdk::*, ioflt::IoRegion, allocator::{alloc_2mb_page, alloc_contd_pages, free_contd_pages}};
+use xpf_core::{nvbdk::*, ioflt::IoRegion};
 use mmio::DeviceTableBaseRegister;
 
 mod acpi;
@@ -48,8 +48,8 @@ pub struct SvmIommuManager
 {
 	/// This `Vec` must be sorted in the order of physical address.
 	pub iommu_bars:Vec<SvmIommuBar>,
-	pub device_table:MemoryDescriptor,
-	pub pml4e:MemoryDescriptor,
+	pub device_table:MemoryDescriptor<PAGE_TABLE_ENTRIES64,SvmIommuDeviceTableEntry>,
+	pub pml4e:MemoryDescriptor<1,SvmIommuPde>,
 	pub pml3e:Vec<SvmIommuPmlManager>,
 	pub pml2e:Vec<SvmIommuPmlManager>,
 	pub pml1e:Vec<SvmIommuPmlManager>
@@ -113,7 +113,7 @@ impl SvmIommuManager
 		else
 		{
 			// PML4E
-			match alloc_contd_pages(PAGE_SIZE)
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>mgr.pml4e=md,
 				None=>panic!("Failed to allocate PML4E for AMD-Vi!")
@@ -128,7 +128,7 @@ impl SvmIommuManager
 				}
 			}
 			// Device Table
-			match alloc_2mb_page()
+			match MemoryDescriptor::alloc_2mb_page()
 			{
 				Some(md)=>mgr.device_table=md,
 				None=>panic!("Failed to allocate Device-Table for AMD-Vi!")
@@ -153,13 +153,13 @@ impl SvmIommuManager
 			for bar in &mut mgr.iommu_bars
 			{
 				// Command Buffer
-				match alloc_contd_pages(PAGE_SIZE)
+				match MemoryDescriptor::alloc()
 				{
 					Some(md)=>bar.cmd_base=md,
 					None=>panic!("Failed to allocate command buffer for AMD-Vi!")
 				}
 				// Event Logs
-				match alloc_contd_pages(PAGE_SIZE)
+				match MemoryDescriptor::alloc()
 				{
 					Some(md)=>bar.log_base=md,
 					None=>panic!("Failed to allocate event logs for AMD-Vi!")
@@ -240,25 +240,13 @@ impl SvmIommuManager
 	}
 }
 
-impl Drop for SvmIommuManager
-{
-	fn drop(&mut self)
-	{
-		if !self.pml4e.virt.is_null()
-		{
-			free_contd_pages(self.pml4e.virt,PAGE_SIZE);
-		}
-		// Note that PML3E to PML1E are automatically freed by Drop trait.
-	}
-}
-
 pub struct SvmIommuBar
 {
-	pub bar:MemoryDescriptor,
+	pub bar:MmioDescriptor<4,c_void>,
 	pub size:usize,
 	pub iotlb_sup:bool,
-	pub cmd_base:MemoryDescriptor,
-	pub log_base:MemoryDescriptor
+	pub cmd_base:MemoryDescriptor<1,[u32;4]>,
+	pub log_base:MemoryDescriptor<1,[u32;4]>
 }
 
 impl SvmIommuBar
@@ -267,11 +255,7 @@ impl SvmIommuBar
 	{
 		Self
 		{
-			bar:MemoryDescriptor
-			{
-				virt:unsafe{noir_map_uncached_memory(phys,0x4000)},
-				phys
-			},
+			bar:MmioDescriptor::map(phys),
 			size:0x4000,
 			iotlb_sup:false,
 			cmd_base:MemoryDescriptor::null(),
@@ -287,17 +271,6 @@ impl SvmIommuBar
 		{
 			*self.cmd_base.virt.byte_add(tail_pos as usize).cast()=raw;
 			mmio_write(self.bar.virt.byte_add(MMIO_BASE_COMMAND_BUFFER_TAIL).cast(),tail_pos+16);
-		}
-	}
-}
-
-impl Drop for SvmIommuBar
-{
-	fn drop(&mut self)
-	{
-		unsafe
-		{
-			noir_unmap_physical_memory(self.bar.virt,0x4000);
 		}
 	}
 }

@@ -47,6 +47,17 @@ void noir_system_debugger_write(IN CHAR8* String,IN UINTN MaximumLength)
 	Print(L"%.*a",j,Buffer);
 }
 
+void* noir_kmalloc(size_t length,size_t alignment)
+{
+	// No implementation for alternate allocation in UEFI.
+	return NULL;
+}
+
+void noir_kfree(void* ptr,size_t length,size_t alignment)
+{
+	// No implementation for alternate allocation in UEFI.
+}
+
 VOID* noir_alloc_2mb_page()
 {
 	VOID* p=AllocateAlignedRuntimePages(512,SIZE_2MB);

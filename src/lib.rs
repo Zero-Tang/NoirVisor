@@ -33,14 +33,15 @@ use log::*;
 
 use nvcvm::status::Status;
 
-use xpf_core::{allocator::set_alloc_checker, x86::cpuid::*, nvbdk::PAGE_SIZE};
+use xpf_core::{allocator::set_alloc_checker, x86::cpuid::*, nvbdk::PAGE_4KB_SHIFT};
 pub use xpf_core::debug::*;
 use vt_core::VtHypervisor;
 use svm_core::SvmHypervisor;
 
 // Limit stack size to 64KiB. Should be enough for most circumstances.
 // FIXME: Implement runtime stack overflow detector.
-pub const HYPERVISOR_STACK_SIZE:usize=PAGE_SIZE*16;
+pub const HYPERVISOR_STACK_PAGE_COUNT:usize=16;
+pub const HYPERVISOR_STACK_SIZE:usize=HYPERVISOR_STACK_PAGE_COUNT<<PAGE_4KB_SHIFT;
 
 pub enum ProcessorManufacturer
 {

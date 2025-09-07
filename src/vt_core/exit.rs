@@ -18,7 +18,7 @@ use log::*;
 
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall, nvc_forward_memory_mapped_hypercall};
-use crate::{mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, ci::is_ci_phys_page, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, trytask::try_task, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, GENERAL_PROTECTION_FAULT, INVALID_OPCODE_FAULT}}}, *};
+use crate::{disasm::MnemonicString, mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, ci::is_ci_phys_page, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, trytask::try_task, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, GENERAL_PROTECTION_FAULT, INVALID_OPCODE_FAULT}}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, VtStackTop, nvc_vt_resume_without_entry};
 
 impl VtVcpu
@@ -261,7 +261,7 @@ impl VtVcpu
 			#[cfg(windows)]
 			if hv.mshvcall_forwarder.is_some()
 			{
-				let stack:&mut VtStackTop=unsafe{&mut *self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast()};
+				let stack:&mut VtStackTop=unsafe{&mut *self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast()};
 				let hvcall_code=TlfsHypercallCode::from_bits(gpr_state.rcx);
 				// Construct the forward stack.
 				let mut fwd_stack=MshvForwardStack::from_context(gpr_state,&mut stack.volatile_xmms);
@@ -393,9 +393,9 @@ impl VtVcpu
 				let mut decoder=Decoder::with_ip(self.get_current_bitness(),&instruction_bytes,rip as u64,0);
 				let ins=decoder.decode();
 				inslen=ins.len() as u32;
-				let mut mnemonic:FormatBuffer<64>=FormatBuffer::default();
+				let mut mnemonic=MnemonicString::default();
 				self.disasm_fmter.format(&ins,&mut mnemonic);
-				debug!("CI-fault instruction bytes: {:02X?} | {}",&instruction_bytes[..ins.len()],mnemonic.as_str());
+				debug!("CI-fault instruction bytes: {:02X?} | {}",&instruction_bytes[..ins.len()],mnemonic);
 			}
 			self.advance_rip_manually(inslen);
 		}

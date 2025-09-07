@@ -11,9 +11,11 @@
  */
 
 use core::{ffi::c_void,cmp::Ordering,ops::Add};
-use alloc::{string::String,vec::Vec};
+use alloc::vec::Vec;
 
+use log::info;
 use nvcvm::status::Status;
+use static_collections::string::StaticString;
 
 pub type IoInputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*mut c_void,context:*mut c_void);
 pub type IoOutputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*const c_void,context:*mut c_void);
@@ -25,7 +27,7 @@ pub type IoOutputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:
 // There might be some other weirdo addressing modes (probably not even simple integers) of I/O in other architectures, so use generics to reduce problems.
 pub struct IoRegion<T>
 {
-	pub name:String,
+	pub name:StaticString<32>,
 	pub input_handler:Option<IoInputFilterHandler<T>>,
 	pub output_handler:IoOutputFilterHandler<T>,
 	pub addr:T,
@@ -41,7 +43,7 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoRegion<T>
 	{
 		Self
 		{
-			name:String::from(name),
+			name:StaticString::from(name),
 			input_handler,
 			output_handler,
 			addr,
@@ -106,44 +108,23 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoAddressSpace<T>
 	/// This method binds a region to this I/O address space. 
 	pub fn add_region(&mut self,region:IoRegion<T>)
 	{
-		for i in 0..self.regions.len()
+		if let Err(i)=self.regions.binary_search_by(|r| r.try_dispatch(region.addr))
 		{
-			if region<self.regions[i]
-			{
-				self.regions.insert(i,region);
-				return;
-			}
+			info!("Inserting region to index {i}...");
+			self.regions.insert(i,region);
 		}
-		self.regions.push(region);
 	}
 
 	/// ## `try_dispatch` method
 	/// This is an internal method which uses binary search to dispatch I/O.
 	fn try_dispatch(&self,addr:T)->Option<&IoRegion<T>>
 	{
-		// If it is empty, no need to perform binary search.
-		if self.regions.is_empty()
-		{
-			return None;
-		}
 		// Use binary search.
-		let mut lo:isize=0;
-		let mut hi:isize=self.regions.len() as isize;
-		while hi>=lo
+		match self.regions.binary_search_by(|r| r.try_dispatch(addr))
 		{
-			let mid:usize=((lo+hi)>>1) as usize;
-			let r=self.regions[mid].try_dispatch(addr);
-			match r
-			{
-				Ordering::Less=>lo=(mid+1) as isize,
-				Ordering::Greater=>hi=(mid-1) as isize,
-				Ordering::Equal=>
-				{
-					return Some(&self.regions[mid]);
-				}
-			}
+			Ok(i)=>Some(&self.regions[i]),
+			Err(_)=>None
 		}
-		None
 	}
 
 	/// ## `dispatch_input` method

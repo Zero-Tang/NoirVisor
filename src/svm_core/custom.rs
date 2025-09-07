@@ -10,19 +10,21 @@
  * or fitness for a particular purpose, etc.).
  */
 
+use core::ffi::c_void;
+
 use alloc::{vec::Vec,boxed::Box};
 // use nvcvm::interface::Vpcb;
 
 use nvcvm::status::Status;
 
-use crate::{cvm_core::*, xpf_core::nvbdk::MemoryDescriptor};
-use super::SvmHypervisor;
+use crate::{cvm_core::*, xpf_core::{allocator::kmalloc::KernelAllocator, nvbdk::MemoryDescriptor}};
+use super::{SvmHypervisor,npt::*};
 
 pub struct SvmCustomVcpu
 {
-	vpcb:MemoryDescriptor,
-	vmcb:MemoryDescriptor,
-	apic_backing:Option<MemoryDescriptor>,
+	vpcb:MemoryDescriptor<1,c_void>,
+	vmcb:MemoryDescriptor<1,c_void>,
+	apic_backing:Option<MemoryDescriptor<1,c_void>>,
 	proc_id:u32,
 	apic_id:u32
 }
@@ -31,18 +33,18 @@ pub struct SvmCustomVm
 {
 	asid:u32,
 	vcpus:Vec<Option<Box<SvmCustomVcpu>>>,
-	iopm:MemoryDescriptor,
-	msrpm:MemoryDescriptor,
+	iopm:MemoryDescriptor<3,usize>,
+	msrpm:MemoryDescriptor<2,usize>,
 	nptm:SvmCustomNptManager,
 	smm_nptm:SvmCustomNptManager
 }
 
 pub struct SvmCustomNptManager
 {
-	pml4e:MemoryDescriptor,
-	pdpte:Vec<MemoryDescriptor>,
-	pde:Vec<MemoryDescriptor>,
-	pte:Vec<MemoryDescriptor>
+	pml4e:MemoryDescriptor<1,NptPml4e>,
+	pdpte:Vec<MemoryDescriptor<1,NptPdpte>,KernelAllocator>,
+	pde:Vec<MemoryDescriptor<1,NptPde>,KernelAllocator>,
+	pte:Vec<MemoryDescriptor<1,NptPte>,KernelAllocator>
 }
 
 impl CvmVcpuOps for SvmCustomVcpu
@@ -123,21 +125,13 @@ impl CvmHvOps for SvmHypervisor
 		
 	}
 
-	fn reference_vm(&self,vm:CvmHandle)->Option<&impl CvmVmOps>
+	fn reference_vm(&self,_vm:CvmHandle)->Option<&impl CvmVmOps>
 	{
-		match self.cvm_list.get(vm.0)
-		{
-			Some(Some(vm))=>Some(vm.as_ref()),
-			_=>Option::<&SvmCustomVm>::None
-		}
+		None::<&SvmCustomVm>
 	}
 
-	fn reference_vm_mut(&mut self,vm:CvmHandle)->Option<&mut impl CvmVmOps>
+	fn reference_vm_mut(&mut self,_vm:CvmHandle)->Option<&mut impl CvmVmOps>
 	{
-		match self.cvm_list.get_mut(vm.0)
-		{
-			Some(Some(vm))=>Some(vm.as_mut()),
-			_=>Option::<&mut SvmCustomVm>::None
-		}
+		None::<&mut SvmCustomVm>
 	}
 }

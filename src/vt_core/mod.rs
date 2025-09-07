@@ -12,6 +12,7 @@
 
 use alloc::vec::Vec;
 use iced_x86::MasmFormatter;
+use static_collections::bitmap::RefBitmap;
 use core::{ffi::c_void, ptr::null_mut};
 
 use ia32::msr::*;
@@ -19,7 +20,7 @@ use vmcs::*;
 use ept::VtEptManager;
 use crate::*;
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
-use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, bitmap::*, allocator::alloc_contd_pages, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
+use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
@@ -43,11 +44,11 @@ use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, bitmap::*, allocator::allo
 
 pub struct VtVcpu
 {
-	pub vmcs:MemoryDescriptor,
-	pub vmxon:MemoryDescriptor,
-	pub hv_stack:*mut c_void,
+	pub vmcs:MemoryDescriptor<1,c_void>,
+	pub vmxon:MemoryDescriptor<1,c_void>,
+	pub hv_stack:MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>,
 	pub hypervisor:*mut c_void,
-	pub ist:[*mut c_void;8],
+	pub ist:[MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>;8],
 	pub cpuid_fms:u32,
 	pub vcpu_id:u32,
 	pub under_hvm:bool,
@@ -72,9 +73,9 @@ impl Default for VtVcpu
 		{
 			vmcs:MemoryDescriptor::null(),
 			vmxon:MemoryDescriptor::null(),
-			hv_stack:null_mut(),
+			hv_stack:MemoryDescriptor::null(),
 			hypervisor:null_mut(),
-			ist:[null_mut();8],
+			ist:[const{MemoryDescriptor::null()};8],
 			cpuid_fms:0,
 			vcpu_id:0,
 			under_hvm:false,
@@ -137,10 +138,10 @@ impl VtVcpu
 		unsafe
 		{
 			let hv:*const VtHypervisor=self.hypervisor.cast();
-			let stack:*mut VtStackTop=self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast();
+			let stack:*mut VtStackTop=self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast();
 			// Setup Host State.
-			let mut ist:[*mut c_void;8]=self.ist;
-			ist[1]=self.ist[1].byte_add(HYPERVISOR_STACK_SIZE);
+			let mut ist:[*mut c_void;8]=[null_mut();8];
+			ist[1]=self.ist[1].virt.byte_add(HYPERVISOR_STACK_SIZE);
 			HostProcessor::build(&mut self.host_cpu,&ist);
 			let idtr=(*hv).host.idt.get_reg();
 			let gdtr=self.host_cpu.gdt.get_reg();
@@ -469,9 +470,9 @@ impl VtVcpu
 pub struct VtHypervisor
 {
 	pub vcpus:Vec<VtVcpu>,
-	pub msr_bitmap:MemoryDescriptor,
-	pub io_bitmap_a:MemoryDescriptor,
-	pub io_bitmap_b:MemoryDescriptor,
+	pub msr_bitmap:MemoryDescriptor<1,usize>,
+	pub io_bitmap_a:MemoryDescriptor<1,usize>,
+	pub io_bitmap_b:MemoryDescriptor<1,usize>,
 	pub eptm:VtEptManager,
 	pub host:HostSystem,
 	pub pio_space:IoAddressSpace<u16>,
@@ -608,7 +609,7 @@ impl HypervisorEssentials for VtHypervisor
 		}
 		info!("Subverting the system with Intel VT-x...");
 		// Allocate various stuff. Note that they are required to be raw-pointer.
-		match alloc_contd_pages(PAGE_SIZE)
+		match MemoryDescriptor::alloc()
 		{
 			Some(md)=>
 			{
@@ -623,10 +624,10 @@ impl HypervisorEssentials for VtHypervisor
 							warn!("MSR (0x{index:X}) can't be intercepted via bitmap!");
 							return;
 						} as usize;
-					let bmp_r:&mut Bitmap<8192>=unsafe{Bitmap::from_raw_parts_mut(self.msr_bitmap.virt.byte_add(if index>=0xC0000000 {0x400} else {0}))};
-					let bmp_w:&mut Bitmap<8192>=unsafe{Bitmap::from_raw_parts_mut(self.msr_bitmap.virt.byte_add(if index>=0xC0000000 {0xC00} else {0x800}))};
-					bmp_r.assign(i,read);
-					bmp_w.assign(i,write);
+					let bmp_r:&mut RefBitmap<8192>=unsafe{RefBitmap::from_raw_mut_ptr(self.msr_bitmap.virt.byte_add(if index>=0xC0000000 {0x400} else {0}).cast())};
+					let bmp_w:&mut RefBitmap<8192>=unsafe{RefBitmap::from_raw_mut_ptr(self.msr_bitmap.virt.byte_add(if index>=0xC0000000 {0xC00} else {0x800}).cast())};
+					let _=bmp_r.assign(i,read);
+					let _=bmp_w.assign(i,write);
 				};
 				// Intercept accesses to the microcode updater.
 				set_interception(MSR_BIOS_UPDATE_TRIGGER,true,true);
@@ -654,41 +655,38 @@ impl HypervisorEssentials for VtHypervisor
 			}
 			None=>fail_cleanup!("Failed to alloate MSR-Bitmap!")
 		}
-		match alloc_contd_pages(PAGE_SIZE*2)
+		match MemoryDescriptor::alloc()
 		{
-			Some(md)=>
-			{
-				self.io_bitmap_a=md;
-				self.io_bitmap_b=md.add(PAGE_SIZE);
-			}
-			None=>fail_cleanup!("Failed to allocate I/O-Bitmap!")
+			Some(md)=>self.io_bitmap_a=md,
+			None=>fail_cleanup!("Failed to allocate I/O-Bitmap A!")
+		}
+		match MemoryDescriptor::alloc()
+		{
+			Some(md)=>self.io_bitmap_b=md,
+			None=>fail_cleanup!("Failed to allocate I/O-Bitmap B!")
 		}
 		let vcpu_count=unsafe{noir_get_processor_count()};
 		for i in 0..vcpu_count
 		{
 			let mut vcpu=VtVcpu::default();
-			let vmxon=alloc_contd_pages(PAGE_SIZE);
-			let vmcs=alloc_contd_pages(PAGE_SIZE);
-			let stack=alloc_contd_pages(HYPERVISOR_STACK_SIZE);
-			let ist1=alloc_contd_pages(HYPERVISOR_STACK_SIZE);
-			match vmxon
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>vcpu.vmxon=md,
 				None=>fail_cleanup!("Failed to allocate VMXON region for processor {i}!")
 			}
-			match vmcs
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>vcpu.vmcs=md,
 				None=>fail_cleanup!("Failed to allocate VMCS for processor {i}!")
 			}
-			match stack
+			match MemoryDescriptor::alloc()
 			{
-				Some(md)=>vcpu.hv_stack=md.virt,
+				Some(md)=>vcpu.hv_stack=md,
 				None=>fail_cleanup!("Failed to allocate hypervisor stack for processor {i}!")
 			}
-			match ist1
+			match MemoryDescriptor::alloc()
 			{
-				Some(md)=>vcpu.ist[1]=md.virt,
+				Some(md)=>vcpu.ist[1]=md,
 				None=>fail_cleanup!("Failed to allocate host IST1 stack for processor {i}!")
 			}
 			vcpu.hypervisor=self as *mut Self as *mut c_void;

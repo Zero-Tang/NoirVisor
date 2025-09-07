@@ -20,7 +20,7 @@ use npt::NptFaultCode;
 use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::{descriptors::DescriptorTable, interrupts::*}};
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall,nvc_forward_memory_mapped_hypercall};
 
-use crate::xpf_core::trytask::try_task;
+use crate::{disasm::MnemonicString, xpf_core::trytask::try_task};
 
 use super::*;
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
@@ -446,7 +446,7 @@ impl SvmVcpu
 			#[cfg(windows)]
 			if let Some(_fwder)=&hv.mshvcall_forwarder
 			{
-				let stack:*mut SvmStackTop=unsafe{self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast()};
+				let stack:*mut SvmStackTop=unsafe{self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast()};
 				let hvcall_code=TlfsHypercallCode::from_bits(gpr_state.rcx);
 				// Construct the forward stack.
 				let mut fwd_stack=MshvForwardStack::from_context(gpr_state,unsafe{&raw mut (*stack).volatile_xmms});
@@ -524,9 +524,9 @@ impl SvmVcpu
 			assert!(decoder.can_decode());
 			let ins_info=decoder.decode();
 			error!("CI-fault for GPA=0x{gpa:016X} is intercepted! rip=0x{rip:016X}, Fault-Reason: {fault}, Instruction-Length: {}",ins_info.len());
-			let mut mnemonic:FormatBuffer<64>=FormatBuffer::default();
+			let mut mnemonic=MnemonicString::default();
 			self.disasm_fmter.format(&ins_info,&mut mnemonic);
-			debug!("CI-fault Instruction: {:02X?} | {}",&ins_bytes[..ins_info.len()],mnemonic.as_str());
+			debug!("CI-fault Instruction: {:02X?} | {}",&ins_bytes[..ins_info.len()],mnemonic);
 			unsafe{advance_rip_manually(vmcb,ins_info.len())};
 		}
 		else if !fault.code_fetch()

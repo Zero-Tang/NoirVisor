@@ -10,13 +10,13 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use iced_x86::*;
 use log::*;
 use spin::Mutex;
 
 use nvcvm::status::Status;
+use static_collections::string::StaticString;
 
-use core::{cell::LazyCell, fmt, mem::MaybeUninit, str};
+use core::{cell::LazyCell, fmt};
 use alloc::boxed::Box;
 
 use qemu_debugcon::*;
@@ -98,63 +98,6 @@ static INTERNAL_LOGGER:InternalLogger=InternalLogger;
 	r.is_ok()
 }
 
-// We need to implement a formatter without alloc!
-pub struct FormatBuffer<const N:usize>
-{
-	buffer:MaybeUninit<[u8;N]>,
-	used:usize
-}
-
-impl<const N:usize> FormatBuffer<N>
-{
-	pub fn as_str(&self)->&str
-	{
-		unsafe
-		{
-			str::from_utf8_unchecked(&self.buffer.assume_init_ref()[..self.used])
-		}
-	}
-}
-
-impl<const N:usize> Default for FormatBuffer<N>
-{
-	fn default() -> Self
-	{
-		Self
-		{
-			buffer:MaybeUninit::uninit(),
-			used:0
-		}
-	}
-}
-
-impl<const N:usize> fmt::Write for FormatBuffer<N>
-{
-	fn write_str(&mut self, s: &str) -> fmt::Result
-	{
-		let remainder=unsafe{&mut self.buffer.assume_init_mut()[self.used..]};
-		let current=s.as_bytes();
-		if remainder.len()<current.len()
-		{
-			return Err(fmt::Error);
-		}
-		remainder[..current.len()].copy_from_slice(current);
-		self.used+=current.len();
-		Ok(())
-	}
-}
-
-impl<const N:usize> FormatterOutput for FormatBuffer<N>
-{
-	fn write(&mut self, text: &str, _kind: FormatterTextKind)
-	{
-		let b=text.as_bytes();
-		let remainder=unsafe{&mut self.buffer.assume_init_mut()[self.used..self.used+b.len()]};
-		remainder.copy_from_slice(b);
-		self.used+=b.len();
-	}
-}
-
 pub trait DebuggerBackend:Send
 {
 	/// # Safety
@@ -187,26 +130,26 @@ static DEBUGGER:Mutex<LazyCell<Box<dyn DebuggerBackend>>>=Mutex::new(
 
 pub fn dbg_print(args: fmt::Arguments)
 {
-	let mut w:FormatBuffer<512>=FormatBuffer::default();
+	let mut w:StaticString<512>=StaticString::new();
 	let r=fmt::write(&mut w, args);
 	if r.is_ok()
 	{
 		unsafe
 		{
-			noir_debug_output(w.buffer.assume_init_ref().as_ptr(),w.used);
+			noir_debug_output(w.as_bytes().as_ptr(),w.as_bytes().len());
 		}
 	}
 }
 
 pub fn system_print(args: fmt::Arguments)
 {
-	let mut w:FormatBuffer<512>=FormatBuffer::default();
+	let mut w:StaticString<512>=StaticString::new();
 	let r=fmt::write(&mut w,args);
 	if r.is_ok()
 	{
 		unsafe 
 		{
-			noir_system_debugger_write(w.buffer.assume_init_ref().as_ptr(),w.used);
+			noir_system_debugger_write(w.as_bytes().as_ptr(),w.as_bytes().len());
 		}
 	}
 }

@@ -14,7 +14,7 @@ use core::ffi::c_void;
 
 use log::*;
 
-use crate::xpf_core::{asm::{crdr::*, msr::rdmsr, seg::*}, allocator::{alloc_contd_pages, free_contd_pages}, nvbdk::*, x86::{descriptors::*, interrupts::*, msr::MSR_GS_BASE, paging::*}};
+use crate::xpf_core::{asm::{crdr::*, msr::rdmsr, seg::*}, nvbdk::*, x86::{descriptors::*, interrupts::*, msr::MSR_GS_BASE, paging::*}};
 
 pub struct HostSystem
 {
@@ -65,8 +65,8 @@ impl HostProcessor
 
 pub struct HostPaging
 {
-	pub cr3:MemoryDescriptor,
-	pdpt:MemoryDescriptor
+	pub cr3:MemoryDescriptor<1,Pml4e>,
+	pdpt:MemoryDescriptor<1,HugePdpte>
 }
 
 impl Default for HostPaging
@@ -81,13 +81,12 @@ impl Default for HostPaging
 			cr3:MemoryDescriptor::null(),
 			pdpt:MemoryDescriptor::null()
 		};
-		match alloc_contd_pages(PAGE_SIZE*2)
+		match MemoryDescriptor::alloc()
 		{
 			Some(md)=>
 			{
-				r.cr3=md;
-				r.pdpt=md.add(PAGE_SIZE);
-				let pdpte_p=r.pdpt.virt as *mut HugePdpte;
+				r.pdpt=md;
+				let pdpte_p=r.pdpt.virt;
 				for i in 0..PAGE_TABLE_ENTRIES
 				{
 					unsafe
@@ -97,33 +96,26 @@ impl Default for HostPaging
 					}
 				}
 			}
+			None=>panic!("Failed to allocate PDPTE for host paging base!")
+		}
+		match MemoryDescriptor::alloc()
+		{
+			Some(md)=>r.cr3=md,
 			None=>panic!("Failed to allocate host paging base!")
 		}
-		let pml4e_p=r.cr3.virt as *mut Pml4e;
+		let pml4e_p=r.cr3.virt;
 		unsafe
 		{
 			// CR3 might contain PCID. Clear it.
 			let scr3_phys=page_4kb_base(read_cr3());
 			let scr3_virt=noir_find_virt_by_phys(scr3_phys);
 			debug!("System CR3 Virt: {scr3_virt:p}, Phys: 0x{scr3_phys:016X}");
-			memcpy(r.cr3.virt,scr3_virt,PAGE_SIZE);
+			memcpy(r.cr3.virt.cast(),scr3_virt,PAGE_SIZE);
 			let pml4e_v=Pml4e::construct(true,true,false,r.pdpt.phys,false);
 			debug!("PML4E Pointer: {:p}, PML4E value 0x{:016X}",pml4e_p,pml4e_v.into_bits());
 			pml4e_p.write(pml4e_v);
 		}
 		r
-	}
-}
-
-impl Drop for HostPaging
-{
-	fn drop(&mut self)
-	{
-		trace!("Dropping Host Paging...");
-		if !self.cr3.virt.is_null()
-		{
-			free_contd_pages(self.cr3.virt,PAGE_SIZE*2);
-		}
 	}
 }
 

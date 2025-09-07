@@ -12,17 +12,17 @@
 
 use core::{arch::x86_64::_xgetbv, ffi::c_void, ptr::*};
 use alloc::vec::Vec;
-use custom::SvmCustomVm;
 #[cfg(target_os="uefi")]
 use exit::svm_apic_output_handler;
 use iced_x86::MasmFormatter;
+use static_collections::bitmap::RefBitmap;
 use iommu::{svm_iommu_output_handler, SvmIommuManager};
 use log::*;
 use npt::SvmNptManager;
-use xpf_core::{bitmap::Bitmap, hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
+use xpf_core::{hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 
-use crate::{xpf_core::{allocator::{kmalloc::{KernelAllocator, KERNEL_ALLOCATOR}, *}, asm::{crdr::*, msr::*, seg::*, svm::*}, nvbdk::*, x86::{cpuid::*, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
+use crate::{xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, nvbdk::*, x86::{cpuid::*, crdr::CR4_LA57, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
@@ -63,12 +63,12 @@ pub struct SvmNestedVcpu
 
 pub struct SvmVcpu
 {
-	pub vmcb:MemoryDescriptor,
-	pub hsave:MemoryDescriptor,
-	pub hvmcb:MemoryDescriptor,
-	pub hv_stack:*mut c_void,
+	pub vmcb:MemoryDescriptor<1,c_void>,
+	pub hsave:MemoryDescriptor<1,c_void>,
+	pub hvmcb:MemoryDescriptor<1,c_void>,
+	pub hv_stack:MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>,
 	pub hypervisor:*mut c_void,
-	pub ist:[*mut c_void;8],
+	pub ist:[MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>;8],
 	pub vcpu_id:u32,
 	pub apic_id:u8,
 	pub x2apic_id:u32,
@@ -94,9 +94,9 @@ impl SvmVcpu
 			vmcb:MemoryDescriptor::null(),
 			hsave:MemoryDescriptor::null(),
 			hvmcb:MemoryDescriptor::null(),
-			hv_stack:null_mut(),
+			hv_stack:MemoryDescriptor::null(),
 			hypervisor:null_mut(),
-			ist:[null_mut();8],
+			ist:[const{MemoryDescriptor::null()};8],
 			vcpu_id:0,
 			apic_id:0,
 			x2apic_id:0,
@@ -143,7 +143,7 @@ impl SvmVcpu
 	{
 		unsafe
 		{
-			let stack:&mut SvmStackTop=&mut *self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast();
+			let stack:&mut SvmStackTop=&mut *self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast();
 			// Setup supported features.
 			self.svm_feats=SvmFeatureIdentifier::cpuid();
 			let hv=self.hypervisor as *mut SvmHypervisor;
@@ -166,8 +166,8 @@ impl SvmVcpu
 			iv2.set_skinit(true);
 			iv2.write(self.vmcb.virt);
 			// Setup Host State.
-			let mut ist:[*mut c_void;8]=self.ist;
-			ist[1]=self.ist[1].byte_add(HYPERVISOR_STACK_SIZE);
+			let mut ist:[*mut c_void;8]=[null_mut();8];
+			ist[1]=self.ist[1].virt.byte_add(HYPERVISOR_STACK_SIZE);
 			HostProcessor::build(&mut self.host_cpu,&ist);
 			vmsave(self.hvmcb.phys);
 			let idtr=(*hv).host.idt.get_reg();
@@ -240,7 +240,8 @@ impl SvmVcpu
 			vmwrite(self.vmcb.virt,IOPM_PHYSICAL_ADDRESS,(*hv).iopm.phys);
 			vmwrite(self.vmcb.virt,MSRPM_PHYSICAL_ADDRESS,(*hv).msrpm.phys);
 			// Setup NPT.
-			vmwrite(self.vmcb.virt,NPT_CR3,(*hv).nptm.pml4e.phys);
+			// Note that Host CR4.LA57 bit determines whether NPT uses 5-level paging or not.
+			vmwrite(self.vmcb.virt,NPT_CR3,if (state.cr4 & CR4_LA57 as usize)!=0 {(*hv).nptm.pml5e.phys} else {(*hv).nptm.pml4e.phys});
 			let mut npt_ctrl=NptControl::from_bits(0);
 			npt_ctrl.set_enable_npt(true);
 			vmwrite(self.vmcb.virt,NPT_CONTROL,npt_ctrl);
@@ -271,7 +272,7 @@ impl SvmVcpu
 		// Initialize Hypervisor Context stack.
 		unsafe
 		{
-			let stack:*mut SvmStackTop=self.hv_stack.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()) as *mut SvmStackTop;
+			let stack:*mut SvmStackTop=self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()) as *mut SvmStackTop;
 			trace!("Stack-Top of vCPU {}: {stack:p}",self.vcpu_id);
 			(*stack).guest_vmcb_pa=self.vmcb.phys;
 			(*stack).host_vmcb_pa=self.hvmcb.phys;
@@ -304,14 +305,13 @@ impl SvmVcpu
 pub struct SvmHypervisor
 {
 	pub vcpus:Vec<SvmVcpu>,
-	pub msrpm:MemoryDescriptor,
-	pub iopm:MemoryDescriptor,
+	pub msrpm:MemoryDescriptor<2,c_void>,
+	pub iopm:MemoryDescriptor<3,c_void>,
 	pub nptm:SvmNptManager,
 	pub host:HostSystem,
 	pub iommu_manager:Option<SvmIommuManager>,
 	pub pio_space:IoAddressSpace<u16>,
 	pub mmio_space:IoAddressSpace<u64>,
-	pub cvm_list:Vec<Option<Box<SvmCustomVm>>,KernelAllocator>,
 	pub image_base:*mut c_void,
 	pub image_size:u32,
 	pub features:EnabledFeatures,
@@ -342,7 +342,6 @@ impl Default for SvmHypervisor
 			iommu_manager:None,
 			pio_space:IoAddressSpace{regions:Vec::new()},
 			mmio_space:IoAddressSpace{regions:Vec::new()},
-			cvm_list:Vec::with_capacity_in(8,KERNEL_ALLOCATOR),
 			image_base:null_mut(),
 			image_size:0,
 			features:EnabledFeatures::get(),
@@ -406,14 +405,12 @@ impl HypervisorEssentials for SvmHypervisor
 		info!("Subverting the system with AMD-V...");
 		info!("Enabled features: {}",self.features);
 		// Allocate various stuff. Note that they are required to be raw-pointer.
-		let msrpm=alloc_contd_pages(PAGE_SIZE*2);
-		let iopm=alloc_contd_pages(PAGE_SIZE*3);
-		match msrpm
+		match MemoryDescriptor::alloc()
 		{
 			Some(md)=>
 			{
 				self.msrpm=md;
-				let msrpm:&mut Bitmap<65536>=unsafe{Bitmap::from_raw_parts_mut(self.msrpm.virt)};
+				let msrpm:&mut RefBitmap<65536>=unsafe{RefBitmap::from_raw_mut_ptr(self.msrpm.virt.cast())};
 				// Setup basic interceptions to MSRs that may interfere with SVM normal operations.
 				// This is also for nested virtualization.
 				let mut set_interception=|index:u32,read:bool,write:bool|
@@ -429,8 +426,8 @@ impl HypervisorEssentials for SvmHypervisor
 					{
 						Some(i)=>
 						{
-							msrpm.assign(i,read);
-							msrpm.assign(i+1,write);
+							let _=msrpm.assign(i,read);
+							let _=msrpm.assign(i+1,write);
 						}
 						None=>warn!("MSR 0x{index:X} is invalid!")
 					}
@@ -446,44 +443,39 @@ impl HypervisorEssentials for SvmHypervisor
 			}
 			None=>fail_cleanup!("Failed to allocate MSR Permission-Map!")
 		}
-		match iopm
+		match MemoryDescriptor::alloc()
 		{
 			Some(md)=>self.iopm=md,
 			None=>fail_cleanup!("Failed to allocate I/O Permission-Map!")
 		}
-		debug!("MSRPM: 0x{:016X}, IOPM: 0x{:016X}",msrpm.unwrap().phys,iopm.unwrap().phys);
+		debug!("MSRPM: 0x{:016X}, IOPM: 0x{:016X}",self.msrpm.phys,self.iopm.phys);
 		let vcpu_count=unsafe{noir_get_processor_count()};
 		for i in 0..vcpu_count
 		{
 			let mut vcpu=SvmVcpu::new();
-			let hsave=alloc_contd_pages(PAGE_SIZE);
-			let vmcb=alloc_contd_pages(PAGE_SIZE);
-			let hvmcb=alloc_contd_pages(PAGE_SIZE);
-			let stack=alloc_contd_pages(HYPERVISOR_STACK_SIZE);
-			let ist1=alloc_contd_pages(HYPERVISOR_STACK_SIZE);
-			match hsave
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>vcpu.hsave=md,
 				None=>fail_cleanup!("Failed to allocate HSAVE Area for processor {}!",i)
 			}
-			match vmcb
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>vcpu.vmcb=md,
 				None=>fail_cleanup!("Failed to allocate VMCB for processor {}!",i)
 			}
-			match hvmcb
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>vcpu.hvmcb=md,
 				None=>fail_cleanup!("Failed to allocate Host-VMCB for processor {}!",i)
 			}
-			match stack
+			match MemoryDescriptor::alloc()
 			{
-				Some(md)=>vcpu.hv_stack=md.virt,
+				Some(md)=>vcpu.hv_stack=md,
 				None=>fail_cleanup!("Failed to allocate hypervisor stack for processor {}!",i)
 			}
-			match ist1
+			match MemoryDescriptor::alloc()
 			{
-				Some(md)=>vcpu.ist[1]=md.virt,
+				Some(md)=>vcpu.ist[1]=md,
 				None=>fail_cleanup!("Failed to allocate host IST1 stack for processor {}!",i)
 			}
 			vcpu.hypervisor=self as *mut Self as *mut c_void;

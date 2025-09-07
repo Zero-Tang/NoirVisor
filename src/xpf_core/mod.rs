@@ -2,7 +2,6 @@ pub mod debug;
 pub mod asm;
 pub mod allocator;
 pub mod ci;
-pub mod bitmap;
 pub mod ioflt;
 pub mod x86;
 pub mod nvbdk;

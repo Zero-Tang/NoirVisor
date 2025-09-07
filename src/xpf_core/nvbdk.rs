@@ -19,15 +19,24 @@ use spin::Lazy;
 
 #[cfg(windows)] use crate::mshv_core::forwarder::MshvForwardStack;
 
-#[derive(Copy,Clone)] #[repr(C)] pub struct MemoryDescriptor
+/// The `MemoryDescriptor<N,T>` is a descriptor type which describes a
+/// contiguous range of memory with type `T` and `N` pages.
+pub struct MemoryDescriptor<const N:usize,T:Sized>
 {
-	pub virt:*mut c_void,
+	pub virt:*mut T,
 	pub phys:u64
 }
 
-impl MemoryDescriptor
+unsafe impl<const N:usize,T:Sized> Send for MemoryDescriptor<N,T> {}
+
+impl<const N:usize,T:Sized> MemoryDescriptor<N,T>
 {
-	pub fn new(virt:*mut c_void,phys:u64)->Self
+	/// Constructs a memory descriptor from raw pointer.
+	/// 
+	/// ## Safety
+	/// You must either ensure the constructed descriptor can be dropped properly,
+	/// or wrap the descriptor with `ManuallyDrop` generic type.
+	pub unsafe fn new(virt:*mut T,phys:u64)->Self
 	{
 		Self
 		{
@@ -36,7 +45,26 @@ impl MemoryDescriptor
 		}
 	}
 
-	pub fn null()->Self
+	/// Constructs a null memory descriptor. The `Drop` trait ignores null memory descriptors.
+	pub const fn null()->Self
+	{
+		Self
+		{
+			virt:null_mut(),
+			phys:0
+		}
+	}
+}
+
+pub struct MmioDescriptor<const N:usize,T:Sized>
+{
+	pub virt:*mut T,
+	pub phys:u64
+}
+
+impl<const N:usize,T:Sized> MmioDescriptor<N,T>
+{
+	pub const fn null()->Self
 	{
 		Self
 		{
@@ -45,12 +73,12 @@ impl MemoryDescriptor
 		}
 	}
 
-	pub fn add(&self,size:usize)->Self
+	pub fn map(phys:u64)->Self
 	{
 		Self
 		{
-			virt:unsafe{self.virt.byte_add(size)},
-			phys:self.phys+size as u64
+			virt:unsafe{noir_map_uncached_memory(phys,page_4kb_mult(N)).cast()},
+			phys
 		}
 	}
 }

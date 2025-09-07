@@ -14,7 +14,7 @@ use core::{cmp::Ordering, ffi::c_void};
 use alloc::vec::Vec;
 
 use crate::{vt_core::ia32::msr::VmxEptVpidCapMsr, xpf_core::{ci::CI_MANAGER, allocator::enum_allocated_large_pages}, *};
-use xpf_core::{allocator::{alloc_2mb_page, alloc_contd_pages}, nvbdk::*, x86::caching::*};
+use xpf_core::{nvbdk::*, x86::caching::*};
 
 use bitfield_struct::bitfield;
 use log::*;
@@ -203,13 +203,13 @@ impl EptPte
 	}
 }
 
-pub struct VtEptPageTableDescriptor
+pub struct VtEptPageTableDescriptor<T>
 {
-	pub table:MemoryDescriptor,
+	pub table:MemoryDescriptor<1,T>,
 	pub gpa_start:u64
 }
 
-impl VtEptPageTableDescriptor
+impl<T> VtEptPageTableDescriptor<T>
 {
 	pub fn cmp_by_addr(&self,gpa:u64,range:usize)->Ordering
 	{
@@ -228,7 +228,7 @@ impl VtEptPageTableDescriptor
 	}
 }
 
-impl Default for VtEptPageTableDescriptor
+impl<T> Default for VtEptPageTableDescriptor<T>
 {
 	fn default() -> Self
 	{
@@ -242,10 +242,10 @@ impl Default for VtEptPageTableDescriptor
 
 pub struct VtEptManager
 {
-	pub pml4e:MemoryDescriptor,
-	pub pdpte:MemoryDescriptor,
-	pub pde:Vec<VtEptPageTableDescriptor>,
-	pub pte:Vec<VtEptPageTableDescriptor>,
+	pub pml4e:MemoryDescriptor<1,EptPml4e>,
+	pub pdpte:MemoryDescriptor<PAGE_TABLE_ENTRIES64,EptHugePdpte>,
+	pub pde:Vec<VtEptPageTableDescriptor<EptLargePde>>,
+	pub pte:Vec<VtEptPageTableDescriptor<EptPte>>,
 	pub mtrr_mgr:MtrrManager,
 	pub ept_cap:VmxEptVpidCapMsr
 }
@@ -273,7 +273,7 @@ impl VtEptManager
 		let pfn=page_1gb_count(gpa as usize);
 		unsafe
 		{
-			let pdpte_p=self.pdpte.virt as *mut EptHugePdpte;
+			let pdpte_p=self.pdpte.virt;
 			pdpte_p.add(pfn)
 		}
 	}
@@ -285,18 +285,18 @@ impl VtEptManager
 		{
 			// This 1GiB page has not been described yet.
 			debug!("Splitting PDPTE for GPA 0x{gpa:X}...");
-			match alloc_contd_pages(PAGE_SIZE)
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>
 				{
 					// Initialize descriptor.
-					let d=VtEptPageTableDescriptor
+					let d:VtEptPageTableDescriptor<EptLargePde>=VtEptPageTableDescriptor
 					{
 						table:md,
 						gpa_start:page_1gb_base(gpa)
 					};
 					// Initialize PDE Page.
-					let pde_p:*mut EptLargePde=md.virt.cast();
+					let pde_p:*mut EptLargePde=d.table.virt.cast();
 					unsafe
 					{
 						let pdpte_v=self.locate_pdpte(gpa);
@@ -309,7 +309,7 @@ impl VtEptManager
 						(*pdpte_v).set_memory_type(0);
 						(*pdpte_v).set_page_size(false);
 						let pdpte_p:*mut EptPdpte=pdpte_v.cast();
-						(*pdpte_p).set_pde_base(page_4kb_count(md.phys));
+						(*pdpte_p).set_pde_base(page_4kb_count(d.table.phys));
 					}
 					// Insert to EPT Manager.
 					self.pde.insert(i,d);
@@ -340,20 +340,20 @@ impl VtEptManager
 		{
 			// This 2MiB page has not been described yet.
 			debug!("Splitting PDE for GPA 0x{gpa:X}...");
-			match alloc_contd_pages(PAGE_SIZE)
+			match MemoryDescriptor::alloc()
 			{
 				Some(md)=>
 				{
 					// Split the PDPTE first.
 					self.split_pdpte(gpa);
 					// Initialize descriptor.
-					let d=VtEptPageTableDescriptor
+					let d:VtEptPageTableDescriptor<EptPte>=VtEptPageTableDescriptor
 					{
 						table:md,
 						gpa_start:page_2mb_base(gpa)
 					};
 					// Initialize PTE page.
-					let pte_p:*mut EptPte=md.virt.cast();
+					let pte_p:*mut EptPte=d.table.virt.cast();
 					unsafe
 					{
 						let pde_v=self.locate_pde(gpa).unwrap();
@@ -366,7 +366,7 @@ impl VtEptManager
 						(*pde_v).set_memory_type(0);
 						(*pde_v).set_page_size(false);
 						let pde_p:*mut EptPde=pde_v.cast();
-						(*pde_p).set_pte_base(page_4kb_count(md.phys));
+						(*pde_p).set_pte_base(page_4kb_count(d.table.phys));
 					}
 					// Insert to EPT Manager.
 					self.pte.insert(i,d);
@@ -514,13 +514,13 @@ impl VtEptManager
 	pub fn build_identity_map(&mut self)
 	{
 		self.ept_cap=VmxEptVpidCapMsr::read();
-		match alloc_contd_pages(PAGE_SIZE)
+		match MemoryDescriptor::alloc()
 		{
 			Some(md)=>self.pml4e=md,
 			None=>panic!("Failed to allocate PML4E")
 		}
 		debug!("PML4E is allocated at {:p}",self.pml4e.virt);
-		match alloc_2mb_page()
+		match MemoryDescriptor::alloc_2mb_page()
 		{
 			Some(md)=>self.pdpte=md,
 			None=>panic!("Failed to allocate PDPTE")

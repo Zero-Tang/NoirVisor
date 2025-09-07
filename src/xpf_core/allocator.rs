@@ -11,13 +11,16 @@
  */
 
 use core::{ffi::c_void, fmt::{self,Display}, sync::atomic::*};
+#[cfg(not(test))] use core::mem::ManuallyDrop;
 
+use log::info;
 #[cfg(not(test))]
 use portable_dlmalloc::raw::*;
 use paste::paste;
 use spin::Mutex;
+use static_collections::bitmap::RefBitmap;
 
-use super::{bitmap::Bitmap, nvbdk::*};
+use super::nvbdk::*;
 use crate::{system_print, sysdprint, sysdprintln};
 
 static CHECK_ALLOC:AtomicBool=AtomicBool::new(false);
@@ -74,8 +77,8 @@ mod dlmalloc
 
 	use portable_dlmalloc::DLMalloc;
 	
-	use super::{CHECK_ALLOC, alloc_2mb_page, free_2mb_page};
-	use crate::{system_print, sysdprint, sysdprintln, xpf_core::nvbdk::{PAGE_2MB_SIZE, nulstr_from_ptr}};
+	use super::CHECK_ALLOC;
+	use crate::{sysdprint, sysdprintln, system_print, xpf_core::{allocator::PAGE_ALLOC_MANAGER, nvbdk::{nulstr_from_ptr, MemoryDescriptor, PAGE_2MB_SIZE}}};
 
 	struct InternalAllocator;
 
@@ -116,7 +119,7 @@ mod dlmalloc
 
 	#[unsafe(no_mangle)] unsafe extern "C" fn custom_mmap(length:usize)->*mut c_void
 	{
-		match alloc_2mb_page()
+		match MemoryDescriptor::alloc_2mb_page_manual_drop()
 		{
 			Some(md)=>
 			{
@@ -134,7 +137,9 @@ mod dlmalloc
 		{
 			unsafe
 			{
-				free_2mb_page(ptr.byte_add(i));
+				let p=ptr.byte_add(i);
+				let mut lk=PAGE_ALLOC_MANAGER.lock();
+				lk.free_large_page(p);
 			}
 		}
 		0
@@ -210,7 +215,6 @@ pub fn get_free()->usize
 	}
 }
 
-#[derive(Clone, Copy)]
 enum PageAllocationType
 {
 	Invalid,
@@ -218,11 +222,9 @@ enum PageAllocationType
 	Blank([u64;8]),
 }
 
-#[derive(Clone, Copy)]
-pub struct PageAllocationInformation
+struct PageAllocationInformation
 {
-	virt:u64,
-	phys:u64,
+	descriptor:MemoryDescriptor<PAGE_TABLE_ENTRIES64,c_void>,
 	alloc_type:PageAllocationType
 }
 
@@ -230,7 +232,7 @@ impl Display for PageAllocationInformation
 {
 	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result
 	{
-		write!(f,"Virt: {:016X}, Phys: 0x{:016X}, ",self.virt,self.phys)?;
+		write!(f,"Virt: {:p}, Phys: 0x{:016X}, ",self.descriptor.virt,self.descriptor.phys)?;
 		match self.alloc_type
 		{
 			PageAllocationType::Full=>write!(f,"Full Large Page is occupied."),
@@ -263,8 +265,7 @@ impl PageAllocationInformation
 			(
 				Self
 				{
-					virt:virt as u64,
-					phys:unsafe{noir_get_physical_address(virt)},
+					descriptor:unsafe{MemoryDescriptor::new(virt,noir_get_physical_address(virt))},
 					alloc_type:PageAllocationType::Blank([0;8])
 				}
 			)
@@ -277,24 +278,23 @@ impl PageAllocationInformation
 		(
 			|info| Self
 			{
-				virt:info.virt,
-				phys:info.phys,
+				descriptor:info.descriptor,
 				alloc_type:PageAllocationType::Full
 			}
 		)
 	}
 
-	fn alloc_pages(&mut self,pages:usize)->Option<MemoryDescriptor>
+	fn alloc_pages(&mut self,pages:usize)->Option<(*mut c_void,u64)>
 	{
 		match &mut self.alloc_type
 		{
 			PageAllocationType::Blank(info)=>
 			{
-				let bmp:&mut Bitmap<PAGE_TABLE_ENTRIES64>=unsafe{Bitmap::from_raw_parts_mut(info.as_mut_ptr().cast())};
+				let bmp:&mut RefBitmap<PAGE_TABLE_ENTRIES64>=unsafe{RefBitmap::from_raw_mut_ptr(info.as_mut_ptr().cast())};
 				let mut i:usize=0;
 				while i<PAGE_TABLE_ENTRIES64
 				{
-					if !bmp.test(i)
+					if !bmp.test(i).unwrap()
 					{
 						let mut is_free=true;
 						for j in i+1..i+pages
@@ -304,7 +304,7 @@ impl PageAllocationInformation
 								is_free=false;
 								break;
 							}
-							if bmp.test(j)
+							if bmp.test(j).unwrap()
 							{
 								is_free=false;
 								break;
@@ -314,21 +314,14 @@ impl PageAllocationInformation
 						{
 							unsafe 
 							{
-								let s=self.virt+page_mult(i) as u64;
+								let s=self.descriptor.virt.byte_add(page_mult(i));
 								// Set the bitmap.
 								for j in i..i+pages
 								{
-									bmp.set(j);
+									let _=bmp.set(j);
 								}
 								// println!("[alloc] Allocated Page {s:p} to {:p}! Allocation Info: {self}",s.byte_add(pages));
-								return Some
-								(
-									MemoryDescriptor
-									{
-										virt:s as *mut c_void,
-										phys:noir_get_physical_address(s as *mut c_void)
-									}
-								);
+								return Some((s,noir_get_physical_address(s)));
 							}
 						}
 					}
@@ -344,14 +337,13 @@ impl PageAllocationInformation
 	{
 		Self
 		{
-			virt:0,
-			phys:0,
+			descriptor:MemoryDescriptor::null(),
 			alloc_type:PageAllocationType::Invalid
 		}
 	}
 }
 
-pub struct PageAllocationManager
+struct PageAllocationManager
 {
 	list:[PageAllocationInformation;64],
 	count:usize
@@ -366,8 +358,8 @@ pub struct PageAllocationManager
 		{
 			PageAllocationType::Blank(_)|PageAllocationType::Full=>
 			{
-				sysdprintln!("Freeing {:016X} from page allocation manager...",entry.virt);
-				unsafe{noir_free_2mb_page(entry.virt as *mut c_void)};
+				sysdprintln!("Freeing {:p} from page allocation manager...",entry.descriptor.virt);
+				unsafe{noir_free_2mb_page(entry.descriptor.virt)};
 			}
 			_=>()
 		}
@@ -406,7 +398,7 @@ impl PageAllocationManager
 	build_alloc_manager!(blank);
 	build_alloc_manager!(full);
 
-	fn alloc_pages(&mut self,pages:usize)->Option<MemoryDescriptor>
+	fn alloc_pages(&mut self,pages:usize)->Option<(*mut c_void,u64)>
 	{
 		// Try to allocate pages from existing large pages.
 		for i in 0..self.count
@@ -428,7 +420,7 @@ impl PageAllocationManager
 		{
 			unsafe
 			{
-				let v=self.list[i].virt as *mut c_void;
+				let v=self.list[i].descriptor.virt;
 				if virt>=v && virt<v.byte_add(PAGE_2MB_SIZE)
 				{
 					match &mut self.list[i].alloc_type
@@ -437,11 +429,11 @@ impl PageAllocationManager
 						PageAllocationType::Invalid=>panic!("Freeing invalid entry!"),
 						PageAllocationType::Blank(info)=>
 						{
-							let bmp:&mut Bitmap<64>=Bitmap::from_raw_parts_mut(info.as_mut_ptr().cast());
+							let bmp:&mut RefBitmap<64>=RefBitmap::from_raw_mut_ptr(info.as_mut_ptr().cast());
 							let start=page_count(virt.offset_from(v) as usize);
 							for j in start..start+pages
 							{
-								bmp.reset(j);
+								let _=bmp.reset(j);
 							}
 						}
 					}
@@ -451,11 +443,28 @@ impl PageAllocationManager
 		}
 	}
 
+	fn free_large_page(&mut self,virt:*mut c_void)
+	{
+		// Search for large pages.
+		for x in &mut self.list
+		{
+			if core::ptr::eq(virt,x.descriptor.virt as *const c_void)
+			{
+				match x.alloc_type
+				{
+					PageAllocationType::Full=>x.alloc_type=PageAllocationType::Blank([0;8]),
+					PageAllocationType::Blank(_)=>panic!("Freeing large page from blank-entry!"),
+					PageAllocationType::Invalid=>panic!("Freeing invalid entry!")
+				}
+			}
+		}
+	}
+
 	const fn empty()->Self
 	{
 		Self
 		{
-			list:[PageAllocationInformation::empty();64],
+			list:[const{PageAllocationInformation::empty()};64],
 			count:0
 		}
 	}
@@ -463,42 +472,55 @@ impl PageAllocationManager
 
 static PAGE_ALLOC_MANAGER:Mutex<PageAllocationManager>=Mutex::new(PageAllocationManager::empty());
 
-pub fn alloc_contd_pages(length:usize)->Option<MemoryDescriptor>
+impl<const N:usize,T:Sized> MemoryDescriptor<N,T>
 {
-	let mut lk=PAGE_ALLOC_MANAGER.lock();
-	lk.alloc_pages(page_count(length))
-}
-
-pub fn free_contd_pages(virt:*mut c_void,length:usize)
-{
-	let mut lk=PAGE_ALLOC_MANAGER.lock();
-	lk.free_pages(virt,page_count(length));
-}
-
-pub fn alloc_2mb_page()->Option<MemoryDescriptor>
-{
-	let mut lk=PAGE_ALLOC_MANAGER.lock();
-	lk.new_full();
-	Some
-	(
-		MemoryDescriptor
-		{
-			virt:lk.list[lk.count-1].virt as *mut c_void,
-			phys:lk.list[lk.count-1].phys
-		}
-	)
-}
-
-pub fn free_2mb_page(ptr:*mut c_void)
-{
-	let mut lk=PAGE_ALLOC_MANAGER.lock();
-	for i in 0..lk.count
+	pub fn alloc()->Option<Self>
 	{
-		if core::ptr::eq(lk.list[i].virt as *mut c_void,ptr)
+		let mut lk=PAGE_ALLOC_MANAGER.lock();
+		lk.alloc_pages(N).map(|(virt,phys)| unsafe{MemoryDescriptor::new(virt.cast(),phys)})
+	}
+}
+
+impl<const N:usize,T:Sized> Drop for MemoryDescriptor<N,T>
+{
+	fn drop(&mut self)
+	{
+		if self.virt.is_null()
 		{
-			lk.list[i].alloc_type=PageAllocationType::Blank([0;8]);
-			break;
+			return;
 		}
+		let mut lk=PAGE_ALLOC_MANAGER.lock();
+		if N==PAGE_TABLE_ENTRIES64
+		{
+			// This is probably 2MiB page.
+			lk.free_large_page(self.virt.cast());
+			info!("Freeing Large Page at {:p}...",self.virt);
+		}
+		else
+		{
+			// This is normal contiguous page.
+			lk.free_pages(self.virt.cast(),N);
+			info!("Freeing Page at {:p}...",self.virt);
+		}
+	}
+}
+
+impl<T:Sized> MemoryDescriptor<PAGE_TABLE_ENTRIES64,T>
+{
+	pub fn alloc_2mb_page()->Option<Self>
+	{
+		let mut lk=PAGE_ALLOC_MANAGER.lock();
+		lk.new_full();
+		Some(unsafe{MemoryDescriptor::new(lk.list[lk.count-1].descriptor.virt.cast(),lk.list[lk.count-1].descriptor.phys)})
+	}
+
+	// This routine can only be used by dynamic allocator's large-page allocations.
+	#[cfg(not(test))]
+	fn alloc_2mb_page_manual_drop()->Option<ManuallyDrop<Self>>
+	{
+		let mut lk=PAGE_ALLOC_MANAGER.lock();
+		lk.new_full();
+		Some(ManuallyDrop::new(unsafe{MemoryDescriptor::new(lk.list[lk.count-1].descriptor.virt.cast(),lk.list[lk.count-1].descriptor.phys)}))
 	}
 }
 
@@ -509,7 +531,7 @@ pub fn enum_allocated_large_pages(callback_rt:PhysicalRangeCallback,context:*mut
 	{
 		let count={PAGE_ALLOC_MANAGER.lock().count};
 		if i>=count {break;}
-		let phys={PAGE_ALLOC_MANAGER.lock().list[i].phys};
+		let phys={PAGE_ALLOC_MANAGER.lock().list[i].descriptor.phys};
 		// The callback routine may allocate memories.
 		// Therefore, there mustn't be any lock holders on allocation manager.
 		callback_rt(phys,PAGE_2MB_SIZE as u64,context);
