@@ -18,7 +18,7 @@ use log::*;
 
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall, nvc_forward_memory_mapped_hypercall};
-use crate::{disasm::MnemonicString, mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, seg::*, vt::*}, ci::is_ci_phys_page, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, trytask::try_task, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, GENERAL_PROTECTION_FAULT, INVALID_OPCODE_FAULT}}}, *};
+use crate::{disasm::MnemonicString, mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::{rdmsr, wrmsr}, seg::*, vt::*}, ci::is_ci_phys_page, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, trytask::try_task, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, GENERAL_PROTECTION_FAULT, INVALID_OPCODE_FAULT}, msr::{MSR_FS_BASE, MSR_GS_BASE}}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, VtStackTop, nvc_vt_resume_without_entry};
 
 impl VtVcpu
@@ -237,6 +237,9 @@ impl VtVcpu
 						let tss_entry=(ggdtr.base+(tr_sel as u64 & 0xFFF8)) as *mut SystemSegmentDescriptor;
 						(*tss_entry).flags=SegmentFlags::AVAILABLE_TSS;
 						((ggdtr.base+tr_sel as u64+0x5) as *mut u8).write(0x89);
+						// Switch FS/GS Bases
+						wrmsr(MSR_FS_BASE,vmreadptr(GUEST_FS_BASE).unwrap() as u64);
+						wrmsr(MSR_GS_BASE,vmreadptr(GUEST_GS_BASE).unwrap() as u64);
 						// Switch it.
 						write_tr(tr_sel);
 					}

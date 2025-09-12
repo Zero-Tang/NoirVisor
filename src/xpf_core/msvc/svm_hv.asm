@@ -42,7 +42,7 @@ nvc_svm_return proc
 
 	; Switch the stack where state is saved.
 	mov rsp,rcx
-	popaq
+	popaq_fast 0
 	; In the restored GPR layout, we have:
 	; rax=rip
 	; rcx=rflags

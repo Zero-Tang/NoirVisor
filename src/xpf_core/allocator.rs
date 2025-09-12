@@ -299,7 +299,7 @@ impl PageAllocationInformation
 						let mut is_free=true;
 						for j in i+1..i+pages
 						{
-							if j==512
+							if j==PAGE_TABLE_ENTRIES64
 							{
 								is_free=false;
 								break;

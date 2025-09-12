@@ -102,7 +102,7 @@ impl SvmIommuPmlManager
 			{
 				let pte_p:*mut SvmIommuPte=md.virt;
 				debug!("Allocated PML at {pte_p:p} with page-size of 0x{page_size:X}...");
-				for i in 0..512
+				for i in 0..PAGE_TABLE_ENTRIES64 as u64
 				{
 					unsafe{pte_p.add(i as usize).write(SvmIommuPte::new_pte(gpa_base+(page_size as u64)*i,true,true))};
 				}

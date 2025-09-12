@@ -425,7 +425,7 @@ impl VtEptManager
 			}
 			else
 			{
-				for i in 0..512
+				for i in 0..PAGE_TABLE_ENTRIES64 as u64
 				{
 					self.update_pte(gpa+page_4kb_mult(i),memory_type,r,w,x);
 				}
@@ -451,7 +451,7 @@ impl VtEptManager
 			}
 			else
 			{
-				for i in 0..512
+				for i in 0..PAGE_TABLE_ENTRIES64 as u64
 				{
 					self.update_pde(gpa+page_2mb_mult(i),memory_type,r,w,x);
 				}

@@ -270,7 +270,7 @@ pub struct SvmNptManager
 {
 	pub pml5e:MemoryDescriptor<1,NptPml5e>,
 	pub pml4e:MemoryDescriptor<1,NptPml4e>,
-	pub pdpte:MemoryDescriptor<1,NptHugePdpte>,
+	pub pdpte:MemoryDescriptor<PAGE_TABLE_ENTRIES64,NptHugePdpte>,
 	pub pde:Vec<SvmNptPageTableDescriptor<NptLargePde>>,
 	pub pte:Vec<SvmNptPageTableDescriptor<NptPte>>
 }
@@ -299,21 +299,22 @@ impl SvmNptManager
 			Some(md)=>self.pml5e=md,
 			None=>panic!("Failed to allocate PML5E!")
 		}
+		debug!("PML5E is allocated at {:p}",self.pml5e.virt);
 		match MemoryDescriptor::alloc()
 		{
 			Some(md)=>self.pml4e=md,
 			None=>panic!("Failed to allocate PML4E!")
 		}
 		debug!("PML4E is allocated at {:p}",self.pml4e.virt);
-		match MemoryDescriptor::alloc()
+		match MemoryDescriptor::alloc_2mb_page()
 		{
 			Some(md)=>self.pdpte=md,
 			None=>panic!("Failed to allocate PDPTE!")
 		}
 		debug!("PDPTE is allocated at {:p}",self.pdpte.virt);
-		for i in 0..512
+		for i in 0..PAGE_TABLE_ENTRIES64
 		{
-			for j in 0..512
+			for j in 0..PAGE_TABLE_ENTRIES64
 			{
 				let k=(i<<PAGE_SHIFT_DIFF)+j;
 				let mut pdpte_v=NptPdpte::construct(true,true,true,page_1gb_mult(k) as u64,false);
@@ -329,12 +330,16 @@ impl SvmNptManager
 			{
 				let pml4e_p=self.pml4e.virt.add(i);
 				pml4e_p.write(pml4e_v);
-				self.pml5e.virt.add(i).write(NptPml5e::from_bits(0));
 			}
 		}
+		debug!("Identity-Mapping is successfully built!");
 		unsafe
 		{
-			*self.pml5e.virt=NptPml5e::construct(true,true,true,self.pml4e.phys,false);
+			for i in 0..PAGE_TABLE_ENTRIES64
+			{
+				self.pml5e.virt.add(i).write(NptPml5e::from_bits(0));
+			}
+			self.pml5e.virt.write(NptPml5e::construct(true,true,true,self.pml4e.phys,false));
 		}
 	}
 
@@ -382,7 +387,7 @@ impl SvmNptManager
 						table:md
 					};
 					let pdpte_p=self.locate_pdpte_mut(gpa);
-					for i in 0..512
+					for i in 0..PAGE_TABLE_ENTRIES64
 					{
 						unsafe 
 						{
@@ -465,7 +470,7 @@ impl SvmNptManager
 							table:md
 						};
 						let pte_array:*mut NptPte=pte_d.table.virt;
-						for i in 0..512
+						for i in 0..PAGE_TABLE_ENTRIES64
 						{
 							unsafe
 							{
