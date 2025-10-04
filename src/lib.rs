@@ -20,8 +20,11 @@ extern crate alloc;
 
 pub mod drv_core;
 pub mod xpf_core;
+#[cfg(any(target_arch="x86_64",target_arch="x86"))]
 pub mod vt_core;
+#[cfg(any(target_arch="x86_64",target_arch="x86"))]
 pub mod svm_core;
+#[cfg(not(target_os="uefi"))]
 pub mod cvm_core;
 pub mod mshv_core;
 pub mod disasm;

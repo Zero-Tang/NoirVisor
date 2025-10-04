@@ -40,12 +40,13 @@ def main():
 		msvc_path=os.environ["VCToolsInstallDir"]
 		inc_path=os.path.join(sdk_path,"Include",sdk_ver)
 		lib_path=os.path.join(sdk_path,"Lib",sdk_ver)
-		extract_lib(os.path.join(lib_path,"ucrt","x64","libucrt.lib"),"strlen.obj",os.path.join("bin",outdir,"Intermediate","strlen.obj"))
+		src_path=os.path.join(sdk_path,"Source",sdk_ver)
 		extract_lib(os.path.join(msvc_path,"lib","x64","libcmt.lib"),"cpu_disp.obj",os.path.join("bin",outdir,"Intermediate","cpu_disp.obj"))
 		shutil.copy2(os.path.join(msvc_path,"lib","x64","libcmt.amd64.pdb"),os.path.join("bin",outdir,"libcmt.amd64.pdb"))
 		pl=Pipeline("build-msvcrt.json",outdir=outdir)
 		pl.global_variable["incpath"]=inc_path
 		pl.global_variable["crtpath"]=os.path.join(msvc_path,"crt","src","x64")
+		pl.global_variable["ucrtpath"]=os.path.join(src_path,"ucrt","string","amd64")
 		pl.run()
 
 if __name__=="__main__":

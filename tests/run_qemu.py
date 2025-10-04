@@ -60,6 +60,5 @@ if __name__=="__main__":
 			"-drive","if=pflash,format=raw,unit=0,readonly=on,file=ovmf-code.fd",
 			"-drive","if=pflash,format=raw,unit=1,readonly=on,file=ovmf-vars.fd",
 			"-drive","format=raw,file="+os.path.join("..","bin","compchk_uefix64","NoirVisor-Uefi.img"),
-			"-chardev","stdio,id=debugger",
-			"-device","isa-debugcon,chardev=debugger,iobase=0x402"]
+			"-debugcon","stdio"]
 		subprocess.call(cmd_list)

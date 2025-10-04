@@ -676,6 +676,16 @@ pub mod paging
 	/// Implement this trait on vCPU objects.
 	pub trait PageTranslationHelper
 	{
+		fn read_virt(&mut self,va:u64,buffer:&mut [u8],fault_va:&mut Option<u64>)->Result<(),PageFaultErrorCode> where Self:Sized
+		{
+			read_virtual_address(va,self,buffer,fault_va)
+		}
+
+		fn write_virt(&mut self,va:u64,buffer:&[u8],fault_va:&mut Option<u64>)->Result<(),PageFaultErrorCode> where Self:Sized
+		{
+			write_virtual_address(va,self,buffer,fault_va)
+		}
+
 		fn get_cr0(&self)->u64;
 		fn get_cr3(&self)->u64;
 		fn get_cr4(&self)->u64;
@@ -831,6 +841,24 @@ pub mod paging
 		}
 	}
 
+	unsafe fn write_virtual_address_in_page(va:u64,vcpu:&mut impl PageTranslationHelper,buffer:*const u8,copy_size:usize)->Result<(),PageFaultErrorCode>
+	{
+		let r=translate_virtual_address(va,vcpu,true,false,false);
+		match r
+		{
+			Ok(pa)=>
+			{
+				let buff=unsafe{slice::from_raw_parts(buffer,copy_size)};
+				vcpu.write_phys_mem(pa,buff);
+				Ok(())
+			}
+			Err(e)=>
+			{
+				Err(e)
+			}
+		}
+	}
+
 	pub fn read_virtual_address(va:u64,vcpu:&mut impl PageTranslationHelper,buffer:&mut [u8],fault_va:&mut Option<u64>)->Result<(),PageFaultErrorCode>
 	{
 		let mut cur_va=va;
@@ -844,6 +872,32 @@ pub mod paging
 			let r=unsafe
 			{
 				read_virtual_address_in_page(va+copied_size,vcpu,buffer.as_mut_ptr().add(copied_size as usize),copy_size as usize)
+			};
+			if r.is_err()
+			{
+				*fault_va=Some(cur_va);
+				return r;
+			}
+			copied_size+=copy_size;
+			cur_va+=copy_size;
+		}
+		*fault_va=None;
+		Ok(())
+	}
+
+	pub fn write_virtual_address(va:u64,vcpu:&mut impl PageTranslationHelper,buffer:&[u8],fault_va:&mut Option<u64>)->Result<(),PageFaultErrorCode>
+	{
+		let mut cur_va=va;
+		let mut copied_size:u64=0;
+		let end_va=va+buffer.len() as u64;
+		while cur_va<end_va
+		{
+			let end_len=PAGE_SIZE as u64-page_offset(va);
+			let rem_len=end_va-cur_va;
+			let copy_size=if end_len<rem_len {end_len} else {rem_len};
+			let r=unsafe
+			{
+				write_virtual_address_in_page(va+copied_size,vcpu,buffer.as_ptr().add(copied_size as usize),copy_size as usize)
 			};
 			if r.is_err()
 			{
@@ -1032,8 +1086,7 @@ pub mod descriptors
 pub mod crdr
 {
 	use bitfield_struct::bitfield;
-use paste::paste;
-	use crate::*;
+	use paste::paste;
 
 	#[macro_export] macro_rules! define_bit
 	{

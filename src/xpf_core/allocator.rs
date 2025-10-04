@@ -472,35 +472,109 @@ impl PageAllocationManager
 
 static PAGE_ALLOC_MANAGER:Mutex<PageAllocationManager>=Mutex::new(PageAllocationManager::empty());
 
-impl<const N:usize,T:Sized> MemoryDescriptor<N,T>
+/// # The `ContiguousAllocator` trait
+/// This trait defines the trait for page allocators.
+/// 
+/// # Safety
+/// It is your duty to guarantee the validity of pointers.
+pub unsafe trait ContiguousAllocator
 {
-	pub fn alloc()->Option<Self>
-	{
-		let mut lk=PAGE_ALLOC_MANAGER.lock();
-		lk.alloc_pages(N).map(|(virt,phys)| unsafe{MemoryDescriptor::new(virt.cast(),phys)})
-	}
+	/// # The `alloc` method
+	/// Allocates `pages` of memory in page-granularity.
+	/// 
+	/// # Safety
+	/// You must make sure the returned pointer is page-aligned.
+	unsafe fn alloc(&self,pages:usize)->Option<(*mut c_void,u64)>;
+	/// # The `free` method
+	/// Free `pages` of memory in page-granularity.
+	/// 
+	/// # Safety
+	/// It is your duty to guarantee the release procedure is safe.
+	unsafe fn free(&self,virt:*mut c_void,pages:usize);
 }
 
-impl<const N:usize,T:Sized> Drop for MemoryDescriptor<N,T>
+pub struct InternalPageAllocator;
+
+unsafe impl ContiguousAllocator for InternalPageAllocator
 {
-	fn drop(&mut self)
+	unsafe fn alloc(&self,pages:usize)->Option<(*mut c_void,u64)>
 	{
-		if self.virt.is_null()
-		{
-			return;
-		}
 		let mut lk=PAGE_ALLOC_MANAGER.lock();
-		if N==PAGE_TABLE_ENTRIES64
+		lk.alloc_pages(pages)
+	}
+
+	unsafe fn free(&self,virt:*mut c_void,pages:usize)
+	{
+		let mut lk=PAGE_ALLOC_MANAGER.lock();
+		if pages==PAGE_TABLE_ENTRIES64
 		{
 			// This is probably 2MiB page.
-			lk.free_large_page(self.virt.cast());
-			info!("Freeing Large Page at {:p}...",self.virt);
+			lk.free_large_page(virt);
+			info!("Freeing Large Page at {virt:p}...");
 		}
 		else
 		{
 			// This is normal contiguous page.
-			lk.free_pages(self.virt.cast(),N);
-			info!("Freeing Page at {:p}...",self.virt);
+			lk.free_pages(virt,pages);
+			info!("Freeing Page at {virt:p}...");
+		}
+	}
+}
+
+unsafe extern "C"
+{
+	fn noir_kmmap(pages:usize)->*mut c_void;
+	fn noir_kmunmap(virt:*mut c_void,pages:usize);
+}
+
+pub struct SystemPageAllocator;
+
+unsafe impl ContiguousAllocator for SystemPageAllocator
+{
+	unsafe fn alloc(&self,pages:usize)->Option<(*mut c_void,u64)>
+	{
+		unsafe
+		{
+			let virt=noir_kmmap(pages);
+			if virt.is_null()
+			{
+				None
+			}
+			else
+			{
+				Some((virt,noir_get_physical_address(virt)))
+			}
+		}
+	}
+
+	unsafe fn free(&self,virt:*mut c_void,pages:usize)
+	{
+		unsafe
+		{
+			noir_kmunmap(virt,pages);
+		}
+	}
+}
+
+impl<const N:usize,T:Sized> MemoryDescriptor<N,T>
+{
+	pub fn alloc()->Option<Self>
+	{
+		let a=InternalPageAllocator;
+		unsafe
+		{
+			a.alloc(N).map(|(virt,phys)| Self::new(virt.cast(),phys))
+		}
+	}
+}
+
+impl<const N:usize,T:Sized,A:ContiguousAllocator> MemoryDescriptor<N,T,A>
+{
+	pub fn alloc_in(alloc:A)->Option<Self>
+	{
+		unsafe
+		{
+			alloc.alloc(N).map(|(virt,phys)| Self::new_in(virt.cast(),phys,alloc))
 		}
 	}
 }

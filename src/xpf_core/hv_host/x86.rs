@@ -227,20 +227,12 @@ impl HostIDT
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[repr(C)] pub enum PerCpuGsState
 {
-	AwaitExecution,
+	#[default] AwaitExecution,
 	Failed{vector:u8,error_code:Option<u32>},
 	Successful
-}
-
-impl Default for PerCpuGsState
-{
-	fn default() -> Self
-	{
-		Self::AwaitExecution
-	}
 }
 
 #[derive(Default,Debug)]

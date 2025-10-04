@@ -444,6 +444,26 @@ void noir_free_2mb_page(void* virtual_address)
 	MmFreeContiguousMemorySpecifyCache(virtual_address,0x200000,MmCached);
 }
 
+void* noir_kmmap(size_t pages)
+{
+	PHYSICAL_ADDRESS L={0};
+	PHYSICAL_ADDRESS H={0xFFFFFFFFFFFFFFFF};
+	PHYSICAL_ADDRESS B={PAGE_SIZE};
+	PVOID p=MmAllocateContiguousMemorySpecifyCache(pages<<PAGE_SHIFT,L,H,B,MmCached);
+	if(p)
+	{
+		RtlZeroMemory(p,pages<<PAGE_SHIFT);
+		InterlockedIncrement(&NoirAllocatedContiguousMemoryCount);
+	}
+	return p;
+}
+
+void noir_kmunmap(void* virtual_address,size_t pages)
+{
+	InterlockedDecrement(&NoirAllocatedContiguousMemoryCount);
+	MmFreeContiguousMemorySpecifyCache(virtual_address,pages<<PAGE_SHIFT,MmCached);
+}
+
 /*
 // NoirVisor should be aware of large-scale systems with NUMA.
 void* noir_alloc_contd_memory_for_numa(ULONG32 numa_node,ULONG64 alignment,size_t length)

@@ -26,7 +26,7 @@ nvcvm = {path = "crates/nvcvm"}
 spin = "0.10.0"
 log = "0.4.27"
 bitfield-struct = "0.11.0"
-static-collections = "0.1.0"
+static-collections = "0.2.0"
 
 [dependencies.portable-dlmalloc]
 version = "0.3.3"
@@ -36,3 +36,7 @@ features = ["alt-alloc"]
 version = "1.21.0"
 default-features = false
 features = ["no_std","decoder","op_code_info","instr_info","masm"]
+
+[target.'cfg(windows)'.dev-dependencies.windows]
+version = "0.62.1"
+features = ["Win32_System_Memory","Win32_System_Threading"]

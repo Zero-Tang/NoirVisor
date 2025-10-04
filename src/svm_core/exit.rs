@@ -20,7 +20,7 @@ use npt::NptFaultCode;
 use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::{descriptors::DescriptorTable, interrupts::*}};
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall,nvc_forward_memory_mapped_hypercall};
 
-use crate::{disasm::MnemonicString, xpf_core::trytask::try_task};
+use crate::{disasm::MnemonicString, xpf_core::{trytask::try_task, x86::paging::PageTranslationHelper}};
 
 use super::*;
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
@@ -359,7 +359,7 @@ impl SvmVcpu
 	{
 		let gpr_state=&mut context.gpr_state;
 		let grip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
-		let hv:&SvmHypervisor=unsafe{&*self.hypervisor.cast()};
+		let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
 		if hv.is_rip_from_hypervisor(grip)
 		{
 			let vmmcall_func=gpr_state.rcx as u32;
@@ -430,6 +430,63 @@ impl SvmVcpu
 					{
 						warn!("Invalid Call to restore system! rip=0x{grip:016X}");
 						unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
+					}
+				}
+				NOIR_HYPERCALL_CODE_CVM_ALLOC_TLB_TAG=>
+				{
+					match hv.alloc_asid()
+					{
+						Some(asid)=>
+						{
+							let buf=asid.to_le_bytes();
+							let mut fault_va:Option<u64>=None;
+							match self.write_virt(gpr_state.rdx,&buf,&mut fault_va)
+							{
+								Ok(_)=>gpr_state.rax=Status::SUCCESS.0 as u64,
+								Err(e)=>
+								{
+									error!("Failed to write ASID back! Error-Code: {e}, Linear-Address: 0x{:X}",fault_va.unwrap());
+									// Free this ASID as we can't write it back.
+									hv.free_asid(asid);
+									unsafe
+									{
+										// Inject #PF.
+										inject_event(self.vmcb.virt,PAGE_FAULT,EventType::HardwareException,Some(e.into_bits()),true);
+										vmwrite(self.vmcb.virt,GUEST_CR2,fault_va.unwrap());
+										vmcb_clean_cr2(self.vmcb.virt);
+									}
+								}
+							}
+						}
+						None=>
+						{
+							gpr_state.rax=Status::INSUFFICIENT_RESOURCES.0 as u64;
+						}
+					}
+				}
+				NOIR_HYPERCALL_CODE_CVM_FREE_TLB_TAG=>
+				{
+					let mut asid_buf:MaybeUninit<[u8;4]>=MaybeUninit::uninit();
+					let mut fault_va:Option<u64>=None;
+					match self.read_virt(gpr_state.rdx,unsafe{asid_buf.assume_init_mut()},&mut fault_va)
+					{
+						Ok(_)=>
+						{
+							let asid=u32::from_le_bytes(unsafe{asid_buf.assume_init()});
+							hv.free_asid(asid);
+							gpr_state.rax=Status::SUCCESS.0 as u64;
+						}
+						Err(e)=>
+						{
+							error!("Failed to read ASID from context! Error-Code: {e}, Linear-Address: 0x{:X}",fault_va.unwrap());
+							unsafe
+							{
+								// Inject #PF.
+								inject_event(self.vmcb.virt,PAGE_FAULT,EventType::HardwareException,Some(e.into_bits()),true);
+								vmwrite(self.vmcb.virt,GUEST_CR2,fault_va.unwrap());
+								vmcb_clean_cr2(self.vmcb.virt);
+							}
+						}
 					}
 				}
 				_=>
@@ -614,6 +671,10 @@ impl SvmVcpu
 			// The rax in GPR state should be the physical address of VMCB
 			// in order to execute the vmrun instruction properly.
 			// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.
+		}
+		else
+		{
+			panic!("Current VMCB Physical-Address (0x{:X}) is unexpected!",(*stack).guest_vmcb_pa);
 		}
 		gpr.rax=(*stack).guest_vmcb_pa;
 	}

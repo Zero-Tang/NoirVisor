@@ -18,16 +18,18 @@ use paste::paste;
 use spin::Lazy;
 
 #[cfg(windows)] use crate::mshv_core::forwarder::MshvForwardStack;
+use crate::xpf_core::allocator::{ContiguousAllocator, InternalPageAllocator};
 
 /// The `MemoryDescriptor<N,T>` is a descriptor type which describes a
 /// contiguous range of memory with type `T` and `N` pages.
-pub struct MemoryDescriptor<const N:usize,T:Sized>
+pub struct MemoryDescriptor<const N:usize,T:Sized,A:ContiguousAllocator=InternalPageAllocator>
 {
 	pub virt:*mut T,
-	pub phys:u64
+	pub phys:u64,
+	allocator:A
 }
 
-unsafe impl<const N:usize,T:Sized> Send for MemoryDescriptor<N,T> {}
+unsafe impl<const N:usize,T:Sized,A:ContiguousAllocator> Send for MemoryDescriptor<N,T,A> {}
 
 impl<const N:usize,T:Sized> MemoryDescriptor<N,T>
 {
@@ -41,7 +43,8 @@ impl<const N:usize,T:Sized> MemoryDescriptor<N,T>
 		Self
 		{
 			virt,
-			phys
+			phys,
+			allocator:InternalPageAllocator
 		}
 	}
 
@@ -51,7 +54,41 @@ impl<const N:usize,T:Sized> MemoryDescriptor<N,T>
 		Self
 		{
 			virt:null_mut(),
-			phys:0
+			phys:0,
+			allocator:InternalPageAllocator
+		}
+	}
+}
+
+impl<const N:usize,T:Sized,A:ContiguousAllocator> MemoryDescriptor<N,T,A>
+{
+	/// Constructs a memory descriptor from raw pointer with a specific allocator.
+	/// 
+	/// ## Safety
+	/// You must either ensure the constructed descriptor can be dropped properly,
+	/// or wrap the descriptor with `ManuallyDrop` generic type.
+	pub unsafe fn new_in(virt:*mut T,phys:u64,allocator:A)->Self
+	{
+		Self
+		{
+			virt,
+			phys,
+			allocator
+		}
+	}
+}
+
+impl<const N:usize,T:Sized,A:ContiguousAllocator> Drop for MemoryDescriptor<N,T,A>
+{
+	fn drop(&mut self)
+	{
+		if self.virt.is_null()
+		{
+			return;
+		}
+		unsafe
+		{
+			self.allocator.free(self.virt.cast(),N);
 		}
 	}
 }
@@ -153,6 +190,61 @@ impl SegmentRegister
 			attrib:0,
 			limit:descriptor.limit as u32,
 			base:descriptor.base
+		}
+	}
+
+	pub const fn reset_code()->Self
+	{
+		Self
+		{
+			selector:0xF000,
+			attrib:0x9B,
+			limit:0xFFFF,
+			base:0xFFFF0000
+		}
+	}
+
+	pub const fn reset_data()->Self
+	{
+		Self
+		{
+			selector:0,
+			attrib:0x92,
+			limit:0xFFFF,
+			base:0
+		}
+	}
+
+	pub const fn reset_tss()->Self
+	{
+		Self
+		{
+			selector:0,
+			attrib:0x83,
+			limit:0xFFFF,
+			base:0
+		}
+	}
+
+	pub const fn reset_ldt()->Self
+	{
+		Self
+		{
+			selector:0,
+			attrib:0x82,
+			limit:0xFFFF,
+			base:0
+		}
+	}
+
+	pub const fn reset_dt()->Self
+	{
+		Self
+		{
+			selector:0,
+			attrib:0,
+			limit:0xFFFF,
+			base:0
 		}
 	}
 }

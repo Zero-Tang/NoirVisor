@@ -79,7 +79,8 @@
 		},
 		"msvcrt":
 		{
-			"cmd":["python","build_msvcrt.py","--outdir","{outdir}"]
+			"cmd":["python","build_msvcrt.py","--outdir","{outdir}"],
+			"cancel_if_intact":[".\\build-msvcrt.json",".\\build_msvcrt.py"]
 		},
 		"NoirVisor":
 		{

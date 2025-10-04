@@ -11,7 +11,7 @@
  */
 
 use core::{arch::x86_64::_xgetbv, ffi::c_void, ptr::*};
-use alloc::vec::Vec;
+use alloc::{vec::Vec, vec};
 #[cfg(target_os="uefi")]
 use exit::svm_apic_output_handler;
 use iced_x86::MasmFormatter;
@@ -19,8 +19,10 @@ use static_collections::bitmap::RefBitmap;
 use iommu::{svm_iommu_output_handler, SvmIommuManager};
 use log::*;
 use npt::SvmNptManager;
-use xpf_core::{hv_host::{x86::*, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
+use xpf_core::{hv_host::{x86::*, *}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
+#[cfg(not(target_os="uefi"))]
+use crate::{cvm_core::CUSTOMIZABLE_HYPERVISOR, xpf_core::allocator::kmalloc::KernelAllocator,  svm_core::custom::SvmCustomHypervisor};
 
 use crate::{xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, nvbdk::*, x86::{cpuid::*, crdr::CR4_LA57, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
 use amd64::{cpuid::*,msr::*};
@@ -32,7 +34,8 @@ pub mod amd64;
 #[allow(dead_code)] mod decode;
 #[allow(dead_code)] mod exit;
 #[allow(dead_code)] mod npt;
-#[allow(dead_code)] mod custom;
+#[cfg(not(target_os="uefi"))]
+#[allow(dead_code)] pub mod custom;
 #[allow(dead_code)] mod iommu;
 
 #[repr(C)] pub struct SvmStackTop
@@ -118,7 +121,7 @@ impl SvmVcpu
 	}
 }
 
-unsafe extern "C"
+unsafe extern "win64"
 {
 	#[allow(improper_ctypes)]
 	fn nvc_svm_subvert_processor_a(stack:*mut SvmStackTop);
@@ -129,7 +132,7 @@ unsafe extern "C"
 /// # Safety
 /// This function is unsafe because it's called from assembly.
 /// DO NOT CALL THIS FUNCTION FROM RUST!
-#[unsafe(no_mangle)] unsafe extern "C" fn nvc_svm_subvert_processor_i(vcpu:*mut SvmVcpu,gsp:u64)->u64
+#[unsafe(no_mangle)] unsafe extern "win64" fn nvc_svm_subvert_processor_i(vcpu:*mut SvmVcpu,gsp:u64)->u64
 {
 	unsafe
 	{
@@ -314,6 +317,8 @@ pub struct SvmHypervisor
 	pub mmio_space:IoAddressSpace<u64>,
 	pub image_base:*mut c_void,
 	pub image_size:u32,
+	pub asid_max:u32,
+	pub asid_pool:Vec<u64>,
 	pub features:EnabledFeatures,
 	#[cfg(windows)] pub mshvcall_forwarder:Option<MshvCallForwarder>
 }
@@ -326,12 +331,47 @@ impl SvmHypervisor
 		let end=start+self.image_size as u64;
 		(start..end).contains(&rip)
 	}
+
+	/// Allocation of ASID must be protected by hypervisor.
+	pub fn alloc_asid(&mut self)->Option<u32>
+	{
+		let bmp:&mut RefBitmap<65536>=unsafe{RefBitmap::from_raw_mut_ptr(self.asid_pool.as_mut_ptr().cast())};
+		let i=bmp.search_cleared_forward()? as u32;
+		if i<self.asid_max
+		{
+			let _=bmp.set(i as usize);
+			Some(i)
+		}
+		else
+		{
+			None
+		}
+	}
+
+	pub fn free_asid(&mut self,asid:u32)
+	{
+		if asid<self.asid_max
+		{
+			let bmp:&mut RefBitmap<65536>=unsafe{RefBitmap::from_raw_mut_ptr(self.asid_pool.as_mut_ptr().cast())};
+			let _=bmp.reset(asid as usize);
+		}
+	}
 }
 
 impl Default for SvmHypervisor
 {
 	fn default() -> Self
 	{
+		let svm_feat=SvmFeatureIdentifier::cpuid();
+		let mut asid_quotient=(svm_feat.asid() as usize)>>6;
+		let asid_remainder=(svm_feat.asid() as usize)&0x3f;
+		if asid_remainder!=0
+		{
+			asid_quotient+=1;
+		}
+		let mut asid_pool:Vec<u64>=vec![0;asid_quotient];
+		// ASID 0 and 1 are reserved.
+		asid_pool[0]=3;
 		Self
 		{
 			vcpus:Vec::with_capacity(unsafe{noir_get_processor_count() as usize}),
@@ -344,6 +384,8 @@ impl Default for SvmHypervisor
 			mmio_space:IoAddressSpace{regions:Vec::new()},
 			image_base:null_mut(),
 			image_size:0,
+			asid_max:svm_feat.asid(),
+			asid_pool,
 			features:EnabledFeatures::get(),
 			#[cfg(windows)] mshvcall_forwarder:MshvCallForwarder::new()
 		}
@@ -487,6 +529,17 @@ impl HypervisorEssentials for SvmHypervisor
 		{
 			let apic_bar=rdmsr(MSR_APIC_BASE);
 			self.mmio_space.add_region(IoRegion::new("lapic",None,svm_apic_output_handler,page_4kb_base(apic_bar),PAGE_SIZE as u64));
+		}
+		// Initialize CVM Module
+		#[cfg(not(target_os="uefi"))]
+		{
+			let mut lk=CUSTOMIZABLE_HYPERVISOR.write();
+			let cvm_hv=SvmCustomHypervisor::new(false);
+			match cvm_hv
+			{
+				Some(h)=>*lk=Some(Box::new_in(h,KernelAllocator)),
+				None=>error!("Failed to initialize CVM Module!")
+			}
 		}
 		// Initialize NPT.
 		self.nptm.build_identity_map();

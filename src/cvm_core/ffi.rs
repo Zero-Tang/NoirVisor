@@ -12,15 +12,12 @@
 
 use core::{ffi::c_void,ptr::null_mut};
 
-use nvcvm::status::Status;
+use nvcvm::{interface::{CvmHandle, ExitContext}, status::Status};
 
-#[repr(C)] pub struct CvmFfiExitContext
-{
-	
-}
+use crate::cvm_core::CUSTOMIZABLE_HYPERVISOR;
 
 #[allow(non_upper_case_globals)] 
-#[unsafe(no_mangle)] static noir_cvm_exit_context_size:usize=size_of::<CvmFfiExitContext>();
+#[unsafe(no_mangle)] static noir_cvm_exit_context_size:usize=size_of::<ExitContext>();
 
 #[unsafe(no_mangle)] extern "C" fn nvc_query_hypervisor_status(_status_type:u64,_result:*mut c_void)->Status
 {
@@ -77,9 +74,21 @@ use nvcvm::status::Status;
 	Status::NOT_IMPLEMENTED
 }
 
-#[unsafe(no_mangle)] extern "C" fn nvc_create_vcpu(_vm:*mut c_void,_vcpu:*mut *mut c_void,_vcpu_id:u32)->Status
+#[unsafe(no_mangle)] extern "C" fn nvc_create_vcpu(vm_handle:CvmHandle,vcpu_id:u32)->Status
 {
-	Status::NOT_IMPLEMENTED
+	let mut lk=CUSTOMIZABLE_HYPERVISOR.write();
+	match &mut *lk
+	{
+		Some(hv)=>
+		{
+			match hv.create_vcpu(vm_handle,vcpu_id as usize)
+			{
+				Ok(_)=>Status::SUCCESS,
+				Err(e)=>e
+			}
+		}
+		None=>Status::HYPERVISION_ABSENT
+	}
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_ref_vcpu(_vcpu:*mut c_void)->Status
@@ -112,9 +121,18 @@ use nvcvm::status::Status;
 	Status::NOT_IMPLEMENTED
 }
 
-#[unsafe(no_mangle)] extern "C" fn nvc_release_vm(_vm:*mut c_void)->Status
+#[unsafe(no_mangle)] extern "C" fn nvc_release_vm(vm_handle:CvmHandle)->Status
 {
-	Status::NOT_IMPLEMENTED
+	let mut lk=CUSTOMIZABLE_HYPERVISOR.write();
+	match &mut *lk
+	{
+		Some(hv)=>
+		{
+			hv.release_vm(vm_handle);
+			Status::SUCCESS
+		}
+		None=>Status::HYPERVISION_ABSENT
+	}
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_create_vm_ex(_vm:*mut c_void,_process_id:u32,_properties:u64)->Status
@@ -122,9 +140,32 @@ use nvcvm::status::Status;
 	Status::NOT_IMPLEMENTED
 }
 
-#[unsafe(no_mangle)] extern "C" fn nvc_create_vm(_vm:*mut c_void,_process_id:u32)->Status
+#[unsafe(no_mangle)] extern "C" fn nvc_create_vm(vm_handle:*mut CvmHandle,process_id:u32)->Status
 {
-	Status::NOT_IMPLEMENTED
+	if process_id==0 || vm_handle.is_null()
+	{
+		return Status::INVALID_PARAMETER;
+	}
+	let mut lk=CUSTOMIZABLE_HYPERVISOR.write();
+	match &mut *lk
+	{
+		Some(hv)=>
+		{
+			match hv.create_vm(process_id)
+			{
+				Ok(h)=>
+				{
+					unsafe
+					{
+						*vm_handle=h;
+					}
+					Status::SUCCESS
+				}
+				Err(e)=>e
+			}
+		}
+		None=>Status::HYPERVISION_ABSENT
+	}
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_deref_vm(_vm:*mut c_void)->Status

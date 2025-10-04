@@ -10,7 +10,12 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::c_void, ptr::null_mut, sync::atomic::{AtomicBool, Ordering}};
+use core::{alloc::Layout, ffi::c_void, ptr::null_mut, sync::atomic::{AtomicBool, Ordering}};
+
+#[cfg(windows)]
+use windows::Win32::System::Memory::{VirtualAlloc, VirtualFree, MEM_COMMIT, MEM_DECOMMIT, PAGE_READWRITE};
+
+use crate::xpf_core::nvbdk::page_4kb_mult;
 
 static mut ALLOC_BUFFER:[u8;2<<20]=[0;2<<20];
 static ALLOCATED:AtomicBool=AtomicBool::new(false);
@@ -66,12 +71,38 @@ pub type PhysicalRangeCallback=extern "C" fn(start:u64,length:u64,context:*mut c
 
 }
 
-#[unsafe(no_mangle)] extern "C" fn noir_kmalloc(_length:usize,_alignment:usize)->*mut u8
+#[unsafe(no_mangle)] extern "C" fn noir_kmalloc(length:usize,alignment:usize)->*mut u8
 {
-	null_mut()
+	unsafe
+	{
+		// Just forward to default memory allocator.
+		alloc::alloc::alloc(Layout::from_size_align_unchecked(length,alignment))
+	}
 }
 
-#[unsafe(no_mangle)] extern "C" fn noir_kfree(_ptr:*mut u8,_length:usize,_alignment:usize)
+#[unsafe(no_mangle)] extern "C" fn noir_kfree(ptr:*mut u8,length:usize,alignment:usize)
 {
+	unsafe
+	{
+		// Just forward to default memory allocator.
+		alloc::alloc::dealloc(ptr,Layout::from_size_align_unchecked(length,alignment))
+	}
+}
 
+#[unsafe(no_mangle)] extern "C" fn noir_kmmap(pages:usize)->*mut c_void
+{
+	#[cfg(windows)]
+	unsafe
+	{
+		VirtualAlloc(None,page_4kb_mult(pages),MEM_COMMIT,PAGE_READWRITE)
+	}
+}
+
+#[unsafe(no_mangle)] extern "C" fn noir_kmunmap(ptr:*mut c_void,pages:usize)
+{
+	#[cfg(windows)]
+	unsafe
+	{
+		let _=VirtualFree(ptr,page_4kb_mult(pages),MEM_DECOMMIT);
+	}
 }

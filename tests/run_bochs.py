@@ -7,6 +7,8 @@ import sys
 def call_bochs():
 	bochs_path=os.path.join(progpath,L[0])
 	print("Detected Bochs installed at {}!".format(bochs_path))
+	old_path=os.environ["PATH"]
+	os.environ["PATH"]+=";"+bochs_path
 	var_dict={"cpu-model":"corei7_icelake_u","bochs-path":bochs_path}
 	# Parse Command-Line Arguments
 	i=1
@@ -31,6 +33,7 @@ def call_bochs():
 	f.close()
 	# Run Bochs.
 	subprocess.call(["bochs","-f","bochsrc.bxrc","-q"])
+	os.environ["PATH"]=old_path
 
 if __name__=="__main__":
 	# OVMF must be present.

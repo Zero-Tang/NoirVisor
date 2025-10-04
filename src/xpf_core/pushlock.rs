@@ -11,7 +11,7 @@
  */
 
 use core::{cell::UnsafeCell, ops::{Deref, DerefMut}, sync::atomic::AtomicUsize};
-use crate::xpf_core::nvbdk::{noir_acquire_pushlock_exclusive, noir_acquire_pushlock_shared, noir_release_pushlock_shared};
+use crate::xpf_core::nvbdk::{noir_acquire_pushlock_exclusive, noir_acquire_pushlock_shared, noir_release_pushlock_exclusive, noir_release_pushlock_shared};
 
 pub struct PushLock<T>
 {
@@ -69,7 +69,7 @@ impl<T> PushLock<T>
 	{
 		unsafe
 		{
-			noir_acquire_pushlock_exclusive(self.push_lock.as_ptr());
+			noir_release_pushlock_exclusive(self.push_lock.as_ptr());
 		}
 	}
 }

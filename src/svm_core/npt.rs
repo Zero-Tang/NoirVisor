@@ -248,11 +248,67 @@ impl NptPte
 	}
 }
 
-pub struct SvmNptPageTableDescriptor<T:Sized>
+pub struct SvmNptPageTableDescriptor<T:Sized,A:ContiguousAllocator=InternalPageAllocator>
 {
-	pub table:MemoryDescriptor<1,T>,
+	pub table:MemoryDescriptor<1,T,A>,
 	pub gpa_start:u64
 }
+
+impl<T:Sized,A:ContiguousAllocator> SvmNptPageTableDescriptor<T,A>
+{
+	pub fn as_slice(&self)->&[T]
+	{
+		unsafe
+		{
+			slice::from_raw_parts(self.table.virt,PAGE_TABLE_ENTRIES64)
+		}
+	}
+	pub fn as_slice_mut(&mut self)->&mut [T]
+	{
+		unsafe
+		{
+			slice::from_raw_parts_mut(self.table.virt,PAGE_TABLE_ENTRIES64)
+		}
+	}
+}
+
+macro_rules! derive_partial_cmp
+{
+	($type:ty,$size:expr)=>
+	{
+		impl<A:ContiguousAllocator> PartialEq<u64> for SvmNptPageTableDescriptor<$type,A>
+		{
+			fn eq(&self,other:&u64)->bool
+			{
+				(self.gpa_start..self.gpa_start+$size as u64).contains(other)
+			}
+		}
+		
+		impl<A:ContiguousAllocator> PartialOrd<u64> for SvmNptPageTableDescriptor<$type,A>
+		{
+			fn partial_cmp(&self, other: &u64) -> Option<core::cmp::Ordering>
+			{
+				use core::cmp::Ordering;
+				if self.gpa_start+$size as u64<=*other
+				{
+					Some(Ordering::Less)
+				}
+				else if self.gpa_start>*other
+				{
+					Some(Ordering::Greater)
+				}
+				else
+				{
+					Some(Ordering::Equal)
+				}
+			}
+		}
+	};
+}
+
+derive_partial_cmp!(NptPte,PAGE_2MB_SIZE);
+derive_partial_cmp!(NptPde,PAGE_1GB_SIZE);
+derive_partial_cmp!(NptPdpte,PAGE_512GB_SIZE);
 
 impl<T:Sized> Default for SvmNptPageTableDescriptor<T>
 {

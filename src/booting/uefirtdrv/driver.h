@@ -19,7 +19,6 @@
 #include <Protocol/DevicePathUtilities.h>
 #include <Protocol/HiiFont.h>
 #include <Protocol/LoadedImage.h>
-#include <Protocol/UgaDraw.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Protocol/MpService.h>
 #include <Guid/Acpi.h>

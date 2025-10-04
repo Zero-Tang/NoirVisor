@@ -12,6 +12,9 @@
 
 use core::ffi::c_void;
 
+#[cfg(windows)]
+use windows::Win32::System::Threading::{AcquireSRWLockExclusive, AcquireSRWLockShared, ReleaseSRWLockShared, ReleaseSRWLockExclusive};
+
 use crate::xpf_core::nvbdk::BroadcastWorker;
 
 #[unsafe(no_mangle)] extern "C" fn noir_get_processor_count()->u32
@@ -37,4 +40,40 @@ use crate::xpf_core::nvbdk::BroadcastWorker;
 #[unsafe(no_mangle)] extern "C" fn nvc_call_try_task(_procedure:extern "C" fn(*mut c_void),_context:*mut c_void)->u32
 {
 	0
+}
+
+#[unsafe(no_mangle)] extern "C" fn noir_acquire_pushlock_exclusive(push_lock:*mut usize)
+{
+	#[cfg(windows)]
+	unsafe
+	{
+		AcquireSRWLockExclusive(push_lock.cast())
+	}
+}
+
+#[unsafe(no_mangle)] extern "C" fn noir_acquire_pushlock_shared(push_lock:*mut usize)
+{
+	#[cfg(windows)]
+	unsafe
+	{
+		AcquireSRWLockShared(push_lock.cast())
+	}
+}
+
+#[unsafe(no_mangle)] extern "C" fn noir_release_pushlock_exclusive(push_lock:*mut usize)
+{
+	#[cfg(windows)]
+	unsafe
+	{
+		ReleaseSRWLockExclusive(push_lock.cast());
+	}
+}
+
+#[unsafe(no_mangle)] extern "C" fn noir_release_pushlock_shared(push_lock:*mut usize)
+{
+	#[cfg(windows)]
+	unsafe
+	{
+		ReleaseSRWLockShared(push_lock.cast())
+	}
 }

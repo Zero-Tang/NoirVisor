@@ -48,11 +48,23 @@ Nested Intel VT-x is not supported yet.
 NoirVisor is coded in the C programming language, Assembly and Rust. \
 **NO C++ CODES ARE ACCEPTED IN THIS PROJECT!**
 
+## Rust
 If your patch includes Rust codes, make sure it could pass `cargo clippy` checks! No warnings and errors are allowed. \
 If you believe `clippy` is prompting dubious warnings and errors, do not put `#[allow(...)]` on your own. Instead, report in your PR and state why you think that is false positive. \
 If it is really is false positive, relevant suppression will be put.
 
 For your convenience, if `clippy` prompted too many errors and warnings, you may double click `clippy.bat` to restrict the output in one window.
+
+## Git
+To contribute to NoirVisor, you need to make a fork of this repository to your own account. Submit changes to your forked repository. When your patch completes, submit a [PR (short for Pull Request)](https://github.com/Zero-Tang/NoirVisor/pulls).
+
+If your patch is trivial, there isn't no specific commit history requirement. The PR will merge to `master` branch with the **Squash** strategy. You need to "force" a synchronization between the fork after the merge.
+
+If your patch is substantial, you need to maintain a strict commit history. This PR will merge to `master` branch with the **Merge-Commit** strategy. The rules for commit history are:
+
+- Changes in each commit belongs to the same purpose. No all-in-one commit.
+- No "nit" commits. You need to amend or squash your commits.
+- To synchronize new changes from `master` master to your fork, use the **Rebase** strategy.
 
 # Build
 We use Python script to build NoirVisor. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, building NoirVisor through Python script in Windows 7 is not supported. There are no `pip` package requirements for compilation.

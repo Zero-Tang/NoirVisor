@@ -14,8 +14,11 @@ use core::{ffi::c_void, ptr::null_mut};
 use paste::paste;
 use crate::xpf_core::nvbdk::GprState;
 
+extern crate std;
+
 mod cpu;
 mod memory;
+pub mod svm_hv;
 
 #[unsafe(no_mangle)] extern "C" fn nvc_store_image_info(_base:*mut *mut c_void,_size:*mut u32)
 {

@@ -16,6 +16,11 @@
 			"cmd":["ml64"],
 			"var":{"src":"{crtpath}\\memset.asm"}
 		},
+		"strlen":
+		{
+			"cmd":["ml64"],
+			"var":{"src":"{ucrtpath}\\strlen.asm"}
+		},
 		"archive":
 		{
 			"cmd":["lib","{objpath}\\memcpy.obj","{objpath}\\memcmp.obj","{objpath}\\memset.obj","{objpath}\\strlen.obj","{objpath}\\cpu_disp.obj"],

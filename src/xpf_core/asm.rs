@@ -363,17 +363,27 @@ pub mod msr
 pub mod svm
 {
 	use core::arch::asm;
+	#[cfg(test)]
+	use crate::xpf_core::tests::svm_hv::mock_vmmcall;
 
-	#[inline] pub fn vmmcall(index:u32,context:usize)
+	#[inline] pub fn vmmcall(index:u32,context:usize)->u32
 	{
+		#[cfg(test)]
+		{
+			mock_vmmcall(index,context)
+		}
+		#[cfg(not(test))]
 		unsafe
 		{
+			let st:u32;
 			asm!
 			(
 				"vmmcall",
 				in("ecx") index,
-				in("rdx") context
+				in("rdx") context,
+				out("eax") st
 			);
+			st
 		}
 	}
 
@@ -838,26 +848,24 @@ pub mod vt
 	{
 		unsafe
 		{
-			if cfg!(target_arch="x86_64")
+			#[cfg(target_arch="x86_64")]
 			{
 				vmread_proc!(field,u64)
 			}
-			else
+			#[cfg(not(target_arch="x86_64"))]
+			match vmread32(field)
 			{
-				match vmread32(field)
+				VmxResult::Ok(v1)=>
 				{
-					VmxResult::Ok(v1)=>
+					match vmread32(field+1)
 					{
-						match vmread32(field+1)
-						{
-							VmxResult::Ok(v2)=>VmxResult::Ok((v1 as u64)|((v2 as u64)<<32)),
-							VmxResult::Err(e)=>VmxResult::Err(e),
-							VmxResult::NoVmcs=>VmxResult::NoVmcs
-						}
+						VmxResult::Ok(v2)=>VmxResult::Ok((v1 as u64)|((v2 as u64)<<32)),
+						VmxResult::Err(e)=>VmxResult::Err(e),
+						VmxResult::NoVmcs=>VmxResult::NoVmcs
 					}
-					VmxResult::Err(e)=>VmxResult::Err(e),
-					VmxResult::NoVmcs=>VmxResult::NoVmcs
 				}
+				VmxResult::Err(e)=>VmxResult::Err(e),
+				VmxResult::NoVmcs=>VmxResult::NoVmcs
 			}
 		}
 	}
@@ -898,18 +906,16 @@ pub mod vt
 	{
 		unsafe
 		{
-			if cfg!(target_arch="x86_64")
+			#[cfg(target_arch="x86_64")]
 			{
 				vmwrite_proc!(field,value)
 			}
-			else
+			#[cfg(not(target_arch="x86_64"))]
+			match vmwrite32(field,value as u32)
 			{
-				match vmwrite32(field,value as u32)
-				{
-					VmxResult::Ok(EmptyUnit(()))=>vmwrite32(field+1,(value>>32) as u32),
-					VmxResult::Err(e)=>VmxResult::Err(e),
-					VmxResult::NoVmcs=>VmxResult::NoVmcs
-				}
+				VmxResult::Ok(EmptyUnit(()))=>vmwrite32(field+1,(value>>32) as u32),
+				VmxResult::Err(e)=>VmxResult::Err(e),
+				VmxResult::NoVmcs=>VmxResult::NoVmcs
 			}
 		}
 	}
