@@ -79,6 +79,7 @@ EFI_STATUS NoirInitializeConfigurationManager();
 void NoirFinalizeConfigurationManager();
 EFI_STATUS NoirConfigureInternalDebugger();
 BOOLEAN NoirInitializeLogger();
+void __cdecl NoirDebugPrint(IN CONST CHAR8 *Format,...);
 
 void __isa_available_init();
 extern UINT32 __isa_available;

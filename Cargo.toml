@@ -10,6 +10,14 @@ crate-type = ["staticlib"]
 debug = "full"
 panic = "abort"
 
+# Disassembler engines have insane binary size.
+# Enable optimization even in dev profile.
+[profile.dev.package.yaxpeax-x86]
+opt-level = "s"
+
+[profile.dev.package.yaxpeax-arch]
+opt-level = "s"
+
 [profile.release]
 panic = "abort"
 debug = "full"
@@ -27,16 +35,17 @@ spin = "0.10.0"
 log = "0.4.27"
 bitfield-struct = "0.11.0"
 static-collections = "0.2.0"
+portable-dlmalloc = "1.3.0"
 
-[dependencies.portable-dlmalloc]
-version = "0.3.3"
-features = ["alt-alloc"]
-
-[dependencies.iced-x86]
-version = "1.21.0"
+[dependencies.yaxpeax-x86]
+version = "2.0.0"
 default-features = false
-features = ["no_std","decoder","op_code_info","instr_info","masm"]
+features = ["fmt"]
+
+[dependencies.yaxpeax-arch]
+version = "0.3.2"
+default-features = false
 
 [target.'cfg(windows)'.dev-dependencies.windows]
 version = "0.62.1"
-features = ["Win32_System_Memory","Win32_System_Threading"]
+features = ["Win32_System_Threading"]

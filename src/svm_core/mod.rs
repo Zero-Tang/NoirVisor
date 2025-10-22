@@ -14,7 +14,6 @@ use core::{arch::x86_64::_xgetbv, ffi::c_void, ptr::*};
 use alloc::{vec::Vec, vec};
 #[cfg(target_os="uefi")]
 use exit::svm_apic_output_handler;
-use iced_x86::MasmFormatter;
 use static_collections::bitmap::RefBitmap;
 use iommu::{svm_iommu_output_handler, SvmIommuManager};
 use log::*;
@@ -33,6 +32,7 @@ pub mod amd64;
 #[allow(dead_code)] mod vmcb;
 #[allow(dead_code)] mod decode;
 #[allow(dead_code)] mod exit;
+mod hvcall;
 #[allow(dead_code)] mod npt;
 #[cfg(not(target_os="uefi"))]
 #[allow(dead_code)] pub mod custom;
@@ -81,9 +81,6 @@ pub struct SvmVcpu
 	pub under_hvm:bool,
 	// Features supported by the processors.
 	pub svm_feats:SvmFeatureIdentifier,
-	// Always use this member to format the mnemonic of an instruction.
-	// Do not use `MasmFormatter::new()` on your own because it will cause runtime allocation!
-	pub disasm_fmter:MasmFormatter,
 	// This context handles exceptions.
 	pub gs_context:PerCpuGsException
 }
@@ -115,7 +112,6 @@ impl SvmVcpu
 			},
 			under_hvm:false,
 			svm_feats:SvmFeatureIdentifier::new(),
-			disasm_fmter:MasmFormatter::new(),
 			gs_context:PerCpuGsException::default()
 		}
 	}
@@ -142,6 +138,22 @@ unsafe extern "win64"
 
 impl SvmVcpu
 {
+	#[inline(always)] pub fn get_stack_top(&self)->&SvmStackTop
+	{
+		unsafe
+		{
+			&*self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast()
+		}
+	}
+
+	#[inline(always)] pub fn get_stack_top_mut(&mut self)->&mut SvmStackTop
+	{
+		unsafe
+		{
+			&mut *self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast()
+		}
+	}
+	
 	fn subvert_i(&mut self,gsp:u64)->u64
 	{
 		unsafe

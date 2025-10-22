@@ -36,14 +36,14 @@ use log::*;
 
 use nvcvm::status::Status;
 
-use xpf_core::{allocator::set_alloc_checker, x86::cpuid::*, nvbdk::PAGE_4KB_SHIFT};
+use xpf_core::{x86::cpuid::*, nvbdk::PAGE_4KB_SHIFT};
 pub use xpf_core::debug::*;
 use vt_core::VtHypervisor;
 use svm_core::SvmHypervisor;
 
-// Limit stack size to 64KiB. Should be enough for most circumstances.
+// Limit stack size to 32KiB. Should be enough for most circumstances.
 // FIXME: Implement runtime stack overflow detector.
-pub const HYPERVISOR_STACK_PAGE_COUNT:usize=16;
+pub const HYPERVISOR_STACK_PAGE_COUNT:usize=8;
 pub const HYPERVISOR_STACK_SIZE:usize=HYPERVISOR_STACK_PAGE_COUNT<<PAGE_4KB_SHIFT;
 
 pub enum ProcessorManufacturer
@@ -203,9 +203,14 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 	};
 	if let Some(mut hypervisor)=hv
 	{
+		use xpf_core::allocator::*;
 		// Subvert the system.
 		let st=hypervisor.subvert_system();
 		set_alloc_checker(true);
+		// Print out heap usage.
+		#[cfg(not(test))]
+		info!("Allocated {} large pages! heap has {} used bytes, has {} free bytes",get_large_page_count(),get_used(),get_free());
+		print_allocation();
 		unsafe 
 		{
 			HVM=Some(hypervisor);

@@ -12,11 +12,11 @@
  */
 
 use alloc::slice;
-use exit::*;
-use iced_x86::{Code, Decoder, DecoderOptions, Instruction, Mnemonic};
 use paste::paste;
-use npt::NptFaultCode;
 
+use crate::disasm::emulator::{EmulatorOps, Instruction, MovCrInfo, MovDrInfo};
+use exit::*;
+use npt::NptFaultCode;
 use super::{xpf_core::x86::paging::*,svm_core::*};
 
 macro_rules! build_get_reg_helper
@@ -68,6 +68,61 @@ impl PageTranslationHelper for SvmVcpu
 	}
 }
 
+impl EmulatorOps for SvmVcpu
+{
+	fn read_gpr(&self,gpr_index:usize)->u64
+	{
+		let stk_top=self.get_stack_top();
+		stk_top.gpr_state.read(gpr_index).unwrap()
+	}
+
+	fn write_gpr(&mut self,gpr_index:usize,value:u64)
+	{
+		let stk_top=self.get_stack_top_mut();
+		stk_top.gpr_state.write(gpr_index,value);
+	}
+
+	fn read_seg_selector(&self,seg_index:usize)->u16
+	{
+		unsafe
+		{
+			vmread(self.vmcb.virt,GUEST_ES_SELECTOR+(seg_index<<4))
+		}
+	}
+
+	fn write_seg_selector(&self,seg_index:usize,value:u16)
+	{
+		unsafe
+		{
+			vmwrite(self.vmcb.virt,GUEST_ES_SELECTOR+(seg_index<<4),value);
+			if seg_index<4
+			{
+				vmcb_clean_seg(self.vmcb.virt);
+			}
+		}
+	}
+
+	fn read_rip(&self)->u64
+	{
+		unsafe
+		{
+			vmread(self.vmcb.virt,GUEST_RIP)
+		}
+	}
+
+	fn read_gpa(&mut self,gpa:u64,value:&mut [u8])
+	{
+		let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
+		let _=hv.mmio_space.dispatch_input(gpa,value.len() as u64,value.as_mut_ptr().cast(),self as *mut Self as *mut c_void);
+	}
+
+	fn write_gpa(&mut self,gpa:u64,value:&[u8])
+	{
+		let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
+		let _=hv.mmio_space.dispatch_output(gpa,value.len() as u64,value.as_ptr().cast(),self as *mut Self as *mut c_void);
+	}
+}
+
 impl SvmVcpu
 {
 	pub(super) fn get_current_bitness(&self)->u32
@@ -111,16 +166,14 @@ impl SvmVcpu
 	fn decode_instruction_internal(&mut self)->Option<Instruction>
 	{
 		let rip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
-		let buff=unsafe{slice::from_raw_parts_mut(self.vmcb.virt.cast::<u8>().add(GUEST_INSTRUCTION_BYTES),15)};
+		let buff:&mut [u8;15]=unsafe{&mut *self.vmcb.virt.byte_add(GUEST_INSTRUCTION_BYTES).cast()};
 		// Fetch instructions.
 		self.fetch_instruction();
-		// Check bitness.
-		let bitness:u32=self.get_current_bitness();
 		// Call disassembler.
-		let mut decoder=Decoder::with_ip(bitness,buff,rip,DecoderOptions::AMD);
-		if decoder.can_decode()
+		let mut ins=Instruction::new(*buff);
+		ins.decode(self.get_current_bitness());
+		if ins.len()>0
 		{
-			let ins=decoder.decode();
 			let mut nrip:u64=rip+ins.len() as u64;
 			// If the vCPU is in compatibility mode, advancing rip should drop the higher 32 bits.
 			unsafe
@@ -164,24 +217,22 @@ impl SvmVcpu
 			if let Some(ins)=self.decode_instruction_internal()
 			{
 				// Then put the results back.
-				let ins_kind=ins.mnemonic();
-				match ins_kind
+				let v=match ins.decode_cr_access()
 				{
-					Mnemonic::Mov=>
+					Some(info)=>
 					{
-						let ins_code=ins.code();
-						match ins_code
+						match info
 						{
-							// According to AMD64 manual, the highest bit of EXITINFO1 should be set if this is a mov-crx instruction.
-							Code::Mov_cr_r32|Code::Mov_cr_r64=>unsafe{vmwrite(self.vmcb.virt,EXIT_INFO1,(ins.op1_register().number() as u64)|0x8000000000000000)},
-							Code::Mov_r32_cr|Code::Mov_r64_cr=>unsafe{vmwrite(self.vmcb.virt,EXIT_INFO1,(ins.op0_register().number() as u64)|0x8000000000000000)},
-							_=>panic!("Unexpected instruction code {:?}!",ins_code)
+							MovCrInfo::MovToCr(rd,_rs)=>rd as u64|(1<<63),
+							MovCrInfo::MovFromCr(_rd,rs)=>rs as u64|(1<<63),
+							MovCrInfo::Lmsw|MovCrInfo::Smsw|MovCrInfo::Clts=>0
 						}
 					}
-					// There are additional instructions which can access control registers!
-					// According to AMD64 manual, nothing will be reported if these instructions are lmsw, smsw or clts.
-					Mnemonic::Lmsw|Mnemonic::Smsw|Mnemonic::Clts=>unsafe{vmwrite::<u64>(self.vmcb.virt,EXIT_INFO1,0)},
-					_=>panic!("Unexpected instruction mnemonic {:?}!",ins_kind)
+					None=>0
+				};
+				unsafe
+				{
+					vmwrite(self.vmcb.virt,EXIT_INFO1,v);
 				}
 			}
 		}
@@ -199,20 +250,21 @@ impl SvmVcpu
 			if let Some(ins)=self.decode_instruction_internal()
 			{
 				// Then put the results back.
-				let ins_kind=ins.mnemonic();
-				match ins_kind
+				let v=match ins.decode_dr_access()
 				{
-					Mnemonic::Mov=>
+					Some(info)=>
 					{
-						let ins_code=ins.code();
-						match ins_code
+						match info
 						{
-							Code::Mov_dr_r32|Code::Mov_dr_r64=>unsafe{vmwrite::<u64>(self.vmcb.virt,EXIT_INFO1,ins.op1_register().number() as u64)},
-							Code::Mov_r32_dr|Code::Mov_r64_dr=>unsafe{vmwrite::<u64>(self.vmcb.virt,EXIT_INFO1,ins.op0_register().number() as u64)},
-							_=>panic!("Unexpected instruction code {:?}!",ins_code)
+							MovDrInfo::MovToDr(rd,_rs)=>rd as u64,
+							MovDrInfo::MovFromDr(_rd,rs)=>rs as u64
 						}
 					}
-					_=>panic!("Unexpected instruction mnemonic {:?}!",ins_kind)
+					None=>0
+				};
+				unsafe
+				{
+					vmwrite(self.vmcb.virt,EXIT_INFO1,v);
 				}
 			}
 		}
@@ -245,11 +297,10 @@ impl SvmVcpu
 			if let Some(ins)=self.decode_instruction_internal()
 			{
 				// Then put the results back.
-				let ins_kind=ins.mnemonic();
-				match ins_kind
+				let v=ins.decode_swint().unwrap_or(0) as u64;
+				unsafe
 				{
-					Mnemonic::Int=>unsafe{vmwrite(self.vmcb.virt,EXIT_INFO1,ins.immediate8() as u64)},
-					_=>panic!("Unexpected instruction mnemonic {:?}!",ins_kind)
+					vmwrite(self.vmcb.virt,EXIT_INFO1,v);
 				}
 			}
 		}
@@ -259,8 +310,20 @@ impl SvmVcpu
 	{
 		if !self.svm_feats.decode_assists()
 		{
-			// FIXME: load registers to obtain the target address.
-			todo!("Software-emulated decode-assists for invlpg is not supported yet!");
+			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
+			// We will have to emulate this on our own.
+			// First, fetch the instruction.
+			self.fetch_instruction();
+			// Second, decode the instruction.
+			if let Some(ins)=self.decode_instruction_internal() && let Some(info)=ins.decode_invlpg()
+			{
+				let p=info.calc_addr(self);
+				// Then put the results back.
+				unsafe
+				{
+					vmwrite(self.vmcb.virt,EXIT_INFO1,p);
+				}
+			}
 		}
 	}
 
@@ -349,33 +412,27 @@ const SVM_HOST_DECODE_HANDLER_GROUPS:[&[SvmHostDecodeHandler];SVM_MAXIMUM_GROUPS
 	if intercept_code<0
 	{
 		let index:usize=!intercept_code as usize;
-		if index<SVM_MAXIMUM_NEGATIVE
+		match SVM_HOST_DECODE_HANDLER_GROUP_NEGATIVE.get(index)
 		{
-			SVM_HOST_DECODE_HANDLER_GROUP_NEGATIVE[index]
-		}
-		else
-		{
-			SvmVcpu::decode_unknown
+			Some(&h)=>h,
+			None=>SvmVcpu::decode_unknown
 		}
 	}
 	else
 	{
 		let group:usize=(intercept_code as usize)>>10;
-		if group<SVM_MAXIMUM_GROUPS
+		match SVM_HOST_DECODE_HANDLER_GROUPS.get(group)
 		{
-			let index:usize=(intercept_code as usize)&0x3ff;
-			if index<SVM_EXIT_HANDLER_GROUP_LIMITS[group]
+			Some(&g)=>
 			{
-				SVM_HOST_DECODE_HANDLER_GROUPS[group][index]
+				let index:usize=(intercept_code as usize)&0x3ff;
+				match g.get(index)
+				{
+					Some(h)=>*h,
+					None=>SvmVcpu::decode_unknown
+				}
 			}
-			else
-			{
-				SvmVcpu::decode_unknown
-			}
-		}
-		else
-		{
-			SvmVcpu::decode_unknown
+			None=>SvmVcpu::decode_unknown
 		}
 	}
 }

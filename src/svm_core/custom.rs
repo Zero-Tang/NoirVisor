@@ -88,9 +88,11 @@ impl SvmCustomVcpu
 	}
 }
 
+type SvmCustomVcpuList=Arc<PushLock<Vec<Option<Arc<PushLock<Box<SvmCustomVcpu,KernelAllocator>>,KernelAllocator>>,KernelAllocator>>,KernelAllocator>;
+
 pub struct SvmCustomVm
 {
-	vcpus:Arc<PushLock<Vec<Option<Arc<PushLock<Box<SvmCustomVcpu,KernelAllocator>>,KernelAllocator>>,KernelAllocator>>,KernelAllocator>,
+	vcpus:SvmCustomVcpuList,
 	iopm:Option<MemoryDescriptor<3,usize,SystemPageAllocator>>,
 	msrpm:Option<MemoryDescriptor<2,usize,SystemPageAllocator>>,
 	/// Built-in NPTMs have a fixed number of them, so use a slice to contain them. \
@@ -133,9 +135,11 @@ impl SvmCustomVm
 	}
 }
 
+type SvmCustomVmList=Vec<Option<Arc<PushLock<Box<SvmCustomVm,KernelAllocator>>,KernelAllocator>>,KernelAllocator>;
+
 pub struct SvmCustomHypervisor
 {
-	vm_list:Vec<Option<Arc<PushLock<Box<SvmCustomVm,KernelAllocator>>,KernelAllocator>>,KernelAllocator>,
+	vm_list:SvmCustomVmList,
 	iopm:MemoryDescriptor<3,usize,InternalPageAllocator>,
 	msrpm:MemoryDescriptor<2,usize,InternalPageAllocator>,
 	l5_npt:bool
@@ -147,6 +151,11 @@ impl SvmCustomHypervisor
 	{
 		let iopm=MemoryDescriptor::alloc()?;
 		let msrpm=MemoryDescriptor::alloc()?;
+		unsafe
+		{
+			memset(msrpm.virt as *mut c_void,u8::MAX,page_4kb_mult(2));
+			memset(iopm.virt as *mut c_void,u8::MAX,page_4kb_mult(2)+1);
+		}
 		Some
 		(
 			Self

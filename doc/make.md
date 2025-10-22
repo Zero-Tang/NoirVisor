@@ -16,7 +16,8 @@ NoirVisor Core is written in Rust. See [documentation for NoirVisor in Rust](./r
 Install [Rust](https://www.rust-lang.org/tools/install). \
 The toolchain is up to you. It is recommended to use the `stable` toolchain. But feel free to use `nightly` toolchain.
 
-Currently, NoirVisor Core in Rust can subvert the system with AMD-V in UEFI and Windows.
+Currently, NoirVisor Core in Rust can subvert the system with Intel VT-x and AMD-V in UEFI and Windows. \
+However, NoirVisor currrently can't boot Windows from UEFI.
 
 ### Windows Driver
 To build a kernel-mode driver on Windows, you should either install Visual Studio or mount Enterprise WDK. \

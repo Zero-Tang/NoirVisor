@@ -23,14 +23,14 @@ EFI_STATUS EFIAPI NoirDriverUnload(IN EFI_HANDLE ImageHandle)
 {
 	NoirFinalizeCodeIntegrity();
 	NoirFinalizeConfigurationManager();
-	Print(L"NoirVisor is unloaded!\r\n");
+	StdOut->OutputString(StdOut,L"NoirVisor is unloaded!\r\n");
 	return EFI_SUCCESS;
 }
 
 void EFIAPI NoirNotifyExitBootServices(IN EFI_EVENT Event,IN VOID* Context)
 {
 	NoirEfiInRuntimeStage=TRUE;
-	Print(L"UEFI now enters Runtime Stage!\n");
+	NoirDebugPrint("UEFI now enters Runtime Stage!\n");
 }
 
 void NoirBlockUntilKeyStroke(IN CHAR16 Unicode)
@@ -51,7 +51,7 @@ EFI_STATUS EFIAPI NoirRegisterHypervisorVariables()
 	{
 		if(sizeof(LayeringPasscode)>255)
 		{
-			Print(L"Passcode for Layered Hypervisor is too long!\n");
+			StdOut->OutputString(StdOut,L"Passcode for Layered Hypervisor is too long!\n");
 			st=EFI_BAD_BUFFER_SIZE;
 		}
 		else
@@ -103,7 +103,7 @@ EFI_STATUS EFIAPI NoirDriverEntry(IN EFI_HANDLE ImageHandle,IN EFI_SYSTEM_TABLE 
 	EFI_STATUS st=NoirEfiInitialize(ImageHandle,SystemTable);
 	EFI_LOADED_IMAGE_PROTOCOL* ImageInfo=NULL;
 	UINT32 Supportability=NoirQueryVirtualizationSupportability();
-	Print(L"Welcome to NoirVisor Runtime Driver!\r\n");
+	StdOut->OutputString(StdOut,L"Welcome to NoirVisor Runtime Driver!\r\n");
 	NoirPrintCompilerVersion();
 	if((Supportability&3)!=3)
 	{

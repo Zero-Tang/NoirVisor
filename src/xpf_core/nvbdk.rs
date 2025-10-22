@@ -553,7 +553,8 @@ unsafe extern "C"
 	pub fn noir_map_uncached_memory(physical_address:u64,length:usize)->*mut c_void;
 	pub fn noir_unmap_physical_memory(virtual_address:*mut c_void,length:usize);
 	pub fn noir_enum_physical_memory_ranges(callback_routine:PhysicalRangeCallback,context:*mut c_void);
-	pub fn memcpy(dest:*mut c_void,src:*const c_void,cch:usize);
+	pub fn memcpy(dest:*mut c_void,src:*const c_void,cch:usize)->*mut c_void;
+	pub fn memset(dest:*mut c_void,val:u8,cch:usize)->*mut c_void;
 	// Image Facility
 	pub fn nvc_store_image_info(base:*mut *mut c_void,size:*mut u32);
 	// Configuration Facility

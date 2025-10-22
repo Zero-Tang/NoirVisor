@@ -12,14 +12,13 @@
 
 use core::{arch::x86_64::_xsetbv, ffi::c_void};
 
-use iced_x86::{Decoder, Formatter};
 use paste::paste;
 use log::*;
 
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall, nvc_forward_memory_mapped_hypercall};
-use crate::{disasm::MnemonicString, mshv_core::cpuid::MSHV_CPUID_HANDLERS, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::{rdmsr, wrmsr}, seg::*, vt::*}, ci::is_ci_phys_page, hv_host::NOIR_HYPERCALL_CODE_CALLEXIT, nvbdk::GprState, trytask::try_task, x86::{cpuid::*, crdr::*, descriptors::{DescriptorTable, SegmentFlags, SystemSegmentDescriptor}, interrupts::{EventType, GENERAL_PROTECTION_FAULT, INVALID_OPCODE_FAULT}, msr::{MSR_FS_BASE, MSR_GS_BASE}}}, *};
-use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, VtStackTop, nvc_vt_resume_without_entry};
+use crate::{disasm::emulator::Instruction, mshv_core::cpuid::MSHV_CPUID_HANDLERS, vt_core::hvcall::dispatch_hypercall, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, ci::is_ci_phys_page, trytask::try_task, x86::{cpuid::*, crdr::*, interrupts::{EventType, GENERAL_PROTECTION_FAULT}}}, *};
+use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, VtStackTop};
 
 impl VtVcpu
 {
@@ -180,80 +179,24 @@ impl VtVcpu
 	{
 		let gpr_state=&mut context.gpr_state;
 		let vmcall_func=gpr_state.rcx as u32;
-		let gcr3=unsafe{vmreadptr(GUEST_CR3)}.unwrap() as u64;
 		let grip=unsafe{vmreadptr(GUEST_RIP)}.unwrap();
 		let hv:&mut VtHypervisor=unsafe{&mut *self.hypervisor.cast()};
 		if hv.is_rip_from_hypervisor(grip)
 		{
 			debug!("The vmcall instruction is intercepted! Hypercall Leaf: 0x{vmcall_func:X}");
-			match vmcall_func
+			let handler_fn=dispatch_hypercall(vmcall_func);
+			match handler_fn(self,vmcall_func,gpr_state.rdx as *mut c_void)
 			{
-				NOIR_HYPERCALL_CODE_CALLEXIT=>
+				Ok(st)=>
 				{
-					let nrip=grip+unsafe{vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap() as usize};
-					let gflags=unsafe{vmreadptr(GUEST_RFLAGS)}.unwrap();
-					let saved_state:GprState=GprState
-					{
-						rax:nrip as u64,
-						rcx:gflags as u64,
-						rdx:gpr_state.rsp,
-						rbx:gpr_state.rbx,
-						rsp:gpr_state.rsp,
-						rbp:gpr_state.rbp,
-						rsi:gpr_state.rsi,
-						rdi:gpr_state.rdi,
-						r8:gpr_state.r8,
-						r9:gpr_state.r9,
-						r10:gpr_state.r10,
-						r11:gpr_state.r11,
-						r12:gpr_state.r12,
-						r13:gpr_state.r13,
-						r14:gpr_state.r14,
-						r15:gpr_state.r15,
-					};
-					// Switch to Restored Control Registers.
-					let gcr4=unsafe{vmreadptr(GUEST_CR4)}.unwrap() as u64;
-					write_cr3(gcr3);
-					write_cr4(gcr4);
-					unsafe
-					{
-						// Switch to Restored IDT.
-						let gidtr=DescriptorTable
-						{
-							limit:vmread32(GUEST_IDTR_LIMIT).unwrap() as u16,
-							base:vmreadptr(GUEST_IDTR_BASE).unwrap() as u64
-						};
-						write_idtr(&raw const gidtr);
-						// Switch to Restored GDT.
-						let ggdtr=DescriptorTable
-						{
-							limit:vmread32(GUEST_GDTR_LIMIT).unwrap() as u16,
-							base:vmreadptr(GUEST_GDTR_BASE).unwrap() as u64
-						};
-						write_gdtr(&raw const ggdtr);
-						// Switch to Restored TSS.
-						let tr_sel=vmread32(GUEST_TR_SELECTOR).unwrap() as u16;
-						// Before actually switching TSS, make it available.
-						let tss_entry=(ggdtr.base+(tr_sel as u64 & 0xFFF8)) as *mut SystemSegmentDescriptor;
-						(*tss_entry).flags=SegmentFlags::AVAILABLE_TSS;
-						((ggdtr.base+tr_sel as u64+0x5) as *mut u8).write(0x89);
-						// Switch FS/GS Bases
-						wrmsr(MSR_FS_BASE,vmreadptr(GUEST_FS_BASE).unwrap() as u64);
-						wrmsr(MSR_GS_BASE,vmreadptr(GUEST_GS_BASE).unwrap() as u64);
-						// Switch it.
-						write_tr(tr_sel);
-					}
-					// Return to the caller in Host Mode.
-					unsafe
-					{
-						nvc_vt_resume_without_entry(&raw const saved_state);
-					}
-					// Never reaches here!
+					// This hypercall is known.
+					gpr_state.rax=st.0 as u64;
+					self.advance_rip();
 				}
-				_=>
+				Err((vector,error_code))=>unsafe
 				{
-					error!("Unknown Hypercall Code 0x{vmcall_func:X} is called!");
-					unsafe{inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true,0);}
+					// This hypercall is unknown.
+					inject_event(vector,EventType::HardwareException,error_code,true,0);
 				}
 			}
 		}
@@ -301,6 +244,7 @@ impl VtVcpu
 		let gpr_state=&mut context.gpr_state;
 		let q=ControlRegisterQualification::read();
 		debug!("CR Index: {}, GPR Index: {}, Access: {}",q.cr_index(),q.access_type(),q.gpr_index());
+		let mut should_advance:bool=true;
 		match q.access_type()
 		{
 			ControlRegisterQualification::WRITE_CR=>
@@ -308,18 +252,39 @@ impl VtVcpu
 				gpr_state.rsp=unsafe{vmread64(GUEST_RSP)}.unwrap();
 				let new_value=gpr_state.read(q.gpr_index()).unwrap() as usize;
 				debug!("New Value: 0x{new_value:X}");
-				unsafe
+				match q.cr_index()
 				{
-					match q.cr_index()
+					4=>
 					{
-						4=>vmwriteptr(GUEST_CR4,new_value|CR4_VMXE as usize),
-						x=>panic!("Interception to CR{x} is unsupported!")
-					};
-				}
+						unsafe
+						{
+							vmwriteptr(GUEST_CR4,new_value|CR4_VMXE as usize);
+						}
+					}
+					x=>
+					{
+						error!("Interception to CR{x} is unsupported!");
+						should_advance=false;
+					}
+				};
 			}
-			_=>error!("Unrecognized Access: {}",q.access_type())
+			_=>
+			{
+				error!("Unrecognized Access: {}",q.access_type());
+				should_advance=false;
+			}
 		}
-		panic!("CR-Access Exit is not implemented!");
+		if should_advance
+		{
+			self.advance_rip();
+		}
+		else
+		{
+			unsafe
+			{
+				inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true,0);
+			}
+		}
 	}
 
 	fn handle_rdmsr(&mut self,context:&mut VtStackTop)
@@ -331,7 +296,11 @@ impl VtVcpu
 			// Returning u64::MAX should prevent the guest from loading microcodes,
 			// unless they ignore the current version of microcode.
 			MSR_BIOS_UPDATE_TRIGGER=>Some(u64::MAX),
-			_=>panic!("Unexpected interception to rdmsr! MSR-Index: 0x{index:X}")
+			_=>
+			{
+				error!("Unexpected interception to rdmsr! MSR-Index: 0x{index:X}");
+				None
+			}
 		};
 		match ret_val
 		{
@@ -353,7 +322,11 @@ impl VtVcpu
 			// Prevent the Guest from updating microcode.
 			// Do so by ignoring the update request.
 			MSR_BIOS_UPDATE_TRIGGER=>false,
-			_=>panic!("Unexpected interception to wrmsr! MSR-Index: 0x{index:X}")
+			_=>
+			{
+				error!("Unexpected interception to wrmsr! MSR-Index: 0x{index:X}");
+				true
+			}
 		};
 		unsafe
 		{
@@ -392,13 +365,10 @@ impl VtVcpu
 				// VMware's nested virtualization does not forward instruction length upon EPT-violation.
 				// Fetch instruction from guest and manually advance rip.
 				warn!("Instruction-Length from VMCS is 0! Fetching instruction via software...");
-				let instruction_bytes:[u8;15]=self.fetch_instruction();
-				let mut decoder=Decoder::with_ip(self.get_current_bitness(),&instruction_bytes,rip as u64,0);
-				let ins=decoder.decode();
-				inslen=ins.len() as u32;
-				let mut mnemonic=MnemonicString::default();
-				self.disasm_fmter.format(&ins,&mut mnemonic);
-				debug!("CI-fault instruction bytes: {:02X?} | {}",&instruction_bytes[..ins.len()],mnemonic);
+				let mut instruction=Instruction::new(self.fetch_instruction());
+				instruction.decode(self.get_current_bitness());
+				inslen=instruction.len() as u32;
+				debug!("CI-fault instruction bytes: {:02X?} | {}",&instruction.instruction_bytes[..inslen as usize],&instruction);
 			}
 			self.advance_rip_manually(inslen);
 		}

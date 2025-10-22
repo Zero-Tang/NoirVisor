@@ -13,16 +13,15 @@
 use core::{mem::MaybeUninit, slice};
 
 use paste::paste;
-use iced_x86::*;
 
 use decode::dispatch_decoder;
 use npt::NptFaultCode;
-use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::{descriptors::DescriptorTable, interrupts::*}};
+use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::interrupts::*};
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall,nvc_forward_memory_mapped_hypercall};
 
-use crate::{disasm::MnemonicString, xpf_core::{trytask::try_task, x86::paging::PageTranslationHelper}};
+use crate::{disasm::emulator::{EmulatorOps, Instruction}, xpf_core::trytask::try_task};
 
-use super::*;
+use super::{*,hvcall::dispatch_hypercall};
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
 use mshv_core::cpuid::*;
 
@@ -62,19 +61,28 @@ impl SvmVcpu
 		let (a,b,c,d)=
 		if (ia&0x40000000)==0x40000000
 		{
-			if hv.features.cpuid_hv_presence()
+			if self.under_hvm
 			{
-				// This is Hypervisor's CPUID.
-				let leaf_func=(ia&0x3FFFFFFF) as usize;
-				match MSHV_CPUID_HANDLERS.get(leaf_func)
-				{
-					Some(f)=>f(ia,ic),
-					None=>(0,0,0,0)
-				}
+				// We're under a hypervisor which exposes its hypervisor interfaces.
+				// Current implementation would directly pass-thru their CPUID.
+				cpuid2(ia,ic)
 			}
 			else
 			{
-				(0,0,0,0)
+				if hv.features.cpuid_hv_presence()
+				{
+					// This is Hypervisor's CPUID.
+					let leaf_func=(ia&0x3FFFFFFF) as usize;
+					match MSHV_CPUID_HANDLERS.get(leaf_func)
+					{
+						Some(f)=>f(ia,ic),
+						None=>(0,0,0,0)
+					}
+				}
+				else
+				{
+					(0,0,0,0)
+				}
 			}
 		}
 		else
@@ -363,136 +371,22 @@ impl SvmVcpu
 		if hv.is_rip_from_hypervisor(grip)
 		{
 			let vmmcall_func=gpr_state.rcx as u32;
-			match vmmcall_func
+			let handler_fn=dispatch_hypercall(vmmcall_func);
+			match handler_fn(self,vmmcall_func,gpr_state.rdx as *mut c_void)
 			{
-				NOIR_HYPERCALL_CODE_CALLEXIT=>
+				Ok(st)=>
 				{
-					let gcr3:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR3)};
-					let start=hv.image_base as u64;
-					let end=start+hv.image_size as u64;
-					if (start..end).contains(&grip)
+					// This hypercall is known. Put status in rax register.
+					gpr_state.rax=st.0 as u64;
+					unsafe
 					{
-						let nrip:u64=unsafe{vmread(self.vmcb.virt,NEXT_RIP)};
-						let gflags:u64=unsafe{vmread(self.vmcb.virt,GUEST_RFLAGS)};
-						let saved_state:GprState=GprState
-						{
-							rax:nrip,
-							rcx:gflags,
-							rdx:gpr_state.rsp,
-							rbx:gpr_state.rbx,
-							rsp:gpr_state.rsp,
-							rbp:gpr_state.rbp,
-							rsi:gpr_state.rsi,
-							rdi:gpr_state.rdi,
-							r8:gpr_state.r8,
-							r9:gpr_state.r9,
-							r10:gpr_state.r10,
-							r11:gpr_state.r11,
-							r12:gpr_state.r12,
-							r13:gpr_state.r13,
-							r14:gpr_state.r14,
-							r15:gpr_state.r15,
-						};
-						// Switch to Restored Control Registers.
-						let gcr4:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR4)};
-						write_cr3(gcr3);
-						write_cr4(gcr4);
-						// Restore the processor's hidden state.
-						vmload(self.vmcb.phys);
-						unsafe
-						{
-							// Switch to Restored IDT.
-							let gidtr:DescriptorTable=DescriptorTable
-							{
-								limit:vmread(self.vmcb.virt,GUEST_IDTR_LIMIT),
-								base:vmread(self.vmcb.virt,GUEST_IDTR_BASE)
-							};
-							write_idtr(&raw const gidtr);
-							// Switch to Restored GDT.
-							let ggdtr:DescriptorTable=DescriptorTable
-							{
-								limit:vmread(self.vmcb.virt,GUEST_GDTR_LIMIT),
-								base:vmread(self.vmcb.virt,GUEST_GDTR_BASE)
-							};
-							write_gdtr(&raw const ggdtr);
-							// Note that TSS is switched in previous vmload.
-						}
-						// Set the GIF. Otherwise the host will never be interrupted.
-						stgi();
-						// Return to the caller in Host Mode.
-						unsafe
-						{
-							nvc_svm_return(&raw const saved_state);
-						}
-						// Never reaches here!
-					}
-					else
-					{
-						warn!("Invalid Call to restore system! rip=0x{grip:016X}");
-						unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
+						advance_rip(self.vmcb.virt);
 					}
 				}
-				NOIR_HYPERCALL_CODE_CVM_ALLOC_TLB_TAG=>
+				Err((vector,error_code))=>unsafe
 				{
-					match hv.alloc_asid()
-					{
-						Some(asid)=>
-						{
-							let buf=asid.to_le_bytes();
-							let mut fault_va:Option<u64>=None;
-							match self.write_virt(gpr_state.rdx,&buf,&mut fault_va)
-							{
-								Ok(_)=>gpr_state.rax=Status::SUCCESS.0 as u64,
-								Err(e)=>
-								{
-									error!("Failed to write ASID back! Error-Code: {e}, Linear-Address: 0x{:X}",fault_va.unwrap());
-									// Free this ASID as we can't write it back.
-									hv.free_asid(asid);
-									unsafe
-									{
-										// Inject #PF.
-										inject_event(self.vmcb.virt,PAGE_FAULT,EventType::HardwareException,Some(e.into_bits()),true);
-										vmwrite(self.vmcb.virt,GUEST_CR2,fault_va.unwrap());
-										vmcb_clean_cr2(self.vmcb.virt);
-									}
-								}
-							}
-						}
-						None=>
-						{
-							gpr_state.rax=Status::INSUFFICIENT_RESOURCES.0 as u64;
-						}
-					}
-				}
-				NOIR_HYPERCALL_CODE_CVM_FREE_TLB_TAG=>
-				{
-					let mut asid_buf:MaybeUninit<[u8;4]>=MaybeUninit::uninit();
-					let mut fault_va:Option<u64>=None;
-					match self.read_virt(gpr_state.rdx,unsafe{asid_buf.assume_init_mut()},&mut fault_va)
-					{
-						Ok(_)=>
-						{
-							let asid=u32::from_le_bytes(unsafe{asid_buf.assume_init()});
-							hv.free_asid(asid);
-							gpr_state.rax=Status::SUCCESS.0 as u64;
-						}
-						Err(e)=>
-						{
-							error!("Failed to read ASID from context! Error-Code: {e}, Linear-Address: 0x{:X}",fault_va.unwrap());
-							unsafe
-							{
-								// Inject #PF.
-								inject_event(self.vmcb.virt,PAGE_FAULT,EventType::HardwareException,Some(e.into_bits()),true);
-								vmwrite(self.vmcb.virt,GUEST_CR2,fault_va.unwrap());
-								vmcb_clean_cr2(self.vmcb.virt);
-							}
-						}
-					}
-				}
-				_=>
-				{
-					warn!("Unknown Hypercall Code 0x{vmmcall_func:X} is called!");
-					unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
+					// Exception happened while servicing the hypercall. Inject into the Guest.
+					inject_event(self.vmcb.virt,vector,EventType::HardwareException,error_code,true);
 				}
 			}
 		}
@@ -565,7 +459,7 @@ impl SvmVcpu
 		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
 	}
 
-	fn handle_npf(&mut self,context:&mut SvmStackTop)
+	fn handle_npf(&mut self,_context:&mut SvmStackTop)
 	{
 		let vmcb=self.vmcb.virt;
 		let fault:NptFaultCode=unsafe{vmread(vmcb,EXIT_INFO1)};
@@ -576,55 +470,30 @@ impl SvmVcpu
 		{
 			// Decode the instruction length.
 			let ins_bytes:&[u8]=unsafe{slice::from_raw_parts(self.vmcb.virt.byte_add(GUEST_INSTRUCTION_BYTES).cast(),15)};
-			let bitness=self.get_current_bitness();
-			let mut decoder=Decoder::with_ip(bitness,ins_bytes,rip,DecoderOptions::AMD);
-			assert!(decoder.can_decode());
-			let ins_info=decoder.decode();
-			error!("CI-fault for GPA=0x{gpa:016X} is intercepted! rip=0x{rip:016X}, Fault-Reason: {fault}, Instruction-Length: {}",ins_info.len());
-			let mut mnemonic=MnemonicString::default();
-			self.disasm_fmter.format(&ins_info,&mut mnemonic);
-			debug!("CI-fault Instruction: {:02X?} | {}",&ins_bytes[..ins_info.len()],mnemonic);
-			unsafe{advance_rip_manually(vmcb,ins_info.len())};
+			let mut ins=Instruction::default();
+			ins.copy_from_slice(ins_bytes);
+			ins.decode(self.get_current_bitness());
+			error!("CI-fault for GPA=0x{gpa:016X} is intercepted! rip=0x{rip:016X}, Fault-Reason: {fault}, Instruction-Length: {}",ins.len());
+			debug!("CI-fault Instruction: {:02X?} | {ins}",&ins_bytes[..ins.len()]);
+			unsafe{advance_rip_manually(vmcb,ins.len())};
 		}
 		else if !fault.code_fetch()
 		{
-			let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
 			// This could be MMIO Filter.
 			let ins_bytes:&[u8]=unsafe{slice::from_raw_parts(self.vmcb.virt.byte_add(GUEST_INSTRUCTION_BYTES).cast(),15)};
-			// Check bitness.
-			let bitness=self.get_current_bitness();
 			// Call disassembler.
-			let mut decoder=Decoder::with_ip(bitness,ins_bytes,rip,DecoderOptions::AMD);
-			assert!(decoder.can_decode());
-			let ins_info=decoder.decode();
-			match ins_info.mnemonic()
+			let mut ins=Instruction::default();
+			ins.copy_from_slice(ins_bytes);
+			ins.decode(self.get_current_bitness());
+			if fault.write()
 			{
-				Mnemonic::Mov=>
-				{
-					// Decode the operand.
-					if fault.write()
-					{
-						let data=match ins_info.op1_kind()
-						{
-							OpKind::Register=>context.gpr_state.read(ins_info.op1_register().number()).unwrap(),
-							OpKind::Immediate8=>ins_info.immediate8().into(),
-							OpKind::Immediate16=>ins_info.immediate16().into(),
-							OpKind::Immediate32=>ins_info.immediate32().into(),
-							_=>panic!("Unknown opcode kind: {:?}!",ins_info.op1_kind())
-						};
-						if let Err(e)=hv.mmio_space.dispatch_output(gpa,(ins_info.op_code().operand_size()>>3).into(),(&raw const data).cast(),self as *mut Self as *mut c_void)
-						{
-							panic!("Failed to dispatch MMIO output! Reason: {e}");
-						}
-					}
-					else
-					{
-						unimplemented!("MMIO Input virtualization is not implemented!");
-					};
-				}
-				_=>panic!("Unsupported instruction: {:?} is intercepted for decoding MMIO instruction!\nrip=0x{rip:X}, GPA=0x{gpa:X}",ins_info.mnemonic())
+				self.emulate_mmio_output(&ins,gpa);
 			}
-			unsafe{advance_rip_manually(vmcb,ins_info.len())};
+			else
+			{
+				self.emulate_mmio_input(&ins,gpa);
+			}
+			unsafe{advance_rip_manually(vmcb,ins.len())};
 		}
 		else
 		{
@@ -864,33 +733,27 @@ pub(super) const SVM_EXIT_HANDLER_GROUP_LIMITS:[usize;SVM_MAXIMUM_GROUPS]=[SVM_M
 	if intercept_code<0
 	{
 		let index:usize=!intercept_code as usize;
-		if index<SVM_MAXIMUM_NEGATIVE
+		match SVM_EXIT_HANDLER_GROUP_NEGATIVE.get(index)
 		{
-			SVM_EXIT_HANDLER_GROUP_NEGATIVE[index]
-		}
-		else
-		{
-			SvmVcpu::handle_unknown
+			Some(&h)=>h,
+			None=>SvmVcpu::handle_unknown
 		}
 	}
 	else
 	{
 		let group:usize=(intercept_code as usize)>>10;
-		if group<SVM_MAXIMUM_GROUPS
+		match SVM_EXIT_HANDLER_GROUPS.get(group)
 		{
-			let index:usize=(intercept_code as usize)&0x3ff;
-			if index<SVM_EXIT_HANDLER_GROUP_LIMITS[group]
+			Some(&g)=>
 			{
-				SVM_EXIT_HANDLER_GROUPS[group][index]
+				let index:usize=(intercept_code as usize)&0x3ff;
+				match g.get(index)
+				{
+					Some(&h)=>h,
+					None=>SvmVcpu::handle_unknown
+				}
 			}
-			else
-			{
-				SvmVcpu::handle_unknown
-			}
-		}
-		else
-		{
-			SvmVcpu::handle_unknown
+			None=>SvmVcpu::handle_unknown
 		}
 	}
 }

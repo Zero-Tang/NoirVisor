@@ -11,7 +11,6 @@
  */
 
 use alloc::vec::Vec;
-use iced_x86::MasmFormatter;
 use static_collections::bitmap::RefBitmap;
 use core::{ffi::c_void, ptr::null_mut};
 
@@ -25,6 +24,7 @@ use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProces
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
 #[allow(dead_code)] mod exit;
+mod hvcall;
 #[allow(dead_code)] mod ept;
 #[allow(dead_code)] mod decode;
 
@@ -58,9 +58,6 @@ pub struct VtVcpu
 	pub msr_auto_host:[VmxMsrAutoItem;5],
 	pub msr_auto_guest:[VmxMsrAutoItem;5],
 	pub cached_ctxt:CachedExitContext,
-	// Always use this member to format the mnemonic of an instruction.
-	// Do not use `MasmFormatter::new()` on your own because it will cause runtime allocation!
-	pub disasm_fmter:MasmFormatter,
 	// This context handles exceptions.
 	pub gs_context:PerCpuGsException
 }
@@ -85,7 +82,6 @@ impl Default for VtVcpu
 			msr_auto_host:[VmxMsrAutoItem::default();5],
 			msr_auto_guest:[VmxMsrAutoItem::default();5],
 			cached_ctxt:CachedExitContext::default(),
-			disasm_fmter:MasmFormatter::new(),
 			gs_context:PerCpuGsException::default()
 		}
 	}
@@ -110,6 +106,22 @@ unsafe extern "C"
 
 impl VtVcpu
 {
+	#[inline(always)] pub fn get_stack_top(&self)->&VtStackTop
+	{
+		unsafe
+		{
+			&*self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast()
+		}
+	}
+
+	#[inline(always)] pub fn get_stack_top_mut(&mut self)->&mut VtStackTop
+	{
+		unsafe
+		{
+			&mut *self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast()
+		}
+	}
+
 	fn setup_msr_auto_list(&mut self,state:&ProcessorState)
 	{
 		self.msr_auto_guest[0]=VmxMsrAutoItem::new(MSR_STAR,state.star);
@@ -358,7 +370,8 @@ impl VtVcpu
 		let mut eptp=VmxEptPointer::from(0);
 		eptp.set_page_walk_length(3);
 		eptp.set_ept_memory_type(MEMORY_TYPE_WB as u64);
-		eptp.set_enable_ad_flags(true);
+		// Disable a/d flags because not all CPUs necessarily support it.
+		eptp.set_enable_ad_flags(false);
 		unsafe
 		{
 			let hv:*const VtHypervisor=self.hypervisor.cast();
