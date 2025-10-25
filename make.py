@@ -41,12 +41,12 @@ def confirm_msvc()->bool:
 		else:
 			sdk_ver=os.environ["WindowsTargetPlatformVersion"]
 	except:
-		print("Windows SDK is not installed!")
+		print("Windows SDK is not installed! Make sure you are calling this script from MSVC 2022 Command Prompt!")
 		return False
 	try:
 		msvc_path=os.environ["VCToolsInstallDir"]
 	except:
-		print("MSVC is not installed!")
+		print("MSVC is not installed! Make sure you are calling this script from MSVC 2022 Command Prompt!")
 		return False
 	print("MSVC is installed at {}".format(msvc_path))
 	print("Windows SDK Version: {}".format(sdk_ver[:-1]))

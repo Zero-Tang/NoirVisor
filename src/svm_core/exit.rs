@@ -67,22 +67,19 @@ impl SvmVcpu
 				// Current implementation would directly pass-thru their CPUID.
 				cpuid2(ia,ic)
 			}
+			else if hv.features.cpuid_hv_presence()
+			{
+				// This is Hypervisor's CPUID.
+				let leaf_func=(ia&0x3FFFFFFF) as usize;
+				match MSHV_CPUID_HANDLERS.get(leaf_func)
+				{
+					Some(f)=>f(ia,ic),
+					None=>(0,0,0,0)
+				}
+			}
 			else
 			{
-				if hv.features.cpuid_hv_presence()
-				{
-					// This is Hypervisor's CPUID.
-					let leaf_func=(ia&0x3FFFFFFF) as usize;
-					match MSHV_CPUID_HANDLERS.get(leaf_func)
-					{
-						Some(f)=>f(ia,ic),
-						None=>(0,0,0,0)
-					}
-				}
-				else
-				{
-					(0,0,0,0)
-				}
+				(0,0,0,0)
 			}
 		}
 		else

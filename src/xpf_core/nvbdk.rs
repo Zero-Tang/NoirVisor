@@ -599,7 +599,7 @@ macro_rules! build_page_def
 			
 			#[inline] pub fn [<page $size:lower offset>]<T:BitAnd<Output=T>+TryFrom<usize>>(addr:T)->T
 			{
-				match T::try_from(([<PAGE $size:upper SIZE>]-1))
+				match T::try_from([<PAGE $size:upper SIZE>]-1)
 				{
 					Ok(mask)=>addr&mask,
 					Err(_)=>panic!("Cannot calculate page offset into this generic type!")
@@ -618,7 +618,7 @@ macro_rules! build_page_def
 			
 			#[inline] pub fn [<page $size:lower base>]<T:BitAnd<Output=T>+TryFrom<usize>>(addr:T)->T
 			{
-				match T::try_from((!([<PAGE $size:upper SIZE>]-1)))
+				match T::try_from(!([<PAGE $size:upper SIZE>]-1))
 				{
 					Ok(mask)=>addr&mask,
 					Err(_)=>panic!("Cannot calculate page base into this generic type!")

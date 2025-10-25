@@ -26,14 +26,14 @@ lto = true
 opt-level = 3
 
 [workspace]
-members = ["crates/loadefi","crates/nvcvm"]
+members = ["crates/loadefi","crates/nvcvm", "src/booting/uefirtdrv"]
 
 [dependencies]
 paste = "1.0.15"
 nvcvm = {path = "crates/nvcvm"}
 spin = "0.10.0"
 log = "0.4.27"
-bitfield-struct = "0.11.0"
+bitfield-struct = "0.12.0"
 static-collections = "0.2.0"
 portable-dlmalloc = "1.3.0"
 

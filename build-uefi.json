@@ -3,32 +3,8 @@
 	{
 		"cargo":
 		{
-			"cmd":["cargo","build","--target","x86_64-unknown-uefi","--package","loadefi","--package","nvcore"],
+			"cmd":["cargo","build","--target","x86_64-unknown-uefi","--package","loadefi","--package","nvcore","--package","uefirtdrv"],
 			"progressive":true
-		},
-		"driver":
-		{
-			"cmd":["cl"],
-			"var":{"src":".\\src\\booting\\uefirtdrv\\driver.c"},
-			"cancel_if_intact":[".\\src\\booting\\uefirtdrv\\driver.c",".\\src\\booting\\uefirtdrv\\driver.h"]
-		},
-		"cfgmgr":
-		{
-			"cmd":["cl"],
-			"var":{"src":".\\src\\xpf_core\\uefi\\cfgmgr.c"},
-			"cancel_if_intact":[".\\src\\xpf_core\\uefi\\cfgmgr.c",".\\src\\xpf_core\\uefi\\cfgmgr.h"]
-		},
-		"host":
-		{
-			"cmd":["cl"],
-			"var":{"src":".\\src\\xpf_core\\uefi\\host.c"},
-			"cancel_if_intact":[".\\src\\xpf_core\\uefi\\host.c",".\\src\\xpf_core\\uefi\\host.h"]
-		},
-		"uefihvm":
-		{
-			"cmd":["cl"],
-			"var":{"src":".\\src\\xpf_core\\uefi\\uefihvm.c"},
-			"cancel_if_intact":[".\\src\\xpf_core\\uefi\\uefihvm.c",".\\src\\xpf_core\\uefi\\uefihvm.h"]
 		},
 		"svm_hv":
 		{
@@ -59,8 +35,8 @@
 		},
 		"NoirVisor":
 		{
-			"cmd":["link","{objpath}\\driver.obj","{objpath}\\cfgmgr.obj","{objpath}\\host.obj","{objpath}\\uefihvm.obj","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libnvcore.a",".\\bin\\{outdir}\\msvcrt-static.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
-			"dependencies":["driver","cfgmgr","host","uefihvm","cargo","svm_hv","vt_hv","interrupt","msvcrt"]
+			"cmd":["link",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libuefirtdrv.a","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libnvcore.a",".\\bin\\{outdir}\\msvcrt-static.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
+			"dependencies":["cargo","svm_hv","vt_hv","interrupt","msvcrt"]
 		},
 		"image":
 		{
@@ -70,13 +46,11 @@
 	},
 	"common_flags":
 	{
-		"cl":["{src}","/nologo","/I{EDK2_PATH}\\edk2\\MdePkg\\Include","/I{EDK2_PATH}\\edk2\\MdePkg\\Include\\X64","/I{ddkpath}\\include","/Zi","/W3","/WX","/FAcs","/Fa{objpath}\\{instruction}.cod","/Fo{objpath}\\{instruction}.obj","/Fd{objpath}","/FS","/GS-","/Qspectre","/Gr","/Gy","/TC","/c","/errorReport:queue"],
 		"ml64":["/W3","/WX","/Zf","/Zd","/Zi","/I.\\src\\xpf_core\\msvc","/D_amd64","/D_msvc","/D_efi","/Fo{objpath}\\{instruction}.obj","/c","/nologo","{src}"],
-		"link":["/NODEFAULTLIB","/LIBPATH:{EDK2_PATH}\\bin\\MdePkg\\{outdir}","MdePkgGuids.lib","BaseLib.lib","BaseDebugPrintErrorLevelLib.lib","BaseMemoryLib.lib","BasePrintLib.lib","UefiLib.lib","UefiDebugLibConOut.lib","UefiMemoryAllocationLib.lib","UefiDevicePathLibDevicePathProtocol.Lib","UefiBootServicesTableLib.Lib","UefiRuntimeServicesTableLib.Lib","/NOLOGO","/DEBUG","/Machine:X64","/ERRORREPORT:QUEUE"]
+		"link":["/NODEFAULTLIB","/NOLOGO","/DEBUG","/Machine:X64","/ERRORREPORT:QUEUE"]
 	},
 	"opt_flags":
 	{
-		"cl":["/O2","/Gy"],
 		"link":["/OPT:REF","/OPT:ICF"],
 		"cargo":["--release"]
 	},

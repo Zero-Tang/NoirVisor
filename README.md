@@ -75,6 +75,16 @@ See [documentation](./doc/make.md) for more information using python script to b
 
 **Note that the `cargo build` command only builds the NoirVisor Core instead of the whole NoirVisor project!**
 
+**TL;DR?** In short, make sure Python, Rust Nightly and MSVC (including WDK) are installed. \
+To build Windows Driver:
+```
+make
+```
+To build UEFI Application & Runtime Driver:
+```
+make /target uefi
+```
+
 # Test
 
 ## Windows Driver

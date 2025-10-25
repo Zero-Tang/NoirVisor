@@ -1,0 +1,12 @@
+[package]
+name = "uefirtdrv"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+r-efi = "5.3.0"
+static-collections = "0.2.0"
+utf16_lit = "2.0.2"

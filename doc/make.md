@@ -31,7 +31,7 @@ rustup target add x86_64-pc-windows-msvc
 ### EFI Application and Runtime Driver
 To build a UEFI runtime driver, you should either install Visual Studio or mount Enterprise WDK. \
 Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. \
-NoirVisor also use EDK II Libraries. However, they should be pre-compiled. Visit [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) on GitHub in order to build them.
+After NoirVisor 7th Anniversary, the [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) is obsolete. NoirVisor for UEFI will be fully written in Rust. You do not have to setup `edk2` anymore in order build NoirVisor for UEFI.
 
 You must install `x86_64-unknown-uefi` target host for Rust. This is not installed by default, so you may install it by:
 ```
