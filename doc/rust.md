@@ -16,17 +16,21 @@ Codes that will be remastered with Rust:
 - AMD-V Core
 - Customizable VM Core
 - Basic Development Kits
+- UEFI Runtime Driver and Loader
 
 Codes that will still be written in C:
-- Platform-specific Driver Framework
+- Windows Driver
 - Cross-Platform Abstract Layer
 
-Rust codes will be managed with the Cargo package manager. They will be compiled into static library (`nvcore.lib`) and linked via linker. In other words, we will be calling the `cargo` command from the compiling script.
+System Assembly codes will still be retained due to MASM's special syntax for stack-unwinding (i.e.: `.allocstack`, `.pushframe` and `.pushreg` directives). Trivial assembly codes will be remastered with Rust inline assembly.
+
+Rust codes will be managed with the Cargo package manager. They will be compiled into static library (`nvcore.lib` or `libnvcore.a`) and linked via linker. In other words, we will be calling the `cargo` command from the compiling script.
 
 NoirVisor uses Rust 2024 standard.
 
 ## Allocator
-NoirVisor uses [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc) as the global allocator. You should avoid using allocators while in VM-Exit handlers!
+NoirVisor uses [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc) as the global allocator. \
+You should avoid using allocators while in VM-Exit handlers! For example, you should use `sort_unstable` instead of `sort` to avoid allocation.
 
 ## Automated Testing
 NoirVisor uses `cargo test` suite to test NoirVisor. However, system subversion and restoration are not currently included in tests yet. \
@@ -38,6 +42,27 @@ While we do provide macros like `print!` and `println!`, please use `error!`, `w
 ## VSCode Setup
 You may add a `.vscode/settings.json` file to configure the behavior of `rust-analyzer` plugin. The `.vscode/` directory is ignored by `git` so feel free to configure however you want. \
 You would most likely want to configure the `rust-analyzer.cargo.target` variable in order to switch to either Windows or UEFI.
+
+### UEFI Development
+Create a `.vscode/settings.json` file in NoirVisor root source directory, and write the following:
+```json
+{
+	"rust-analyzer.cfg.setTest": false,
+	"rust-analyzer.cargo.target": "x86_64-unknown-uefi"
+}
+```
+
+### Windows Driver Development
+Create a `.vscode/settings.json` file in NoirVisor root source directory, and write the following:
+```json
+{
+	"rust-analyzer.cfg.setTest": false,
+	"rust-analyzer.cargo.target": "x86_64-pc-windows-msvc"
+}
+```
+
+### Test Cases
+Make sure `rust-analyzer.cfg.setTest` json entry is set to `true`. However, you need to set it to `false` if you are modifying the panic handler.
 
 ## Coding Style
 The coding style for NoirVisor in Rust is probably drastically different than most projects you have seen:
@@ -91,16 +116,8 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 	// Commments can go here.
 	```
 - Single-line comments must begin with `//`. Do not use `/**/` in most circumstances. This is drastically different from Linux kernel and QEMU.
-- Do not use `/**/`, unless you are making documentation, or unless this comment will have more than 3 lines. Similar to the half-brace rule, lines with `/*` and `*/` are prohibited to contain comment texts.
-	```Rust
-	/*
-	 * Line 1
-	 * Line 2
-	 * Line 3
-	 * Line 4
-	 * Line 5
-	 */
-	```
+- Do not use `/**/` unless for the source file header.
+- For documentation comments, use `///` instead of `/***/`.
 - Functions that are callable in C must begin with `#[unsafe(no_mangle)] (pub) (unsafe) extern "C" fn`. The `pub` and `unsafe` keywords are not required.
 - Naming convention is the same to the [Rust default](https://doc.rust-lang.org/1.0.0/style/style/naming/README.html), with following additions:
 	- Architecture/Hardware-specific names must begin with its name ID as prefix.

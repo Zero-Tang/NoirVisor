@@ -13,18 +13,16 @@
 use core::{ffi::c_void, fmt::{self,Display}, sync::atomic::*};
 
 use log::info;
-#[cfg(not(test))]
 use portable_dlmalloc::raw::*;
 use spin::Mutex;
 use static_collections::bitmap::RefBitmap;
 
 use super::nvbdk::*;
-use crate::{system_print, sysdprint, sysdprintln};
+use crate::sysdprintln;
 
 static CHECK_ALLOC:AtomicBool=AtomicBool::new(false);
 
 // Minimum chunk for malloc is (1<<6)=64 pages (256KiB).
-#[cfg(not(test))]
 const MALLOC_CHUNK_SHIFT:usize=6;
 
 pub fn set_alloc_checker(v:bool)
@@ -72,15 +70,14 @@ pub mod kmalloc
 	pub static KERNEL_ALLOCATOR:KernelAllocator=KernelAllocator;
 }
 
-#[cfg(not(test))]
 mod dlmalloc
 {
 	use core::{alloc::*, ffi::c_void, hint::spin_loop, ptr::null_mut, sync::atomic::{AtomicUsize, Ordering}};
 
 	use portable_dlmalloc::DLMalloc;
 	
-	use super::CHECK_ALLOC;
-	use crate::{sysdprint, sysdprintln, system_print, xpf_core::{allocator::PAGE_ALLOC_MANAGER, nvbdk::{nulstr_from_ptr, page_count}}};
+	use super::{CHECK_ALLOC,PAGE_ALLOC_MANAGER};
+	use crate::{sysdprintln, xpf_core::nvbdk::{nulstr_from_ptr, page_count}};
 
 	struct InternalAllocator;
 
@@ -181,7 +178,6 @@ mod dlmalloc
 	}
 }
 
-#[cfg(not(test))]
 pub fn get_used()->usize
 {
 	unsafe
@@ -190,7 +186,6 @@ pub fn get_used()->usize
 	}
 }
 
-#[cfg(not(test))]
 pub fn get_free()->usize
 {
 	unsafe 
@@ -303,7 +298,6 @@ impl PageAllocationInformation
 		}
 	}
 
-	#[cfg(not(test))]
 	fn alloc_pages_for_malloc(&mut self,pages:usize)->Option<*mut c_void>
 	{
 		match &mut self.alloc_type
@@ -319,6 +313,7 @@ impl PageAllocationInformation
 					if info[i]==0
 					{
 						let mut is_free=true;
+						let chunks=if i<chunks {i} else {chunks};
 						for j in 0..chunks
 						{
 							if info[i-j]!=0
@@ -428,7 +423,6 @@ impl PageAllocationManager
 		self.list[self.count-1].alloc_pages(pages)
 	}
 
-	#[cfg(not(test))]
 	fn alloc_pages_for_malloc(&mut self,pages:usize)->Option<*mut c_void>
 	{
 		sysdprintln!("Trying to allocate {pages} pages for dlmalloc chunk...");
@@ -458,7 +452,7 @@ impl PageAllocationManager
 				{
 					match &mut self.list[i].alloc_type
 					{
-						PageAllocationType::Invalid=>panic!("Freeing invalid entry!"),
+						PageAllocationType::Invalid=>panic!("Freeing pages from invalid entry! Address={virt:p}"),
 						PageAllocationType::Valid(info)=>
 						{
 							let bmp:&mut RefBitmap<64>=RefBitmap::from_raw_mut_ptr(info.as_mut_ptr().cast());
@@ -484,8 +478,8 @@ impl PageAllocationManager
 			{
 				match x.alloc_type
 				{
-					PageAllocationType::Valid(_)=>panic!("Freeing large page from blank-entry!"),
-					PageAllocationType::Invalid=>panic!("Freeing invalid entry!")
+					PageAllocationType::Valid(_)=>info!("Freeing large page from valid-entry at {virt:p}..."),
+					PageAllocationType::Invalid=>panic!("Freeing invalid entry! Address={virt:p}")
 				}
 			}
 		}

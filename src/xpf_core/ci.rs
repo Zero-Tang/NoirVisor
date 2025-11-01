@@ -28,12 +28,14 @@ impl CiManager
 {
 	fn add_page(&mut self,phys:u64)
 	{
+		// Push-all-then-sort is faster than binary-search-then-insert.
 		self.pages.push(phys);
 	}
 
 	fn activate(&mut self)
 	{
-		self.pages.sort();
+		// Use `sort_unstable` to avoid dynamic allocation.
+		self.pages.sort_unstable();
 	}
 
 	fn in_ci(&self,phys:u64)->bool
@@ -77,12 +79,12 @@ pub fn is_ci_phys_page(phys:u64)->bool
 	let mut ci=CI_MANAGER.write();
 	for i in 0..page_num
 	{
-		let virt=((base as usize)+page_mult(i)) as *mut c_void;
-		unsafe
+		let phys=unsafe
 		{
-			let phys=noir_get_physical_address(virt) as u64;
-			ci.add_page(phys);
-		}
+			let virt=base.byte_add(page_mult(i));
+			noir_get_physical_address(virt)
+		};
+		ci.add_page(phys);
 	}
 	true
 }

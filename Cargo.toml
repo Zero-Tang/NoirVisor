@@ -45,7 +45,4 @@ features = ["fmt"]
 [dependencies.yaxpeax-arch]
 version = "0.3.2"
 default-features = false
-
-[target.'cfg(windows)'.dev-dependencies.windows]
-version = "0.62.1"
-features = ["Win32_System_Threading"]
+features = []

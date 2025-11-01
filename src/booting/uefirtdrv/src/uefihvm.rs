@@ -21,6 +21,7 @@ unsafe extern "C"
 	fn noir_configure_qemu_debug_console(port:u16)->u32;
 	fn noir_configure_serial_port_debugger(port_number:u8,port_base:u16,baud_rate:u32)->u32;
 	fn noir_add_section_to_ci(base:*mut c_void,size:u32,enable_scan:bool)->bool;
+	fn noir_activate_ci()->bool;
 	fn nvc_logger_initialize(level:u32)->bool;
 	fn nvc_build_hypervisor()->u32;
 	fn NoirInitializeDisassembler();
@@ -205,9 +206,13 @@ pub fn init_ci()->bool
 					}
 				}
 			}
+			unsafe
+			{
+				return noir_activate_ci();
+			}
 		}
 	}
-	true
+	false
 }
 
 pub fn test_ci()

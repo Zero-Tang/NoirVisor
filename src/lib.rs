@@ -231,7 +231,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 #[allow(dead_code)]
 mod panicking
 {
-	use crate::{print,println,dbg_print};
+	use crate::println;
 	use core::panic::PanicInfo;
 
 	#[panic_handler] fn panic(panic: &PanicInfo)->!

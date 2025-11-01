@@ -12,10 +12,19 @@
 
 use core::ffi::c_void;
 
-#[cfg(windows)]
-use windows::Win32::System::Threading::{AcquireSRWLockExclusive, AcquireSRWLockShared, ReleaseSRWLockShared, ReleaseSRWLockExclusive};
-
 use crate::xpf_core::nvbdk::BroadcastWorker;
+
+// It's probably a bit too much if we import windows crate just for these.
+// So let's just manually declare these APIs.
+#[cfg(windows)]
+#[link(name="kernel32")]
+unsafe extern "system"
+{
+	fn AcquireSRWLockExclusive(srwlock:*mut usize);
+	fn AcquireSRWLockShared(srwlock:*mut usize);
+	fn ReleaseSRWLockExclusive(srwlock:*mut usize);
+	fn ReleaseSRWLockShared(srwlock:*mut usize);
+}
 
 #[unsafe(no_mangle)] extern "C" fn noir_get_processor_count()->u32
 {
@@ -47,7 +56,7 @@ use crate::xpf_core::nvbdk::BroadcastWorker;
 	#[cfg(windows)]
 	unsafe
 	{
-		AcquireSRWLockExclusive(push_lock.cast())
+		AcquireSRWLockExclusive(push_lock)
 	}
 }
 
@@ -56,7 +65,7 @@ use crate::xpf_core::nvbdk::BroadcastWorker;
 	#[cfg(windows)]
 	unsafe
 	{
-		AcquireSRWLockShared(push_lock.cast())
+		AcquireSRWLockShared(push_lock)
 	}
 }
 
@@ -65,7 +74,7 @@ use crate::xpf_core::nvbdk::BroadcastWorker;
 	#[cfg(windows)]
 	unsafe
 	{
-		ReleaseSRWLockExclusive(push_lock.cast());
+		ReleaseSRWLockExclusive(push_lock);
 	}
 }
 
@@ -74,6 +83,6 @@ use crate::xpf_core::nvbdk::BroadcastWorker;
 	#[cfg(windows)]
 	unsafe
 	{
-		ReleaseSRWLockShared(push_lock.cast())
+		ReleaseSRWLockShared(push_lock)
 	}
 }

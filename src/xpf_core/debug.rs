@@ -23,7 +23,7 @@ use qemu_debugcon::*;
 use serial::*;
 use unknown::*;
 
-use crate::{print,println,sysdprint,sysdprintln};
+use crate::{println,sysdprintln};
 
 mod qemu_debugcon;
 #[allow(dead_code)] mod serial;
@@ -180,7 +180,7 @@ pub fn system_print(args: fmt::Arguments)
 {
 	($($arg:tt)*) =>
 	{
-		(dbg_print(format_args!($($arg)*)))		
+		$crate::xpf_core::debug::dbg_print(format_args!($($arg)*))
 	};
 }
 
@@ -188,11 +188,11 @@ pub fn system_print(args: fmt::Arguments)
 {
 	() =>
 	{
-		print!("\n")
+		$crate::print!("\n")
 	};
 	($($arg:tt)*) =>
 	{
-		print!("{}\n",format_args!($($arg)*))
+		$crate::print!("{}\n",format_args!($($arg)*))
 	};
 }
 
@@ -200,7 +200,7 @@ pub fn system_print(args: fmt::Arguments)
 {
 	($($arg:tt)*) =>
 	{
-		(system_print(format_args!($($arg)*)))
+		$crate::xpf_core::debug::system_print(format_args!($($arg)*))
 	};
 }
 
@@ -208,11 +208,11 @@ pub fn system_print(args: fmt::Arguments)
 {
 	() =>
 	{
-		sysdprint("\n");
+		$crate::sysdprint("\n");
 	};
 	($($arg:tt)*) =>
 	{
-		sysdprint!("{}\n",format_args!($($arg)*))
+		$crate::sysdprint!("{}\n",format_args!($($arg)*))
 	}
 }
 
