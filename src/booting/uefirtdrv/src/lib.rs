@@ -17,7 +17,7 @@ use r_efi::efi::{Handle, Status, SystemTable};
 
 use host::{efi_init,block_until_keystroke};
 use cfgmgr::ConfigurationList;
-use uefihvm::{init_internal_debugger,init_disasm,init_logger,init_ci,test_ci,build_hypervisor};
+use uefihvm::{init_internal_debugger,init_disasm,init_logger,init_ci,test_ci,build_hypervisor,register_exit_boot_services_event,suppress_image_relocation};
 
 pub mod host;
 #[allow(non_camel_case_types,non_snake_case)]
@@ -41,6 +41,7 @@ unsafe extern "C"
 	}
 	println!("Welcome to NoirVisor UEFI Runtime Driver!");
 	ConfigurationList::init();
+	suppress_image_relocation();
 	init_internal_debugger();
 	init_logger();
 	init_disasm();
@@ -60,6 +61,7 @@ unsafe extern "C"
 	}
 	println!("Press Enter Key to continue subversion!");
 	block_until_keystroke(b'\r' as u16);
+	register_exit_boot_services_event();
 	init_ci();
 	unsafe
 	{
@@ -79,12 +81,13 @@ unsafe extern "C"
 #[cfg(not(test))]
 mod panicking
 {
-	use crate::println;
+	use crate::{host::set_console_color, println};
 	use core::panic::PanicInfo;
 
 	#[panic_handler] fn panic(panic: &PanicInfo)->!
 	{
-		println!("\x1b[91m[PANIC] NoirVisor UEFI-RT-Driver {} \x1b[39m",panic);
+		set_console_color(0xC);		// Toggle to red foreground.
+		println!("[PANIC] NoirVisor UEFI-RT-Driver {}",panic);
 		loop{}
 	}
 }

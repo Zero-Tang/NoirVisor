@@ -19,6 +19,11 @@ use crate::cvm_core::CUSTOMIZABLE_HYPERVISOR;
 #[allow(non_upper_case_globals)] 
 #[unsafe(no_mangle)] static noir_cvm_exit_context_size:usize=size_of::<ExitContext>();
 
+unsafe extern "C"
+{
+	pub(super) static noir_maximum_memslot_shift:u8;
+}
+
 #[unsafe(no_mangle)] extern "C" fn nvc_query_hypervisor_status(_status_type:u64,_result:*mut c_void)->Status
 {
 	Status::NOT_IMPLEMENTED
@@ -29,22 +34,12 @@ use crate::cvm_core::CUSTOMIZABLE_HYPERVISOR;
 	Status::NOT_IMPLEMENTED
 }
 
-#[unsafe(no_mangle)] extern "C" fn nvc_edit_vcpu_registers2(_vcpu:*mut c_void,_register_names:*const c_void,_register_count:u32,_register_size:u32,_buffer:*const c_void)->Status
+#[unsafe(no_mangle)] extern "C" fn nvc_edit_vcpu_registers(_vcpu:*mut c_void,_register_names:*const c_void,_register_count:u32,_register_size:u32,_buffer:*const c_void)->Status
 {
 	Status::NOT_IMPLEMENTED
 }
 
-#[unsafe(no_mangle)] extern "C" fn nvc_view_vcpu_registers2(_vcpu:*mut c_void,_register_names:*const c_void,_register_count:u32,_register_size:u32,_buffer:*mut c_void)->Status
-{
-	Status::NOT_IMPLEMENTED
-}
-
-#[unsafe(no_mangle)] extern "C" fn nvc_edit_vcpu_registers(_vcpu:*mut c_void,_register_type:u64,_buffer:*const c_void,_buffer_size:u32)->Status
-{
-	Status::NOT_IMPLEMENTED
-}
-
-#[unsafe(no_mangle)] extern "C" fn nvc_view_vcpu_registers(_vcpu:*mut c_void,_register_type:u32,_buffer:*mut c_void,_buffer_size:u32)->Status
+#[unsafe(no_mangle)] extern "C" fn nvc_view_vcpu_registers(_vcpu:*mut c_void,_register_names:*const c_void,_register_count:u32,_register_size:u32,_buffer:*mut c_void)->Status
 {
 	Status::NOT_IMPLEMENTED
 }

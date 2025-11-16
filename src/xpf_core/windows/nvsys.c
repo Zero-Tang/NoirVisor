@@ -300,88 +300,11 @@ void* noir_locate_acpi_rsdt(size_t *length)
 	return Rsdt;
 }
 
-void noir_get_locked_range(PMDL Mdl,void** virt,PULONG bytes)
-{
-	*virt=MmGetMdlVirtualAddress(Mdl);
-	*bytes=MmGetMdlByteCount(Mdl);
-}
-
-void noir_unlock_pages(PMDL Mdl)
-{
-	MmUnlockPages(Mdl);
-	IoFreeMdl(Mdl);
-}
-
-PMDL noir_lock_pages(void* virt,ULONG32 bytes,PULONG64 phys)
-{
-	// Use MDL to lock memories...
-	PMDL pMdl=IoAllocateMdl(virt,bytes,FALSE,FALSE,NULL);
-	if(pMdl)
-	{
-		ULONG Pages=ADDRESS_AND_SIZE_TO_SPAN_PAGES(virt,bytes);
-		PPFN_NUMBER PfnArray;
-		__try
-		{
-			MmProbeAndLockPages(pMdl,KernelMode,IoWriteAccess);
-		}
-		__except(EXCEPTION_EXECUTE_HANDLER)
-		{
-			IoFreeMdl(pMdl);
-			return NULL;
-		}
-		PfnArray=MmGetMdlPfnArray(pMdl);
-		for(ULONG i=0;i<Pages;i++)phys[i]=PfnArray[i]<<PAGE_SHIFT;
-	}
-	return pMdl;
-}
-
 ULONG64 noir_get_physical_address(void* virtual_address)
 {
 	PHYSICAL_ADDRESS pa;
 	pa=MmGetPhysicalAddress(virtual_address);
 	return pa.QuadPart;
-}
-
-ULONG64 noir_get_user_physical_address(void* virtual_address)
-{
-	PHYSICAL_ADDRESS pa={0};
-	PMDL pMdl=IoAllocateMdl(virtual_address,1,FALSE,FALSE,NULL);
-	if(pMdl)
-	{
-		__try
-		{
-			PVOID Buffer;
-			MmProbeAndLockPages(pMdl,KernelMode,IoWriteAccess);
-			Buffer=MmMapLockedPagesSpecifyCache(pMdl,KernelMode,MmCached,NULL,FALSE,HighPagePriority);
-			if(Buffer)
-			{
-				pa=MmGetPhysicalAddress(Buffer);
-				MmUnmapLockedPages(Buffer,pMdl);
-			}
-			MmUnlockPages(pMdl);
-		}
-		__except(EXCEPTION_EXECUTE_HANDLER)
-		{
-			;
-		}
-		IoFreeMdl(pMdl);
-	}
-	return pa.QuadPart;
-}
-
-// Query Page information
-BOOL noir_query_page_attributes(IN PVOID virtual_address,OUT PBOOLEAN valid,OUT PBOOLEAN locked,OUT PBOOLEAN large_page)
-{
-	MEMORY_WORKING_SET_EX_BLOCK Info;
-	NTSTATUS st=NoirGetPageInformation(virtual_address,&Info);
-	if(NT_SUCCESS(st))
-	{
-		*valid=(BOOLEAN)Info.Valid;
-		*locked=(BOOLEAN)Info.Locked;
-		*large_page=(BOOLEAN)Info.LargePage;
-		return TRUE;
-	}
-	return FALSE;
 }
 
 // We might need to map physical memory for ACPI-accesses.
@@ -548,70 +471,11 @@ void noir_enum_physical_memory_ranges(IN NOIR_PHYSICAL_MEMORY_RANGE_CALLBACK Cal
 	NoirDebugPrint("Status of Query Physical-Memory Ranges: 0x%X\n",st);
 }
 
-ULONG64 noir_get_current_process_cr3()
-{
-	PEPROCESS Process=PsGetCurrentProcess();
-#if defined(_WIN64)
-	// Note that KPROCESS+0x110 also points to a paging base, but it
-	// does not map kernel mode address space except syscall handler.
-	return *(PULONG64)((ULONG_PTR)Process+0x28);
-#else
-	return *(PULONG64)((ULONG_PTR)Process+0x18);
-#endif
-}
-
 // Some Additional repetitive functions
 ULONG64 NoirGetPhysicalAddress(IN PVOID VirtualAddress)
 {
 	PHYSICAL_ADDRESS pa=MmGetPhysicalAddress(VirtualAddress);
 	return pa.QuadPart;
-}
-
-ULONG64 noir_get_system_time()
-{
-	LARGE_INTEGER Time;
-	KeQuerySystemTime(&Time);
-	return Time.QuadPart;
-}
-
-// Essential Multi-Threading Facility.
-HANDLE noir_create_thread(IN PKSTART_ROUTINE StartRoutine,IN PVOID Context)
-{
-	OBJECT_ATTRIBUTES oa;
-	HANDLE hThread=NULL;
-	InitializeObjectAttributes(&oa,NULL,OBJ_KERNEL_HANDLE,NULL,NULL);
-	PsCreateSystemThread(&hThread,SYNCHRONIZE,&oa,NULL,NULL,StartRoutine,Context);
-	return hThread;
-}
-
-void noir_exit_thread(IN NTSTATUS Status)
-{
-	PsTerminateSystemThread(Status);
-}
-
-BOOLEAN noir_join_thread(IN HANDLE ThreadHandle)
-{
-	NTSTATUS st=ZwWaitForSingleObject(ThreadHandle,FALSE,NULL);
-	if(st==STATUS_SUCCESS)
-	{
-		ZwClose(ThreadHandle);
-		return TRUE;
-	}
-	return FALSE;
-}
-
-BOOLEAN noir_alert_thread(IN HANDLE ThreadHandle)
-{
-	NTSTATUS st=ZwAlertThread(ThreadHandle);
-	return st==STATUS_SUCCESS;
-}
-
-// Sleep
-void noir_sleep(IN ULONG64 ms)
-{
-	LARGE_INTEGER Time;
-	Time.QuadPart=ms*(-10000);
-	KeDelayExecutionThread(KernelMode,TRUE,&Time);
 }
 
 // Resource Lock (R/W Lock)

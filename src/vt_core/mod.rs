@@ -194,7 +194,7 @@ impl VtVcpu
 			vmwrite64(HOST_MSR_IA32_EFER,state.efer);
 			// Host State Area - Stack Pointer, Instruction Pointer
 			vmwriteptr(HOST_RSP,stack as usize);
-			vmwriteptr(HOST_RIP,nvc_vt_exit_handler_a as usize);
+			vmwriteptr(HOST_RIP,nvc_vt_exit_handler_a as *const c_void as usize);
 		}
 	}
 
@@ -272,7 +272,7 @@ impl VtVcpu
 			vmwrite64(GUEST_MSR_IA32_PAT,state.pat);
 			// Save rflags, rsp and rip.
 			vmwriteptr(GUEST_RSP,gsp);
-			vmwriteptr(GUEST_RIP,nvc_vt_guest_start as usize);
+			vmwriteptr(GUEST_RIP,nvc_vt_guest_start as *const c_void as usize);
 			vmwriteptr(GUEST_RFLAGS,2);
 			// VMCS Link Pointer.
 			vmwrite64(VMCS_LINK_POINTER,u64::MAX);

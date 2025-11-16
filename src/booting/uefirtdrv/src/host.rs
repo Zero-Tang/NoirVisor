@@ -63,6 +63,12 @@ pub static RT_TABLE:AtomicPtr<RuntimeServices>=AtomicPtr::new(null_mut());
 pub static ST_TABLE:AtomicPtr<SystemTable>=AtomicPtr::new(null_mut());
 pub static IMAGE_INFO:AtomicPtr<loaded_image::Protocol>=AtomicPtr::new(null_mut());
 
+pub fn set_console_color(color:usize)
+{
+	let stdout=unsafe{&mut *STDOUT_PROTOCOL.load(Ordering::Relaxed)};
+	(stdout.set_attribute)(stdout,color);
+}
+
 pub fn handle_protocol<T>(handle:Handle,mut guid:Guid)->Result<*mut T,Status>
 {
 	let bs=unsafe{&*BS_TABLE.load(Ordering::Relaxed)};

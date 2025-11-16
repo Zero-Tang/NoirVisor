@@ -10,6 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
+use bitfield_struct::bitfield;
 use log::*;
 use spin::Mutex;
 
@@ -41,6 +42,34 @@ unsafe extern "C"
 	fn noir_system_debugger_write(string:*const u8,maximum_length:usize);
 }
 
+/// Asynchronous Log Header
+#[bitfield(u16)] struct LogHead
+{
+	#[bits(9)] length:usize,
+	#[bits(4)] rsvd:u16,
+	#[bits(3)] level:u8
+}
+
+#[allow(dead_code)]
+impl LogHead
+{
+	fn as_str_ptr(&self)->*const u8
+	{
+		unsafe
+		{
+			(&raw const *self).add(1).cast()
+		}
+	}
+
+	fn as_str_mut_ptr(&mut self)->*mut u8
+	{
+		unsafe
+		{
+			(&raw mut *self).add(1).cast()
+		}
+	}
+}
+
 struct InternalLogger;
 
 impl InternalLogger
@@ -66,7 +95,7 @@ impl Log for InternalLogger
 	{
 		let level=InternalLogger::LEVEL_CHAR[record.level() as usize];
 		let color=InternalLogger::LEVEL_COLOR[record.level() as usize];
-		println!("\x1b[{color}m{:28} @{:4} |{level}|\x1b[39m {}",record.file().unwrap(),record.line().unwrap(),record.args());
+		println!("\x1b[{color}m{:28} @{:4} |{level}|\x1b[39m {}",record.file().unwrap_or("unknown-file"),record.line().unwrap_or(0),record.args());
 	}
 }
 

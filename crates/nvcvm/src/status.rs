@@ -24,7 +24,7 @@ use core::fmt;
 use Severity::*;
 use Facility::*;
 
-#[derive(Debug,PartialEq,Eq,PartialOrd,Ord)]
+#[derive(Debug,PartialEq,Eq,PartialOrd,Ord,Clone,Copy)]
 #[repr(C)] pub struct Status(pub u32);
 
 impl Status

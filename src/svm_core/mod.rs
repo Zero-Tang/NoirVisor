@@ -235,7 +235,7 @@ impl SvmVcpu
 			// Save rflags, rsp and rip.
 			vmwrite(self.vmcb.virt,GUEST_RFLAGS,2u64);
 			vmwrite(self.vmcb.virt,GUEST_RSP,gsp);
-			vmwrite(self.vmcb.virt,GUEST_RIP,nvc_svm_guest_start as usize as u64);
+			vmwrite(self.vmcb.virt,GUEST_RIP,nvc_svm_guest_start as *const c_void as u64);
 			// Save Processor Hidden State.
 			vmsave(self.hvmcb.phys);
 			vmwrite(self.hvmcb.virt,GUEST_GS_BASE,&raw mut self.gs_context as u64);

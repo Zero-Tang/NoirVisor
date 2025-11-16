@@ -115,15 +115,24 @@ impl SvmVcpu
 			None=>Ok(Status::INSUFFICIENT_RESOURCES)
 		}
 	}
+
+	fn hvcall_exit_boot_services(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	{
+		// If NoirVisor is loaded as a UEFI runtime-driver, this routine will be called by Guest OS.
+		// Current implementation just outputs a log and returns.
+		info!("ExitBootServices event is triggered! UEFI now enters Runtime Stage!");
+		Ok(Status::SUCCESS)
+	}
 }
 
 pub(super) type SvmHypercallHandler=fn(&mut SvmVcpu,code:u32,context:*mut c_void)->Result<Status,(u8,Option<u32>)>;
 
-static SVM_HYPERCALL_HANDLER_BASE:[SvmHypercallHandler;3]=
+static SVM_HYPERCALL_HANDLER_BASE:[SvmHypercallHandler;4]=
 [
 	SvmVcpu::hvcall_unknown,
 	SvmVcpu::hvcall_restore,
-	SvmVcpu::hvcall_alloc_tlb_tag
+	SvmVcpu::hvcall_alloc_tlb_tag,
+	SvmVcpu::hvcall_exit_boot_services
 ];
 
 static SVM_HYPERCALL_HANDLER_CVM:[SvmHypercallHandler;6]=

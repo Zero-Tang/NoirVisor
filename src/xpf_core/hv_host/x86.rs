@@ -279,7 +279,10 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 			gs_ctxt.set(vector,None);
 			info!("Returning to host...");
 		}
-		_=>panic!("Host is not expecting for exception!")
+		_=>unsafe
+		{
+			panic!("Host is not expecting for exception! Frame: {}, Vector: {vector} ({exception_name})",&*exception_frame);
+		}
 	}
 }
 

@@ -10,11 +10,15 @@
   or fitness for a particular purpose, etc.).
 */
 
-use core::{arch::x86_64::__cpuid, ffi::c_void, mem::offset_of, ptr::null_mut, slice, sync::atomic::Ordering};
+use core::{arch::naked_asm, ffi::c_void, mem::offset_of, ptr::null_mut, slice, sync::atomic::Ordering};
+#[cfg(target_arch="x86_64")]
+use core::arch::x86_64::__cpuid;
+#[cfg(target_arch="x86")]
+use core::arch::x86::__cpuid;
 
-use r_efi::efi::{ACPI_10_TABLE_GUID, ACPI_20_TABLE_GUID};
+use r_efi::efi::{ACPI_10_TABLE_GUID, ACPI_20_TABLE_GUID, EVENT_GROUP_EXIT_BOOT_SERVICES, EVT_NOTIFY_SIGNAL, Event, EventNotify, TPL_NOTIFY};
 
-use crate::{cfgmgr::{ConfigRecord, ConfigurationList}, host::{IMAGE_INFO, ST_TABLE}, pe::*, println};
+use crate::{cfgmgr::{ConfigRecord, ConfigurationList}, host::{BS_TABLE, IMAGE_INFO, ST_TABLE}, pe::*, println};
 
 unsafe extern "C"
 {
@@ -259,4 +263,70 @@ pub fn build_hypervisor()->u32
 		println!("Hypervisor is detected! Maximum Leaf: 0x{:X}, Vendor: {vendor_id}",r.eax);
 	}
 	st
+}
+
+static mut EXIT_BOOT_SERVICES_EVENT:Event=null_mut();
+const NOIR_HYPERCALL_EXIT_BOOT_SERVICES:u32=3;
+
+// In order to avoid relocation while handling the event, use naked assembly to guarantee location-independency.
+#[unsafe(naked)] extern "efiapi" fn noir_exit_boot_services_notification_intel_fn(event:Event,context:*mut c_void)
+{
+	naked_asm!
+	(
+		"mov ecx,{hvc_index}",
+		"vmcall",
+		"ret",
+		hvc_index=const NOIR_HYPERCALL_EXIT_BOOT_SERVICES
+	)
+}
+
+// In order to avoid relocation while handling the event, use naked assembly to guarantee location-independency.
+#[unsafe(naked)] extern "efiapi" fn noir_exit_boot_services_notification_amd_fn(event:Event,context:*mut c_void)
+{
+	naked_asm!
+	(
+		"mov ecx,{hvc_index}",
+		"vmmcall",
+		"ret",
+		hvc_index=const NOIR_HYPERCALL_EXIT_BOOT_SERVICES
+	)
+}
+
+pub fn register_exit_boot_services_event()
+{
+	let bs=BS_TABLE.load(Ordering::Relaxed);
+	let exit_bs_guid=EVENT_GROUP_EXIT_BOOT_SERVICES;
+	// Determine the CPU vendor name and confirm what hypercall instruction will be used.
+	let r=unsafe{__cpuid(0)};
+	let mut vstr:[u8;12]=[0;12];
+	vstr[..4].copy_from_slice(&r.ebx.to_le_bytes());
+	vstr[4..8].copy_from_slice(&r.edx.to_le_bytes());
+	vstr[8..].copy_from_slice(&r.ecx.to_le_bytes());
+	let vstr=unsafe{str::from_utf8_unchecked(&vstr)};
+	let notify_fn=match vstr
+	{
+		"GenuineIntel"|"VIA VIA VIA "|"  Shanghai  "|"CentaurHauls"=>Some(noir_exit_boot_services_notification_intel_fn as EventNotify),
+		"AuthenticAMD"|"HygonGenuine"=>Some(noir_exit_boot_services_notification_amd_fn as EventNotify),
+		_=>None
+	};
+	let st=unsafe{((*bs).create_event_ex)(EVT_NOTIFY_SIGNAL,TPL_NOTIFY,notify_fn,null_mut(),&raw const exit_bs_guid,&raw mut EXIT_BOOT_SERVICES_EVENT)};
+	println!("Register ExitBootServices Event Status=0x{:X}",st.as_usize());
+}
+
+pub fn suppress_image_relocation()
+{
+	let img_info=unsafe{&*IMAGE_INFO.load(Ordering::Relaxed)};
+	let dos_head:&IMAGE_DOS_HEADER=unsafe{&*img_info.image_base.cast()};
+	if dos_head.e_magic==IMAGE_DOS_SIGNATURE
+	{
+		let nt_head:&mut IMAGE_NT_HEADERS64=unsafe{&mut *img_info.image_base.byte_add(dos_head.e_lfanew as usize).cast()};
+		if nt_head.Signature==IMAGE_NT_SIGNATURE
+		{
+			// Locate the Relocation Directory.
+			let reloc_base=&mut nt_head.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+			// Mark the relocation directory as invalid by setting them to zero.
+			reloc_base.VirtualAddress=0;
+			reloc_base.Size=0;
+		}
+	}
 }

@@ -12,7 +12,7 @@
 
 use core::ffi::c_void;
 
-use log::warn;
+use log::{info, warn};
 use nvcvm::status::Status;
 
 use crate::xpf_core::{x86::{interrupts::INVALID_OPCODE_FAULT,descriptors::*,msr::*},asm::{vt::*,crdr::*,seg::*,msr::wrmsr},nvbdk::GprState};
@@ -91,14 +91,27 @@ impl VtVcpu
 		}
 		// Never reaches here!
 	}
+
+	fn hvcall_alloc_tlb_tag(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	{
+		Ok(Status::NOT_IMPLEMENTED)
+	}
+
+	fn hvcall_exit_boot_services(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	{
+		info!("ExitBootServices event is triggered! UEFI now enters Runtime Stage!");
+		Ok(Status::SUCCESS)
+	}
 }
 
 pub(super) type VtHypercallHandler=fn(&mut VtVcpu,code:u32,context:*mut c_void)->Result<Status,(u8,Option<u32>)>;
 
-static VT_HYPERCALL_HANDLER_BASE:[VtHypercallHandler;2]=
+static VT_HYPERCALL_HANDLER_BASE:[VtHypercallHandler;4]=
 [
 	VtVcpu::hvcall_unknown,
-	VtVcpu::hvcall_restore
+	VtVcpu::hvcall_restore,
+	VtVcpu::hvcall_alloc_tlb_tag,
+	VtVcpu::hvcall_exit_boot_services
 ];
 
 static VT_HYPERCALL_HANDLER_CVM:[VtHypercallHandler;6]=

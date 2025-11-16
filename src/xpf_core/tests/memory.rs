@@ -10,9 +10,11 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{alloc::Layout, ffi::c_void, ptr::null_mut, sync::atomic::{AtomicPtr, Ordering}};
+use core::{alloc::Layout, ffi::c_void, ptr::{self, null_mut}, sync::atomic::{AtomicPtr, Ordering}};
 
-use crate::xpf_core::nvbdk::{page_4kb_mult, PAGE_4KB_SIZE, PAGE_2MB_SIZE};
+use alloc::vec::Vec;
+
+use crate::xpf_core::nvbdk::{PAGE_2MB_SIZE, PAGE_4KB_SIZE, page_4kb_mult, page_count, page_offset};
 
 // 4MiB of unaligned global variable guarantees a 2MiB-aligned page.
 static mut ALLOC_BUFFER:[u8;4<<20]=[0;4<<20];
@@ -102,5 +104,78 @@ pub type PhysicalRangeCallback=extern "C" fn(start:u64,length:u64,context:*mut c
 	unsafe
 	{
 		alloc::alloc::dealloc(ptr.cast(),Layout::from_size_align_unchecked(page_4kb_mult(pages),PAGE_4KB_SIZE));
+	}
+}
+
+struct MockMemorySlot
+{
+	uva:*mut c_void,
+	length:usize,
+	pfn_list:Vec<usize>
+}
+
+#[allow(non_upper_case_globals)]
+#[unsafe(no_mangle)] static noir_maximum_memslot_shift:u8=31;
+
+#[unsafe(no_mangle)] extern "C" fn noir_create_memory_slot(uva:*mut c_void,length:usize,slot:*mut *mut MockMemorySlot)->bool
+{
+	if page_offset(uva as usize)==0 && page_offset(length)==0
+	{
+		let mut v:Vec<usize>=Vec::with_capacity(page_count(length));
+		for i in (0..length).step_by(0x1000)
+		{
+			v.push(uva as usize+i);
+		}
+		let new_slot:*mut MockMemorySlot=unsafe{alloc::alloc::alloc(Layout::from_size_align_unchecked(size_of::<MockMemorySlot>(),align_of::<MockMemorySlot>())).cast()};
+		if new_slot.is_null()
+		{
+			false
+		}
+		else
+		{
+			unsafe
+			{
+				(*new_slot).length=length;
+				(*new_slot).uva=uva;
+				ptr::write(&raw mut (*new_slot).pfn_list,v);
+				*slot=new_slot;
+			}
+			true
+		}
+	}
+	else
+	{
+		false
+	}
+}
+
+#[unsafe(no_mangle)] extern "C" fn noir_remove_memory_slot(slot:*mut MockMemorySlot)
+{
+	unsafe
+	{
+		// Read it out so that it can be dropped by RAII.
+		let pfn_list=ptr::read(&raw const (*slot).pfn_list);
+		alloc::alloc::dealloc(slot.cast(),Layout::from_size_align_unchecked(size_of::<MockMemorySlot>(),align_of::<MockMemorySlot>()));
+		// While we don't really need to manually drop it by virtue of RAII,
+		// this manual drop is for the sake of getting rid of compiler warning.
+		drop(pfn_list);
+	}
+}
+
+#[unsafe(no_mangle)] extern "C" fn noir_get_pfn_from_memory_slot(slot:*const MockMemorySlot,offset:usize,result:*mut u64)->bool
+{
+	let pfn_list=unsafe{&(*slot).pfn_list};
+	let index=page_count(offset);
+	match pfn_list.get(index)
+	{
+		Some(pfn)=>
+		{
+			unsafe
+			{
+				*result=*pfn as u64;
+			}
+			true
+		}
+		None=>false
 	}
 }

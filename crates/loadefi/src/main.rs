@@ -111,6 +111,16 @@ fn load_hypervisor_driver()->Option<Handle>
 	}
 }
 
+#[allow(dead_code)]
+fn test_exit_bs()->!
+{
+	use boot::{exit_boot_services,MemoryType};
+	use runtime::{reset,ResetType};
+	println!("Calling ExitBootServices... If the system didn't shutdown, then it's unexpected behavior!");
+	let _=unsafe{exit_boot_services(Some(MemoryType::LOADER_DATA))};
+	reset(ResetType::SHUTDOWN,Status::SUCCESS,None);
+}
+
 #[entry] fn main()->Status
 {
 	let systab=unsafe{system_table_raw().unwrap().as_ref()};
@@ -130,6 +140,8 @@ fn load_hypervisor_driver()->Option<Handle>
 			{
 				println!("Failed to start image! Reason: {e}");
 			}
+			// Uncomment the next line to test ExitBootServices Event. If successful, the machine will shutdown.
+			// test_exit_bs();
 		}
 		None=>println!("Failed to load image!")
 	}

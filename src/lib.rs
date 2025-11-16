@@ -231,11 +231,20 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 #[allow(dead_code)]
 mod panicking
 {
+	use static_collections::{format_static, string::StaticString};
+
 	use crate::println;
-	use core::panic::PanicInfo;
+	use core::{panic::PanicInfo};
+
+	#[unsafe(no_mangle)] static mut PANIC_MESSAGE:StaticString<512>=StaticString::new();
 
 	#[panic_handler] fn panic(panic: &PanicInfo)->!
 	{
+		unsafe
+		{
+			// Store the panic log in global variable.
+			PANIC_MESSAGE=format_static!(512,"[PANIC] NoirVisor {}",panic).unwrap();
+		}
 		println!("\x1b[91m[PANIC] NoirVisor {} \x1b[39m",panic);
 		loop{}
 	}

@@ -14,13 +14,14 @@ You must execute the python script inside a Visual Studio prompt environment. Th
 NoirVisor Core is written in Rust. See [documentation for NoirVisor in Rust](./rust.md).
 
 Install [Rust](https://www.rust-lang.org/tools/install). \
-The toolchain is up to you. It is recommended to use the `stable` toolchain. But feel free to use `nightly` toolchain.
+Due to the usage of [unstable feature "`allocator_api`"](https://doc.rust-lang.org/beta/unstable-book/library-features/allocator-api.html), you must use nightly toolchain in order to build NoirVisor. \
+NoirVisor doesn't require a specific version of rustc. You should be fine using the up-to-date nightly compiler.
 
 Currently, NoirVisor Core in Rust can subvert the system with Intel VT-x and AMD-V in UEFI and Windows. \
 However, NoirVisor currrently can't boot Windows from UEFI.
 
 ### Windows Driver
-To build a kernel-mode driver on Windows, you should either install Visual Studio or mount Enterprise WDK. \
+To build a kernel-mode driver on Windows, you should either install Visual Studio (2022 is recommended) with Windows Driver Kits or mount Enterprise WDK. \
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
 You must install `x86_64-pc-windows-msvc` target host for Rust. This should be installed by default, but if you didn't, you may install it by:
@@ -62,11 +63,11 @@ If you have mounted EWDK to, for example, `V:`, add the following entry in `"ter
 
 ## Synopsis
 ```
-make [/target [target]] [/opt:yes|no]
+make [/target windows|uefi] [/opt:yes|no]
 ```
 
 ### Arguments
-`/target [target]` specifies the target binary to be built. \
+`/target windows|uefi` specifies the target binary to be built. \
 Valid options are `windows` and `uefi`. Default is `windows`.
 
 `/opt:yes|no` specifies whether optimizer is enabled. Default is `no`.

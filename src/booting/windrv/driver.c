@@ -169,158 +169,76 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 		}
 		case IOCTL_CvmCreateVm:
 		{
-			PCVM_HANDLE VmHandle=(PCVM_HANDLE)((ULONG_PTR)OutputBuffer+sizeof(CVM_HANDLE));
-			*(PULONG32)OutputBuffer=NoirCreateVirtualMachine(VmHandle);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmDeleteVm:
 		{
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
-			*(PULONG32)OutputBuffer=NoirReleaseVirtualMachine(VmHandle);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmSetMapping:
 		{
-			PNOIR_ADDRESS_MAPPING MapInfo=(PNOIR_ADDRESS_MAPPING)InputBuffer;
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)((ULONG_PTR)InputBuffer+sizeof(NOIR_ADDRESS_MAPPING));
-			*(PULONG32)OutputBuffer=NoirSetMapping(VmHandle,MapInfo);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmQueryGpaAdMap:
 		{
-			PNOIR_QUERY_ADBITMAP_CONTEXT Param=(PNOIR_QUERY_ADBITMAP_CONTEXT)InputBuffer;
-			*(PULONG32)OutputBuffer=NoirQueryGpaAccessingBitmap(Param->VirtualMachine,Param->GpaStart,Param->NumberOfPages,(PVOID)Param->BitmapBuffer,Param->BitmapLength);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmClearGpaAdBit:
 		{
-			PNOIR_QUERY_ADBITMAP_CONTEXT Param=(PNOIR_QUERY_ADBITMAP_CONTEXT)InputBuffer;
-			*(PULONG32)OutputBuffer=NoirClearGpaAccessingBits(Param->VirtualMachine,Param->GpaStart,Param->NumberOfPages);
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmCreateVmEx:
-		{
-			PULONG32 Input=(PULONG32)InputBuffer;
-			PCVM_HANDLE VmHandle=(PCVM_HANDLE)((ULONG_PTR)OutputBuffer+sizeof(CVM_HANDLE));
-			*(PULONG32)OutputBuffer=NoirCreateVirtualMachineEx(VmHandle,Input[0]);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmQueryHvStatus:
 		{
-			ULONG64 StType=*(PULONG64)((ULONG_PTR)InputBuffer);
-			PVOID Status=(PULONG64)((ULONG_PTR)OutputBuffer+8);
-			*(PULONG32)OutputBuffer=NoirQueryHypervisorStatus(StType,Status);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmCreateVcpu:
 		{
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
-			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
-			*(PULONG32)OutputBuffer=NoirCreateVirtualProcessor(VmHandle,VpIndex);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmDeleteVcpu:
 		{
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
-			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
-			*(PULONG32)OutputBuffer=NoirReleaseVirtualProcessor(VmHandle,VpIndex);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmRunVcpu:
 		{
 			st=STATUS_SUCCESS;
-			if(OutputSize<noir_cvm_exit_context_size)
-			{
-				if(OutputSize<sizeof(ULONG64))
-					st=STATUS_INSUFFICIENT_RESOURCES;
-				else
-				{
-					*(PULONG32)OutputBuffer=NOIR_INSUFFICIENT_RESOURCES;
-					*(PULONG32)((ULONG_PTR)OutputBuffer+4)=noir_cvm_exit_context_size;
-				}
-			}
-			else
-			{
-				CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
-				ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
-				PVOID ExitContext=(PVOID)((ULONG_PTR)OutputBuffer+sizeof(ULONG64));
-				*(PULONG32)OutputBuffer=NoirRunVirtualProcessor(VmHandle,VpIndex,ExitContext);
-			}
 			break;
 		}
 		case IOCTL_CvmViewVcpuReg:
 		{
-			PNOIR_VIEW_EDIT_REGISTER_CONTEXT Context=(PNOIR_VIEW_EDIT_REGISTER_CONTEXT)InputBuffer;
-			PVOID Buffer=(PVOID)((ULONG_PTR)OutputBuffer+8);
-			*(PULONG32)OutputBuffer=NoirViewVirtualProcessorRegisters(Context->VirtualMachine,Context->VpIndex,Context->RegisterType,Buffer,OutputSize-8);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmEditVcpuReg:
 		{
-			PNOIR_VIEW_EDIT_REGISTER_CONTEXT Context=(PNOIR_VIEW_EDIT_REGISTER_CONTEXT)InputBuffer;
-			PVOID Buffer=(PVOID)&Context->DummyBuffer;
-			*(PULONG32)OutputBuffer=NoirEditVirtualProcessorRegisters(Context->VirtualMachine,Context->VpIndex,Context->RegisterType,Buffer,InputSize-sizeof(NOIR_VIEW_EDIT_REGISTER_CONTEXT)+sizeof(PVOID));
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmRescindVcpu:
 		{
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
-			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
-			*(PULONG32)OutputBuffer=NoirRescindVirtualProcessor(VmHandle,VpIndex);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmInjectEvent:
 		{
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
-			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
-			ULONG64 InjectedEvent=*(PULONG64)((ULONG_PTR)InputBuffer+16);
-			*(PULONG32)OutputBuffer=NoirSetEventInjection(VmHandle,VpIndex,InjectedEvent);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmSetVcpuOptions:
 		{
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
-			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
-			ULONG32 OptionType=*(PULONG32)((ULONG_PTR)InputBuffer+16);
-			ULONG32 OptionData=*(PULONG32)((ULONG_PTR)InputBuffer+20);
-			*(PULONG32)OutputBuffer=NoirSetVirtualProcessorOptions(VmHandle,VpIndex,OptionType,OptionData);
 			st=STATUS_SUCCESS;
 			break;
 		}
 		case IOCTL_CvmQueryVcpuStats:
 		{
-			CVM_HANDLE VmHandle=*(PCVM_HANDLE)InputBuffer;
-			ULONG32 VpIndex=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE));
-			ULONG32 BufferSize=*(PULONG32)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE)+4);
-			PVOID StatsBuffer=*(PVOID*)((ULONG_PTR)InputBuffer+sizeof(CVM_HANDLE)+8);
-			*(PULONG32)OutputBuffer=NoirQueryVirtualProcessorStatistics(VmHandle,VpIndex,StatsBuffer,BufferSize);
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmViewVcpuReg2:
-		{
-			PNOIR_VIEW_EDIT_REGISTER_CONTEXT2 Context=(PNOIR_VIEW_EDIT_REGISTER_CONTEXT2)InputBuffer;
-			*Context->Status=NoirViewVirtualProcessorRegisters2(Context->VirtualMachine,Context->VpIndex,Context->RegNames,Context->RegCount,Context->RegSize,Context->Buffer);
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmEditVcpuReg2:
-		{
-			PNOIR_VIEW_EDIT_REGISTER_CONTEXT2 Context=(PNOIR_VIEW_EDIT_REGISTER_CONTEXT2)InputBuffer;
-			*Context->Status=NoirEditVirtualProcessorRegisters2(Context->VirtualMachine,Context->VpIndex,Context->RegNames,Context->RegCount,Context->RegSize,Context->Buffer);
 			st=STATUS_SUCCESS;
 			break;
 		}
@@ -335,19 +253,12 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 	return st;
 }
 
-void static NoirInitializeWithExpandedStackCallout(IN PVOID Paramater OPTIONAL)
-{
-	// The iced-x86 crate costs lots of stack resources.
-	NoirInitializeDisassembler();
-}
-
 void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Context OPTIONAL,IN ULONG Count)
 {
 	NoirPrintCompilerVersion();
 	NoirConfigureInternalDebugger();
 	NoirInitializeLogger();
-	NTSTATUS st=KeExpandKernelStackAndCallout(NoirInitializeWithExpandedStackCallout,NULL,MAXIMUM_EXPANSION_SIZE-PAGE_SIZE);
-	NoirDebugPrint("Initializer with Expanded Stack returned 0x%X\n",st);
+	NoirInitializeDisassembler();
 	NoirInitializeCodeIntegrity(DriverObject->DriverStart);
 	NoirDebugPrint("CI is initialized!\n");
 	NoirLocatePsLoadedModule(DriverObject);

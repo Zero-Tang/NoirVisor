@@ -64,7 +64,7 @@ If your patch is substantial, you need to maintain a strict commit history. This
 
 - Changes in each commit belongs to the same purpose. No all-in-one commit.
 - No "nit" commits. You need to amend or squash your commits.
-- To synchronize new changes from `master` master to your fork, use the **Rebase** strategy.
+- To synchronize new changes from `master` branch to your fork, use the **Rebase** strategy.
 
 # Build
 We use Python script to build NoirVisor. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, building NoirVisor through Python script in Windows 7 is not supported. There are no `pip` package requirements for compilation.
@@ -169,10 +169,6 @@ reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 0
 
 ## NoirVisor as a Nested Hypervisor
 If NoirVisor is subverting a system under a virtualized environment with exposed detection (e.g: VMware virtual machines with `hypervisor.cpuid.v0 = TRUE` configuration) as a Type-II hypervisor, the operating system may have already been using functionalities provided by the hypervisor. In this regard, NoirVisor should pass-through the access to hypervisor functionalities (e.g: `cpuid` instructions, accesses to Microsoft Synthetic MSRs, hypercalls, etc.)
-
-## TSC-Omission
-Since the end of 2020, NoirVisor implemented a simple Time-Profiler Countermeasure. According to the half-year test, this technique is deemed unstable with multiprocessing systems. For example, TSC-omission may cause external hardwares to trigger drivers resetting themselves. Everything could be messed up: Timer, Graphics Card, NIC, etc. In a nutshell, system may go haywire. \
-By virtue of this unexpected and unpleasant side-effect, this feature is now obsolete. Codes addressing this feature are now removed.
 
 # Customizable VM
 Customizable VM is the true explanation of "complex functions and purposes". As the project creator and director, Zero's true intention to create this project is for studying Hardware-Acclerated Virtualization Technology. Therefore, any features which is related to virtualization and which Zero has ideas to implement will be added in the project. \
