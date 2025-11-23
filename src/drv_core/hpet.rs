@@ -12,6 +12,7 @@
 
 use core::{ptr::null_mut,sync::atomic::{AtomicU64, AtomicU32, Ordering}};
 
+use bitfield_struct::bitfield;
 use log::*;
 
 use nvcvm::status::Status;
@@ -19,8 +20,75 @@ use nvcvm::status::Status;
 use crate::xpf_core::asm::io::mmio_read;
 use super::acpi::{search_acpi_table,tables::{AcpiSystemDescriptorSignature,HighPrecisionEventTimerTable}};
 
-const HPET_GENRERAL_COUNTER_CLOCK_PERIOD:usize=0x4;
+#[allow(dead_code)]
+const fn hpet_timer_config_capability_offset(n:usize)->usize
+{
+	0x100+(n<<5)
+}
+
+#[allow(dead_code)]
+const fn hpet_timer_comparator_value_offset(n:usize)->usize
+{
+	0x100+(n<<5)+0x8
+}
+
+#[allow(dead_code)]
+const fn hpet_timer_fsb_interrupt_value_offset(n:usize)->usize
+{
+	0x100+(n<<5)+0x10
+}
+
+#[allow(dead_code)]
+const fn hpet_timer_fsb_interrupt_addressvalue_offset(n:usize)->usize
+{
+	0x100+(n<<5)+0x14
+}
+
+#[allow(dead_code)]
+const HPET_GENERAL_CAPABILITY_ID:usize=0x0;
+const HPET_GENERAL_COUNTER_CLOCK_PERIOD:usize=0x4;
+#[allow(dead_code)]
+const HPET_GENERAL_CONFIGURATION:usize=0x10;
+#[allow(dead_code)]
+const HPET_GENREAL_INTERRUPT_STATUS:usize=0x20;
 const HPET_MAIN_COUNTER_VALUE:usize=0xF0;
+
+#[bitfield(u32)] pub struct HpetGeneralCapabilityIdRegister
+{
+	pub revision_id:u8,
+	#[bits(5)] pub timer_count:usize,
+	pub counter_size:bool,
+	reserved:bool,
+	pub legacy_replacement_route:bool,
+	pub vendor_id:u16
+}
+
+#[bitfield(u64)] pub struct HpetGeneralConfigRegister
+{
+	pub enable:bool,
+	pub legacy_replacement_route:bool,
+	#[bits(6)] rsvd0:u64,
+	pub reserved_non_os:u8,
+	#[bits(48)] rsvd1:u64
+}
+
+#[bitfield(u64)] pub struct HpetTimerConfigRegister
+{
+	rsvd0:bool,
+	pub int_type:bool,
+	pub int_enable:bool,
+	pub timer_type:bool,
+	pub can_be_periodic:bool,
+	pub timer_size:bool,
+	pub timer_value_set:bool,
+	rsvd1:bool,
+	pub timer_32bit_mode:bool,
+	#[bits(5)] pub int_route:usize,
+	pub fsb_enable:bool,
+	pub fsb_delivery:bool,
+	rsvd2:u16,
+	pub route_cap:u32
+}
 
 static HPET_BASE_ADDRESS:AtomicU64=AtomicU64::new(0);
 static HPET_PERIOD:AtomicU32=AtomicU32::new(0);
@@ -47,7 +115,7 @@ pub fn hpet_read_counter()->u64
 	else
 	{
 		HPET_BASE_ADDRESS.store(unsafe{(*hpet_acpi_ptr).block.address},Ordering::Relaxed);
-		HPET_PERIOD.store(hpet_read_register(HPET_GENRERAL_COUNTER_CLOCK_PERIOD),Ordering::Relaxed);
+		HPET_PERIOD.store(hpet_read_register(HPET_GENERAL_COUNTER_CLOCK_PERIOD),Ordering::Relaxed);
 		Status::SUCCESS
 	}
 }

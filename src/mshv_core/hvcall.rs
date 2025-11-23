@@ -12,6 +12,20 @@
 
 use bitfield_struct::bitfield;
 
+// Currently, we don't support hypercall, so let's avoid hypercall VM-Exit.
+pub(super) static MSHV_HYPERCALL_CODE64:[u8;6]=
+[
+	0xB8,0x02,0x00,0x00,0x00,	// mov eax,HvStatus::INVALID_HYPERCALL_CODE
+	0xC3						// ret
+];
+
+pub(super) static MSHV_HYPERCALL_CODE32:[u8;8]=
+[
+	0xB8,0x02,0x00,0x00,0x00,	// mov eax,HvStatus::INVALID_HYPERCALL_CODE
+	0x33,0xD2,					// xor edx,edx
+	0xC3						// ret
+];
+
 #[bitfield(u64)] pub struct TlfsHypercallCode
 {
 	pub call_code:u16,

@@ -258,9 +258,11 @@ pub fn build_hypervisor()->u32
 	let r=unsafe{__cpuid(1)};
 	if (r.ecx&0x80000000)!=0
 	{
+		let r=unsafe{__cpuid(0x40000001)};
+		let interface_id=unsafe{str::from_utf8_unchecked(slice::from_raw_parts((&raw const r.eax).cast(),4))};
 		let r=unsafe{__cpuid(0x40000000)};
 		let vendor_id=unsafe{str::from_utf8_unchecked(slice::from_raw_parts((&raw const r.ebx).cast(),12))};
-		println!("Hypervisor is detected! Maximum Leaf: 0x{:X}, Vendor: {vendor_id}",r.eax);
+		println!("Hypervisor is detected! Maximum Leaf: 0x{:X}, Vendor: {vendor_id}, Signature: {interface_id}",r.eax);
 	}
 	st
 }

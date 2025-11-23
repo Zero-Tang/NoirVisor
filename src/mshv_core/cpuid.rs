@@ -12,35 +12,77 @@
 
 use core::{arch::x86_64::CpuidResult, slice};
 
+use bitfield_struct::bitfield;
+
 use crate::xpf_core::x86::cpuid::CpuidLeaf;
 
-fn nvc_mshv_cpuid_hypervisor_system_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
+static HYPERVISOR_VENDOR_STRING:&str="NoirVisor ZT";
+
+fn nvc_mshv_cpuid_hypervisor_vendor_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
 {
-	let hv_vendor="NoirVisor ZT".as_bytes();
-	let a=0x40000001u32;
+	let hv_vendor=HYPERVISOR_VENDOR_STRING.as_bytes();
+	let a=0x3FFFFFFF+MSHV_CPUID_HANDLERS_COUNT as u32;
 	let b=u32::from_le_bytes(hv_vendor[..4].try_into().unwrap());
 	let c=u32::from_le_bytes(hv_vendor[4..8].try_into().unwrap());
 	let d=u32::from_le_bytes(hv_vendor[8..].try_into().unwrap());
 	(a,b,c,d)
 }
 
-fn nvc_mshv_cpuid_hypervisor_feature_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
+fn nvc_mshv_cpuid_hypervisor_interface_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
 {
-	let signature="Hv#0".as_bytes();
-	let a=u32::from_le_bytes(signature.try_into().unwrap());
+	let a=u32::from_le_bytes(*b"Hv#1");
 	let b=0;
 	let c=0;
 	let d=0;
 	(a,b,c,d)
 }
 
+fn nvc_mshv_cpuid_hypervisor_system_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
+{
+	(0,0,0,0)
+}
+
+fn nvc_mshv_cpuid_hypervisor_feature_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
+{
+	let mut r=HypervisorFeatureId::new();
+	// Requirements for Minimal Hv#1 interface.
+	r.set_hypercall_msr(true);
+	r.set_vp_index(true);
+	let a:&[u32;4]=unsafe{&*(&raw const r.0).cast()};
+	(a[0],a[1],a[2],a[3])
+}
+
+fn nvc_mshv_cpuid_implementation_recommendation_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
+{
+	// Nothing to recommend
+	// TODO: recommend using Microsoft Synthetic MSR on AMD-V.
+	(0,0,0,0)
+}
+
+fn nvc_mshv_cpuid_implementation_limit_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
+{
+	// Nothing to limit
+	(0,0,0,0)
+}
+
+fn nvc_mshv_cpuid_implementation_hardware_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
+{
+	// TODO: Fill in the fact of what hardware features are used.
+	(0,0,0,0)
+}
+
 type TlfsCpuidHandler=fn(u32,u32)->(u32,u32,u32,u32);
 
-const MSHV_CPUID_HANDLERS_COUNT:usize=2;
+const MSHV_CPUID_HANDLERS_COUNT:usize=7;
 pub const MSHV_CPUID_HANDLERS:[TlfsCpuidHandler;MSHV_CPUID_HANDLERS_COUNT]=
 [
+	nvc_mshv_cpuid_hypervisor_vendor_id_handler,
+	nvc_mshv_cpuid_hypervisor_interface_id_handler,
 	nvc_mshv_cpuid_hypervisor_system_id_handler,
-	nvc_mshv_cpuid_hypervisor_feature_id_handler
+	nvc_mshv_cpuid_hypervisor_feature_id_handler,
+	nvc_mshv_cpuid_implementation_recommendation_handler,
+	nvc_mshv_cpuid_implementation_limit_handler,
+	nvc_mshv_cpuid_implementation_hardware_handler
 ];
 
 pub const CPUID_LEAF_RANGE_AND_VENDOR_STRING:u32=0x40000000;
@@ -137,6 +179,92 @@ impl HypervisorVendorNeutralInterface
 		{
 			let s:&[u8]=slice::from_raw_parts((&raw const self.interface_id).cast(),4);
 			str::from_utf8_unchecked(s)
+		}
+	}
+}
+
+#[bitfield(u128)] pub struct HypervisorFeatureId
+{
+	pub vp_runtime_msr:bool,
+	pub partition_ref_counter:bool,
+	pub synic_msr:bool,
+	pub synthetic_timer_msr:bool,
+	pub apic_msr:bool,
+	pub hypercall_msr:bool,
+	pub vp_index:bool,
+	pub reset_msr:bool,
+	pub stats_msr:bool,
+	pub partition_ref_tsc:bool,
+	pub guest_idle_msr:bool,
+	pub frequency_msr:bool,
+	#[bits(20)] rsvd0:u32,
+	pub create_partition:bool,
+	pub access_partition_id:bool,
+	pub access_memory_pool:bool,
+	pub adjust_message_buffers:bool,
+	pub port_messages:bool,
+	pub signal_events:bool,
+	pub create_port:bool,
+	pub connect_port:bool,
+	pub access_stats:bool,
+	#[bits(2)] rsvd1:u32,
+	pub debugging:bool,
+	pub cpu_management:bool,
+	pub configure_profiler:bool,
+	#[bits(18)] rsvd2:u32,
+	pub power_management:u32,
+	pub mwait_avail:bool,
+	pub guest_debug:bool,
+	pub performance_monitor:bool,
+	pub phys_cpu_dynp_event:bool,
+	pub hypercall_xmm_support:bool,
+	pub virt_guest_idle_state:bool,
+	pub hv_sleep_state:bool,
+	pub query_numa_distance:bool,
+	pub determine_timer_freq:bool,
+	pub inject_synthetic_mc:bool,
+	pub guest_crash_msr:bool,
+	pub guest_debug_msr:bool,
+	pub npiep:bool,
+	pub disable_hypervisor:bool,
+	pub ext_gvar_flush_va_list:bool,
+	pub ret_hypercall_by_xmm:bool,
+	rsvd3:bool,
+	pub sint_polling_mode:bool,
+	pub hypercall_msr_lock:bool,
+	pub direct_synthetic_timer:bool,
+	pub avail_pat_for_vsm:bool,
+	pub avail_bndcfgs_vsm:bool,
+	rsvd4:bool,
+	pub synthetic_unhalted_timer:bool,
+	#[bits(2)] rsvd5:u32,
+	pub use_lbr_support:bool,
+	#[bits(5)] rsvd6:u32
+}
+
+impl CpuidLeaf for HypervisorFeatureId
+{
+	const LEAF_INDEX:u32 = 0x40000003;
+	const SUBLEAF_INDEX:Option<u32> = None;
+
+	fn init(&mut self,result:&CpuidResult)
+	{
+		let v:&mut [u32;4]=unsafe{&mut *(&raw mut self.0).cast()};
+		v[0]=result.eax;
+		v[1]=result.ebx;
+		v[2]=result.ecx;
+		v[3]=result.edx;
+	}
+
+	fn as_result(&self)->CpuidResult
+	{
+		let v:&[u32;4]=unsafe{&*(&raw const self.0).cast()};
+		CpuidResult
+		{
+			eax:v[0],
+			ebx:v[1],
+			ecx:v[2],
+			edx:v[3]
 		}
 	}
 }

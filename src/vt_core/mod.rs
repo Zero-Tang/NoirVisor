@@ -19,6 +19,7 @@ use vmcs::*;
 use ept::VtEptManager;
 use crate::*;
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
+use mshv_core::{MshvVcpuContext,MshvVcpuOps};
 use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
 
 #[allow(dead_code)] mod ia32;
@@ -55,6 +56,7 @@ pub struct VtVcpu
 	pub apic_id:u8,
 	pub x2apic_id:u32,
 	pub host_cpu:HostProcessor,
+	pub mshv_ctxt:MshvVcpuContext,
 	pub msr_auto_host:[VmxMsrAutoItem;5],
 	pub msr_auto_guest:[VmxMsrAutoItem;5],
 	pub cached_ctxt:CachedExitContext,
@@ -79,6 +81,7 @@ impl Default for VtVcpu
 			apic_id:0,
 			x2apic_id:0,
 			host_cpu:HostProcessor::default(),
+			mshv_ctxt:MshvVcpuContext::new(&VT_MSHV_VCPU_OPS),
 			msr_auto_host:[VmxMsrAutoItem::default();5],
 			msr_auto_guest:[VmxMsrAutoItem::default();5],
 			cached_ctxt:CachedExitContext::default(),
@@ -104,8 +107,32 @@ unsafe extern "C"
 	}
 }
 
+static VT_MSHV_VCPU_OPS:MshvVcpuOps=MshvVcpuOps
+{
+	inform_apic_icr:VtVcpu::inform_apic_icr,
+	in_long_mode:VtVcpu::in_long_mode,
+	get_vp_index:VtVcpu::get_vp_index
+};
+
 impl VtVcpu
 {
+	unsafe fn inform_apic_icr(_vcpu:*mut c_void,_icr_lo:u32,_icr_hi:u32)
+	{
+		panic!("APIC-ICR ops is unimplemented!");
+	}
+
+	fn in_long_mode(vcpu:*const c_void)->bool
+	{
+		let vcpu:&Self=unsafe{&*vcpu.cast()};
+		vcpu.get_current_bitness()==64
+	}
+
+	fn get_vp_index(vcpu:*const c_void)->u32
+	{
+		let vcpu:&Self=unsafe{&*vcpu.cast()};
+		vcpu.vcpu_id
+	}
+
 	#[inline(always)] pub fn get_stack_top(&self)->&VtStackTop
 	{
 		unsafe
@@ -403,6 +430,7 @@ impl VtVcpu
 	fn subvert_i(&mut self,gsp:usize)
 	{
 		let state=ProcessorState::new();
+		self.mshv_ctxt.root=(&raw mut *self).cast();
 		self.setup_guest_state_area(&state,gsp);
 		self.setup_msr_auto_list(&state);
 		self.setup_host_state_area(&state);

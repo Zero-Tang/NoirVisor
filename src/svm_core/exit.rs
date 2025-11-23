@@ -16,14 +16,12 @@ use paste::paste;
 
 use decode::dispatch_decoder;
 use npt::NptFaultCode;
-use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::interrupts::*};
+use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::interrupts::*, trytask::try_task};
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall,nvc_forward_memory_mapped_hypercall};
-
-use crate::{disasm::emulator::{EmulatorOps, Instruction}, xpf_core::trytask::try_task};
-
-use super::{*,hvcall::dispatch_hypercall};
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
-use mshv_core::cpuid::*;
+use disasm::emulator::{EmulatorOps, Instruction};
+use super::{*,hvcall::dispatch_hypercall};
+use mshv_core::{cpuid::*,msr::dispatch_mshv_msr_handler};
 
 pub(super) fn svm_apic_output_handler(_region:&IoRegion<u64>,address:u64,size:u64,value:*const c_void,_context:*mut c_void)
 {
@@ -140,6 +138,19 @@ impl SvmVcpu
 		}
 		match index
 		{
+			(0x40000000..0x80000000)=>
+			{
+				let f=dispatch_mshv_msr_handler(index);
+				let mut r:u64=0;
+				if f(&mut self.mshv_ctxt,false,&mut r)
+				{
+					Some(r)
+				}
+				else
+				{
+					None
+				}
+			}
 			MSR_EFER=>
 			{
 				// Read the EFER value from VMCB.
@@ -238,6 +249,12 @@ impl SvmVcpu
 		}
 		match index
 		{
+			(0x40000000..0x80000000)=>
+			{
+				let mut v=value;
+				let f=dispatch_mshv_msr_handler(index);
+				f(&mut self.mshv_ctxt,true,&mut v)
+			}
 			MSR_EFER=>
 			{
 				let svme=(value&MSR_EFER_SVME)==MSR_EFER_SVME;

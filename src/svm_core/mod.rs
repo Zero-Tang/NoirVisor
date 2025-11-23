@@ -12,18 +12,19 @@
 
 use core::{arch::x86_64::_xgetbv, ffi::c_void, ptr::*};
 use alloc::{vec::Vec, vec};
+use static_collections::bitmap::RefBitmap;
+
 #[cfg(target_os="uefi")]
 use exit::svm_apic_output_handler;
-use static_collections::bitmap::RefBitmap;
 use iommu::{svm_iommu_output_handler, SvmIommuManager};
 use log::*;
 use npt::SvmNptManager;
-use xpf_core::{hv_host::{x86::*, *}, ioflt::{IoAddressSpace, IoRegion}, x86::crdr::{CR4_OSFXSR, CR4_OSXSAVE}};
+use crate::*;
+use xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, hv_host::{x86::*, *}, ioflt::{IoAddressSpace, IoRegion}, nvbdk::*, x86::{cpuid::*, crdr::{CR4_LA57, CR4_OSFXSR, CR4_OSXSAVE}, interrupts::InterruptStackFrameWithErrorCode, msr::*}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 #[cfg(not(target_os="uefi"))]
 use crate::{cvm_core::CUSTOMIZABLE_HYPERVISOR, xpf_core::allocator::kmalloc::KernelAllocator,  svm_core::custom::SvmCustomHypervisor};
-
-use crate::{xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, nvbdk::*, x86::{cpuid::*, crdr::CR4_LA57, interrupts::InterruptStackFrameWithErrorCode, msr::*}}, *};
+use mshv_core::{MshvVcpuContext,MshvVcpuOps};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
 
@@ -77,6 +78,7 @@ pub struct SvmVcpu
 	pub x2apic_id:u32,
 	pub cpuid_fms:u32,
 	pub host_cpu:HostProcessor,
+	pub mshv_ctxt:MshvVcpuContext,
 	pub nested_hvm:SvmNestedVcpu,
 	pub under_hvm:bool,
 	// Features supported by the processors.
@@ -85,8 +87,32 @@ pub struct SvmVcpu
 	pub gs_context:PerCpuGsException
 }
 
+static SVM_MSHV_VCPU_OPS:MshvVcpuOps=MshvVcpuOps
+{
+	inform_apic_icr:SvmVcpu::inform_apic_icr,
+	in_long_mode:SvmVcpu::in_long_mode,
+	get_vp_index:SvmVcpu::get_vp_index
+};
+
 impl SvmVcpu
 {
+	unsafe fn inform_apic_icr(_vcpu:*mut c_void,_icr_lo:u32,_icr_hi:u32)
+	{
+		panic!("APIC-ICR ops is unimplemented!");
+	}
+
+	fn in_long_mode(vcpu:*const c_void)->bool
+	{
+		let vcpu:&Self=unsafe{&*vcpu.cast()};
+		vcpu.get_current_bitness()==64
+	}
+
+	fn get_vp_index(vcpu:*const c_void)->u32
+	{
+		let vcpu:&Self=unsafe{&*vcpu.cast()};
+		vcpu.vcpu_id
+	}
+
 	fn new()->Self
 	{
 		Self
@@ -102,6 +128,7 @@ impl SvmVcpu
 			x2apic_id:0,
 			cpuid_fms:0,
 			host_cpu:HostProcessor::default(),
+			mshv_ctxt:MshvVcpuContext::new(&SVM_MSHV_VCPU_OPS),
 			nested_hvm:SvmNestedVcpu
 			{
 				svme:false,
@@ -159,6 +186,7 @@ impl SvmVcpu
 		unsafe
 		{
 			let stack:&mut SvmStackTop=&mut *self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast();
+			self.mshv_ctxt.root=(&raw mut *self).cast();
 			// Setup supported features.
 			self.svm_feats=SvmFeatureIdentifier::cpuid();
 			let hv=self.hypervisor as *mut SvmHypervisor;

@@ -41,6 +41,14 @@ qemu-system-x86_64 \
 ```
 The `socket` option allows the remote debug console. If you don't need it, just use `stdio` option instead.
 
+Or even shorter:
+```
+qemu-system-x86_64 -debugcon stdio
+```
+This creates ISA Debug Console that listens to port 0xE9 and outputs to stdio. This option cannot reassign the port number, though.
+
+For Bochs, you may enable the `0xE9 port hack`, which emulates the ISA Debug Console and outputs to the stdio.
+
 ## Text-Mode Debugging
 For this debugging mode, the connection is considered a console. The remote host will be receiving texts only. So programs like PuTTY should do the job well in terms of a serial console.
 

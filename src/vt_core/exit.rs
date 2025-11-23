@@ -17,7 +17,7 @@ use log::*;
 
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall, nvc_forward_memory_mapped_hypercall};
-use crate::{disasm::emulator::Instruction, mshv_core::cpuid::MSHV_CPUID_HANDLERS, vt_core::hvcall::dispatch_hypercall, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, ci::is_ci_phys_page, trytask::try_task, x86::{cpuid::*, crdr::*, interrupts::{EventType, GENERAL_PROTECTION_FAULT}}}, *};
+use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, vt_core::hvcall::dispatch_hypercall, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, ci::is_ci_phys_page, trytask::try_task, x86::{cpuid::*, crdr::*, interrupts::{EventType, GENERAL_PROTECTION_FAULT}}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, VtStackTop};
 
 impl VtVcpu
@@ -296,6 +296,19 @@ impl VtVcpu
 			// Returning u64::MAX should prevent the guest from loading microcodes,
 			// unless they ignore the current version of microcode.
 			MSR_BIOS_UPDATE_TRIGGER=>Some(u64::MAX),
+			(0x40000000..0x80000000)=>
+			{
+				let f=dispatch_mshv_msr_handler(index);
+				let mut r:u64=0;
+				if f(&mut self.mshv_ctxt,false,&mut r)
+				{
+					Some(r)
+				}
+				else
+				{
+					None
+				}
+			}
 			_=>
 			{
 				error!("Unexpected interception to rdmsr! MSR-Index: 0x{index:X}");
@@ -322,6 +335,12 @@ impl VtVcpu
 			// Prevent the Guest from updating microcode.
 			// Do so by ignoring the update request.
 			MSR_BIOS_UPDATE_TRIGGER=>false,
+			(0x40000000..0x80000000)=>
+			{
+				let f=dispatch_mshv_msr_handler(index);
+				let mut v=(context.gpr_state.rax&0xFFFFFFFF)|(context.gpr_state.rdx<<32);
+				f(&mut self.mshv_ctxt,true,&mut v)
+			}
 			_=>
 			{
 				error!("Unexpected interception to wrmsr! MSR-Index: 0x{index:X}");

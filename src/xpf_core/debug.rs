@@ -17,7 +17,7 @@ use spin::Mutex;
 use nvcvm::status::Status;
 use static_collections::string::StaticString;
 
-use core::{cell::LazyCell, fmt};
+use core::{cell::LazyCell, fmt, ptr::null_mut, sync::atomic::{AtomicPtr, AtomicUsize, Ordering}};
 use alloc::boxed::Box;
 
 use qemu_debugcon::*;
@@ -70,12 +70,25 @@ impl LogHead
 	}
 }
 
-struct InternalLogger;
+struct InternalLogger
+{
+	pool:AtomicPtr<u8>,
+	limit:AtomicUsize
+}
 
 impl InternalLogger
 {
 	const LEVEL_CHAR:[char;6]=[' ','E','W','I','D','T'];
 	const LEVEL_COLOR:[u8;6]=[39,31,33,32,94,36];
+
+	const fn new()->Self
+	{
+		Self
+		{
+			pool:AtomicPtr::new(null_mut()),
+			limit:AtomicUsize::new(0)
+		}
+	}
 }
 
 impl Log for InternalLogger
@@ -99,7 +112,7 @@ impl Log for InternalLogger
 	}
 }
 
-static INTERNAL_LOGGER:InternalLogger=InternalLogger;
+static INTERNAL_LOGGER:InternalLogger=InternalLogger::new();
 
 #[unsafe(no_mangle)] extern "C" fn nvc_logger_initialize(level:u32)->bool
 {
@@ -125,6 +138,12 @@ static INTERNAL_LOGGER:InternalLogger=InternalLogger;
 		Err(e)=>sysdprintln!("Failed to set logger! Reason: {e}")
 	};
 	r.is_ok()
+}
+
+#[unsafe(no_mangle)] extern "C" fn nvc_logger_set_pool(pool_base:*mut u8,pool_limit:usize)
+{
+	INTERNAL_LOGGER.pool.store(pool_base,Ordering::Relaxed);
+	INTERNAL_LOGGER.limit.store(pool_limit,Ordering::Relaxed);
 }
 
 pub trait DebuggerBackend:Send

@@ -10,6 +10,139 @@
  * or fitness for a particular purpose, etc.).
  */
 
+use alloc::slice;
+use bitfield_struct::bitfield;
+
+use crate::{mshv_core::MshvVcpuContext, xpf_core::nvbdk::{noir_find_virt_by_phys, page_4kb_base}};
+use super::hvcall::{MSHV_HYPERCALL_CODE32,MSHV_HYPERCALL_CODE64};
+
+fn nvc_mshv_msr_unknown_handler(_context:&mut MshvVcpuContext,_write:bool,_value:&mut u64)->bool
+{
+	false
+}
+
+fn nvc_mshv_msr_guest_os_id_handler(context:&mut MshvVcpuContext,write:bool,value:&mut u64)->bool
+{
+	if write
+	{
+		context.guest_os_id = *value;
+	}
+	else
+	{
+		*value=context.guest_os_id;
+	}
+	true
+}
+
+fn nvc_mshv_msr_hypercall_handler(context:&mut MshvVcpuContext,write:bool,value:&mut u64)->bool
+{
+	if write
+	{
+		let old=HypercallConfig::from_bits(context.hypercall_gpfn);
+		if !old.locked()
+		{
+			// This value is changeable only if it is not locked.
+			context.hypercall_gpfn = *value;
+			let src=if context.in_long_mode() {MSHV_HYPERCALL_CODE64.as_slice()} else {MSHV_HYPERCALL_CODE32.as_slice()};
+			let dest=unsafe
+			{
+				let virt:*mut u8=noir_find_virt_by_phys(page_4kb_base(*value)).cast();
+				slice::from_raw_parts_mut(virt,src.len())
+			};
+			dest.copy_from_slice(src);
+		}
+	}
+	else
+	{
+		*value=context.hypercall_gpfn;
+	}
+	true
+}
+
+fn nvc_mshv_msr_vp_index_handler(context:&mut MshvVcpuContext,write:bool,value:&mut u64)->bool
+{
+	if write
+	{
+		false
+	}
+	else
+	{
+		*value=context.get_vp_index() as u64;
+		true
+	}
+}
+
+pub type TlfsMsrHandler=fn(context:&mut MshvVcpuContext,write:bool,value:&mut u64)->bool;
+
+const MSHV_MSR_HANDLERS_COUNT:usize=3;
+pub static MSHV_MSR_HANDLERS:[TlfsMsrHandler;MSHV_MSR_HANDLERS_COUNT]=
+{
+	let mut group:[TlfsMsrHandler;MSHV_MSR_HANDLERS_COUNT]=[nvc_mshv_msr_unknown_handler;MSHV_MSR_HANDLERS_COUNT];
+	group[0]=nvc_mshv_msr_guest_os_id_handler;
+	group[1]=nvc_mshv_msr_hypercall_handler;
+	group[2]=nvc_mshv_msr_vp_index_handler;
+	group
+};
+
+pub fn dispatch_mshv_msr_handler(index:u32)->TlfsMsrHandler
+{
+	let i=(index-0x40000000) as usize;
+	match MSHV_MSR_HANDLERS.get(i)
+	{
+		Some(&f)=>f,
+		None=>nvc_mshv_msr_unknown_handler
+	}
+}
+
+#[bitfield(u64)] pub struct ProprietaryGuestOsId
+{
+	pub build_number:u16,
+	pub service_version:u8,
+	pub minor_version:u8,
+	pub major_version:u8,
+	pub os_id:u8,
+	#[bits(15)] pub vendor_id:u16,
+	pub open_source:bool
+}
+
+impl ProprietaryGuestOsId
+{
+	pub const VENDOR_MICROSOFT:u16=0x0001;
+	pub const VENDOR_HPE:u16=0x0002;
+	pub const VENDOR_LANCOM:u16=0x0200;
+
+	pub const MICROSOFT_OS_MS_DOS:u8=1;
+	pub const MICROSOFT_OS_WINDOWS_3X:u8=2;
+	pub const MICROSOFT_OS_WINDOWS_9X:u8=3;
+	pub const MICROSOFT_OS_WINDOWS_NT:u8=4;
+	pub const MICROSOFT_OS_WINDOWS_CE:u8=5;
+}
+
+#[bitfield(u64)] pub struct OpenSourceGuestOsId
+{
+	pub build_number:u16,
+	pub version:u32,
+	pub os_id:u8,
+	#[bits(7)] pub os_type:u8,
+	pub open_source:bool
+}
+
+impl OpenSourceGuestOsId
+{
+	pub const OS_LINUX:u8=1;
+	pub const OS_FREEBSD:u8=2;
+	pub const OS_XEN:u8=3;
+	pub const OS_ILLUMOS:u8=4;
+}
+
+#[bitfield(u64)] pub struct HypercallConfig
+{
+	pub enable:bool,
+	pub locked:bool,
+	#[bits(10)] rsvd:u64,
+	#[bits(52)] pub gpfn:u64
+}
+
 pub const HV_X64_MSR_GUEST_OS_ID:u32=0x40000000;
 pub const HV_X64_MSR_HYPERCALL:u32=0x40000001;
 pub const HV_X64_MSR_VP_INDEX:u32=0x40000002;
