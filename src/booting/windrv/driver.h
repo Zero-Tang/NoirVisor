@@ -25,8 +25,6 @@
 #define IOCTL_Subvert		CTL_CODE_GEN(0x801)
 #define IOCTL_Restore		CTL_CODE_GEN(0x802)
 #define IOCTL_SetPID		CTL_CODE_GEN(0x803)
-#define IOCTL_SetNs			CTL_CODE_GEN(0x804)
-#define IOCTL_SetVs			CTL_CODE_GEN(0x805)
 #define IOCTL_SetName		CTL_CODE_GEN(0x806)
 #define IOCTL_CpuVs			CTL_CODE_GEN(0x811)
 #define IOCTL_CpuPn			CTL_CODE_GEN(0x812)
@@ -51,13 +49,14 @@
 #define IOCTL_CvmSetVcpuOptions	CTL_CODE_GEN(0x897)
 #define IOCTL_CvmQueryVcpuStats	CTL_CODE_GEN(0x898)
 
+// Derive I/O Control Code Leaf from IOCTL Code
+#define FUNCTION_FROM_CTL_CODE(i)	((i>>2)&0x7FF)
+#define IS_CTL_CODE_CUSTOM(i)		(i&0x2000)
+
 void NoirInitializeDisassembler();
-NTSTATUS NoirReportWindowsVersion();
 NTSTATUS NoirBuildProtectedFile();
 void NoirTeardownProtectedFile();
-void NoirSetProtectedFile(IN PWSTR FileName);
 void NoirPrintCompilerVersion();
-NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength);
 NTSTATUS NoirGetUefiHypervisionStatus();
 void NoirReportMemoryIntrospectionCounter();
 ULONG NoirBuildHypervisor();
@@ -66,35 +65,78 @@ NTSTATUS NoirConfigureInternalDebugger();
 BOOL NoirAcpiInitialize();
 void NoirAcpiFinalize();
 BOOL NoirInitializeLogger();
-ULONG NoirQueryVirtualizationSupportability();
-BOOLEAN NoirIsVirtualizationEnabled();
 void NoirLocatePsLoadedModule(IN PDRIVER_OBJECT DriverObject);
 BOOLEAN NoirInitializeCodeIntegrity(IN PVOID ImageBase);
 void NoirFinalizeCodeIntegrity();
 NTSTATUS NoirInitializePowerStateCallback();
 void NoirFinalizePowerStateCallback();
-void NoirGetVendorString(OUT PSTR VendorString);
-void NoirGetProcessorName(OUT PSTR ProcessorName);
 void NoirGetNtOpenProcessIndex();
 void NoirSaveImageInfo(IN PDRIVER_OBJECT DriverObject);
-void NoirSetProtectedPID(IN ULONG NewPID);
 void NoirBuildHookedPages();
 void NoirTeardownHookedPages();
 NTSTATUS NoirSubvertSystemOnDriverLoad(OUT PBOOLEAN Subvert);
 void NoirFreeAllAllocatedPages();
 void __cdecl NoirDebugPrint(const char* Format,...);
 
+// Dispatch the I/O Routine into a matrix.
+typedef NTSTATUS (*IO_DISPATCH_ROUTINE)
+(
+	IN PVOID InputBuffer,
+	IN ULONG InputSize,
+	OUT PVOID OutputBuffer,
+	IN ULONG OutputSize
+);
+
+NTSTATUS NoirUnknownIoDispatchRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize);
+NTSTATUS NoirBuildHypervisorRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize);
+NTSTATUS NoirTeardownHypervisorRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize);
+NTSTATUS NoirGetCpuVendorStringRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize);
+NTSTATUS NoirGetCpuBrandStringRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize);
+NTSTATUS NoirQueryVirtualizationSupportRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize);
+NTSTATUS NoirQueryVirtualizationEnabledRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize);
+NTSTATUS NoirGetSystemVersionRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize);
+NTSTATUS NoirSetProtectedPidRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize);
+NTSTATUS NoirSetProtectedFileRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize);
+
+IO_DISPATCH_ROUTINE NoirDispatchIoHvBasicGroup[16]=
+{
+	NoirUnknownIoDispatchRoutine,NoirBuildHypervisorRoutine,NoirTeardownHypervisorRoutine,NoirSetProtectedPidRoutine,
+	NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirSetProtectedFileRoutine,NoirUnknownIoDispatchRoutine,
+	NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,
+	NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine
+};
+
+IO_DISPATCH_ROUTINE NoirDispatchIoSysBasicGroup[16]=
+{
+	NoirUnknownIoDispatchRoutine,NoirGetCpuVendorStringRoutine,NoirGetCpuBrandStringRoutine,NoirGetSystemVersionRoutine,
+	NoirQueryVirtualizationSupportRoutine,NoirQueryVirtualizationEnabledRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,
+	NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,
+	NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine
+};
+
+IO_DISPATCH_ROUTINE NoirDispatchIoEmptyGroup[16]=
+{
+	NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,
+	NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,
+	NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,
+	NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine,NoirUnknownIoDispatchRoutine
+};
+
+IO_DISPATCH_ROUTINE* NoirDispatchIoGroups[16]=
+{
+	NoirDispatchIoHvBasicGroup,NoirDispatchIoSysBasicGroup,NoirDispatchIoEmptyGroup,NoirDispatchIoEmptyGroup,
+	NoirDispatchIoEmptyGroup,NoirDispatchIoEmptyGroup,NoirDispatchIoEmptyGroup,NoirDispatchIoEmptyGroup,
+	NoirDispatchIoEmptyGroup,NoirDispatchIoEmptyGroup,NoirDispatchIoEmptyGroup,NoirDispatchIoEmptyGroup,
+	NoirDispatchIoEmptyGroup,NoirDispatchIoEmptyGroup,NoirDispatchIoEmptyGroup,NoirDispatchIoEmptyGroup
+};
+
 void __isa_available_init();
 extern ULONG32 __isa_available;
 
 extern ULONG32 noir_cvm_exit_context_size;
 
-char virtual_vstr[12];
-char virtual_nstr[48];
-
 ULONG_PTR orig_system_call=0;
 
-PEPROCESS SubversionProcess=NULL;
 BOOLEAN SubvertOnDriverLoad=FALSE;
 
 PDRIVER_OBJECT NoirDriverObject=NULL;

@@ -84,7 +84,7 @@
 		},
 		"NoirVisor":
 		{
-			"cmd":["link","{objpath}\\driver.obj","{objpath}\\version.res","{objpath}\\detour.obj","{objpath}\\hooks.obj","{objpath}\\layered.obj","{objpath}\\nvsys.obj","{objpath}\\winhvm.obj","{objpath}\\msrhook.obj","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\hvcall.obj","{objpath}\\interrupt.obj","{objpath}\\memcpy.obj","{objpath}\\memset.obj","{objpath}\\memcmp.obj","{objpath}\\strlen.obj","{objpath}\\cpu_disp.obj",".\\target\\x86_64-pc-windows-msvc\\{cargo_preset}\\nvcore.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.sys","/SUBSYSTEM:NATIVE","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
+			"cmd":["link","{objpath}\\driver.obj","{objpath}\\version.res","{objpath}\\detour.obj","{objpath}\\hooks.obj","{objpath}\\layered.obj","{objpath}\\nvsys.obj","{objpath}\\winhvm.obj","{objpath}\\msrhook.obj","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\hvcall.obj","{objpath}\\interrupt.obj","{objpath}\\memcpy.obj","{objpath}\\memset.obj","{objpath}\\memcmp.obj","{objpath}\\strlen.obj","{objpath}\\cpu_disp.obj",".\\target\\x86_64-pc-windows-msvc\\{cargo_preset}\\nvcore.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.sys","/SUBSYSTEM:NATIVE","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb","/INTEGRITYCHECK"],
 			"dependencies":["cargo","driver","version","detour","hooks","layered","nvsys","winhvm","msrhook","svm_hv","vt_hv","hvcall","interrupt","msvcrt"]
 		},
 		"sign":

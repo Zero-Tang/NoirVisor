@@ -42,8 +42,9 @@ class PipelineInstruction:
 	
 	def post_evaluate_cancel(self):
 		for fn in self.cancel_if_intact:
-			t=os.path.getmtime(fn)
-			self.parent.mtimes[fn]=t
+			if not self.proc is None and self.proc.returncode==0:
+				t=os.path.getmtime(fn)
+				self.parent.mtimes[fn]=t
 
 	def worker(self):
 		# Evaluate if this instruction should be cancelled.
@@ -122,11 +123,22 @@ class Pipeline:
 			"cd":os.getcwd()}|os.environ|extra_vars
 		os.makedirs(self.global_variable["objpath"],exist_ok=True)
 		self.instructions:dict[str,PipelineInstruction]=dict()
+		# Load re-run conditions.
 		mtimes_fn=os.path.join("bin",self.global_variable["outdir"],"mtimes.json")
 		try:
 			self.mtimes:dict[str,float]=json.load(open(mtimes_fn)) if os.path.exists(mtimes_fn) else dict()
 		except:
 			self.mtimes=dict()
+		# Check if whole script should be re-run.
+		checklist=["pipeline.py",config,"make.py"]
+		for fn in checklist:
+			t=os.path.getmtime(fn)
+			if not fn in self.mtimes or self.mtimes[fn]!=t:
+				self.mtimes=dict()
+				break
+		for fn in checklist:
+			t=os.path.getmtime(fn)
+			self.mtimes[fn]=t
 		# Load all instructions into the pipeline.
 		for i_name in self._raw["instructions"]:
 			self.instructions[i_name]=PipelineInstruction(self,i_name,self._raw["instructions"][i_name],opt)

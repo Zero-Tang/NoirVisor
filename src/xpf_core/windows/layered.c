@@ -66,12 +66,12 @@ BOOLEAN noir_get_pfn_from_memory_slot(IN PMDL slot,IN SIZE_T offset,OUT PULONG64
 	return FALSE;
 }
 
-void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessId,IN BOOLEAN Create)
+void static NoirCreateProcessNotifyRoutine(IN PEPROCESS Process,IN HANDLE ProcessId,IN PPS_CREATE_NOTIFY_INFO CreateInfo)
 {
 	// This notify routine is the key to actively maintain the VM list.
 	// Remove any VMs that corresponding process is to be terminated.
 	// In this regard can we address the issue of resource leaks.
-	if(!Create)		// We have no interest in process creation event.
+	if(CreateInfo==NULL)		// We have no interest in process creation event.
 	{
 		// TODO: Call into the VMM to delete VM with `ProcessId`.
 	}
@@ -79,12 +79,12 @@ void static NoirCreateProcessNotifyRoutine(IN HANDLE ParentId,IN HANDLE ProcessI
 
 NTSTATUS NoirFinalizeCvmModule()
 {
-	return PsSetCreateProcessNotifyRoutine(NoirCreateProcessNotifyRoutine,TRUE);
+	return PsSetCreateProcessNotifyRoutineEx(NoirCreateProcessNotifyRoutine,TRUE);
 }
 
 NTSTATUS NoirInitializeCvmModule()
 {
-	NTSTATUS st=PsSetCreateProcessNotifyRoutine(NoirCreateProcessNotifyRoutine,FALSE);
+	NTSTATUS st=PsSetCreateProcessNotifyRoutineEx(NoirCreateProcessNotifyRoutine,FALSE);
 	if(NT_ERROR(st))
 		NoirDebugPrint("Failed to set CreateProcess notification callback! Status=0x%X\n",st);
 	// This number is required for building memslots.

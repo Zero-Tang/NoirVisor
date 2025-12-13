@@ -39,3 +39,4 @@ LONG volatile NoirAllocatedPagedPools=0;
 LONG volatile NoirAllocatedContiguousMemoryCount=0;
 LONG volatile NoirAllocatedLargePageCount=0;
 LONG64 volatile NoirMappedPhysicalMemorySize=0;
+LONG64 volatile NoirRustAllocationSize=0;

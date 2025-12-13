@@ -9,3 +9,6 @@
  * without any warranty (no matter implied warranty or merchantability
  * or fitness for a particular purpose, etc.).
  */
+
+#[allow(dead_code)] mod acpi;
+#[allow(dead_code)] mod registers;

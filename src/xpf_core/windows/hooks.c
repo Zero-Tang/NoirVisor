@@ -48,23 +48,6 @@ void NoirTeardownProtectedFile()
 	}
 }
 
-// Use exclusive locking primitive to revise protected file information.
-void NoirSetProtectedFile(IN PWSTR FileName)
-{
-	if(NoirProtectedFile)
-	{
-		KeEnterCriticalRegion();
-		if(ExAcquireResourceExclusiveLite(&NoirProtectedFile->Lock,TRUE))
-		{
-			RtlZeroMemory(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength);
-			RtlStringCbCopyW(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength,FileName);
-			RtlStringCbLengthW(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength,&NoirProtectedFile->Length);
-			ExReleaseResourceLite(&NoirProtectedFile->Lock);
-		}
-		KeLeaveCriticalRegion();
-	}
-}
-
 // Use shared locking primitive to read protected file information.
 BOOLEAN NoirIsProtectedFile(IN PWSTR FilePath)
 {
@@ -300,12 +283,6 @@ void NoirGetNtOpenProcessIndex()
 	if(p)IndexOf_NtOpenProcess=*(PULONG)((ULONG_PTR)p+INDEX_OFFSET);
 }
 
-void NoirSetProtectedPID(IN ULONG NewPID)
-{
-	// Use atomic operation for thread-safe consideration.
-	InterlockedExchange(&ProtPID,NewPID&0xFFFFFFFC);
-}
-
 // The detection algorithm is very simple: is the syscall handler located in KVASCODE section?
 BOOLEAN NoirDetectKvaShadow()
 {
@@ -352,4 +329,35 @@ BOOLEAN NoirDetectKvaShadow()
 	}
 	NoirDebugPrint("Failed to locate NT Kernel-Mode Image!\n");
 	return FALSE;
+}
+
+NTSTATUS NoirSetProtectedPidRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize)
+{
+	if(InputSize>=sizeof(ULONG))
+	{
+		// Use atomic operation for thread-safe consideration.
+		ULONG NewPID=*(PULONG)InputBuffer;
+		InterlockedExchange(&ProtPID,NewPID&0xFFFFFFFC);
+		return STATUS_SUCCESS;
+	}
+	return STATUS_BUFFER_TOO_SMALL;
+}
+
+NTSTATUS NoirSetProtectedFileRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize)
+{
+	if(NoirProtectedFile)
+	{
+		// Use exclusive locking primitive to revise protected file information.
+		KeEnterCriticalRegion();
+		if(ExAcquireResourceExclusiveLite(&NoirProtectedFile->Lock,TRUE))
+		{
+			PWSTR FileName=(PWSTR)InputBuffer;
+			RtlZeroMemory(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength);
+			RtlStringCbCopyNW(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength,FileName,InputSize);
+			RtlStringCbLengthW(NoirProtectedFile->FileName,NoirProtectedFile->MaximumLength,&NoirProtectedFile->Length);
+			ExReleaseResourceLite(&NoirProtectedFile->Lock);
+		}
+		KeLeaveCriticalRegion();
+	}
+	return STATUS_SUCCESS;
 }

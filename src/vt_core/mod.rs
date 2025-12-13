@@ -738,11 +738,22 @@ impl HypervisorEssentials for VtHypervisor
 		self.eptm.build_identity_map();
 		self.eptm.protect_allocated_pages();
 		self.eptm.protect_ci();
+		extern "C" fn subvert_processor_thunk(context:*mut c_void,processor_id:u32)
+		{
+			let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
+			let vp=hv.vcpus.get_mut(processor_id as usize);
+			info!("Subverting processor {processor_id} with Intel VT-x...");
+			match vp
+			{
+				Some(vcpu)=>vcpu.subvert(),
+				None=>panic!("Processor ID ({processor_id}) out of bounds! Check for broadcaster bugs!\n")
+			}
+		}
 		unsafe
 		{
 			nvc_store_image_info(&raw mut self.image_base,&raw mut self.image_size);
 			debug!("Base: {:p}, Size: 0x{:X}",self.image_base,self.image_size);
-			noir_generic_call(nvc_vt_subvert_processor_thunk,self as *mut Self as *mut c_void);
+			noir_generic_call(subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
 		info!("System Subversion Completed!");
 		Status::SUCCESS
@@ -750,36 +761,22 @@ impl HypervisorEssentials for VtHypervisor
 
 	fn restore_system(&mut self)->Status
 	{
+		extern "C" fn restore_processor_thunk(context:*mut c_void,processor_id:u32)
+		{
+			let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
+			let vp=hv.vcpus.get_mut(processor_id as usize);
+			info!("Processor {processor_id} entered restoration routine...");
+			match vp
+			{
+				Some(vcpu)=>vcpu.restore(),
+				None=>panic!("Processor ID ({processor_id}) out of bounds! Check for broadcaster bugs!\n")
+			}
+		}
 		unsafe
 		{
-			noir_generic_call(nvc_vt_restore_processor_thunk,self as *mut Self as *mut c_void);
+			noir_generic_call(restore_processor_thunk,self as *mut Self as *mut c_void);
 		}
 		info!("System Restoration Completed!");
 		Status::SUCCESS
-	}
-}
-
-extern "C" fn nvc_vt_subvert_processor_thunk(context:*mut c_void,processor_id:u32)
-{
-	let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
-	let vp=hv.vcpus.get_mut(processor_id as usize);
-	info!("Subverting processor {processor_id} with Intel VT-x...");
-	match vp
-	{
-		Some(vcpu)=>vcpu.subvert(),
-		None=>panic!("WTF? Processor ID out of bounds!\n")
-	}
-
-}
-
-extern "C" fn nvc_vt_restore_processor_thunk(context:*mut c_void,processor_id:u32)
-{
-	let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
-	let vp=hv.vcpus.get_mut(processor_id as usize);
-	info!("Processor {processor_id} entered restoration routine...");
-	match vp
-	{
-		Some(vcpu)=>vcpu.restore(),
-		None=>panic!("WTF? Processor ID out of bounds!\n")
 	}
 }

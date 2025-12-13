@@ -117,7 +117,6 @@ impl SvmVcpu
 		}
 		extern "C" fn try_rdmsr(ctxt:*mut c_void)
 		{
-			debug!("Context is located at {ctxt:p}!");
 			let ctxt:&mut MsrContext=unsafe{&mut *ctxt.cast()};
 			ctxt.value.write(rdmsr(ctxt.index));
 		}

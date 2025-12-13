@@ -93,158 +93,14 @@ NTSTATUS NoirDispatchIoControl(IN PDEVICE_OBJECT DeviceObject,IN PIRP Irp)
 	PVOID OutputBuffer=NoirGetOutputBuffer(Irp);
 	ULONG InputSize=irpsp->Parameters.DeviceIoControl.InputBufferLength;
 	ULONG OutputSize=irpsp->Parameters.DeviceIoControl.OutputBufferLength;
-	switch(IoCtrlCode)
+	if(IS_CTL_CODE_CUSTOM(IoCtrlCode))
 	{
-		case IOCTL_Subvert:
+		ULONG FuncCode=FUNCTION_FROM_CTL_CODE(IoCtrlCode);
+		ULONG i=FuncCode>>4,j=FuncCode&15;
+		if(i<16)
 		{
-			NoirSetProtectedPID((ULONG)(ULONG_PTR)PsGetCurrentProcessId());
-			SubversionProcess=PsGetCurrentProcess();
-			NoirBuildHypervisor();
-			NoirReportWindowsVersion();
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_Restore:
-		{
-			st=STATUS_SUCCESS;
-			if(PsGetCurrentProcess()!=SubversionProcess)
-				st=STATUS_ACCESS_DENIED;
-			else
-				NoirTeardownHypervisor();
-			break;
-		}
-		case IOCTL_SetPID:
-		{
-			st=STATUS_SUCCESS;
-			NoirSetProtectedPID(*(PULONG)InputBuffer);
-			break;
-		}
-		case IOCTL_SetVs:
-		{
-			st=STATUS_SUCCESS;
-			RtlCopyMemory(virtual_vstr,InputBuffer,12);
-			break;
-		}
-		case IOCTL_SetNs:
-		{
-			st=STATUS_SUCCESS;
-			RtlCopyMemory(virtual_nstr,InputBuffer,48);
-			break;
-		}
-		case IOCTL_SetName:
-		{
-			st=STATUS_SUCCESS;
-			NoirSetProtectedFile((PWSTR)InputBuffer);
-			break;
-		}
-		case IOCTL_CpuVs:
-		{
-			st=STATUS_SUCCESS;
-			NoirGetVendorString(OutputBuffer);
-			break;
-		}
-		case IOCTL_CpuPn:
-		{
-			st=STATUS_SUCCESS;
-			NoirGetProcessorName(OutputBuffer);
-			break;
-		}
-		case IOCTL_OsVer:
-		{
-			st=STATUS_SUCCESS;
-			NoirGetSystemVersion(OutputBuffer,OutputSize);
-			break;
-		}
-		case IOCTL_VirtCap:
-		{
-			st=STATUS_SUCCESS;
-			*(PULONG)OutputBuffer=NoirQueryVirtualizationSupportability();
-			break;
-		}
-		case IOCTL_VirtEn:
-		{
-			st=STATUS_SUCCESS;
-			*(PBOOLEAN)OutputBuffer=NoirIsVirtualizationEnabled();
-			break;
-		}
-		case IOCTL_CvmCreateVm:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmDeleteVm:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmSetMapping:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmQueryGpaAdMap:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmClearGpaAdBit:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmQueryHvStatus:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmCreateVcpu:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmDeleteVcpu:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmRunVcpu:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmViewVcpuReg:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmEditVcpuReg:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmRescindVcpu:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmInjectEvent:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmSetVcpuOptions:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		case IOCTL_CvmQueryVcpuStats:
-		{
-			st=STATUS_SUCCESS;
-			break;
-		}
-		default:
-		{
-			break;
+			IO_DISPATCH_ROUTINE DispatchFn=NoirDispatchIoGroups[i][j];
+			st=DispatchFn(InputBuffer,InputSize,OutputBuffer,OutputSize);
 		}
 	}
 	Irp->IoStatus.Information=st==STATUS_SUCCESS?OutputSize:0;
@@ -273,9 +129,7 @@ void static NoirDriverReinitialize(IN PDRIVER_OBJECT DriverObject,IN PVOID Conte
 	NoirSubvertSystemOnDriverLoad(&SubvertOnDriverLoad);
 	NoirAcpiInitialize();
 	if(SubvertOnDriverLoad)
-		if(NoirQueryVirtualizationSupportability())
-			if(NoirIsVirtualizationEnabled())
-				NoirBuildHypervisor();
+		NoirBuildHypervisor();
 }
 
 NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING RegistryPath)

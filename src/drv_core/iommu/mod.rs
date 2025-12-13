@@ -10,6 +10,8 @@
  * or fitness for a particular purpose, etc.).
  */
 
+use alloc::vec::Vec;
+
 pub mod intel;
 pub mod amd;
 
@@ -28,4 +30,6 @@ pub trait IommuOps
 	fn set_pde(&mut self,gpa:u64,hpa:u64,r:bool,w:bool,x:bool);
 	/// Map a huge page with specified permission in global page-table.
 	fn set_pdpte(&mut self,gpa:u64,hpa:u64,r:bool,w:bool,x:bool);
+	/// List all IOMMU BAR pages in order to filter I/O to them.
+	fn get_bar_pages(&self)->Vec<u64>;
 }

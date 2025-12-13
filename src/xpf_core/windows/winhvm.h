@@ -153,6 +153,8 @@ void nvc_free_all_large_pages();
 GUID EfiNoirVisorVendorGuid={0x2B1F2A1E,0xDBDF,0x44AC,0xDA,0xBC,0xC7,0xA1,0x30,0xE2,0xE7,0x1E};
 
 BOOLEAN NoirHypervisorStarted=FALSE;
+PVOID NoirProcessorChangeCallbackHandle;
 PVOID NoirPowerCallbackObject=NULL;
 PVOID NvImageBase=NULL;
 ULONG NvImageSize=0;
+PEPROCESS SubversionProcess=NULL;

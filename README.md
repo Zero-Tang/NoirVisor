@@ -195,7 +195,7 @@ You should not report security vulnerabilities through the GitHub issue. You sho
 
 # Supported Platforms
 NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. \
-Currently, NoirVisor supports the Windows Operating System newer than or same as Windows XP, running as a kernel-mode driver. \
+Currently, NoirVisor supports 64-bit Windows Operating System newer than or same as Windows 7, running as a kernel-mode driver. \
 Porting to Unified Extensible Firmware Interface (UEFI) is in progress. \
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 

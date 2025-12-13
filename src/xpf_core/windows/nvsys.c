@@ -47,6 +47,7 @@ void NoirReportMemoryIntrospectionCounter()
 	NoirDebugPrint("Unreleased Contiguous Memory Count: %d\n",NoirAllocatedContiguousMemoryCount);
 	NoirDebugPrint("Unreleased Large Parge Count: %d\n",NoirAllocatedLargePageCount);
 	NoirDebugPrint("Unreleased Mapped Physical Memory Size: 0x%llX\n",NoirMappedPhysicalMemorySize);
+	NoirDebugPrint("Unreleased Rust Pool Size: 0x%llX\n",NoirRustAllocationSize);
 	if(NoirAllocatedNonPagedPools || NoirAllocatedPagedPools || NoirAllocatedContiguousMemoryCount || NoirAllocatedLargePageCount || NoirMappedPhysicalMemorySize)
 		NoirDebugPrint("Memory Leak is detected!\n");
 	else
@@ -136,10 +137,17 @@ void* noir_kmalloc(size_t length,size_t alignment)
 	if(RequireRealignment(length,alignment))
 	{
 		PVOID p=NoirAllocateNonPagedMemory(length+alignment);
-		return PrependAlignmentPointer(p,alignment);
+		if(p==NULL)
+			return NULL;
+		else
+		{
+			InterlockedAdd64(&NoirRustAllocationSize,(LONG64)(length+alignment));
+			return PrependAlignmentPointer(p,alignment);
+		}
 	}
 	else
 	{
+		InterlockedAdd64(&NoirRustAllocationSize,(LONG64)length);
 		return NoirAllocateNonPagedMemory(length);
 	}
 }
@@ -150,29 +158,30 @@ void noir_kfree(void* ptr,size_t length,size_t alignment)
 	{
 		PVOID p=*(PVOID*)((ULONG_PTR)ptr-sizeof(PVOID));
 		NoirFreeNonPagedMemory(p);
+		InterlockedAdd64(&NoirRustAllocationSize,-((LONG64)(length+alignment)));
 	}
 	else
 	{
 		NoirFreeNonPagedMemory(ptr);
+		InterlockedAdd64(&NoirRustAllocationSize,-((LONG64)length));
 	}
 }
 
 ULONG32 noir_get_processor_count()
 {
-	KAFFINITY af;
-	return KeQueryActiveProcessorCount(&af);
+	return KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
 }
 
 ULONG32 noir_get_current_processor()
 {
-	return KeGetCurrentProcessorNumber();
+	return KeGetCurrentProcessorNumberEx(NULL);
 }
 
 void static NoirDpcRT(IN PKDPC Dpc,IN PVOID DeferedContext OPTIONAL,IN PVOID SystemArgument1 OPTIONAL,IN PVOID SystemArgument2 OPTIONAL)
 {
 	noir_broadcast_worker worker=(noir_broadcast_worker)SystemArgument1;
 	PLONG32 volatile GlobalOperatingNumber=(PLONG32)SystemArgument2;
-	ULONG Pn=KeGetCurrentProcessorNumber();
+	ULONG Pn=noir_get_current_processor();
 	worker(DeferedContext,Pn);
 	InterlockedDecrement(GlobalOperatingNumber);
 }
@@ -188,8 +197,10 @@ void noir_generic_call(noir_broadcast_worker worker,void* context)
 		*GlobalOperatingNumber=Num;
 		for(ULONG i=0;i<Num;i++)
 		{
+			PROCESSOR_NUMBER ProcNum;
+			KeGetProcessorNumberFromIndex(i,&ProcNum);
 			KeInitializeDpc(&pDpc[i],NoirDpcRT,context);
-			KeSetTargetProcessorDpc(&pDpc[i],(BYTE)i);
+			KeSetTargetProcessorDpcEx(&pDpc[i],&ProcNum);
 			KeSetImportanceDpc(&pDpc[i],HighImportance);
 			KeInsertQueueDpc(&pDpc[i],(PVOID)worker,(PVOID)GlobalOperatingNumber);
 		}

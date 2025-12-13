@@ -18,40 +18,6 @@
 #include <ntstrsafe.h>
 #include "winhvm.h"
 
-NTSTATUS NoirReportWindowsVersion()
-{
-	NTSTATUS st=STATUS_NOT_SUPPORTED;
-	int Info[4];
-	__cpuid(Info,1);
-	if(_bittest(&Info[2],31))
-	{
-		__cpuid(Info,CPUID_LEAF_HV_VENDOR_ID);
-		if(Info[0]>=CPUID_LEAF_HV_VENDOR_NEUTRAL)
-		{
-			__cpuid(Info,CPUID_LEAF_HV_VENDOR_NEUTRAL);
-			if(Info[0]=='1#vH')
-			{
-				RTL_OSVERSIONINFOEXW OsVer;
-				OsVer.dwOSVersionInfoSize=sizeof(OsVer);
-				st=RtlGetVersion((PRTL_OSVERSIONINFOW)&OsVer);
-				if(NT_SUCCESS(st))
-				{
-					HV_MSR_PROPRIETARY_GUEST_OS_ID HvMsrOsId;
-					HvMsrOsId.BuildNumber=OsVer.dwBuildNumber;
-					HvMsrOsId.ServiceVersion=OsVer.wServicePackMajor;
-					HvMsrOsId.MajorVersion=OsVer.dwMajorVersion;
-					HvMsrOsId.MinorVersion=OsVer.dwMinorVersion;
-					HvMsrOsId.OsId=HV_WINDOWS_NT_OS_ID;
-					HvMsrOsId.VendorId=HV_MICROSOFT_VENDOR_ID;
-					HvMsrOsId.OsType=0;
-					__writemsr(HV_X64_MSR_GUEST_OS_ID,HvMsrOsId.Value);
-				}
-			}
-		}
-	}
-	return st;
-}
-
 NTSTATUS NoirGetUefiHypervisionStatus()
 {
 	NTSTATUS st=STATUS_UNSUCCESSFUL;
@@ -443,23 +409,24 @@ NTSTATUS NoirGetSystemVersion(OUT PWSTR VersionString,IN ULONG VersionLength)
 	return st;
 }
 
-void NoirBuildHypervisorExpendedStackCallRT(IN PVOID Parameter OPTIONAL)
+void static NoirProcessorChangeCallback(IN PVOID CallbackContext,IN PKE_PROCESSOR_CHANGE_NOTIFY_CONTEXT ChangeContext,IN OUT PNTSTATUS OperationStatus)
 {
-	// Rust codes really cost lots of stack, especially if you did not enable optimization...
-	*(PULONG)Parameter=nvc_build_hypervisor();
+	// ProcessorChange event happened.
+	// TODO: Subvert newly-added processors.
+	if(ChangeContext->State==KeProcessorAddCompleteNotify)
+		NoirDebugPrint("TODO: Subvert newly-added processor! Number=0x%X\n",ChangeContext->NtNumber);
 }
 
 ULONG NoirBuildHypervisor()
 {
 	if(NoirHypervisorStarted==FALSE)
 	{
-		
-		ULONG r=0xFFFFFFFF;
-		NTSTATUS st=KeExpandKernelStackAndCallout(NoirBuildHypervisorExpendedStackCallRT,&r,MAXIMUM_EXPANSION_SIZE-PAGE_SIZE);
-		if(st==STATUS_SUCCESS && r==0)
+		ULONG r=nvc_build_hypervisor();
+		if(r==0)
 		{
 			NoirHypervisorStarted=TRUE;
 			NoirDebugPrint("NoirVisor CVM Initialization Status: 0x%X\n",NoirInitializeCvmModule());
+			NoirProcessorChangeCallbackHandle=KeRegisterProcessorChangeCallback(NoirProcessorChangeCallback,NULL,0);
 		}
 		return r;
 	}
@@ -471,29 +438,10 @@ void NoirTeardownHypervisor()
 	if(NoirHypervisorStarted)
 	{
 		NoirFinalizeCvmModule();
+		KeDeregisterProcessorChangeCallback(NoirProcessorChangeCallbackHandle);
 		nvc_teardown_hypervisor();
 		NoirHypervisorStarted=FALSE;
 	}
-}
-
-void NoirGetVendorString(OUT PSTR VendorString)
-{
-	noir_get_vendor_string(VendorString);
-}
-
-void NoirGetProcessorName(OUT PSTR ProcessorName)
-{
-	noir_get_processor_name(ProcessorName);
-}
-
-ULONG NoirQueryVirtualizationSupportability()
-{
-	return noir_get_virtualization_supportability();
-}
-
-BOOLEAN NoirIsVirtualizationEnabled()
-{
-	return noir_is_virtualization_enabled();
 }
 
 void NoirSaveImageInfo(IN PDRIVER_OBJECT DriverObject)
@@ -629,4 +577,71 @@ NTSTATUS NoirInitializePowerStateCallback()
 		ObDereferenceObject(pCallback);
 	}
 	return st;
+}
+
+NTSTATUS NoirUnknownIoDispatchRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize)
+{
+	return STATUS_INVALID_DEVICE_REQUEST;
+}
+
+NTSTATUS NoirBuildHypervisorRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize)
+{
+	SubversionProcess=PsGetCurrentProcess();
+	NoirBuildHypervisor();
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS NoirTeardownHypervisorRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize)
+{
+	if(PsGetCurrentProcess()==SubversionProcess)
+	{
+		NoirTeardownHypervisor();
+		return STATUS_SUCCESS;
+	}
+	return STATUS_ACCESS_DENIED;
+}
+
+NTSTATUS NoirGetCpuVendorStringRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize)
+{
+	if(OutputSize>=12)
+	{
+		noir_get_vendor_string(OutputBuffer);
+		return STATUS_SUCCESS;
+	}
+	return STATUS_BUFFER_TOO_SMALL;
+}
+
+NTSTATUS NoirGetCpuBrandStringRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize)
+{
+	if(OutputSize>=48)
+	{
+		noir_get_processor_name(OutputBuffer);
+		return STATUS_SUCCESS;
+	}
+	return STATUS_BUFFER_TOO_SMALL;
+}
+
+NTSTATUS NoirQueryVirtualizationSupportRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize)
+{
+	if(OutputSize>=sizeof(ULONG))
+	{
+		*(PULONG)OutputBuffer=noir_get_virtualization_supportability();
+		return STATUS_SUCCESS;
+	}
+	return STATUS_BUFFER_TOO_SMALL;
+}
+
+NTSTATUS NoirQueryVirtualizationEnabledRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize)
+{
+	if(OutputSize>=sizeof(BOOLEAN))
+	{
+		*(PBOOLEAN)OutputBuffer=noir_is_virtualization_enabled();
+		return STATUS_SUCCESS;
+	}
+	return STATUS_BUFFER_TOO_SMALL;
+}
+
+NTSTATUS NoirGetSystemVersionRoutine(IN PVOID InputBuffer,IN ULONG InputSize,OUT PVOID OutputBuffer,IN ULONG OutputSize)
+{
+	return NoirGetSystemVersion(OutputBuffer,OutputSize);
 }
