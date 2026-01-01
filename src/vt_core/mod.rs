@@ -20,7 +20,7 @@ use ept::VtEptManager;
 use crate::*;
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 use mshv_core::{MshvVcpuContext,MshvVcpuOps};
-use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
+use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{apic::APIC_OFFSET_TPR, caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}, rflags::RFLAGS_IF_BIT}};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
@@ -43,10 +43,23 @@ mod hvcall;
 	pub flags:u32
 }
 
+enum VtIrqInterruptibilityState
+{
+	/// Can be immediately delivered.
+	Interruptible,
+	/// Either masked by RFLAGS.IF or interrupt-shadow. \
+	/// Should wait for interrupt window.
+	MaskedByRflags,
+	/// Masked by TPR. \
+	/// Should wait for TPR-below-threshold.
+	MaskedByTpr(u8)
+}
+
 pub struct VtVcpu
 {
 	pub vmcs:MemoryDescriptor<1,c_void>,
 	pub vmxon:MemoryDescriptor<1,c_void>,
+	pub vapic:MemoryDescriptor<1,c_void>,
 	pub hv_stack:MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>,
 	pub hypervisor:*mut c_void,
 	pub ist:[MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>;8],
@@ -60,6 +73,7 @@ pub struct VtVcpu
 	pub msr_auto_host:[VmxMsrAutoItem;5],
 	pub msr_auto_guest:[VmxMsrAutoItem;5],
 	pub cached_ctxt:CachedExitContext,
+	pub irq_bmp:[u64;4],
 	// This context handles exceptions.
 	pub gs_context:PerCpuGsException
 }
@@ -72,6 +86,7 @@ impl Default for VtVcpu
 		{
 			vmcs:MemoryDescriptor::null(),
 			vmxon:MemoryDescriptor::null(),
+			vapic:MemoryDescriptor::null(),
 			hv_stack:MemoryDescriptor::null(),
 			hypervisor:null_mut(),
 			ist:[const{MemoryDescriptor::null()};8],
@@ -85,6 +100,7 @@ impl Default for VtVcpu
 			msr_auto_host:[VmxMsrAutoItem::default();5],
 			msr_auto_guest:[VmxMsrAutoItem::default();5],
 			cached_ctxt:CachedExitContext::default(),
+			irq_bmp:[0;4],
 			gs_context:PerCpuGsException::default()
 		}
 	}
@@ -146,6 +162,44 @@ impl VtVcpu
 		unsafe
 		{
 			&mut *self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast()
+		}
+	}
+
+	fn is_interruptible(&mut self,irq:u8)->VtIrqInterruptibilityState
+	{
+		let rflags=self.cached_ctxt.rflags();
+		if (rflags&(1<<RFLAGS_IF_BIT))==0
+		{
+			// Not interruptible because it's masked in rflags.
+			// trace!("Current rflags: 0x{rflags:X} and IRQ-Vector 0x{irq:X} will be masked.");
+			VtIrqInterruptibilityState::MaskedByRflags
+		}
+		else
+		{
+			// Check interruptibility.
+			let interruptibility=InterruptibilityState::from_bits(unsafe{vmread32(GUEST_INTERRUPTIBILITY_STATE).unwrap()});
+			if interruptibility.blocking_by_sti() || interruptibility.blocking_by_mov_ss()
+			{
+				// Not interruptible due to interrupt-shadow.
+				// trace!("Current Interruptibility-State: 0x{:X} and IRQ-Vector 0x{irq:X} will be masked due to interrupt-shadow.",interruptibility.into_bits());
+				VtIrqInterruptibilityState::MaskedByRflags
+			}
+			else
+			{
+				// Check TPR.
+				let required_priority=irq>>4;
+				let current_tpr=unsafe{*self.vapic.virt.byte_add(0x80).cast::<u8>()}>>4;
+				// Interruptible if required priority is higher than current TPR.
+				if required_priority>=current_tpr
+				{
+					VtIrqInterruptibilityState::Interruptible
+				}
+				else
+				{
+					trace!("Current TPR: 0x{current_tpr:X} and IRQ-Vector 0x{irq:X} will be masked.");
+					VtIrqInterruptibilityState::MaskedByTpr(required_priority)
+				}
+			}
 		}
 	}
 
@@ -288,6 +342,10 @@ impl VtVcpu
 			vmwriteptr(GUEST_CR4,state.cr4);
 			vmwriteptr(CR0_READ_SHADOW,state.cr0);
 			vmwriteptr(CR4_READ_SHADOW,state.cr4&(!CR4_VMXE as usize));
+			// CR8 is special. It's located in Virtual APIC Page.
+			*self.vapic.virt.byte_add(APIC_OFFSET_TPR).cast::<u8>()=(state.cr8 as u8)>>4;
+			// Clear CR8 to 0 in host so that External-Interrupt Exiting can work properly.
+			write_cr8(0);
 			// Save Debug Registers.
 			vmwriteptr(GUEST_DR7,state.dr7);
 			// Save Model-Specific Registers.
@@ -312,6 +370,9 @@ impl VtVcpu
 		// Setup Pin-Based VM-Execution Controls.
 		// Filter unsupported fields.
 		let pin_ctrl_msr=VmxPinBasedCtrlMsr::read(true_msr);
+		// In future implementation, we may want to enable external interrupt exiting
+		// in order to enable interrupts delivered by Intel VT-d page faults.
+		pin_ctrl.set_external_interrupt_exiting(true);
 		pin_ctrl|=pin_ctrl_msr.get_allowed0();
 		pin_ctrl&=pin_ctrl_msr.get_allowed1();
 		// Write to VMCS.
@@ -325,6 +386,7 @@ impl VtVcpu
 	{
 		// Setup Primary Processor-Based VM-Execution Controls
 		let mut proc_ctrl=VmxPrimaryProcessorControls::from_bits(0);
+		proc_ctrl.set_use_tpr_shadow(true);
 		proc_ctrl.set_use_io_bitmap(true);
 		proc_ctrl.set_use_msr_bitmap(true);
 		proc_ctrl.set_activate_secondary_controls(true);
@@ -358,6 +420,8 @@ impl VtVcpu
 		// Setup VM-Exit Controls
 		let mut exit_ctrl=VmxExitControls::from_bits(0);
 		exit_ctrl.set_save_debug_controls(true);
+		// Acknowledging interrupts on exit may reduce our effort in handling interrupts.
+		exit_ctrl.set_acknowledge_interrupt_on_exit(true);
 		exit_ctrl.set_host_address_space_size(cfg!(target_arch="x86_64"));
 		exit_ctrl.set_load_efer(true);
 		exit_ctrl.set_save_efer(true);
@@ -424,6 +488,8 @@ impl VtVcpu
 			vmwrite64(ADDRESS_OF_MSR_BITMAP,(*hv).msr_bitmap.phys);
 			vmwrite64(ADDRESS_OF_IO_BITMAP_A,(*hv).io_bitmap_a.phys);
 			vmwrite64(ADDRESS_OF_IO_BITMAP_B,(*hv).io_bitmap_b.phys);
+			vmwrite64(VIRTUAL_APIC_ADDRESS,self.vapic.phys);
+			vmwrite32(TPR_THRESHOLD,0);
 		}
 	}
 
@@ -479,7 +545,7 @@ impl VtVcpu
 								unsafe
 								{
 									nvc_vt_subvert_processor_a(self as *mut Self);
-									info!("Processor {} completed subversion!",self.vcpu_id);
+									sysdprintln!("Processor {} completed subversion!",self.vcpu_id);
 								}
 							}
 							r=>panic!("Failed to execute vmptrld! Reason: {r}")
@@ -503,7 +569,7 @@ impl VtVcpu
 			// Clear CR4.VMXE bit.
 			let cr4=read_cr4()&!CR4_VMXE;
 			write_cr4(cr4);
-			info!("Processor {} completed restoration!",self.vcpu_id);
+			sysdprintln!("Processor {} completed restoration!",self.vcpu_id);
 		}
 	}
 }
@@ -567,8 +633,37 @@ impl HypervisorCapabilities for VtHypervisor
 			let mut basic_requirement:bool=true;
 			let vt_basic=VmxBasicMsr::read();
 			let use_true_msr=vt_basic.use_true_msr();
+			let pin_sup=VmxPinBasedCtrlMsr::read(use_true_msr);
 			let pri_proc_sup=VmxPriProcCtrlMsr::read(use_true_msr);
+			let exit_sup=VmxExitCtrlMsr::read(use_true_msr);
+			let entry_sup=VmxEntryCtrlMsr::read(use_true_msr);
+			// Most of the following requirements are necessary for NoirVisor CVM feature.
+			// External-Interrupt Exiting and Interrupt-Acknowledging on Exit are required
+			// for filtering IOMMU-fault interrupts.
+			basic_requirement&=pin_sup.get_allowed1().external_interrupt_exiting();
+			basic_requirement&=pin_sup.get_allowed1().nmi_exiting();
+			basic_requirement&=pin_sup.get_allowed1().virtual_nmi();
+			basic_requirement&=pri_proc_sup.get_allowed1().interrupt_window_exiting();
+			basic_requirement&=pri_proc_sup.get_allowed1().use_tsc_offsetting();
+			basic_requirement&=pri_proc_sup.get_allowed1().hlt_exiting();
+			basic_requirement&=pri_proc_sup.get_allowed1().nmi_window_exiting();
+			basic_requirement&=pri_proc_sup.get_allowed1().unconditional_io_exiting();
+			basic_requirement&=pri_proc_sup.get_allowed1().monitor_trap_flag();
 			basic_requirement&=pri_proc_sup.get_allowed1().use_msr_bitmap();
+			basic_requirement&=exit_sup.get_allowed1().acknowledge_interrupt_on_exit();
+			basic_requirement&=exit_sup.get_allowed1().load_efer();
+			basic_requirement&=exit_sup.get_allowed1().save_efer();
+			basic_requirement&=exit_sup.get_allowed1().load_pat();
+			basic_requirement&=exit_sup.get_allowed1().save_pat();
+			basic_requirement&=entry_sup.get_allowed1().load_efer();
+			basic_requirement&=entry_sup.get_allowed1().load_pat();
+			// While NoirVisor doesn't really support being a 32-bit hypervisor,
+			// let's still put it in conditional-compilation block
+			#[cfg(target_arch="x86_64")]
+			{
+				basic_requirement&=exit_sup.get_allowed1().host_address_space_size();
+				basic_requirement&=entry_sup.get_allowed1().ia32e_mode_guest();
+			}
 			let vt_misc=VmxMiscMsr::read();
 			if pri_proc_sup.get_allowed1().activate_secondary_controls()
 			{
@@ -722,6 +817,11 @@ impl HypervisorEssentials for VtHypervisor
 			}
 			match MemoryDescriptor::alloc()
 			{
+				Some(md)=>vcpu.vapic=md,
+				None=>fail_cleanup!("Failed to allocate Virtual-APIC Page for processor {i}!")
+			}
+			match MemoryDescriptor::alloc()
+			{
 				Some(md)=>vcpu.hv_stack=md,
 				None=>fail_cleanup!("Failed to allocate hypervisor stack for processor {i}!")
 			}
@@ -741,9 +841,8 @@ impl HypervisorEssentials for VtHypervisor
 		extern "C" fn subvert_processor_thunk(context:*mut c_void,processor_id:u32)
 		{
 			let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
-			let vp=hv.vcpus.get_mut(processor_id as usize);
 			info!("Subverting processor {processor_id} with Intel VT-x...");
-			match vp
+			match hv.vcpus.get_mut(processor_id as usize)
 			{
 				Some(vcpu)=>vcpu.subvert(),
 				None=>panic!("Processor ID ({processor_id}) out of bounds! Check for broadcaster bugs!\n")
@@ -755,7 +854,7 @@ impl HypervisorEssentials for VtHypervisor
 			debug!("Base: {:p}, Size: 0x{:X}",self.image_base,self.image_size);
 			noir_generic_call(subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
-		info!("System Subversion Completed!");
+		sysdprintln!("System Subversion Completed!");
 		Status::SUCCESS
 	}
 
@@ -764,9 +863,8 @@ impl HypervisorEssentials for VtHypervisor
 		extern "C" fn restore_processor_thunk(context:*mut c_void,processor_id:u32)
 		{
 			let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
-			let vp=hv.vcpus.get_mut(processor_id as usize);
 			info!("Processor {processor_id} entered restoration routine...");
-			match vp
+			match hv.vcpus.get_mut(processor_id as usize)
 			{
 				Some(vcpu)=>vcpu.restore(),
 				None=>panic!("Processor ID ({processor_id}) out of bounds! Check for broadcaster bugs!\n")

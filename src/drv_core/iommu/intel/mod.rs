@@ -12,3 +12,9 @@
 
 #[allow(dead_code)] mod acpi;
 #[allow(dead_code)] mod registers;
+#[allow(dead_code)] mod paging;
+
+pub struct IntelIommuManager
+{
+	
+}

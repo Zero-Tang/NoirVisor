@@ -2171,3 +2171,30 @@ pub mod msr
 	pub const MSR_GS_BASE:u32=0xC0000101;
 	pub const MSR_KERNEL_GS_BASE:u32=0xC0000102;
 }
+
+pub mod apic
+{
+	pub const APIC_OFFSET_ID:usize=0x20;
+	pub const APIC_OFFSET_VERSION:usize=0x30;
+	pub const APIC_OFFSET_TPR:usize=0x80;
+	pub const APIC_OFFSET_PPR:usize=0xA0;
+	pub const APIC_OFFSET_EOI:usize=0xB0;
+	pub const APIC_OFFSET_REMOTE_READ:usize=0xC0;
+	pub const APIC_OFFSET_LDR:usize=0xD0;
+	pub const APIC_OFFSET_SVR:usize=0xF0;
+	pub const APIC_OFFSET_ISR:usize=0x100;
+	pub const APIC_OFFSET_TMR:usize=0x180;
+	pub const APIC_OFFSET_IRR:usize=0x200;
+	pub const APIC_OFFSET_ESR:usize=0x280;
+	pub const APIC_OFFSET_ICR_LO:usize=0x300;
+	pub const APIC_OFFSET_ICR_HI:usize=0x310;
+	pub const APIC_OFFSET_LVT_TIMER:usize=0x320;
+	pub const APIC_OFFSET_LVT_THERMAL:usize=0x330;
+	pub const APIC_OFFSET_LVT_PERF:usize=0x340;
+	pub const APIC_OFFSET_LVT_LINT0:usize=0x350;
+	pub const APIC_OFFSET_LVT_LINT1:usize=0x360;
+	pub const APIC_OFFSET_LVT_ERROR:usize=0x370;
+	pub const APIC_OFFSET_TIMER_INITIAL_COUNT:usize=0x380;
+	pub const APIC_OFFSET_TIMER_CURRENT_COUNT:usize=0x390;
+	pub const APIC_OFFSET_TIMER_DIVIDE_CONFIG:usize=0x3E0;
+}

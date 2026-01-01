@@ -184,7 +184,24 @@ pub fn dbg_print(args: fmt::Arguments)
 	{
 		unsafe
 		{
+			// Interrupts may cause mutex recursion, so disable interrupts.
+			// However, NMIs might still cause recursion and cause deadlocks.
+			use core::arch::asm;
+			let old_rflags:usize;
+			asm!
+			(
+				"pushfq",
+				"pop {flags}",
+				"cli",
+				flags=out(reg) old_rflags
+			);
 			noir_debug_output(w.as_bytes().as_ptr(),w.as_bytes().len());
+			asm!
+			(
+				"push {flags}",
+				"popfq",
+				flags=in(reg) old_rflags
+			);
 		}
 	}
 }

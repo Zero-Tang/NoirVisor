@@ -37,7 +37,8 @@ NoirVisor uses `cargo test` suite to test NoirVisor. However, system subversion 
 To develop test cases, you should toggle `rust-analyzer.cfg.setTest` to true in `rust-analyzer` plugin and then reload VSCode.
 
 ## Logging
-While we do provide macros like `print!` and `println!`, please use `error!`, `warn!`, `info!`, `debug!` and `trace!` macro provided by [the `log` crate](https://docs.rs/log/latest/log/).
+While we do provide macros like `print!` and `println!`, please use `error!`, `warn!`, `info!`, `debug!` and `trace!` macro provided by [the `log` crate](https://docs.rs/log/latest/log/). These logging macros are only usable in host mode. \
+However, if you wish to print logs in codes that would run in guest mode, please use `sysdprint` and `sysdprintln` macro instead. Otherwise, it may cause mutex recursion.
 
 ## VSCode Setup
 You may add a `.vscode/settings.json` file to configure the behavior of `rust-analyzer` plugin. The `.vscode/` directory is ignored by `git` so feel free to configure however you want. \

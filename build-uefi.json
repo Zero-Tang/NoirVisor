@@ -35,7 +35,7 @@
 		},
 		"NoirVisor":
 		{
-			"cmd":["link",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libuefirtdrv.a","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libnvcore.a",".\\bin\\{outdir}\\msvcrt-static.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
+			"cmd":["link","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libnvcore.a",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libuefirtdrv.a",".\\bin\\{outdir}\\msvcrt-static.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
 			"dependencies":["cargo","svm_hv","vt_hv","interrupt","msvcrt"]
 		},
 		"image":

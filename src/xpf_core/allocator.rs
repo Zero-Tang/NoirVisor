@@ -502,7 +502,7 @@ pub fn print_allocation()
 	let lk=PAGE_ALLOC_MANAGER.lock();
 	for i in 0..lk.count
 	{
-		info!("Large Page {i}: {}",lk.list[i]);
+		sysdprintln!("Large Page {i}: {}",lk.list[i]);
 	}
 }
 

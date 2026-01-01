@@ -10,14 +10,15 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_xsetbv, ffi::c_void};
+use core::{arch::x86_64::_xsetbv, ffi::c_void, hint::unreachable_unchecked};
 
 use paste::paste;
 use log::*;
 
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
+use static_collections::bitmap::RefBitmap;
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall, nvc_forward_memory_mapped_hypercall};
-use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, vt_core::hvcall::dispatch_hypercall, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, ci::is_ci_phys_page, trytask::try_task, x86::{cpuid::*, crdr::*, interrupts::{EventType, GENERAL_PROTECTION_FAULT}}}, *};
+use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, vt_core::{VtIrqInterruptibilityState, hvcall::dispatch_hypercall}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, ci::is_ci_phys_page, trytask::try_task, x86::{cpuid::*, crdr::*, interrupts::{EventType, GENERAL_PROTECTION_FAULT}}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, VtStackTop};
 
 impl VtVcpu
@@ -57,6 +58,24 @@ impl VtVcpu
 		let pat=unsafe{vmread64(GUEST_MSR_IA32_PAT).unwrap()};
 		let dbg_ctrl=unsafe{vmread64(GUEST_MSR_IA32_DEBUG_CTRL).unwrap()};
 		error!("Guest EFER: 0x{efer:X}, PAT: 0x{pat:X}, Debug-Control: 0x{dbg_ctrl:X}");
+	}
+
+	fn handle_extint(&mut self,_context:&mut VtStackTop)
+	{
+		// In future implementations, we should check the interrupt vectors so that we may filter IOMMU-induced events.
+		let int_info=VmxExitInterruptionInformation::from_bits(unsafe{vmread32(VMEXIT_INTERRUPTION_INFORMATION).unwrap()});
+		// info!("External Interrupt occured! Info: 0x{:X}",int_info.into_bits());
+		let irq_bmp:&mut RefBitmap<256>=unsafe{RefBitmap::from_raw_mut_ptr(self.irq_bmp.as_mut_ptr().cast())};
+		// Set the interrupt as pending in the bitmap.
+		match irq_bmp.set(int_info.vector() as usize)
+		{
+			Ok(b)=>if b
+			{
+				error!("Interrupt Vector {} is already set as pending!",int_info.vector());
+			}
+			// This branch is impossible to reach. Don't bother to check it.
+			Err(_)=>unsafe{unreachable_unchecked()}
+		}
 	}
 
 	fn handle_triple_fault(&mut self,_context:&mut VtStackTop)
@@ -114,6 +133,31 @@ impl VtVcpu
 			// Upon INIT, vCPU enters inactive state to wait for Startup-IPI.
 			vmwrite32(GUEST_ACTIVITY_STATE,ActivityState::WAIT_FOR_SIPI);
 		}
+	}
+
+	fn handle_sipi(&mut self,_context:&mut VtStackTop)
+	{
+		unsafe
+		{
+			let vector=vmreadptr(VMEXIT_QUALIFICATION).unwrap();
+			vmwrite16(GUEST_CS_SELECTOR,(vector<<8) as u16);
+			vmwriteptr(GUEST_CS_BASE,vector<<12);
+			vmwriteptr(GUEST_RIP,0);
+			// Startup-IPI is received. Resume to active state.
+			vmwrite32(GUEST_ACTIVITY_STATE,ActivityState::ACTIVE);
+		}
+	}
+
+	fn handle_interrupt_window(&mut self,_context:&mut VtStackTop)
+	{
+		// Cancel interrupt-window exiting.
+		unsafe
+		{
+			let mut proc_ctrl1=VmxPrimaryProcessorControls::from_bits(vmread32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS).unwrap());
+			proc_ctrl1.set_interrupt_window_exiting(false);
+			vmwrite32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,proc_ctrl1.into_bits());
+		}
+		// trace!("Cancelled interrupt-window exiting.");
 	}
 
 	fn handle_cpuid(&mut self,context:&mut VtStackTop)
@@ -371,6 +415,16 @@ impl VtVcpu
 		panic!("Invalid Auto-MSR List!");
 	}
 
+	fn handle_tpr_below_threshold(&mut self,_context:&mut VtStackTop)
+	{
+		// Clear TPR-Threshold to disable TPR-below-threshold exiting.
+		unsafe
+		{
+			vmwrite32(TPR_THRESHOLD,0);
+		}
+		trace!("Cleared TPR-Threshold.");
+	}
+
 	fn handle_ept_violation(&mut self,_context:&mut VtStackTop)
 	{
 		let gpa=unsafe{vmread64(GUEST_PHYSICAL_ADDRESS)}.unwrap();
@@ -450,7 +504,46 @@ impl VtVcpu
 	fn handle_unknown(&mut self,_context:&mut VtStackTop)
 	{
 		let exit_reason=unsafe{vmread32(VMEXIT_REASON).unwrap()};
+		info!("Unknown VM-Exit happened! Reason: {}",self.cached_ctxt.exit_reason.into_bits());
 		panic!("Unknown VM-Exit is intercepted! Exit-Reason: {} (0x{exit_reason:X})",exit_reason&0xFFFF);
+	}
+
+	fn handle_pending_interrupt(&mut self)
+	{
+		let irq_bmp:&mut RefBitmap<256>=unsafe{RefBitmap::from_raw_mut_ptr(self.irq_bmp.as_mut_ptr().cast())};
+		// Find the last set bit (highest-priority) in the bitmap.
+		if let Some(irq)=irq_bmp.search_set_backward()
+		{
+			// Check if the pending IRQ can interrupt the guest now.
+			match self.is_interruptible(irq as u8)
+			{
+				VtIrqInterruptibilityState::Interruptible=>unsafe
+				{
+					// Inject the interrupt because it's interruptible now.
+					// trace!("Injecting pending Interrupt Vector {irq} into Guest now.");
+					inject_event(irq as u8,EventType::ExternalInterrupt,None,true,0);
+					// Reset the interrupt as not pending in the bitmap.
+					irq_bmp.reset(irq).unwrap();
+				}
+				VtIrqInterruptibilityState::MaskedByRflags=>unsafe
+				{
+					// trace!("Interrupt Vector {irq} will be held pending since it's masked by RFLAGS.IF or Interrupt-Shadow.");
+					// Wait for interrupt window.
+					let mut proc_ctrl1=VmxPrimaryProcessorControls::from_bits(vmread32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS).unwrap());
+					proc_ctrl1.set_interrupt_window_exiting(true);
+					vmwrite32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,proc_ctrl1.into_bits());
+				}
+				VtIrqInterruptibilityState::MaskedByTpr(required_priority)=>
+				{
+					trace!("Interrupt Vector {irq} will be held pending since it's masked by TPR. (Required Priority: {required_priority})");
+					// Wait for TPR-below-threshold.
+					unsafe
+					{
+						vmwrite32(TPR_THRESHOLD,required_priority as u32);
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -464,6 +557,7 @@ impl VtVcpu
 	ctxt.guest_frame.return_rip=vcpu.cached_ctxt.rip;
 	let handler=dispatch_handler(vcpu.cached_ctxt.exit_reason);
 	handler(unsafe{&mut *ctxt.vcpu},ctxt);
+	vcpu.handle_pending_interrupt();
 }
 
 #[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_resume_failure(_context:*mut VtStackTop,_vmx_status:u8)
@@ -556,8 +650,11 @@ type VtExitHandler=fn(&mut VtVcpu,&mut VtStackTop);
 const VT_EXIT_HANDLERS:[VtExitHandler;VT_MAXIMUM_CODE]=
 {
 	let mut array:[VtExitHandler;VT_MAXIMUM_CODE]=[VtVcpu::handle_unknown;VT_MAXIMUM_CODE];
+	array[INTERCEPTED_EXTERNAL_INTERRUPT as usize]=VtVcpu::handle_extint;
 	array[INTERCEPTED_TRIPLE_FAULT as usize]=VtVcpu::handle_triple_fault;
 	array[INTERCEPTED_INIT_SIGNAL as usize]=VtVcpu::handle_init;
+	array[INTERCEPTED_STARTUP_IPI as usize]=VtVcpu::handle_sipi;
+	array[INTERCEPTED_INTERRUPT_WINDOW as usize]=VtVcpu::handle_interrupt_window;
 	array[INTERCEPTED_CPUID as usize]=VtVcpu::handle_cpuid;
 	array[INTERCEPTED_GETSEC as usize]=VtVcpu::handle_getsec;
 	array[INTERCEPTED_INVD as usize]=VtVcpu::handle_invd;
@@ -567,6 +664,7 @@ const VT_EXIT_HANDLERS:[VtExitHandler;VT_MAXIMUM_CODE]=
 	array[INTERCEPTED_WRMSR as usize]=VtVcpu::handle_wrmsr;
 	array[INVALID_GUEST_STATE as usize]=VtVcpu::handle_invalid_state;
 	array[MSR_LOADING_FAILURE as usize]=VtVcpu::handle_invalid_auto_msr;
+	array[TPR_BELOW_THRESHOLD as usize]=VtVcpu::handle_tpr_below_threshold;
 	array[EPT_VIOLATION as usize]=VtVcpu::handle_ept_violation;
 	array[EPT_MISCONFIGURATION as usize]=VtVcpu::handle_ept_misconfig;
 	array[INTERCEPTED_XSETBV as usize]=VtVcpu::handle_xsetbv;

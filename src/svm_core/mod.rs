@@ -606,9 +606,8 @@ impl HypervisorEssentials for SvmHypervisor
 		extern "C" fn subvert_processor_thunk(context:*mut c_void,processor_id:u32)
 		{
 			let hv:&mut SvmHypervisor=unsafe{&mut *context.cast()};
-			let vp=hv.vcpus.get_mut(processor_id as usize);
 			info!("Subverting processor {processor_id} with AMD-V...");
-			match vp
+			match hv.vcpus.get_mut(processor_id as usize)
 			{
 				Some(vcpu)=>vcpu.subvert(),
 				None=>panic!("Processor ID ({processor_id}) out of bounds! Check for broadcaster bugs!\n")
@@ -628,9 +627,8 @@ impl HypervisorEssentials for SvmHypervisor
 		extern "C" fn restore_processor_thunk(context:*mut c_void,processor_id:u32)
 		{
 			let hv=unsafe{&mut *(context as *mut SvmHypervisor)};
-			let vp=hv.vcpus.get_mut(processor_id as usize);
 			info!("Processor {processor_id} entered restoration routine...");
-			match vp
+			match hv.vcpus.get_mut(processor_id as usize)
 			{
 				Some(vcpu)=>vcpu.restore(),
 				None=>panic!("Processor ID ({processor_id}) out of bounds! Check for broadcaster bugs!\n")

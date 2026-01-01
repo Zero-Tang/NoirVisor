@@ -209,7 +209,7 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 		set_alloc_checker(true);
 		// Print out heap usage.
 		#[cfg(not(test))]
-		info!("Allocated {} large pages! heap has {} used bytes, has {} free bytes",get_large_page_count(),get_used(),get_free());
+		sysdprintln!("Allocated {} large pages! heap has {} used bytes, has {} free bytes",get_large_page_count(),get_used(),get_free());
 		print_allocation();
 		unsafe 
 		{
@@ -231,10 +231,10 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 #[allow(dead_code)]
 mod panicking
 {
-	use static_collections::{format_static, string::StaticString};
-
-	use crate::println;
 	use core::{panic::PanicInfo};
+
+	use log::error;
+	use static_collections::{format_static, string::StaticString};
 
 	#[unsafe(no_mangle)] static mut PANIC_MESSAGE:StaticString<512>=StaticString::new();
 
@@ -245,7 +245,7 @@ mod panicking
 			// Store the panic log in global variable.
 			PANIC_MESSAGE=format_static!(512,"[PANIC] NoirVisor {}",panic).unwrap();
 		}
-		println!("\x1b[91m[PANIC] NoirVisor {} \x1b[39m",panic);
+		error!("\x1b[91m[PANIC] NoirVisor {} \x1b[39m",panic);
 		loop{}
 	}
 }

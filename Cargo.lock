@@ -190,9 +190,9 @@ dependencies = [
 
 [[package]]
 name = "static-collections"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "031e203895bb071e4196fabfabffedff4e0596e8b4b593b862030cbbe4beb5e0"
+checksum = "331bc287ccc005adadde7ae05e0bd710c2aa61386d9b0a694790ec52dc49f262"
 
 [[package]]
 name = "syn"
