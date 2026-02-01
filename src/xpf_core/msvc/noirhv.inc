@@ -17,36 +17,6 @@ mach_frame_size			equ 30h
 gpr_stack_size			equ 80h
 volatile_gpr_stack_size	equ 40h
 
-; Macro for pushing volatile GPRs to stack.
-pushvq macro
-
-	sub rsp,volatile_gpr_stack_size
-	mov qword ptr [rsp+00h],rax
-	mov qword ptr [rsp+08h],rcx
-	mov qword ptr [rsp+10h],rdx
-	mov qword ptr [rsp+18h],rsp
-	add qword ptr [rsp+18h],volatile_gpr_stack_size
-	mov qword ptr [rsp+20h],r8
-	mov qword ptr [rsp+28h],r9
-	mov qword ptr [rsp+30h],r10
-	mov qword ptr [rsp+38h],r11
-
-endm
-
-; Macro for popping volatile GPRs from stack.
-popvq macro
-
-	mov rax,qword ptr [rsp+00h]
-	mov rcx,qword ptr [rsp+08h]
-	mov rdx,qword ptr [rsp+10h]
-	mov r8,qword ptr [rsp+20h]
-	mov r9,qword ptr [rsp+28h]
-	mov r10,qword ptr [rsp+30h]
-	mov r11,qword ptr [rsp+38h]
-	add rsp,volatile_gpr_stack_size
-
-endm
-
 ; Macro for NMI-blocking iret.
 nmiret macro
 
@@ -69,6 +39,29 @@ nmiret macro
 	mov rax,qword ptr [rax]		; Restore rax
 	retf						; Restore cs and rip
 
+endm
+
+; Macro for pushing volatile GPRs to stack.
+pushvq_fast macro rsp_offset
+
+	mov qword ptr [rsp+rsp_offset+00h],rax
+	.pushreg rax
+	mov qword ptr [rsp+rsp_offset+08h],rcx
+	.pushreg rcx
+	mov qword ptr [rsp+rsp_offset+10h],rdx
+	.pushreg rdx
+	mov qword ptr [rsp+rsp_offset+18h],rbx
+	.pushreg rbx
+	.allocstack 32
+	mov qword ptr [rsp+rsp_offset+40h],r8
+	.pushreg r8
+	mov qword ptr [rsp+rsp_offset+48h],r9
+	.pushreg r9
+	mov qword ptr [rsp+rsp_offset+50h],r10
+	.pushreg r10
+	mov qword ptr [rsp+rsp_offset+58h],r11
+	.pushreg r11
+	.allocstack 32
 endm
 
 ; Macro for pushing all GPRs to stack.
@@ -144,79 +137,6 @@ popaq macro
 
 endm
 
-; Macro for pushing all XMM registers onto stack
-pushax macro
-
-	sub rsp,100h
-	.allocstack 100h
-	movaps xmmword ptr [rsp+00h],xmm0
-	movaps xmmword ptr [rsp+10h],xmm1
-	movaps xmmword ptr [rsp+20h],xmm2
-	movaps xmmword ptr [rsp+30h],xmm3
-	movaps xmmword ptr [rsp+40h],xmm4
-	movaps xmmword ptr [rsp+50h],xmm5
-	movaps xmmword ptr [rsp+60h],xmm6
-	movaps xmmword ptr [rsp+70h],xmm7
-	movaps xmmword ptr [rsp+80h],xmm8
-	movaps xmmword ptr [rsp+90h],xmm9
-	movaps xmmword ptr [rsp+0A0h],xmm10
-	movaps xmmword ptr [rsp+0B0h],xmm11
-	movaps xmmword ptr [rsp+0C0h],xmm12
-	movaps xmmword ptr [rsp+0D0h],xmm13
-	movaps xmmword ptr [rsp+0E0h],xmm14
-	movaps xmmword ptr [rsp+0F0h],xmm15
-
-endm
-
-; Macro for popping all XMM registers from stack
-popax macro
-
-	movaps xmm0,xmmword ptr [rsp+00h]
-	movaps xmm1,xmmword ptr [rsp+10h]
-	movaps xmm2,xmmword ptr [rsp+20h]
-	movaps xmm3,xmmword ptr [rsp+30h]
-	movaps xmm4,xmmword ptr [rsp+40h]
-	movaps xmm5,xmmword ptr [rsp+50h]
-	movaps xmm6,xmmword ptr [rsp+60h]
-	movaps xmm7,xmmword ptr [rsp+70h]
-	movaps xmm8,xmmword ptr [rsp+80h]
-	movaps xmm9,xmmword ptr [rsp+90h]
-	movaps xmm10,xmmword ptr [rsp+0A0h]
-	movaps xmm11,xmmword ptr [rsp+0B0h]
-	movaps xmm12,xmmword ptr [rsp+0C0h]
-	movaps xmm13,xmmword ptr [rsp+0D0h]
-	movaps xmm14,xmmword ptr [rsp+0E0h]
-	movaps xmm15,xmmword ptr [rsp+0F0h]
-	add rsp,100h
-
-endm
-
-; Macro for pushing volatile XMM registers onto stack.
-pushax_volatile macro
-
-	sub rsp,60h
-	.allocstack 60h
-	movaps xmmword ptr [rsp+00h],xmm0
-	movaps xmmword ptr [rsp+10h],xmm1
-	movaps xmmword ptr [rsp+20h],xmm2
-	movaps xmmword ptr [rsp+30h],xmm3
-	movaps xmmword ptr [rsp+40h],xmm4
-	movaps xmmword ptr [rsp+50h],xmm5
-
-endm
-
-popax_volatile macro
-
-	movaps xmm0,xmmword ptr [rsp+00h]
-	movaps xmm1,xmmword ptr [rsp+10h]
-	movaps xmm2,xmmword ptr [rsp+20h]
-	movaps xmm3,xmmword ptr [rsp+30h]
-	movaps xmm4,xmmword ptr [rsp+40h]
-	movaps xmm5,xmmword ptr [rsp+50h]
-	add rsp,60h
-
-endm
-
 pushax_volatile_fast macro rsp_offset
 
 	.allocstack 70h
@@ -243,35 +163,5 @@ popax_volatile_fast macro rsp_offset
 endm
 
 else
-
-; Macro for pushing all XMM registers onto stack
-pushax macro
-
-	sub esp,80h
-	movaps xmmword ptr [esp+00h],xmm0
-	movaps xmmword ptr [esp+10h],xmm1
-	movaps xmmword ptr [esp+20h],xmm2
-	movaps xmmword ptr [esp+30h],xmm3
-	movaps xmmword ptr [esp+40h],xmm4
-	movaps xmmword ptr [esp+50h],xmm5
-	movaps xmmword ptr [esp+60h],xmm6
-	movaps xmmword ptr [esp+70h],xmm7
-
-endm
-
-; Macro for popping all XMM registers from stack
-popax macro
-
-	movaps xmm0,xmmword ptr [esp+00h]
-	movaps xmm1,xmmword ptr [esp+10h]
-	movaps xmm2,xmmword ptr [esp+20h]
-	movaps xmm3,xmmword ptr [esp+30h]
-	movaps xmm4,xmmword ptr [esp+40h]
-	movaps xmm5,xmmword ptr [esp+50h]
-	movaps xmm6,xmmword ptr [esp+60h]
-	movaps xmm7,xmmword ptr [esp+70h]
-	add esp,80h
-
-endm
 
 endif

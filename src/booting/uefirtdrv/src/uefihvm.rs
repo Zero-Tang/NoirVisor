@@ -255,12 +255,12 @@ pub fn build_hypervisor()->u32
 {
 	let st=unsafe{nvc_build_hypervisor()};
 	// Test CPUID.
-	let r=unsafe{__cpuid(1)};
+	let r=__cpuid(1);
 	if (r.ecx&0x80000000)!=0
 	{
-		let r=unsafe{__cpuid(0x40000001)};
+		let r=__cpuid(0x40000001);
 		let interface_id=unsafe{str::from_utf8_unchecked(slice::from_raw_parts((&raw const r.eax).cast(),4))};
-		let r=unsafe{__cpuid(0x40000000)};
+		let r=__cpuid(0x40000000);
 		let vendor_id=unsafe{str::from_utf8_unchecked(slice::from_raw_parts((&raw const r.ebx).cast(),12))};
 		println!("Hypervisor is detected! Maximum Leaf: 0x{:X}, Vendor: {vendor_id}, Signature: {interface_id}",r.eax);
 	}
@@ -299,7 +299,7 @@ pub fn register_exit_boot_services_event()
 	let bs=BS_TABLE.load(Ordering::Relaxed);
 	let exit_bs_guid=EVENT_GROUP_EXIT_BOOT_SERVICES;
 	// Determine the CPU vendor name and confirm what hypercall instruction will be used.
-	let r=unsafe{__cpuid(0)};
+	let r=__cpuid(0);
 	let mut vstr:[u8;12]=[0;12];
 	vstr[..4].copy_from_slice(&r.ebx.to_le_bytes());
 	vstr[4..8].copy_from_slice(&r.edx.to_le_bytes());

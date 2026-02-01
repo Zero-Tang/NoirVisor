@@ -25,10 +25,7 @@ macro_rules! build_get_reg_helper
 		{
 			#[inline] fn [<get_ $name:lower>](&self)->u64
 			{
-				unsafe
-				{
-					vmread64([<GUEST_ $name:upper>]).unwrap()
-				}
+				vmread64([<GUEST_ $name:upper>]).unwrap()
 			}
 		}
 	};
@@ -42,15 +39,12 @@ impl PageTranslationHelper for VtVcpu
 	
 	fn get_efer(&self)->u64
 	{
-		unsafe
-		{
-			vmread64(GUEST_MSR_IA32_EFER).unwrap()
-		}
+		vmread64(GUEST_MSR_IA32_EFER).unwrap()
 	}
 
 	fn is_user_mode(&self)->bool
 	{
-		let ss_ar=SegmentAccessRights::from_bits(unsafe{vmread32(GUEST_SS_ACCESS_RIGHTS).unwrap()});
+		let ss_ar=SegmentAccessRights::from_bits(vmread32(GUEST_SS_ACCESS_RIGHTS).unwrap());
 		ss_ar.dpl()==3
 	}
 
@@ -77,7 +71,7 @@ impl VtVcpu
 {
 	pub(super) fn get_current_bitness(&self)->u32
 	{
-		let cs_ar=SegmentAccessRights::from_bits(unsafe{vmread32(GUEST_CS_ACCESS_RIGHTS).unwrap()});
+		let cs_ar=SegmentAccessRights::from_bits(vmread32(GUEST_CS_ACCESS_RIGHTS).unwrap());
 		let efer=self.get_efer();
 		if (efer&MSR_EFER_LMA)==0
 		{
@@ -94,7 +88,7 @@ impl VtVcpu
 	pub(super) fn fetch_instruction(&mut self)->[u8;15]
 	{
 		let mut instruction_bytes:[u8;15]=[0;15];
-		let rip=unsafe{vmread64(GUEST_RIP).unwrap()};
+		let rip=vmread64(GUEST_RIP).unwrap();
 		let mut fault_pa:Option<u64>=None;
 		if let Err(e)=read_virtual_address(rip,self,&mut instruction_bytes,&mut fault_pa)
 		{

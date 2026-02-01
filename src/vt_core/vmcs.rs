@@ -230,46 +230,54 @@ pub struct VmcsSegment
 	{
 		paste!
 		{
-			unsafe
+			VmcsSegment
 			{
-				let sel=vmread16([<GUEST_ $name:upper _SELECTOR>]).unwrap();
-				let ar=vmread32([<GUEST_ $name:upper _ACCESS_RIGHTS>]).unwrap();
-				let lim=vmread32([<GUEST_ $name:upper _LIMIT>]).unwrap();
-				let base=vmreadptr([<GUEST_ $name:upper _BASE>]).unwrap();
-				VmcsSegment
-				{
-					selector:sel,
-					acces_rights:ar,
-					limit:lim,
-					base
-				}
+				selector:vmread16([<GUEST_ $name:upper _SELECTOR>]).unwrap(),
+				acces_rights:vmread32([<GUEST_ $name:upper _ACCESS_RIGHTS>]).unwrap(),
+				limit:vmread32([<GUEST_ $name:upper _LIMIT>]).unwrap(),
+				base:vmreadptr([<GUEST_ $name:upper _BASE>]).unwrap()
 			}
 		}
 	};
 }
 
 // Used as LazyCell-like indicators.
-#[bitfield(u64)] struct ValidExitFields
+// The cached items represented in this bitfield become invalid after VM-Exit, thus reducing the number of `vmread` to once per field.
+#[bitfield(u64)] struct CleanExitFields
 {
 	rflags:bool,
 	cs_ar:bool,
 	exit_instruction_length:bool,
-	#[bits(61)] rsvd:u64
+	interruptibility:bool,
+	#[bits(60)] rsvd:u64
+}
+
+// Used as LazyCell-like indicators.
+// The cached items represented in this bitfield are still valid after VM-Exit.
+// Can be used to reduce number of `vmwrite` to once per-field and prevent unnecessary `vmread`.
+#[bitfield(u64)] struct DirtyExitFields
+{
+	proc_ctrl1:bool,
+	interruptibility:bool,
+	#[bits(62)] rsvd:u64
 }
 
 #[derive(Default)]
 pub struct CachedExitContext
 {
-	valid_fields:ValidExitFields,
+	clean_fields:CleanExitFields,
+	dirty_fields:DirtyExitFields,
 	pub rip:u64,
 	pub rsp:u64,
 	rflags:u64,
 	cs_ar:SegmentAccessRights,
 	pub exit_reason:VmxExitReason,
-	exit_instruction_length:u32
+	interruptibility:InterruptibilityState,
+	exit_instruction_length:u32,
+	proc_ctrl1:VmxPrimaryProcessorControls
 }
 
-macro_rules! build_cache_method
+macro_rules! build_clean_method
 {
 	($name:tt,$const:expr,$type:ty,$bitness:tt)=>
 	{
@@ -277,10 +285,10 @@ macro_rules! build_cache_method
 		{
 			#[inline(always)] pub fn [<force_eval_ $name>](&mut self)
 			{
-				if !self.valid_fields.$name()
+				if !self.clean_fields.$name()
 				{
-					self.valid_fields.[<set_ $name>](true);
-					self.$name=$type::from(unsafe{[<vmread $bitness>]($const).unwrap()});
+					self.clean_fields.[<set_ $name>](true);
+					self.$name=$type::from([<vmread $bitness>]($const).unwrap());
 				}
 			}
 
@@ -293,23 +301,71 @@ macro_rules! build_cache_method
 	};
 }
 
+macro_rules! build_dirty_method
+{
+	($name:tt,$type:ty)=>
+	{
+		paste!
+		{
+			#[inline(always)] pub fn [<write_ $name>](&mut self,value:$type)
+			{
+				self.$name=value;
+				self.dirty_fields.[<set_ $name>](true);
+			}
+
+			#[inline(always)] pub fn [<get_ $name _mut>](&mut self)->&mut $type
+			{
+				self.dirty_fields.[<set_ $name>](true);
+				&mut self.$name
+			}
+		}
+	};
+	($name:tt,$type:ty,$reeval:tt)=>
+	{
+		paste!
+		{
+			#[inline(always)] pub fn [<write_ $name>](&mut self,value:$type)
+			{
+				self.$name=value;
+				self.dirty_fields.[<set_ $name>](true);
+			}
+
+			#[inline(always)] pub fn [<get_ $name _mut>](&mut self)->&mut $type
+			{
+				self.[<force_eval_ $name>]();
+				self.dirty_fields.[<set_ $name>](true);
+				&mut self.$name
+			}
+		}
+	}
+}
+
 impl CachedExitContext
 {
 	pub fn reset(&mut self)
 	{
-		self.valid_fields=ValidExitFields::new();
-		unsafe
-		{
-			// The following fields are forced to reevaluate on every VM-Exit!
-			self.rip=vmread64(GUEST_RIP).unwrap();
-			self.rsp=vmread64(GUEST_RSP).unwrap();
-			self.exit_reason=VmxExitReason::from_bits(vmread32(VMEXIT_REASON).unwrap());
-		}
+		self.clean_fields=CleanExitFields::new();
+		// The following fields are forced to reevaluate on every VM-Exit!
+		self.rip=vmread64(GUEST_RIP).unwrap();
+		self.rsp=vmread64(GUEST_RSP).unwrap();
+		self.exit_reason=VmxExitReason::from_bits(vmread32(VMEXIT_REASON).unwrap());
 	}
 
-	build_cache_method!(cs_ar,GUEST_CS_ACCESS_RIGHTS,SegmentAccessRights,32);
-	build_cache_method!(rflags,GUEST_RFLAGS,u64,64);
-	build_cache_method!(exit_instruction_length,VMEXIT_INSTRUCTION_LENGTH,u32,32);
+	pub fn flush(&mut self)
+	{
+		if self.dirty_fields.proc_ctrl1()
+		{
+			vmwrite32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,self.proc_ctrl1.0);
+		}
+		self.dirty_fields=DirtyExitFields::new();
+	}
+
+	build_clean_method!(cs_ar,GUEST_CS_ACCESS_RIGHTS,SegmentAccessRights,32);
+	build_clean_method!(rflags,GUEST_RFLAGS,u64,64);
+	build_clean_method!(exit_instruction_length,VMEXIT_INSTRUCTION_LENGTH,u32,32);
+	build_clean_method!(interruptibility,GUEST_INTERRUPTIBILITY_STATE,InterruptibilityState,32);
+	build_dirty_method!(proc_ctrl1,VmxPrimaryProcessorControls);
+	build_dirty_method!(interruptibility,InterruptibilityState,reeval);
 }
 
 impl VtVcpu
@@ -330,10 +386,9 @@ impl VtVcpu
 				let pending_de=vmreadptr(GUEST_PENDING_DEBUG_EXCEPTIONS).unwrap();
 				vmwriteptr(GUEST_PENDING_DEBUG_EXCEPTIONS,pending_de|DR6_BS as usize);
 				// Remove the interrupt shadowing.
-				let mut interruptibility=InterruptibilityState(vmread32(GUEST_INTERRUPTIBILITY_STATE).unwrap());
+				let interruptibility=self.cached_ctxt.get_interruptibility_mut();
 				interruptibility.set_blocking_by_sti(false);
 				interruptibility.set_blocking_by_mov_ss(false);
-				vmwrite32(GUEST_INTERRUPTIBILITY_STATE,interruptibility.0);
 			}
 			let cs_ar=self.cached_ctxt.cs_ar();
 			if !cs_ar.long_mode()
@@ -362,16 +417,13 @@ impl VtVcpu
 	evt.set_vector(vector);
 	evt.set_interruption_type(event_type as u32);
 	evt.set_valid(valid);
-	unsafe
+	if let Some(code)=error_code
 	{
-		if let Some(code)=error_code
-		{
-			evt.set_deliver_error_code(true);
-			vmwrite32(VMENTRY_EXCEPTION_ERROR_CODE,code);
-		}
-		vmwrite32(VMENTRY_INTERRUPTION_INFORMATION_FIELD,evt.0);
-		vmwrite32(VMENTRY_INSTRUCTION_LENGTH,length);
+		evt.set_deliver_error_code(true);
+		vmwrite32(VMENTRY_EXCEPTION_ERROR_CODE,code);
 	}
+	vmwrite32(VMENTRY_INTERRUPTION_INFORMATION_FIELD,evt.0);
+	vmwrite32(VMENTRY_INSTRUCTION_LENGTH,length);
 }
 
 impl<T:Display> Display for VmxResult<T>
@@ -734,10 +786,7 @@ macro_rules! derive_qualification_reader
 	{
 		#[inline] pub fn read()->Self
 		{
-			unsafe
-			{
-				Self::from_bits(vmread32(VMEXIT_QUALIFICATION).unwrap())
-			}
+			Self::from_bits(vmread32(VMEXIT_QUALIFICATION).unwrap())
 		}
 	};
 }

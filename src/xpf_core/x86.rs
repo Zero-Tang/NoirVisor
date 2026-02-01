@@ -1241,13 +1241,10 @@ pub mod cpuid
 		/// Do not implement this method. You must always use the provided method!
 		fn cpuid()->Self where Self:Sized
 		{
-			let r:CpuidResult=unsafe
+			let r:CpuidResult=match Self::SUBLEAF_INDEX
 			{
-				match Self::SUBLEAF_INDEX
-				{
-					Some(subleaf)=>__cpuid_count(Self::LEAF_INDEX,subleaf),
-					None=>__cpuid(Self::LEAF_INDEX)
-				}
+				Some(subleaf)=>__cpuid_count(Self::LEAF_INDEX,subleaf),
+				None=>__cpuid(Self::LEAF_INDEX)
 			};
 			let mut s:MaybeUninit<Self>=MaybeUninit::uninit();
 			unsafe
@@ -1292,13 +1289,13 @@ pub mod cpuid
 			}
 			for (i,(a,c)) in Self::LEAF_INDICES.iter().enumerate()
 			{
+				let r:CpuidResult=match c
+				{
+					Some(c)=>__cpuid_count(*a,*c),
+					None=>__cpuid(*a)
+				};
 				unsafe
 				{
-					let r:CpuidResult=match c
-					{
-						Some(c)=>__cpuid_count(*a,*c),
-						None=>__cpuid(*a)
-					};
 					s.assume_init_mut().init(i,&r);
 				}
 			}

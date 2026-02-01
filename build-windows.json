@@ -57,13 +57,13 @@
 		{
 			"cmd":["ml64"],
 			"var":{"src":".\\src\\xpf_core\\msvc\\svm_hv.asm"},
-			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\svm_hv.asm"]
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\svm_hv.asm",".\\src\\xpf_core\\msvc\\noirhv.inc"]
 		},
 		"vt_hv":
 		{
 			"cmd":["ml64"],
 			"var":{"src":".\\src\\xpf_core\\msvc\\vt_hv.asm"},
-			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\vt_hv.asm"]
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\vt_hv.asm",".\\src\\xpf_core\\msvc\\noirhv.inc"]
 		},
 		"hvcall":
 		{
@@ -75,7 +75,7 @@
 		{
 			"cmd":["ml64"],
 			"var":{"src":".\\src\\xpf_core\\msvc\\interrupt.asm"},
-			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\interrupt.asm"]
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\interrupt.asm",".\\src\\xpf_core\\msvc\\noirhv.inc"]
 		},
 		"msvcrt":
 		{

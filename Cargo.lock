@@ -96,6 +96,7 @@ dependencies = [
  "portable-dlmalloc",
  "spin",
  "static-collections",
+ "uefirtdrv",
  "yaxpeax-arch",
  "yaxpeax-x86",
 ]

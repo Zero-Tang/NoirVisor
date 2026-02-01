@@ -29,9 +29,9 @@ impl VtVcpu
 
 	fn hvcall_restore(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
 	{
-		let nrip=self.cached_ctxt.rip+unsafe{vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap() as u64};
-		let gflags=unsafe{vmreadptr(GUEST_RFLAGS)}.unwrap();
-		let gcr3=unsafe{vmreadptr(GUEST_CR3)}.unwrap() as u64;
+		let nrip=self.cached_ctxt.rip+vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap() as u64;
+		let gflags=vmreadptr(GUEST_RFLAGS).unwrap();
+		let gcr3=vmreadptr(GUEST_CR3).unwrap() as u64;
 		let gpr_state=&mut self.get_stack_top_mut().gpr_state;
 		let saved_state:GprState=GprState
 		{
@@ -53,7 +53,7 @@ impl VtVcpu
 			r15:gpr_state.r15,
 		};
 		// Switch to Restored Control Registers.
-		let gcr4=unsafe{vmreadptr(GUEST_CR4)}.unwrap() as u64;
+		let gcr4=vmreadptr(GUEST_CR4).unwrap() as u64;
 		write_cr3(gcr3);
 		write_cr4(gcr4);
 		unsafe

@@ -15,6 +15,9 @@
 // 1. alternate allocator (i.e. the `Allocator` trait)
 // 2. try-allocate (e.g.: `Box::try_new`, `Vec::try_reserve`)
 #![feature(allocator_api)]
+// For performance reasons, we may heavily rely on branch-prediction optimizations.
+#![feature(likely_unlikely)]
+#![feature(cold_path)]
 
 extern crate alloc;
 
@@ -35,6 +38,11 @@ use alloc::boxed::Box;
 use log::*;
 
 use nvcvm::status::Status;
+// We do not directly use the uefirtdrv crate by Rust's import method.
+// However, in order to link it, it must be imported.
+#[allow(unused_imports)]
+#[cfg(target_os="uefi")]
+use uefirtdrv;
 
 use xpf_core::{x86::cpuid::*, nvbdk::PAGE_4KB_SHIFT};
 pub use xpf_core::debug::*;

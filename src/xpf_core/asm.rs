@@ -313,7 +313,7 @@ pub mod cpuid
 
 	#[inline] pub fn cpuid2(ia:u32,ic:u32)->(u32,u32,u32,u32)
 	{
-		let r=unsafe{__cpuid_count(ia,ic)};
+		let r=__cpuid_count(ia,ic);
 		(r.eax,r.ebx,r.ecx,r.edx)
 	}
 }
@@ -443,7 +443,7 @@ pub mod svm
 
 pub mod vt
 {
-	use core::{arch::asm,fmt::*};
+	use core::{arch::{asm, naked_asm},fmt::*,mem::MaybeUninit};
 	const VM_INSTRUCTION_ERROR:usize=0x4400;
 
 	pub struct EmptyUnit(pub ());
@@ -463,7 +463,7 @@ pub mod vt
 			match $e
 			{
 				0=>VmxResult::Ok($v),
-				1=>VmxResult::Err(vmread32(VM_INSTRUCTION_ERROR).unwrap()),
+				1=>VmxResult::Err(unsafe{asm_vmread_unchecked(VM_INSTRUCTION_ERROR) as u32}),
 				2=>VmxResult::NoVmcs,
 				_=>panic!("Unexpected VMX Fail Flag: {}!",$e)
 			}
@@ -488,8 +488,8 @@ pub mod vt
 				zf=out(reg_byte) _,
 				cf=out(reg_byte) vmx_err
 			);
-			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 		}
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 	}
 
 	/// ## Safety
@@ -509,8 +509,8 @@ pub mod vt
 				zf=out(reg_byte) _,
 				cf=out(reg_byte) vmx_err
 			);
-			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 		}
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 	}
 
 	/// ## Safety
@@ -529,8 +529,8 @@ pub mod vt
 				zf=out(reg_byte) _,
 				cf=out(reg_byte) vmx_err
 			);
-			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 		}
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 	}
 
 	/// ## Safety
@@ -550,8 +550,8 @@ pub mod vt
 				zf=out(reg_byte) _,
 				cf=out(reg_byte) vmx_err
 			);
-			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 		}
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 	}
 
 	/// ## Safety
@@ -571,8 +571,8 @@ pub mod vt
 				zf=out(reg_byte) _,
 				cf=out(reg_byte) vmx_err
 			);
-			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 		}
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 	}
 
 	/// ## Safety
@@ -593,8 +593,8 @@ pub mod vt
 				zf=out(reg_byte) _,
 				cf=out(reg_byte) vmx_err
 			);
-			dispatch_vmx_result!(vmx_err,vmcs_phys)
 		}
+		dispatch_vmx_result!(vmx_err,vmcs_phys)
 	}
 
 	/// ## Safety
@@ -613,50 +613,56 @@ pub mod vt
 				zf=out(reg_byte) _,
 				cf=out(reg_byte) vmx_err
 			);
-			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 		}
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+	}
+
+	#[unsafe(naked)] pub extern "win64" fn asm_vmread(field:usize,value:*mut usize)->u8
+	{
+		naked_asm!
+		(
+			// Avoid using memory-operand to improve nested virtualization performance.
+			"vmread rax,rcx",
+			"mov [rdx],rax",
+			"setc al",
+			"setz cl",
+			"adc al,cl",
+			"ret"
+		)
+	}
+
+	#[unsafe(naked)] pub extern "win64" fn asm_vmwrite(field:usize,value:usize)->u8
+	{
+		naked_asm!
+		(
+			"vmwrite rcx,rdx",
+			"setc al",
+			"setz cl",
+			"adc al,cl",
+			"ret"
+		)
 	}
 
 	/// ## Safety
-	/// The `vmcs_phys` is a raw pointer to the physical address of VMCS.
-	#[inline] unsafe fn vmread(field:usize,value:*mut usize)->u8
+	/// This routine does not check if vmread is successful.
+	#[unsafe(naked)] pub unsafe extern "win64" fn asm_vmread_unchecked(field:usize)->usize
 	{
-		let vmx_err:u8;
-		unsafe
-		{
-			asm!
-			(
-				"vmread [{value}],{field}",
-				"setc {cf}",
-				"setz {zf}",
-				"adc {cf},{zf}",
-				field=in(reg) field,
-				value=in(reg) value,
-				zf=out(reg_byte) _,
-				cf=out(reg_byte) vmx_err
-			);
-			vmx_err
-		}
+		naked_asm!
+		(
+			"vmread rax,rcx",
+			"ret"
+		)
 	}
 
-	#[inline] unsafe fn vmwrite(field:usize,value:*const usize)->u8
+	/// ## Safety
+	/// This routine does not check if vmwrite is successful.
+	#[unsafe(naked)] pub unsafe extern "win64" fn asm_vmwrite_unchecked(field:usize,value:usize)
 	{
-		let vmx_err:u8;
-		unsafe
-		{
-			asm!
-			(
-				"vmwrite {field},[{value}]",
-				"setc {cf}",
-				"setz {zf}",
-				"adc {cf},{zf}",
-				field=in(reg) field,
-				value=in(reg) value,
-				zf=out(reg_byte) _,
-				cf=out(reg_byte) vmx_err
-			);
-			vmx_err
-		}
+		naked_asm!
+		(
+			"vmwrite rcx,rdx",
+			"ret"
+		)
 	}
 
 	const INVEPT_SINGLE:usize=1;
@@ -705,8 +711,8 @@ pub mod vt
 				zf=out(reg_byte) _,
 				cf=out(reg_byte) vmx_err
 			);
-			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 		}
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 	}
 
 	const INVVPID_INDIVIDUAL_ADDRESS:usize=0;
@@ -763,8 +769,8 @@ pub mod vt
 				zf=out(reg_byte) _,
 				cf=out(reg_byte) vmx_err
 			);
-			dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 		}
+		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
 	}
 	
 	// Unfortunately, we won't be able to abuse generics to read/write VMCS...
@@ -793,9 +799,9 @@ pub mod vt
 		($f:tt,$t:ty) =>
 		{
 			{
-				let mut v:usize=0;
-				let r=vmread($f,&raw mut v);
-				dispatch_vmx_result!(r,(v as $t))
+				let mut v:MaybeUninit<usize>=MaybeUninit::uninit();
+				let r=asm_vmread($f,v.as_mut_ptr());
+				dispatch_vmx_result!(r,(unsafe{v.assume_init()} as $t))
 			}
 		};
 	}
@@ -805,118 +811,77 @@ pub mod vt
 		($f:tt,$v:tt) =>
 		{
 			{
-				let v=$v as usize;
-				let r=vmwrite($f,&raw const v);
+				let r=asm_vmwrite($f,$v as usize);
 				dispatch_vmx_result!(r,EmptyUnit(()))
 			}
 		};
 	}
 	
-	/// ## Safety
-	/// Understand what this field means.
-	#[inline] pub unsafe fn vmread16(field:usize)->VmxResult<u16>
+	#[inline] pub fn vmread16(field:usize)->VmxResult<u16>
 	{
-		unsafe
-		{
-			vmread_proc!(field,u16)
-		}
+		vmread_proc!(field,u16)
 	}
 	
-	/// ## Safety
-	/// Understand what this field means.
-	#[inline] pub unsafe fn vmread32(field:usize)->VmxResult<u32>
+	#[inline] pub fn vmread32(field:usize)->VmxResult<u32>
 	{
-		unsafe
-		{
-			vmread_proc!(field,u32)
-		}
+		vmread_proc!(field,u32)
 	}
 	
-	/// ## Safety
-	/// Understand what this field means.
-	#[inline] pub unsafe fn vmreadptr(field:usize)->VmxResult<usize>
+	#[inline] pub fn vmreadptr(field:usize)->VmxResult<usize>
 	{
-		unsafe
-		{
-			vmread_proc!(field,usize)
-		}
+		vmread_proc!(field,usize)
 	}
 	
-	/// ## Safety
-	/// Understand what this field means.
-	#[inline] pub unsafe fn vmread64(field:usize)->VmxResult<u64>
+	#[inline] pub fn vmread64(field:usize)->VmxResult<u64>
 	{
-		unsafe
+		#[cfg(target_arch="x86_64")]
 		{
-			#[cfg(target_arch="x86_64")]
+			vmread_proc!(field,u64)
+		}
+		#[cfg(not(target_arch="x86_64"))]
+		match vmread32(field)
+		{
+			VmxResult::Ok(v1)=>
 			{
-				vmread_proc!(field,u64)
-			}
-			#[cfg(not(target_arch="x86_64"))]
-			match vmread32(field)
-			{
-				VmxResult::Ok(v1)=>
+				match vmread32(field+1)
 				{
-					match vmread32(field+1)
-					{
-						VmxResult::Ok(v2)=>VmxResult::Ok((v1 as u64)|((v2 as u64)<<32)),
-						VmxResult::Err(e)=>VmxResult::Err(e),
-						VmxResult::NoVmcs=>VmxResult::NoVmcs
-					}
+					VmxResult::Ok(v2)=>VmxResult::Ok((v1 as u64)|((v2 as u64)<<32)),
+					VmxResult::Err(e)=>VmxResult::Err(e),
+					VmxResult::NoVmcs=>VmxResult::NoVmcs
 				}
-				VmxResult::Err(e)=>VmxResult::Err(e),
-				VmxResult::NoVmcs=>VmxResult::NoVmcs
 			}
+			VmxResult::Err(e)=>VmxResult::Err(e),
+			VmxResult::NoVmcs=>VmxResult::NoVmcs
 		}
 	}
 	
-	/// ## Safety
-	/// Understand what this field means.
-	#[inline] pub unsafe fn vmwrite16(field:usize,value:u16)->VmxResult<EmptyUnit>
+	#[inline] pub fn vmwrite16(field:usize,value:u16)->VmxResult<EmptyUnit>
 	{
-		unsafe
+		vmwrite_proc!(field,value)
+	}
+	
+	#[inline] pub fn vmwrite32(field:usize,value:u32)->VmxResult<EmptyUnit>
+	{
+		vmwrite_proc!(field,value)
+	}
+	
+	#[inline] pub fn vmwriteptr(field:usize,value:usize)->VmxResult<EmptyUnit>
+	{
+		vmwrite_proc!(field,value)
+	}
+	
+	#[inline] pub fn vmwrite64(field:usize,value:u64)->VmxResult<EmptyUnit>
+	{
+		#[cfg(target_arch="x86_64")]
 		{
 			vmwrite_proc!(field,value)
 		}
-	}
-	
-	/// ## Safety
-	/// Understand what this field means.
-	#[inline] pub unsafe fn vmwrite32(field:usize,value:u32)->VmxResult<EmptyUnit>
-	{
-		unsafe
+		#[cfg(not(target_arch="x86_64"))]
+		match vmwrite32(field,value as u32)
 		{
-			vmwrite_proc!(field,value)
-		}
-	}
-	
-	/// ## Safety
-	/// Understand what this field means.
-	#[inline] pub unsafe fn vmwriteptr(field:usize,value:usize)->VmxResult<EmptyUnit>
-	{
-		unsafe
-		{
-			vmwrite_proc!(field,value)
-		}
-	}
-	
-	/// ## Safety
-	/// Understand what this field means.
-	#[inline] pub unsafe fn vmwrite64(field:usize,value:u64)->VmxResult<EmptyUnit>
-	{
-		unsafe
-		{
-			#[cfg(target_arch="x86_64")]
-			{
-				vmwrite_proc!(field,value)
-			}
-			#[cfg(not(target_arch="x86_64"))]
-			match vmwrite32(field,value as u32)
-			{
-				VmxResult::Ok(EmptyUnit(()))=>vmwrite32(field+1,(value>>32) as u32),
-				VmxResult::Err(e)=>VmxResult::Err(e),
-				VmxResult::NoVmcs=>VmxResult::NoVmcs
-			}
+			VmxResult::Ok(EmptyUnit(()))=>vmwrite32(field+1,(value>>32) as u32),
+			VmxResult::Err(e)=>VmxResult::Err(e),
+			VmxResult::NoVmcs=>VmxResult::NoVmcs
 		}
 	}
 }

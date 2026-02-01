@@ -10,19 +10,19 @@
 		{
 			"cmd":["ml64"],
 			"var":{"src":".\\src\\xpf_core\\msvc\\svm_hv.asm"},
-			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\svm_hv.asm"]
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\svm_hv.asm",".\\src\\xpf_core\\msvc\\noirhv.inc"]
 		},
 		"vt_hv":
 		{
 			"cmd":["ml64"],
 			"var":{"src":".\\src\\xpf_core\\msvc\\vt_hv.asm"},
-			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\vt_hv.asm"]
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\vt_hv.asm",".\\src\\xpf_core\\msvc\\noirhv.inc"]
 		},
 		"interrupt":
 		{
 			"cmd":["ml64"],
 			"var":{"src":".\\src\\xpf_core\\msvc\\interrupt.asm"},
-			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\interrupt.asm"]
+			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\interrupt.asm",".\\src\\xpf_core\\msvc\\noirhv.inc"]
 		},
 		"msvcrt":
 		{
@@ -35,7 +35,7 @@
 		},
 		"NoirVisor":
 		{
-			"cmd":["link","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libnvcore.a",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libuefirtdrv.a",".\\bin\\{outdir}\\msvcrt-static.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
+			"cmd":["link","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libnvcore.a",".\\bin\\{outdir}\\msvcrt-static.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
 			"dependencies":["cargo","svm_hv","vt_hv","interrupt","msvcrt"]
 		},
 		"image":

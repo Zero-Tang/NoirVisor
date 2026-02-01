@@ -36,7 +36,7 @@ fn print_cpu_info()
 {
 	let mut vstr:[u8;12]=[0;12];
 	let mut pstr:[u8;0x31]=[0;0x31];
-	let r=unsafe{__cpuid(0)};
+	let r=__cpuid(0);
 	vstr[0..4].copy_from_slice(&r.ebx.to_le_bytes());
 	vstr[4..8].copy_from_slice(&r.edx.to_le_bytes());
 	vstr[8..12].copy_from_slice(&r.ecx.to_le_bytes());
@@ -44,7 +44,7 @@ fn print_cpu_info()
 	println!("Processor Vendor: {s}");
 	for i in 0..3
 	{
-		let r=unsafe{__cpuid(0x80000002+i as u32)};
+		let r=__cpuid(0x80000002+i as u32);
 		pstr[(i<<4)..((i<<4)+4)].copy_from_slice(&r.eax.to_le_bytes());
 		pstr[((i<<4)+0x4)..((i<<4)+0x8)].copy_from_slice(&r.ebx.to_le_bytes());
 		pstr[((i<<4)+0x8)..((i<<4)+0xC)].copy_from_slice(&r.ecx.to_le_bytes());

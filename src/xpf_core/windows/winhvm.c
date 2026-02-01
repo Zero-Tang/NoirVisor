@@ -417,17 +417,26 @@ void static NoirProcessorChangeCallback(IN PVOID CallbackContext,IN PKE_PROCESSO
 		NoirDebugPrint("TODO: Subvert newly-added processor! Number=0x%X\n",ChangeContext->NtNumber);
 }
 
+void static NoirBuildHypervisorExpandedStackCall(IN PVOID Parameter OPTIONAL)
+{
+	PULONG r=(PULONG)Parameter;
+	*r=nvc_build_hypervisor();
+	if(*r==0)
+	{
+		NoirHypervisorStarted=TRUE;
+		NoirDebugPrint("NoirVisor CVM Initialization Status: 0x%X\n",NoirInitializeCvmModule());
+		NoirProcessorChangeCallbackHandle=KeRegisterProcessorChangeCallback(NoirProcessorChangeCallback,NULL,0);
+	}
+}
+
 ULONG NoirBuildHypervisor()
 {
 	if(NoirHypervisorStarted==FALSE)
 	{
-		ULONG r=nvc_build_hypervisor();
-		if(r==0)
-		{
-			NoirHypervisorStarted=TRUE;
-			NoirDebugPrint("NoirVisor CVM Initialization Status: 0x%X\n",NoirInitializeCvmModule());
-			NoirProcessorChangeCallbackHandle=KeRegisterProcessorChangeCallback(NoirProcessorChangeCallback,NULL,0);
-		}
+		ULONG r;
+		// Unoptimized Rust codes may cause stack overflow.
+		NTSTATUS st=KeExpandKernelStackAndCalloutEx(NoirBuildHypervisorExpandedStackCall,(PVOID)&r,MAXIMUM_EXPANSION_SIZE-0x10,TRUE,NULL);
+		NoirDebugPrint("KeExpandKernelStackAndCalloutEx Status: 0x%X\n",st);
 		return r;
 	}
 	return 0;

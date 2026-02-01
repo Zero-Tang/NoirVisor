@@ -73,21 +73,3 @@ unsafe extern "C"
 	test_ci();
 	Status::SUCCESS
 }
-
-// Panic handler is required for no_std crates. But it is NOT FOR tests!
-// Put it under non-test conditional-compilation, or otherwise
-// the rust-analyzer of VSCode will report duplicate panic_impl.
-
-#[cfg(not(test))]
-mod panicking
-{
-	use crate::{host::set_console_color, println};
-	use core::panic::PanicInfo;
-
-	#[panic_handler] fn panic(panic: &PanicInfo)->!
-	{
-		set_console_color(0xC);		// Toggle to red foreground.
-		println!("[PANIC] NoirVisor UEFI-RT-Driver {}",panic);
-		loop{}
-	}
-}

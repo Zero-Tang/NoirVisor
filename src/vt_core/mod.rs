@@ -11,6 +11,7 @@
  */
 
 use alloc::vec::Vec;
+use bitfield_struct::bitfield;
 use static_collections::bitmap::RefBitmap;
 use core::{ffi::c_void, ptr::null_mut};
 
@@ -29,6 +30,29 @@ mod hvcall;
 #[allow(dead_code)] mod ept;
 #[allow(dead_code)] mod decode;
 
+#[bitfield(u32)] pub struct VtStackContextFlags
+{
+	/// If set, use vmlaunch upon next VM-Entry. Otherwise, use vmresume.
+	pub use_vmlaunch:bool,
+	#[bits(28)] rsvd:u32,
+	/// If set, the available context is specified in `request_full_context` field. \
+	/// If reset, this is phase 1 and only volatile registers are available.
+	pub in_phase2:bool,
+	/// If Phase I cannot handle this VM-Exit, go to Phase II so that more contexts are available.
+	/// - 0: Phase I can handle this VM-Exit. No need to go to Phase II.
+	/// - 1: Phase I cannot handle this VM-Exit. It requires all GPRs in Phase II.
+	/// - 2: Phase I cannot handle this VM-Exit. In addition to all GPRs, XSAVE-state is also required in Phase II.
+	/// - 3: Reserved.
+	#[bits(2)] pub request_full_context:usize
+}
+
+impl VtStackContextFlags
+{
+	pub const REQUEST_VOLATILE_REGISTERS:u32=0;
+	pub const REQUEST_ALL_GPR:u32=1;
+	pub const REQUEST_FULL_CONTEXT:u32=2;
+}
+
 #[repr(C)] pub struct VtStackTop
 {
 	pub arg_home:[u64;4],
@@ -40,7 +64,7 @@ mod hvcall;
 	pub nested_vcpu:*mut c_void,	// NOT IMPLEMENTED IN RUST
 	pub proc_id:u32,
 	// This flag indicates whether the assembly code should use vmlaunch or vmresume.
-	pub flags:u32
+	pub flags:VtStackContextFlags
 }
 
 enum VtIrqInterruptibilityState
@@ -177,11 +201,11 @@ impl VtVcpu
 		else
 		{
 			// Check interruptibility.
-			let interruptibility=InterruptibilityState::from_bits(unsafe{vmread32(GUEST_INTERRUPTIBILITY_STATE).unwrap()});
+			let interruptibility=self.cached_ctxt.interruptibility();
 			if interruptibility.blocking_by_sti() || interruptibility.blocking_by_mov_ss()
 			{
 				// Not interruptible due to interrupt-shadow.
-				// trace!("Current Interruptibility-State: 0x{:X} and IRQ-Vector 0x{irq:X} will be masked due to interrupt-shadow.",interruptibility.into_bits());
+				trace!("Current Interruptibility-State: 0x{:X} and IRQ-Vector 0x{irq:X} will be masked due to interrupt-shadow.",interruptibility.into_bits());
 				VtIrqInterruptibilityState::MaskedByRflags
 			}
 			else
@@ -190,13 +214,13 @@ impl VtVcpu
 				let required_priority=irq>>4;
 				let current_tpr=unsafe{*self.vapic.virt.byte_add(0x80).cast::<u8>()}>>4;
 				// Interruptible if required priority is higher than current TPR.
-				if required_priority>=current_tpr
+				if required_priority>current_tpr
 				{
 					VtIrqInterruptibilityState::Interruptible
 				}
 				else
 				{
-					trace!("Current TPR: 0x{current_tpr:X} and IRQ-Vector 0x{irq:X} will be masked.");
+					// trace!("Current TPR: 0x{current_tpr:X} and IRQ-Vector 0x{irq:X} will be masked.");
 					VtIrqInterruptibilityState::MaskedByTpr(required_priority)
 				}
 			}
@@ -228,9 +252,9 @@ impl VtVcpu
 
 	fn setup_host_state_area(&mut self,state:&ProcessorState)
 	{
-		unsafe
+		let hv:*const VtHypervisor=self.hypervisor.cast();
+		let (gdt_base,idt_base,stack)=unsafe
 		{
-			let hv:*const VtHypervisor=self.hypervisor.cast();
 			let stack:*mut VtStackTop=self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast();
 			// Setup Host State.
 			let mut ist:[*mut c_void;8]=[null_mut();8];
@@ -243,12 +267,7 @@ impl VtVcpu
 			(*stack).custom_vcpu=null_mut();
 			(*stack).nested_vcpu=null_mut();
 			(*stack).proc_id=self.vcpu_id;
-			(*stack).flags=0;
-			// Load them into VMCS.
-			vmwriteptr(HOST_GDTR_BASE,gdtr.base as usize);
-			vmwriteptr(HOST_IDTR_BASE,idtr.base as usize);
-			vmwrite16(HOST_TR_SELECTOR,self.host_cpu.tr_sel);
-			vmwriteptr(HOST_TR_BASE,&raw const self.host_cpu.tss as usize);
+			(*stack).flags=VtStackContextFlags::from_bits(0);
 			// Also load into host now.
 			write_idtr(&raw const idtr);
 			write_gdtr(&raw const gdtr);
@@ -256,112 +275,118 @@ impl VtVcpu
 			write_cr3((*hv).host.paging.cr3.phys);
 			// Test IDT.
 			// xpf_core::asm::misc::ud2();
-			// Host State Area - Segment Selectors
-			vmwrite16(HOST_CS_SELECTOR,state.cs.selector&SELECTOR_RPLTI_MASK);
-			vmwrite16(HOST_DS_SELECTOR,state.ds.selector&SELECTOR_RPLTI_MASK);
-			vmwrite16(HOST_ES_SELECTOR,state.es.selector&SELECTOR_RPLTI_MASK);
-			vmwrite16(HOST_FS_SELECTOR,state.fs.selector&SELECTOR_RPLTI_MASK);
-			vmwrite16(HOST_GS_SELECTOR,state.gs.selector&SELECTOR_RPLTI_MASK);
-			vmwrite16(HOST_SS_SELECTOR,state.ss.selector&SELECTOR_RPLTI_MASK);
-			// Host State Area - Segment Bases
-			vmwriteptr(HOST_FS_BASE,state.fs.base as usize);
-			vmwriteptr(HOST_GS_BASE,&raw mut self.gs_context as usize);
-			// Host State Area - Control Registers
-			let cr0=(state.cr0|rdmsr(MSR_VMX_CR0_FIXED0) as usize)&rdmsr(MSR_VMX_CR0_FIXED1) as usize;
-			let cr4=(state.cr4|rdmsr(MSR_VMX_CR4_FIXED0) as usize)&rdmsr(MSR_VMX_CR4_FIXED1) as usize;
-			vmwriteptr(HOST_CR0,cr0);
-			vmwriteptr(HOST_CR3,(*hv).host.paging.cr3.phys as usize);
-			vmwriteptr(HOST_CR4,cr4&!(CR4_CET as usize));
-			vmwrite64(HOST_MSR_IA32_EFER,state.efer);
-			// Host State Area - Stack Pointer, Instruction Pointer
-			vmwriteptr(HOST_RSP,stack as usize);
-			vmwriteptr(HOST_RIP,nvc_vt_exit_handler_a as *const c_void as usize);
-		}
+			(idtr.base,gdtr.base,stack)
+		};
+		// Load them into VMCS.
+		vmwriteptr(HOST_GDTR_BASE,gdt_base as usize);
+		vmwriteptr(HOST_IDTR_BASE,idt_base as usize);
+		vmwrite16(HOST_TR_SELECTOR,self.host_cpu.tr_sel);
+		vmwriteptr(HOST_TR_BASE,&raw const self.host_cpu.tss as usize);
+		// Host State Area - Segment Selectors
+		vmwrite16(HOST_CS_SELECTOR,state.cs.selector&SELECTOR_RPLTI_MASK);
+		vmwrite16(HOST_DS_SELECTOR,state.ds.selector&SELECTOR_RPLTI_MASK);
+		vmwrite16(HOST_ES_SELECTOR,state.es.selector&SELECTOR_RPLTI_MASK);
+		vmwrite16(HOST_FS_SELECTOR,state.fs.selector&SELECTOR_RPLTI_MASK);
+		vmwrite16(HOST_GS_SELECTOR,state.gs.selector&SELECTOR_RPLTI_MASK);
+		vmwrite16(HOST_SS_SELECTOR,state.ss.selector&SELECTOR_RPLTI_MASK);
+		// Host State Area - Segment Bases
+		vmwriteptr(HOST_FS_BASE,state.fs.base as usize);
+		vmwriteptr(HOST_GS_BASE,&raw mut self.gs_context as usize);
+		// Host State Area - Control Registers
+		let cr0=(state.cr0|rdmsr(MSR_VMX_CR0_FIXED0) as usize)&rdmsr(MSR_VMX_CR0_FIXED1) as usize;
+		let cr4=(state.cr4|rdmsr(MSR_VMX_CR4_FIXED0) as usize)&rdmsr(MSR_VMX_CR4_FIXED1) as usize;
+		vmwriteptr(HOST_CR0,cr0);
+		vmwriteptr(HOST_CR3,unsafe{(*hv).host.paging.cr3.phys} as usize);
+		vmwriteptr(HOST_CR4,cr4&!(CR4_CET as usize));
+		vmwrite64(HOST_MSR_IA32_EFER,state.efer);
+		// Host State Area - Stack Pointer, Instruction Pointer
+		vmwriteptr(HOST_RSP,stack as usize);
+		vmwriteptr(HOST_RIP,nvc_vt_exit_handler_a as *const c_void as usize);
 	}
 
 	fn setup_guest_state_area(&self,state:&ProcessorState,gsp:usize)
 	{
+		// Guest State Area - CS Segment
+		vmwrite16(GUEST_CS_SELECTOR,state.cs.selector);
+		vmwrite32(GUEST_CS_LIMIT,state.cs.limit);
+		vmwrite32(GUEST_CS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.cs.selector,state.cs.attrib).into_bits());
+		vmwriteptr(GUEST_CS_BASE,state.cs.base as usize);
+		// Guest State Area - DS Segment
+		vmwrite16(GUEST_DS_SELECTOR,state.ds.selector);
+		vmwrite32(GUEST_DS_LIMIT,state.ds.limit);
+		vmwrite32(GUEST_DS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.ds.selector,state.ds.attrib).into_bits());
+		vmwriteptr(GUEST_DS_BASE,state.ds.base as usize);
+		// Guest State Area - ES Segment
+		vmwrite16(GUEST_ES_SELECTOR,state.es.selector);
+		vmwrite32(GUEST_ES_LIMIT,state.es.limit);
+		vmwrite32(GUEST_ES_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.es.selector,state.es.attrib).into_bits());
+		vmwriteptr(GUEST_ES_BASE,state.es.base as usize);
+		// Guest State Area - FS Segment
+		vmwrite16(GUEST_FS_SELECTOR,state.fs.selector);
+		vmwrite32(GUEST_FS_LIMIT,state.fs.limit);
+		vmwrite32(GUEST_FS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.fs.selector,state.fs.attrib).into_bits());
+		vmwriteptr(GUEST_FS_BASE,state.fs.base as usize);
+		// Guest State Area - GS Segment
+		vmwrite16(GUEST_GS_SELECTOR,state.gs.selector);
+		vmwrite32(GUEST_GS_LIMIT,state.gs.limit);
+		vmwrite32(GUEST_GS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.gs.selector,state.gs.attrib).into_bits());
+		vmwriteptr(GUEST_GS_BASE,state.gs.base as usize);
+		// Guest State Area - SS Segment
+		vmwrite16(GUEST_SS_SELECTOR,state.ss.selector);
+		vmwrite32(GUEST_SS_LIMIT,state.ss.limit);
+		vmwrite32(GUEST_SS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.ss.selector,state.ss.attrib).into_bits());
+		vmwriteptr(GUEST_SS_BASE,state.ss.base as usize);
+		// Guest State Area - TR Segment
+		vmwrite16(GUEST_TR_SELECTOR,state.tr.selector);
+		vmwrite32(GUEST_TR_LIMIT,state.tr.limit);
+		let tr_ar=if cfg!(target_os="uefi")
+		{
+			0x8B
+		}
+		else
+		{
+			SegmentAccessRights::from_raw(state.tr.selector,state.tr.attrib).into_bits()
+		};
+		vmwrite32(GUEST_TR_ACCESS_RIGHTS,tr_ar);
+		vmwriteptr(GUEST_TR_BASE,state.tr.base as usize);
+		// Guest State Area - LDTR Segment
+		vmwrite16(GUEST_LDTR_SELECTOR,state.ldtr.selector);
+		vmwrite32(GUEST_LDTR_LIMIT,state.ldtr.limit);
+		vmwrite32(GUEST_LDTR_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.ldtr.selector,state.ldtr.attrib).into_bits());
+		vmwriteptr(GUEST_LDTR_BASE,state.ldtr.base as usize);
+		// Guest State Area - IDTR and GDTR
+		vmwrite32(GUEST_GDTR_LIMIT,state.gdtr.limit);
+		vmwriteptr(GUEST_GDTR_BASE,state.gdtr.base as usize);
+		vmwrite32(GUEST_IDTR_LIMIT,state.idtr.limit);
+		vmwriteptr(GUEST_IDTR_BASE,state.idtr.base as usize);
+		// Save Control Registers.
+		vmwriteptr(GUEST_CR0,state.cr0);
+		vmwriteptr(GUEST_CR3,state.cr3);
+		vmwriteptr(GUEST_CR4,state.cr4);
+		vmwriteptr(CR0_READ_SHADOW,state.cr0);
+		vmwriteptr(CR4_READ_SHADOW,state.cr4&(!CR4_VMXE as usize));
+		// CR8 is special. It's located in Virtual APIC Page.
 		unsafe
 		{
-			// Guest State Area - CS Segment
-			vmwrite16(GUEST_CS_SELECTOR,state.cs.selector);
-			vmwrite32(GUEST_CS_LIMIT,state.cs.limit);
-			vmwrite32(GUEST_CS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.cs.selector,state.cs.attrib).into_bits());
-			vmwriteptr(GUEST_CS_BASE,state.cs.base as usize);
-			// Guest State Area - DS Segment
-			vmwrite16(GUEST_DS_SELECTOR,state.ds.selector);
-			vmwrite32(GUEST_DS_LIMIT,state.ds.limit);
-			vmwrite32(GUEST_DS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.ds.selector,state.ds.attrib).into_bits());
-			vmwriteptr(GUEST_DS_BASE,state.ds.base as usize);
-			// Guest State Area - ES Segment
-			vmwrite16(GUEST_ES_SELECTOR,state.es.selector);
-			vmwrite32(GUEST_ES_LIMIT,state.es.limit);
-			vmwrite32(GUEST_ES_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.es.selector,state.es.attrib).into_bits());
-			vmwriteptr(GUEST_ES_BASE,state.es.base as usize);
-			// Guest State Area - FS Segment
-			vmwrite16(GUEST_FS_SELECTOR,state.fs.selector);
-			vmwrite32(GUEST_FS_LIMIT,state.fs.limit);
-			vmwrite32(GUEST_FS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.fs.selector,state.fs.attrib).into_bits());
-			vmwriteptr(GUEST_FS_BASE,state.fs.base as usize);
-			// Guest State Area - GS Segment
-			vmwrite16(GUEST_GS_SELECTOR,state.gs.selector);
-			vmwrite32(GUEST_GS_LIMIT,state.gs.limit);
-			vmwrite32(GUEST_GS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.gs.selector,state.gs.attrib).into_bits());
-			vmwriteptr(GUEST_GS_BASE,state.gs.base as usize);
-			// Guest State Area - SS Segment
-			vmwrite16(GUEST_SS_SELECTOR,state.ss.selector);
-			vmwrite32(GUEST_SS_LIMIT,state.ss.limit);
-			vmwrite32(GUEST_SS_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.ss.selector,state.ss.attrib).into_bits());
-			vmwriteptr(GUEST_SS_BASE,state.ss.base as usize);
-			// Guest State Area - TR Segment
-			vmwrite16(GUEST_TR_SELECTOR,state.tr.selector);
-			vmwrite32(GUEST_TR_LIMIT,state.tr.limit);
-			let tr_ar=if cfg!(target_os="uefi")
-			{
-				0x8B
-			}
-			else
-			{
-				SegmentAccessRights::from_raw(state.tr.selector,state.tr.attrib).into_bits()
-			};
-			vmwrite32(GUEST_TR_ACCESS_RIGHTS,tr_ar);
-			vmwriteptr(GUEST_TR_BASE,state.tr.base as usize);
-			// Guest State Area - LDTR Segment
-			vmwrite16(GUEST_LDTR_SELECTOR,state.ldtr.selector);
-			vmwrite32(GUEST_LDTR_LIMIT,state.ldtr.limit);
-			vmwrite32(GUEST_LDTR_ACCESS_RIGHTS,SegmentAccessRights::from_raw(state.ldtr.selector,state.ldtr.attrib).into_bits());
-			vmwriteptr(GUEST_LDTR_BASE,state.ldtr.base as usize);
-			// Guest State Area - IDTR and GDTR
-			vmwrite32(GUEST_GDTR_LIMIT,state.gdtr.limit);
-			vmwriteptr(GUEST_GDTR_BASE,state.gdtr.base as usize);
-			vmwrite32(GUEST_IDTR_LIMIT,state.idtr.limit);
-			vmwriteptr(GUEST_IDTR_BASE,state.idtr.base as usize);
-			// Save Control Registers.
-			vmwriteptr(GUEST_CR0,state.cr0);
-			vmwriteptr(GUEST_CR3,state.cr3);
-			vmwriteptr(GUEST_CR4,state.cr4);
-			vmwriteptr(CR0_READ_SHADOW,state.cr0);
-			vmwriteptr(CR4_READ_SHADOW,state.cr4&(!CR4_VMXE as usize));
-			// CR8 is special. It's located in Virtual APIC Page.
-			*self.vapic.virt.byte_add(APIC_OFFSET_TPR).cast::<u8>()=(state.cr8 as u8)>>4;
-			// Clear CR8 to 0 in host so that External-Interrupt Exiting can work properly.
-			write_cr8(0);
-			// Save Debug Registers.
-			vmwriteptr(GUEST_DR7,state.dr7);
-			// Save Model-Specific Registers.
-			vmwrite64(GUEST_MSR_IA32_DEBUG_CTRL,state.debug_ctrl);
-			vmwrite32(GUEST_MSR_IA32_SYSENTER_CS,state.sysenter_cs as u32);
-			vmwrite64(GUEST_MSR_IA32_SYSENTER_ESP,state.sysenter_esp);
-			vmwrite64(GUEST_MSR_IA32_SYSENTER_EIP,state.sysenter_eip);
-			vmwrite64(GUEST_MSR_IA32_EFER,state.efer);
-			vmwrite64(GUEST_MSR_IA32_PAT,state.pat);
-			// Save rflags, rsp and rip.
-			vmwriteptr(GUEST_RSP,gsp);
-			vmwriteptr(GUEST_RIP,nvc_vt_guest_start as *const c_void as usize);
-			vmwriteptr(GUEST_RFLAGS,2);
-			// VMCS Link Pointer.
-			vmwrite64(VMCS_LINK_POINTER,u64::MAX);
+			*self.vapic.virt.byte_add(APIC_OFFSET_TPR).cast::<u64>()=state.cr8<<4;
 		}
+		// Clear CR8 to 0 in host so that External-Interrupt Exiting can work properly.
+		write_cr8(0);
+		// Save Debug Registers.
+		vmwriteptr(GUEST_DR7,state.dr7);
+		// Save Model-Specific Registers.
+		vmwrite64(GUEST_MSR_IA32_DEBUG_CTRL,state.debug_ctrl);
+		vmwrite32(GUEST_MSR_IA32_SYSENTER_CS,state.sysenter_cs as u32);
+		vmwrite64(GUEST_MSR_IA32_SYSENTER_ESP,state.sysenter_esp);
+		vmwrite64(GUEST_MSR_IA32_SYSENTER_EIP,state.sysenter_eip);
+		vmwrite64(GUEST_MSR_IA32_EFER,state.efer);
+		vmwrite64(GUEST_MSR_IA32_PAT,state.pat);
+		// Save rflags, rsp and rip.
+		vmwriteptr(GUEST_RSP,gsp);
+		vmwriteptr(GUEST_RIP,nvc_vt_guest_start as *const c_void as usize);
+		vmwriteptr(GUEST_RFLAGS,2);
+		// VMCS Link Pointer.
+		vmwrite64(VMCS_LINK_POINTER,u64::MAX);
 	}
 
 	fn setup_pinbased_controls(&self,true_msr:bool)
@@ -376,13 +401,10 @@ impl VtVcpu
 		pin_ctrl|=pin_ctrl_msr.get_allowed0();
 		pin_ctrl&=pin_ctrl_msr.get_allowed1();
 		// Write to VMCS.
-		unsafe
-		{
-			vmwrite32(PIN_BASED_VM_EXECUTION_CONTROLS,pin_ctrl.into_bits());
-		}
+		vmwrite32(PIN_BASED_VM_EXECUTION_CONTROLS,pin_ctrl.into_bits());
 	}
 
-	fn setup_procbased_controls(&self,true_msr:bool)
+	fn setup_procbased_controls(&mut self,true_msr:bool)
 	{
 		// Setup Primary Processor-Based VM-Execution Controls
 		let mut proc_ctrl=VmxPrimaryProcessorControls::from_bits(0);
@@ -394,6 +416,7 @@ impl VtVcpu
 		let proc_ctrl_msr=VmxPriProcCtrlMsr::read(true_msr);
 		proc_ctrl|=proc_ctrl_msr.get_allowed0();
 		proc_ctrl&=proc_ctrl_msr.get_allowed1();
+		self.cached_ctxt.write_proc_ctrl1(proc_ctrl);
 		// Setup Secondary Processor-Based VM-Execution Controls
 		let mut proc_ctrl2=VmxSecondaryProcessorControls::from_bits(0);
 		proc_ctrl2.set_enable_ept(true);
@@ -408,11 +431,8 @@ impl VtVcpu
 		proc_ctrl2|=proc_ctrl2_msr.get_allowed0();
 		proc_ctrl2&=proc_ctrl2_msr.get_allowed1();
 		// Write to VMCS.
-		unsafe
-		{
-			vmwrite32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,proc_ctrl.into_bits());
-			vmwrite32(SECONDARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,proc_ctrl2.into_bits());
-		}
+		vmwrite32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,proc_ctrl.into_bits());
+		vmwrite32(SECONDARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,proc_ctrl2.into_bits());
 	}
 
 	fn setup_vmexit_controls(&self,true_msr:bool)
@@ -432,10 +452,7 @@ impl VtVcpu
 		exit_ctrl|=exit_ctrl_msr.get_allowed0();
 		exit_ctrl&=exit_ctrl_msr.get_allowed1();
 		// Write to VMCS.
-		unsafe
-		{
-			vmwrite32(VMEXIT_CONTROLS,exit_ctrl.into_bits());
-		}
+		vmwrite32(VMEXIT_CONTROLS,exit_ctrl.into_bits());
 	}
 
 	fn setup_vmentry_controls(&self,true_msr:bool)
@@ -450,10 +467,7 @@ impl VtVcpu
 		let entry_ctrl_msr=VmxEntryCtrlMsr::read(true_msr);
 		entry_ctrl|=entry_ctrl_msr.get_allowed0();
 		entry_ctrl&=entry_ctrl_msr.get_allowed1();
-		unsafe
-		{
-			vmwrite32(VMENTRY_CONTROLS,entry_ctrl.into_bits());
-		}
+		vmwrite32(VMENTRY_CONTROLS,entry_ctrl.into_bits());
 	}
 
 	fn setup_memory_virtualization(&self)
@@ -467,12 +481,12 @@ impl VtVcpu
 		{
 			let hv:*const VtHypervisor=self.hypervisor.cast();
 			eptp.set_eptp_pa((*hv).eptm.pml4e.phys>>PAGE_4KB_SHIFT);
-			vmwrite16(GUEST_VPID,1);
-			vmwrite64(EPT_POINTER,eptp.into_bits());
 		}
+		vmwrite16(GUEST_VPID,1);
+		vmwrite64(EPT_POINTER,eptp.into_bits());
 	}
 
-	fn setup_control_area(&self)
+	fn setup_control_area(&mut self)
 	{
 		let true_msr=VmxBasicMsr::read().use_true_msr();
 		self.setup_pinbased_controls(true_msr);
@@ -501,6 +515,7 @@ impl VtVcpu
 		self.setup_msr_auto_list(&state);
 		self.setup_host_state_area(&state);
 		self.setup_control_area();
+		self.cached_ctxt.flush();
 		info!("Processor {} completed setting up VMCS!",self.vcpu_id);
 		// xpf_core::asm::misc::int3();
 		let r=unsafe{vmlaunch()};
@@ -546,6 +561,10 @@ impl VtVcpu
 								{
 									nvc_vt_subvert_processor_a(self as *mut Self);
 									sysdprintln!("Processor {} completed subversion!",self.vcpu_id);
+									// Test INIT
+									// let apic_base=page_base(rdmsr(crate::xpf_core::x86::msr::MSR_APIC_BASE));
+									// (apic_base as *mut u32).byte_add(crate::xpf_core::x86::apic::APIC_OFFSET_ICR_HI).write(0);
+									// (apic_base as *mut u32).byte_add(crate::xpf_core::x86::apic::APIC_OFFSET_ICR_LO).write(0x44500);
 								}
 							}
 							r=>panic!("Failed to execute vmptrld! Reason: {r}")
