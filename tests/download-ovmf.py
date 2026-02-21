@@ -14,8 +14,9 @@ if __name__=="__main__":
 				f.write(resp.content)
 				f.close()
 			except:
-				print("Failed to download from GitHub! You may try to download OVMF from the following link:")
+				print("Failed to download from GitHub! You may try to manually download OVMF from the following link:")
 				print(url)
+				print("Then extract the \"ovmf-code.fd\" and \"ovmf-vars.fd\" files to the \"tests\" directory!")
 		if os.path.exists("ovmf.zip"):
 			print("Extracting OVMF...")
 			z=zipfile.ZipFile("ovmf.zip")

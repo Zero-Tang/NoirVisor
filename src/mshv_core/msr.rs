@@ -10,87 +10,161 @@
  * or fitness for a particular purpose, etc.).
  */
 
+use core::fmt::Display;
+
 use alloc::slice;
 use bitfield_struct::bitfield;
+use log::{info, trace};
 
-use crate::{mshv_core::MshvVcpuContext, xpf_core::nvbdk::{noir_find_virt_by_phys, page_4kb_base}};
+use crate::{mshv_core::MshvVcpuContext, xpf_core::{asm::{crdr::{read_cr8, write_cr8}, msr::{rdmsr, wrmsr}}, nvbdk::{noir_find_virt_by_phys, page_4kb_base}, x86::msr::*}};
 use super::hvcall::{MSHV_HYPERCALL_CODE32,MSHV_HYPERCALL_CODE64};
 
-fn nvc_mshv_msr_unknown_handler(_context:&mut MshvVcpuContext,_write:bool,_value:&mut u64)->bool
+impl MshvVcpuContext
 {
-	false
-}
-
-fn nvc_mshv_msr_guest_os_id_handler(context:&mut MshvVcpuContext,write:bool,value:&mut u64)->bool
-{
-	if write
-	{
-		context.guest_os_id = *value;
-	}
-	else
-	{
-		*value=context.guest_os_id;
-	}
-	true
-}
-
-fn nvc_mshv_msr_hypercall_handler(context:&mut MshvVcpuContext,write:bool,value:&mut u64)->bool
-{
-	if write
-	{
-		let old=HypercallConfig::from_bits(context.hypercall_gpfn);
-		if !old.locked()
-		{
-			// This value is changeable only if it is not locked.
-			context.hypercall_gpfn = *value;
-			let src=if context.in_long_mode() {MSHV_HYPERCALL_CODE64.as_slice()} else {MSHV_HYPERCALL_CODE32.as_slice()};
-			let dest=unsafe
-			{
-				let virt:*mut u8=noir_find_virt_by_phys(page_4kb_base(*value)).cast();
-				slice::from_raw_parts_mut(virt,src.len())
-			};
-			dest.copy_from_slice(src);
-		}
-	}
-	else
-	{
-		*value=context.hypercall_gpfn;
-	}
-	true
-}
-
-fn nvc_mshv_msr_vp_index_handler(context:&mut MshvVcpuContext,write:bool,value:&mut u64)->bool
-{
-	if write
+	fn handle_unknown(&mut self,_write:bool,_value:&mut u64)->bool
 	{
 		false
 	}
-	else
+
+	fn handle_guest_os_id(&mut self,write:bool,value:&mut u64)->bool
 	{
-		*value=context.get_vp_index() as u64;
+		if write
+		{
+			self.guest_os_id = *value;
+			let os=GuestOsId::from(*value);
+			info!("Guest OS: {os}");
+		}
+		else
+		{
+			*value=self.guest_os_id;
+		}
+		true
+	}
+
+	fn handle_hypercall(&mut self,write:bool,value:&mut u64)->bool
+	{
+		if write
+		{
+			let old=HypercallConfig::from_bits(self.hypercall_gpfn);
+			if !old.locked()
+			{
+				// This value is changeable only if it is not locked.
+				self.hypercall_gpfn = *value;
+				let src=if self.in_long_mode() {MSHV_HYPERCALL_CODE64.as_slice()} else {MSHV_HYPERCALL_CODE32.as_slice()};
+				let dest=unsafe
+				{
+					let virt:*mut u8=noir_find_virt_by_phys(page_4kb_base(*value)).cast();
+					slice::from_raw_parts_mut(virt,src.len())
+				};
+				dest.copy_from_slice(src);
+			}
+		}
+		else
+		{
+			*value=self.hypercall_gpfn;
+		}
+		true
+	}
+
+	fn handle_vp_index(&mut self,write:bool,value:&mut u64)->bool
+	{
+		if write
+		{
+			false
+		}
+		else
+		{
+			*value=self.get_vp_index() as u64;
+			true
+		}
+	}
+
+	fn handle_eoi(&mut self,write:bool,value:&mut u64)->bool
+	{
+		if write
+		{
+			// FIXME: Check if it's APIC or x2APIC.
+			wrmsr(MSR_X2APIC_EOI,*value);
+		}
+		// This synthetic MSR is write-only.
+		write
+	}
+
+	fn handle_icr(&mut self,write:bool,value:&mut u64)->bool
+	{
+		if write
+		{
+			let hi=(*value>>32) as u32;
+			let lo=*value as u32;
+			trace!("Issuing IPI with ICR-HI=0x{hi:X}, ICR-LO=0x{lo:X}...");
+			self.inform_apic_icr(lo,hi);
+		}
+		else
+		{
+			// FIXME: Check if it's APIC or x2APIC
+			*value=rdmsr(MSR_X2APIC_ICR);
+		}
+		true
+	}
+
+	fn handle_tpr(&mut self,write:bool,value:&mut u64)->bool
+	{
+		// Synthetic TPR has the same structure as CR8, so just simply forward the access to cr8 register.
+		if write
+		{
+			trace!("Raising cr8 to {value}...");
+			write_cr8(*value);
+		}
+		else
+		{
+			*value=read_cr8();
+		}
 		true
 	}
 }
 
+/// Microsoft Hypervisor Top Level Functional Specification MSR Handler
+/// 
+/// This function should be implemented as a method of `MshvVcpuContext`. The `context` argument should be `&mut self`. \
+/// The `write` indicates whether the VM-Exit is induced by `wrmsr` or `rdmsr` instruction. \
+/// The `value` indicates the result value.
+/// - If `write` is true, the content referenced by `value` is undefined.
+/// - If `write` is false, `value` is referencing the content to be written into the specified MSR.
+/// 
+/// The return value indicates if this MSR-access is successful or not.
+/// - If successful, advance the rip and resume the guest.
+/// - If failed, inject `#GP(0)` exception and resume the guest.
 pub type TlfsMsrHandler=fn(context:&mut MshvVcpuContext,write:bool,value:&mut u64)->bool;
 
-const MSHV_MSR_HANDLERS_COUNT:usize=3;
-pub static MSHV_MSR_HANDLERS:[TlfsMsrHandler;MSHV_MSR_HANDLERS_COUNT]=
-{
-	let mut group:[TlfsMsrHandler;MSHV_MSR_HANDLERS_COUNT]=[nvc_mshv_msr_unknown_handler;MSHV_MSR_HANDLERS_COUNT];
-	group[0]=nvc_mshv_msr_guest_os_id_handler;
-	group[1]=nvc_mshv_msr_hypercall_handler;
-	group[2]=nvc_mshv_msr_vp_index_handler;
-	group
-};
+const MSHV_MSR_HANDLERS_COUNT:usize=6;
+
+static MSHV_MSR_INDICES:[u32;MSHV_MSR_HANDLERS_COUNT]=
+[
+	HV_X64_MSR_GUEST_OS_ID,
+	HV_X64_MSR_HYPERCALL,
+	HV_X64_MSR_VP_INDEX,
+	HV_X64_MSR_EOI,
+	HV_X64_MSR_ICR,
+	HV_X64_MSR_TPR
+];
+
+static MSHV_MSR_HANDLERS:[TlfsMsrHandler;MSHV_MSR_HANDLERS_COUNT]=
+[
+	MshvVcpuContext::handle_guest_os_id,
+	MshvVcpuContext::handle_hypercall,
+	MshvVcpuContext::handle_vp_index,
+	MshvVcpuContext::handle_eoi,
+	MshvVcpuContext::handle_icr,
+	MshvVcpuContext::handle_tpr
+];
 
 pub fn dispatch_mshv_msr_handler(index:u32)->TlfsMsrHandler
 {
-	let i=(index-0x40000000) as usize;
-	match MSHV_MSR_HANDLERS.get(i)
+	// Use binary-search to look for handler.
+	match MSHV_MSR_INDICES.binary_search(&index)
 	{
-		Some(&f)=>f,
-		None=>nvc_mshv_msr_unknown_handler
+		Ok(i)=>MSHV_MSR_HANDLERS[i],
+		Err(_)=>MshvVcpuContext::handle_unknown
 	}
 }
 
@@ -133,6 +207,68 @@ impl OpenSourceGuestOsId
 	pub const OS_FREEBSD:u8=2;
 	pub const OS_XEN:u8=3;
 	pub const OS_ILLUMOS:u8=4;
+}
+
+pub union GuestOsId
+{
+	pub proprietary:ProprietaryGuestOsId,
+	pub open_source:OpenSourceGuestOsId
+}
+
+impl From<u64> for GuestOsId
+{
+	fn from(value:u64)->Self
+	{
+		Self
+		{
+			proprietary:ProprietaryGuestOsId(value)
+		}
+	}
+}
+
+impl Display for GuestOsId
+{
+	fn fmt(&self,f:&mut core::fmt::Formatter<'_>)->core::fmt::Result
+	{
+		let o=unsafe{self.open_source};
+		if o.open_source()
+		{
+			// This is an open-source system.
+			let os_name=match o.os_type()
+			{
+				OpenSourceGuestOsId::OS_LINUX=>"Linux",
+				OpenSourceGuestOsId::OS_FREEBSD=>"FreeBSD",
+				OpenSourceGuestOsId::OS_XEN=>"Xen",
+				OpenSourceGuestOsId::OS_ILLUMOS=>"Illumos",
+				_=>"Unknown Open-Source OS"
+			};
+			write!(f,"{os_name} Distributed by {}, Version 0x{:X}, Build {}",o.os_id(),o.version(),o.build_number())
+		}
+		else
+		{
+			// This is a proprietary system.
+			let p=unsafe{self.proprietary};
+			match p.vendor_id()
+			{
+				ProprietaryGuestOsId::VENDOR_MICROSOFT=>
+				{
+					let os_name=match p.os_id()
+					{
+						ProprietaryGuestOsId::MICROSOFT_OS_MS_DOS=>"MS-DOS",
+						ProprietaryGuestOsId::MICROSOFT_OS_WINDOWS_3X=>"Windows 3.x",
+						ProprietaryGuestOsId::MICROSOFT_OS_WINDOWS_9X=>"Windows 9x",
+						ProprietaryGuestOsId::MICROSOFT_OS_WINDOWS_NT=>"Windows NT",
+						ProprietaryGuestOsId::MICROSOFT_OS_WINDOWS_CE=>"Windows CE",
+						_=>"Undefined"
+					};
+					write!(f,"Microsoft {os_name} {}.{} Service Pack {} Build {}",p.major_version(),p.minor_version(),p.service_version(),p.build_number())
+				}
+				ProprietaryGuestOsId::VENDOR_HPE=>write!(f,"HPE OS"),
+				ProprietaryGuestOsId::VENDOR_LANCOM=>write!(f,"Lancom OS"),
+				_=>write!(f,"Unknown Vendor OS")
+			}
+		}
+	}
 }
 
 #[bitfield(u64)] pub struct HypercallConfig

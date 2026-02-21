@@ -498,6 +498,7 @@ impl SvmVcpu
 			let mut ins=Instruction::default();
 			ins.copy_from_slice(ins_bytes);
 			ins.decode(self.get_current_bitness());
+			trace!("Intercepted filtered MMIO! Instruction: {ins}");
 			if fault.write()
 			{
 				self.emulate_mmio_output(&ins,gpa);

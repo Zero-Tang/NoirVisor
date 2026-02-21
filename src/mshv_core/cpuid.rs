@@ -30,7 +30,7 @@ fn nvc_mshv_cpuid_hypervisor_vendor_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u3
 
 fn nvc_mshv_cpuid_hypervisor_interface_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
 {
-	let a=u32::from_le_bytes(*b"Hv#1");
+	let a=u32::from_le_bytes(*b"Hv#0");
 	let b=0;
 	let c=0;
 	let d=0;
@@ -54,9 +54,13 @@ fn nvc_mshv_cpuid_hypervisor_feature_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u
 
 fn nvc_mshv_cpuid_implementation_recommendation_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
 {
-	// Nothing to recommend
-	// TODO: recommend using Microsoft Synthetic MSR on AMD-V.
-	(0,0,0,0)
+	let mut r=HypervisorImplementationRecommendation::new();
+	// It seems we can't recommend MSR accesses for EOI/ICR/TPR alone.
+	// Windows 10 LTSC 2021 (build 19044) may BSoD during boot while issuing EOI.
+	// r.set_msr_eoi_icr_tpr(true);
+	r.set_relaxed_timing(true);
+	let a:&[u32;4]=unsafe{&*(&raw const r.0).cast()};
+	(a[0],a[1],a[2],a[3])
 }
 
 fn nvc_mshv_cpuid_implementation_limit_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
@@ -67,8 +71,11 @@ fn nvc_mshv_cpuid_implementation_limit_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u3
 
 fn nvc_mshv_cpuid_implementation_hardware_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
 {
-	// TODO: Fill in the fact of what hardware features are used.
-	(0,0,0,0)
+	let mut r=HypervisorImplementationHardwareFeatures::new();
+	r.set_slat(true);
+	r.set_msr_bitmaps(true);
+	let a:&[u32;4]=unsafe{&*(&raw const r.0).cast()};
+	(a[0],a[1],a[2],a[3])
 }
 
 type TlfsCpuidHandler=fn(u32,u32)->(u32,u32,u32,u32);
@@ -96,6 +103,39 @@ pub const CPUID_CPU_MANAGEMENT_FEATURES:u32=0x40000007;
 pub const CPUID_SHARED_VIRTUAL_MEMORY_FEATURES:u32=0x40000008;
 pub const CPUID_NESTED_HYPERVISOR_FEATURE_ID:u32=0x40000009;
 pub const CPUID_NESTED_VIRTUALIZATION_FEATURES:u32=0x4000000A;
+
+macro_rules! derive_bitfield_cpuid_leaf_impl
+{
+	($name:ty,$index:literal)=>
+	{
+		impl CpuidLeaf for $name
+		{
+			const LEAF_INDEX:u32=$index;
+			const SUBLEAF_INDEX:Option<u32>=None;
+
+			fn init(&mut self,result:&CpuidResult)
+			{
+				let v:&mut [u32;4]=unsafe{&mut *(&raw mut self.0).cast()};
+				v[0]=result.eax;
+				v[1]=result.ebx;
+				v[2]=result.ecx;
+				v[3]=result.edx;
+			}
+
+			fn as_result(&self)->CpuidResult
+			{
+				let v:&[u32;4]=unsafe{&*(&raw const self.0).cast()};
+				CpuidResult
+				{
+					eax:v[0],
+					ebx:v[1],
+					ecx:v[2],
+					edx:v[3]
+				}
+			}
+		}
+	};
+}
 
 pub struct MaxHypervisorLeafAndVendorString
 {
@@ -242,29 +282,85 @@ impl HypervisorVendorNeutralInterface
 	#[bits(5)] rsvd6:u32
 }
 
-impl CpuidLeaf for HypervisorFeatureId
+derive_bitfield_cpuid_leaf_impl!(HypervisorFeatureId,0x40000003);
+
+#[bitfield(u128)] pub struct HypervisorImplementationRecommendation
 {
-	const LEAF_INDEX:u32 = 0x40000003;
+	pub hvcall_switch_cr3:bool,
+	pub hvcall_invlpg:bool,
+	pub hvcall_remote_tlb_flush:bool,
+	pub msr_eoi_icr_tpr:bool,
+	pub msr_reset:bool,
+	pub relaxed_timing:bool,
+	pub dma_remapping:bool,
+	pub intr_remapping:bool,
+	rsvd0:bool,
+	pub deprecate_auto_eoi:bool,
+	pub hvcall_synthetic_clustered_ipi:bool,
+	pub newer_processor_masks:bool,
+	pub nested_in_hyperv:bool,
+	pub int_mbec:bool,
+	pub enlightened_vmcs:bool,
+	pub use_synced_timeline:bool,
+	rsvd1:bool,
+	pub use_direct_local_flush_entire:bool,
+	pub no_non_arch_core_sharing:bool,
+	#[bits(13)] rsvd2:u32,
+	pub long_spinlock_attempts:u32,
+	#[bits(7)] pub impl_phys_bits:u8,
+	#[bits(25)] rsvd3:u32,
+	pub rsvd_edx:u32
+}
+
+derive_bitfield_cpuid_leaf_impl!(HypervisorImplementationRecommendation,0x40000004);
+
+#[derive(Clone, Copy)]
+#[repr(C)] pub struct HypervisorImplementationLimits
+{
+	pub max_vcpu_supported:u32,
+	pub max_lcpu_supported:u32,
+	pub max_phys_intr_vectors:u32,
+	rsvd:u32
+}
+
+impl CpuidLeaf for HypervisorImplementationLimits
+{
+	const LEAF_INDEX:u32 = 0x40000005;
 	const SUBLEAF_INDEX:Option<u32> = None;
 
 	fn init(&mut self,result:&CpuidResult)
 	{
-		let v:&mut [u32;4]=unsafe{&mut *(&raw mut self.0).cast()};
-		v[0]=result.eax;
-		v[1]=result.ebx;
-		v[2]=result.ecx;
-		v[3]=result.edx;
+		self.max_vcpu_supported=result.eax;
+		self.max_lcpu_supported=result.ebx;
+		self.max_phys_intr_vectors=result.ecx;
+		self.rsvd=result.edx;
 	}
 
 	fn as_result(&self)->CpuidResult
 	{
-		let v:&[u32;4]=unsafe{&*(&raw const self.0).cast()};
 		CpuidResult
 		{
-			eax:v[0],
-			ebx:v[1],
-			ecx:v[2],
-			edx:v[3]
+			eax:self.max_vcpu_supported,
+			ebx:self.max_lcpu_supported,
+			ecx:self.max_phys_intr_vectors,
+			edx:self.rsvd
 		}
 	}
 }
+
+#[bitfield(u128)] pub struct HypervisorImplementationHardwareFeatures
+{
+	pub apic_overlay:bool,
+	pub msr_bitmaps:bool,
+	pub arch_perf_counter:bool,
+	pub slat:bool,
+	pub dma_remap:bool,
+	pub intr_remap:bool,
+	pub memory_patrol_scrub:bool,
+	pub dma_protection:bool,
+	pub hpet_requested:bool,
+	pub volatile_synthetic_timer:bool,
+	#[bits(118)] rsvd:u128
+}
+
+derive_bitfield_cpuid_leaf_impl!(HypervisorImplementationHardwareFeatures,0x40000006);

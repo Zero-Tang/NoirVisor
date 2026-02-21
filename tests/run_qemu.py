@@ -4,7 +4,7 @@ import sys
 
 if __name__=="__main__":
 	# OVMF must be present.
-	subprocess.call(["python","download-ovmf.py"])
+	subprocess.call([sys.executable,"download-ovmf.py"])
 	accel_name="tcg"
 	can_run=True
 	cpu_arg="{},hypervisor=off"

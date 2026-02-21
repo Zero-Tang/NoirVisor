@@ -153,13 +153,13 @@ unsafe extern "win64"
 }
 
 /// # Safety
-/// This function is unsafe because it's called from assembly.
-/// DO NOT CALL THIS FUNCTION FROM RUST!
-#[unsafe(no_mangle)] unsafe extern "win64" fn nvc_svm_subvert_processor_i(vcpu:*mut SvmVcpu,gsp:u64)->u64
+/// This function is unsafe because it's called from assembly. \
+/// **DO NOT CALL THIS FUNCTION FROM RUST!**
+#[unsafe(no_mangle)] unsafe extern "win64" fn nvc_svm_subvert_processor_i(vcpu:*mut SvmVcpu,gsp:u64,gssp:u64)->u64
 {
 	unsafe
 	{
-		(*vcpu).subvert_i(gsp)
+		(*vcpu).subvert_i(gsp,gssp)
 	}
 }
 
@@ -181,7 +181,7 @@ impl SvmVcpu
 		}
 	}
 	
-	fn subvert_i(&mut self,gsp:u64)->u64
+	fn subvert_i(&mut self,gsp:u64,gssp:u64)->u64
 	{
 		unsafe
 		{
@@ -262,6 +262,7 @@ impl SvmVcpu
 			vmwrite(self.vmcb.virt,GUEST_DR7,state.dr7);
 			// Save rflags, rsp and rip.
 			vmwrite(self.vmcb.virt,GUEST_RFLAGS,2u64);
+			vmwrite(self.vmcb.virt,GUEST_SSP,gssp);
 			vmwrite(self.vmcb.virt,GUEST_RSP,gsp);
 			vmwrite(self.vmcb.virt,GUEST_RIP,nvc_svm_guest_start as *const c_void as u64);
 			// Save Processor Hidden State.

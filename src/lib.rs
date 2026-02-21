@@ -17,7 +17,6 @@
 #![feature(allocator_api)]
 // For performance reasons, we may heavily rely on branch-prediction optimizations.
 #![feature(likely_unlikely)]
-#![feature(cold_path)]
 
 extern crate alloc;
 

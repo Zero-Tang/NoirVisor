@@ -13,15 +13,15 @@
 use alloc::vec::Vec;
 use bitfield_struct::bitfield;
 use static_collections::bitmap::RefBitmap;
-use core::{ffi::c_void, ptr::null_mut};
+use core::{arch::x86_64::_xgetbv, ffi::c_void, ptr::null_mut, sync::atomic::AtomicBool};
 
 use ia32::msr::*;
 use vmcs::*;
 use ept::VtEptManager;
-use crate::*;
+use crate::{xpf_core::x86::{apic::APIC_OFFSET_ICR_HI, msr::MSR_X2APIC_ICR}, *};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 use mshv_core::{MshvVcpuContext,MshvVcpuOps};
-use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{apic::APIC_OFFSET_TPR, caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}, rflags::RFLAGS_IF_BIT}};
+use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{apic::*, caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_APIC_BASE,MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}, rflags::RFLAGS_IF_BIT}};
 
 #[allow(dead_code)] mod ia32;
 #[allow(dead_code)] mod vmcs;
@@ -64,7 +64,9 @@ impl VtStackContextFlags
 	pub nested_vcpu:*mut c_void,	// NOT IMPLEMENTED IN RUST
 	pub proc_id:u32,
 	// This flag indicates whether the assembly code should use vmlaunch or vmresume.
-	pub flags:VtStackContextFlags
+	pub flags:VtStackContextFlags,
+	pub guest_xcr0:u64,
+	pub host_xcr0:u64
 }
 
 enum VtIrqInterruptibilityState
@@ -98,6 +100,8 @@ pub struct VtVcpu
 	pub msr_auto_guest:[VmxMsrAutoItem;5],
 	pub cached_ctxt:CachedExitContext,
 	pub irq_bmp:[u64;4],
+	pub special_icr_completed:AtomicBool,
+	pub waiting_for_sipi:AtomicBool,
 	// This context handles exceptions.
 	pub gs_context:PerCpuGsException
 }
@@ -106,6 +110,7 @@ impl Default for VtVcpu
 {
 	fn default() -> Self
 	{
+		let std_leaf=StandardProcessorFeatureIdentifiers::cpuid();
 		Self
 		{
 			vmcs:MemoryDescriptor::null(),
@@ -114,7 +119,7 @@ impl Default for VtVcpu
 			hv_stack:MemoryDescriptor::null(),
 			hypervisor:null_mut(),
 			ist:[const{MemoryDescriptor::null()};8],
-			cpuid_fms:0,
+			cpuid_fms:(std_leaf.ext_model()<<16)|0x600,
 			vcpu_id:0,
 			under_hvm:false,
 			apic_id:0,
@@ -125,6 +130,8 @@ impl Default for VtVcpu
 			msr_auto_guest:[VmxMsrAutoItem::default();5],
 			cached_ctxt:CachedExitContext::default(),
 			irq_bmp:[0;4],
+			special_icr_completed:AtomicBool::new(false),
+			waiting_for_sipi:AtomicBool::new(false),
 			gs_context:PerCpuGsException::default()
 		}
 	}
@@ -139,11 +146,11 @@ unsafe extern "C"
 	fn nvc_vt_resume_without_entry(gpr_state:*const GprState)->!;
 }
 
-#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_subvert_processor_i(vcpu:*mut VtVcpu,gsp:usize)
+#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_subvert_processor_i(vcpu:*mut VtVcpu,gsp:usize,gssp:usize)
 {
 	unsafe
 	{
-		(*vcpu).subvert_i(gsp)
+		(*vcpu).subvert_i(gsp,gssp)
 	}
 }
 
@@ -156,9 +163,17 @@ static VT_MSHV_VCPU_OPS:MshvVcpuOps=MshvVcpuOps
 
 impl VtVcpu
 {
-	unsafe fn inform_apic_icr(_vcpu:*mut c_void,_icr_lo:u32,_icr_hi:u32)
+	unsafe fn inform_apic_icr(_vcpu:*mut c_void,icr_lo:u32,icr_hi:u32)
 	{
-		panic!("APIC-ICR ops is unimplemented!");
+		// Forward this to APIC.
+		// FIXME: Generalize APIC BAR
+		let bar=0xfee00000 as *mut u32;
+		unsafe
+		{
+			// TODO: Filter INIT/SIPI ICR writes.
+			bar.byte_add(APIC_OFFSET_ICR_HI).write_volatile(icr_hi);
+			bar.byte_add(APIC_OFFSET_ICR_LO).write_volatile(icr_lo);
+		}
 	}
 
 	fn in_long_mode(vcpu:*const c_void)->bool
@@ -304,7 +319,7 @@ impl VtVcpu
 		vmwriteptr(HOST_RIP,nvc_vt_exit_handler_a as *const c_void as usize);
 	}
 
-	fn setup_guest_state_area(&self,state:&ProcessorState,gsp:usize)
+	fn setup_guest_state_area(&self,state:&ProcessorState,gsp:usize,gssp:usize)
 	{
 		// Guest State Area - CS Segment
 		vmwrite16(GUEST_CS_SELECTOR,state.cs.selector);
@@ -363,7 +378,7 @@ impl VtVcpu
 		vmwriteptr(GUEST_CR0,state.cr0);
 		vmwriteptr(GUEST_CR3,state.cr3);
 		vmwriteptr(GUEST_CR4,state.cr4);
-		vmwriteptr(CR0_READ_SHADOW,state.cr0);
+		// vmwriteptr(CR0_READ_SHADOW,state.cr0);
 		vmwriteptr(CR4_READ_SHADOW,state.cr4&(!CR4_VMXE as usize));
 		// CR8 is special. It's located in Virtual APIC Page.
 		unsafe
@@ -382,6 +397,7 @@ impl VtVcpu
 		vmwrite64(GUEST_MSR_IA32_EFER,state.efer);
 		vmwrite64(GUEST_MSR_IA32_PAT,state.pat);
 		// Save rflags, rsp and rip.
+		vmwriteptr(GUEST_SSP,gssp);
 		vmwriteptr(GUEST_RSP,gsp);
 		vmwriteptr(GUEST_RIP,nvc_vt_guest_start as *const c_void as usize);
 		vmwriteptr(GUEST_RFLAGS,2);
@@ -397,7 +413,7 @@ impl VtVcpu
 		let pin_ctrl_msr=VmxPinBasedCtrlMsr::read(true_msr);
 		// In future implementation, we may want to enable external interrupt exiting
 		// in order to enable interrupts delivered by Intel VT-d page faults.
-		pin_ctrl.set_external_interrupt_exiting(true);
+		// pin_ctrl.set_external_interrupt_exiting(true);
 		pin_ctrl|=pin_ctrl_msr.get_allowed0();
 		pin_ctrl&=pin_ctrl_msr.get_allowed1();
 		// Write to VMCS.
@@ -408,7 +424,7 @@ impl VtVcpu
 	{
 		// Setup Primary Processor-Based VM-Execution Controls
 		let mut proc_ctrl=VmxPrimaryProcessorControls::from_bits(0);
-		proc_ctrl.set_use_tpr_shadow(true);
+		// proc_ctrl.set_use_tpr_shadow(true);
 		proc_ctrl.set_use_io_bitmap(true);
 		proc_ctrl.set_use_msr_bitmap(true);
 		proc_ctrl.set_activate_secondary_controls(true);
@@ -441,7 +457,7 @@ impl VtVcpu
 		let mut exit_ctrl=VmxExitControls::from_bits(0);
 		exit_ctrl.set_save_debug_controls(true);
 		// Acknowledging interrupts on exit may reduce our effort in handling interrupts.
-		exit_ctrl.set_acknowledge_interrupt_on_exit(true);
+		// exit_ctrl.set_acknowledge_interrupt_on_exit(true);
 		exit_ctrl.set_host_address_space_size(cfg!(target_arch="x86_64"));
 		exit_ctrl.set_load_efer(true);
 		exit_ctrl.set_save_efer(true);
@@ -497,25 +513,38 @@ impl VtVcpu
 		unsafe
 		{
 			let hv:*const VtHypervisor=self.hypervisor.cast();
-			vmwriteptr(CR0_GUEST_HOST_MASK,0);
+			let apic_base=page_base(rdmsr(MSR_APIC_BASE));
+			// vmwriteptr(CR0_GUEST_HOST_MASK,CR0_PG as usize);
 			vmwriteptr(CR4_GUEST_HOST_MASK,CR4_VMXE as usize);
 			vmwrite64(ADDRESS_OF_MSR_BITMAP,(*hv).msr_bitmap.phys);
 			vmwrite64(ADDRESS_OF_IO_BITMAP_A,(*hv).io_bitmap_a.phys);
 			vmwrite64(ADDRESS_OF_IO_BITMAP_B,(*hv).io_bitmap_b.phys);
 			vmwrite64(VIRTUAL_APIC_ADDRESS,self.vapic.phys);
+			vmwrite64(APIC_ACCESS_ADDRESS,apic_base);
 			vmwrite32(TPR_THRESHOLD,0);
 		}
 	}
 
-	fn subvert_i(&mut self,gsp:usize)
+	fn subvert_i(&mut self,gsp:usize,gssp:usize)
 	{
 		let state=ProcessorState::new();
 		self.mshv_ctxt.root=(&raw mut *self).cast();
-		self.setup_guest_state_area(&state,gsp);
+		self.setup_guest_state_area(&state,gsp,gssp);
 		self.setup_msr_auto_list(&state);
 		self.setup_host_state_area(&state);
 		self.setup_control_area();
 		self.cached_ctxt.flush();
+		{
+			let cpu_feat_id=StandardProcessorFeatureIdentifiers::cpuid();
+			let stack=self.get_stack_top_mut();
+			// Set to the maximum XCR0.
+			// Current implementation would only support up to AVX, AVX512 excluded.
+			stack.host_xcr0=1;
+			stack.host_xcr0|=(cpu_feat_id.sse() as u64)<<1;
+			stack.host_xcr0|=(cpu_feat_id.avx() as u64)<<2;
+			stack.guest_xcr0=unsafe{_xgetbv(0)};
+			trace!("Using Guest XCR0 as 0x{:X}, Host XCR0 as 0x{:X}...",stack.guest_xcr0,stack.host_xcr0);
+		}
 		info!("Processor {} completed setting up VMCS!",self.vcpu_id);
 		// xpf_core::asm::misc::int3();
 		let r=unsafe{vmlaunch()};
@@ -807,6 +836,8 @@ impl HypervisorEssentials for VtHypervisor
 				set_interception(MSR_VMX_VMFUNC,true,false);
 				set_interception(MSR_VMX_PROC_BASED_CTLS3,true,false);
 				set_interception(MSR_VMX_EXIT_CTLS2,true,false);
+				// Intercept accesses to x2APIC ICR
+				set_interception(MSR_X2APIC_ICR,false,true);
 			}
 			None=>fail_cleanup!("Failed to alloate MSR-Bitmap!")
 		}

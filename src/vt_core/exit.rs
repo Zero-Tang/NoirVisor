@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_xsetbv, ffi::c_void, hint::unreachable_unchecked};
+use core::{ffi::c_void, hint::{spin_loop, unreachable_unchecked}, sync::atomic::Ordering};
 
 use paste::paste;
 use log::*;
@@ -18,7 +18,7 @@ use log::*;
 #[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
 use static_collections::bitmap::RefBitmap;
 #[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall, nvc_forward_memory_mapped_hypercall};
-use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, vt_core::{VtIrqInterruptibilityState, hvcall::dispatch_hypercall}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, ci::is_ci_phys_page, trytask::try_task, x86::{cpuid::*, crdr::*, interrupts::{EventType, GENERAL_PROTECTION_FAULT}}}, *};
+use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, svm_core::amd64::msr::{MSR_EFER_LMA, MSR_EFER_LME}, vt_core::{VtIrqInterruptibilityState, hvcall::dispatch_hypercall}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::{rdmsr, wrmsr}, vt::*}, ci::is_ci_phys_page, x86::{apic::ApicX2Icr, cpuid::*, crdr::*, descriptors::SegmentFlags, interrupts::{EventType, GENERAL_PROTECTION_FAULT}, msr::MSR_X2APIC_ICR}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, VtStackTop};
 
 impl VtVcpu
@@ -88,7 +88,7 @@ impl VtVcpu
 	fn handle_init(&mut self,context:&mut VtStackTop)
 	{
 		let gpr_state=&mut context.gpr_state;
-		info!("INIT-signal is intercepted!");
+		info!("INIT-signal is intercepted for CPU {}! rip=0x{:X}",self.vcpu_id,self.cached_ctxt.rip);
 		unsafe 
 		{
 			// General-Purpose Registers
@@ -97,55 +97,105 @@ impl VtVcpu
 				gpr_state.write(i,0);
 			}
 			gpr_state.rdx=self.cpuid_fms as u64;
-			vmwriteptr(GUEST_RSP,0);
-			vmwriteptr(GUEST_RIP,0xFFF0);
-			vmwriteptr(GUEST_RFLAGS,2);
+			asm_vmwrite_unchecked(GUEST_RSP,0);
+			asm_vmwrite_unchecked(GUEST_RIP,0xFFF0);
+			asm_vmwrite_unchecked(GUEST_RFLAGS,2);
 			// Control Registers
-			let mut cr0=vmreadptr(GUEST_CR0).unwrap();
-			cr0&=(CR0_CD|CR0_NW) as usize;	// CR0.CD and CR0.NW are unchanged during INIT. Other bits except CR0.ET should be cleared.
-			cr0|=CR0_ET as usize;			// CR0.ET is always set during INIT.
+			// CR0.ET is always set during INIT.
+			let mut cr0=CR0_ET as usize;
+			// Fix CR0 bits
 			cr0|=rdmsr(MSR_VMX_CR0_FIXED1) as usize;
 			cr0&=rdmsr(MSR_VMX_CR0_FIXED0) as usize;
-			vmwriteptr(GUEST_CR0,cr0);
+			// CR0.PE and CR0.PG are cleared by INIT.
+			cr0&=!(CR0_PE|CR0_PG) as usize;
+			asm_vmwrite_unchecked(GUEST_CR0,cr0);
+			asm_vmwrite_unchecked(CR0_READ_SHADOW,cr0);
 			write_cr2(0);
-			vmwriteptr(GUEST_CR3,0);
-			let mut cr4=vmreadptr(GUEST_CR4).unwrap();
+			asm_vmwrite_unchecked(GUEST_CR3,0);
+			// CR4 is cleared to 0 upon INIT. But as a guest, CR4.VMXE must be set.
+			let mut cr4=0;
 			cr4|=rdmsr(MSR_VMX_CR4_FIXED0) as usize;
 			cr4&=rdmsr(MSR_VMX_CR4_FIXED1) as usize;
-			vmwriteptr(GUEST_CR4,cr4);
-			vmwriteptr(GUEST_MSR_IA32_EFER,0);
+			asm_vmwrite_unchecked(GUEST_CR4,cr4);
+			asm_vmwrite_unchecked(CR4_READ_SHADOW,0);
+			// EFER is cleared to 0 upon INIT.
+			asm_vmwrite_unchecked(GUEST_MSR_IA32_EFER,0);
 			// Debug Registers
 			write_dr0(0);
 			write_dr1(0);
 			write_dr2(0);
 			write_dr3(0);
 			write_dr6(0xffff0ff0);
-			vmwriteptr(GUEST_DR7,0x400);
+			asm_vmwrite_unchecked(GUEST_DR7,0x400);
+			// Segment Registers
+			macro_rules! vmcs_write_seg
+			{
+				($name:tt,$sel:literal,$ar:expr,$lim:literal,$base:literal)=>
+				{
+					paste!
+					{
+						asm_vmwrite_unchecked([<GUEST_ $name:upper _SELECTOR>],$sel as usize);
+						asm_vmwrite_unchecked([<GUEST_ $name:upper _ACCESS_RIGHTS>],$ar as usize);
+						asm_vmwrite_unchecked([<GUEST_ $name:upper _LIMIT>],$lim as usize);
+						asm_vmwrite_unchecked([<GUEST_ $name:upper _BASE>],$base);
+					}
+				};
+			}
+			let mut ar=SegmentAccessRights::new();
+			ar.set_segment_type(SegmentFlags::CODE_EXECUTE_READ_ACCESSED as u32);
+			ar.set_descriptor_type(true);
+			ar.set_present(true);
+			vmcs_write_seg!(cs,0xF000,ar.into_bits(),0xFFFF,0xFFFF0000);
+			ar.set_segment_type(SegmentFlags::DATA_READ_WRITE_ACCESSED as u32);
+			vmcs_write_seg!(ds,0,ar.into_bits(),0xFFFF,0);
+			vmcs_write_seg!(es,0,ar.into_bits(),0xFFFF,0);
+			vmcs_write_seg!(fs,0,ar.into_bits(),0xFFFF,0);
+			vmcs_write_seg!(gs,0,ar.into_bits(),0xFFFF,0);
+			vmcs_write_seg!(ss,0,ar.into_bits(),0xFFFF,0);
+			// LDTR & TR
+			ar.set_segment_type(SegmentFlags::LDT as u32);
+			ar.set_descriptor_type(false);
+			vmcs_write_seg!(ldtr,0,ar.into_bits(),0xFFFF,0);
+			ar.set_segment_type(SegmentFlags::BUSY_TSS as u32);
+			vmcs_write_seg!(tr,0,ar.into_bits(),0xFFFF,0);
 			// IDTR & GDTR
-			vmwriteptr(GUEST_GDTR_BASE,0);
-			vmwriteptr(GUEST_IDTR_BASE,0);
-			vmwrite32(GUEST_GDTR_LIMIT,0xFFFF);
-			vmwrite32(GUEST_IDTR_LIMIT,0xFFFF);
+			asm_vmwrite_unchecked(GUEST_GDTR_BASE,0);
+			asm_vmwrite_unchecked(GUEST_IDTR_BASE,0);
+			asm_vmwrite_unchecked(GUEST_GDTR_LIMIT,0xFFFF);
+			asm_vmwrite_unchecked(GUEST_IDTR_LIMIT,0xFFFF);
 			// VM-Entry Controls: Guest is definitely not in IA-32e mode.
-			let mut entry_ctrl=VmxEntryControls::from_bits(vmread32(VMENTRY_CONTROLS).unwrap());
+			let mut entry_ctrl=VmxEntryControls::from_bits(asm_vmread_unchecked(VMENTRY_CONTROLS) as u32);
 			entry_ctrl.set_ia32e_mode_guest(false);
-			vmwrite32(VMENTRY_CONTROLS,entry_ctrl.into_bits());
-			// Invalid TLB since paging is switched off.
-			let ivc=InvvpidContext::Single(vmread16(GUEST_VPID).unwrap());
-			invvpid(&ivc);
+			asm_vmwrite_unchecked(VMENTRY_CONTROLS,entry_ctrl.into_bits() as usize);
 			// Upon INIT, vCPU enters inactive state to wait for Startup-IPI.
-			vmwrite32(GUEST_ACTIVITY_STATE,ActivityState::WAIT_FOR_SIPI);
+			asm_vmwrite_unchecked(GUEST_ACTIVITY_STATE,ActivityState::WAIT_FOR_SIPI as usize);
 		}
+		// We've finished handling the INIT signal. Signal the INIT-sender.
+		self.waiting_for_sipi.store(true,Ordering::SeqCst);
+		self.special_icr_completed.store(true,Ordering::SeqCst);
 	}
 
 	fn handle_sipi(&mut self,_context:&mut VtStackTop)
 	{
-		let vector=vmreadptr(VMEXIT_QUALIFICATION).unwrap();
-		vmwrite16(GUEST_CS_SELECTOR,(vector<<8) as u16);
-		vmwriteptr(GUEST_CS_BASE,vector<<12);
-		vmwriteptr(GUEST_RIP,0);
-		// Startup-IPI is received. Resume to active state.
-		vmwrite32(GUEST_ACTIVITY_STATE,ActivityState::ACTIVE);
+		unsafe
+		{
+			let vector=asm_vmread_unchecked(VMEXIT_QUALIFICATION);
+			info!("SIPI-signal is intercepted for CPU {}! Vector=0x{vector:X}",self.vcpu_id);
+			asm_vmwrite_unchecked(GUEST_CS_SELECTOR,vector<<8);
+			asm_vmwrite_unchecked(GUEST_CS_BASE,vector<<12);
+			asm_vmwrite_unchecked(GUEST_RIP,0);
+			// Startup-IPI is received. Resume to active state.
+			asm_vmwrite_unchecked(GUEST_ACTIVITY_STATE,ActivityState::ACTIVE as usize);
+			// Invalid TLB since paging is switched off.
+			let ivc=InvvpidContext::Single(asm_vmread_unchecked(GUEST_VPID) as u16);
+			invvpid(&ivc);
+		}
+		// Dump some codes.
+		// let codes=unsafe{&*((vector<<12) as *const [u8;32])};
+		// info!("SIPI Vector Code Bytes: {codes:02X?}");
+		// We've finished handling the SIPI signal. Signal the SIPI-sender.
+		self.special_icr_completed.store(true,Ordering::SeqCst);
+		self.waiting_for_sipi.store(false,Ordering::SeqCst);
 	}
 
 	fn handle_interrupt_window(&mut self,_context:&mut VtStackTop)
@@ -285,7 +335,7 @@ impl VtVcpu
 	{
 		let gpr_state=&mut context.gpr_state;
 		let q=ControlRegisterQualification::read();
-		debug!("CR Index: {}, GPR Index: {}, Access: {}",q.cr_index(),q.access_type(),q.gpr_index());
+		debug!("CR Index: {}, GPR Index: {}, Access: {}",q.cr_index(),q.gpr_index(),q.access_type());
 		let mut should_advance:bool=true;
 		match q.access_type()
 		{
@@ -296,9 +346,49 @@ impl VtVcpu
 				debug!("New Value: 0x{new_value:X}");
 				match q.cr_index()
 				{
+					0=>
+					{
+						// Currently, NoirVisor only intercepts changes to CR0.PG.
+						// As a result, TLBs must be flushed.
+						let ivc=InvvpidContext::Single(1);
+						unsafe
+						{
+							invvpid(&ivc);
+						}
+						// Fix CR0 value.
+						let mut new_cr0=new_value as u64;
+						new_cr0|=rdmsr(MSR_VMX_CR0_FIXED0)&!(CR0_PG|CR0_PE);
+						new_cr0&=rdmsr(MSR_VMX_CR0_FIXED1);
+						info!("Changed new cr0 to 0x{new_cr0:X} (intended to be 0x{new_value:X})!");
+						vmwriteptr(GUEST_CR0,new_cr0 as usize);
+						vmwriteptr(CR0_READ_SHADOW,new_cr0 as usize);
+						// May affect EFER.LMA bit.
+						let mut efer=vmread64(GUEST_MSR_IA32_EFER).unwrap();
+						let pg=(new_cr0&CR0_PG)!=0;
+						let lme=(efer&MSR_EFER_LME)!=0;
+						efer|=if pg && lme {MSR_EFER_LMA} else {0};
+						vmwrite64(GUEST_MSR_IA32_EFER,efer);
+						// Also write to VM-Entry Controls.
+						let mut entry_ctrl=VmxEntryControls::from_bits(vmread32(VMENTRY_CONTROLS).unwrap());
+						entry_ctrl.set_ia32e_mode_guest(pg&&lme);
+						vmwrite32(VMENTRY_CONTROLS,entry_ctrl.into_bits());
+					}
 					4=>
 					{
+						// Check if new CR4 will require flushing TLB...
+						let old_cr4=vmreadptr(GUEST_CR4).unwrap();
+						let old_masked=old_cr4&CR4_TLB_FLUSH_MASK as usize;
+						let new_masked=new_value&CR4_TLB_FLUSH_MASK as usize;
+						if old_masked!=new_masked
+						{
+							let ivc=InvvpidContext::Single(1);
+							unsafe
+							{
+								invvpid(&ivc);
+							}
+						}
 						vmwriteptr(GUEST_CR4,new_value|CR4_VMXE as usize);
+						vmwriteptr(CR4_READ_SHADOW,new_value);
 					}
 					x=>
 					{
@@ -374,11 +464,69 @@ impl VtVcpu
 			// Prevent the Guest from updating microcode.
 			// Do so by ignoring the update request.
 			MSR_BIOS_UPDATE_TRIGGER=>false,
+			MSR_X2APIC_ICR=>
+			{
+				// Guest is issuing IPIs.
+				let v=ApicX2Icr::from_bits((context.gpr_state.rax&0xFFFFFFFF)|(context.gpr_state.rdx<<32));
+				wrmsr(MSR_X2APIC_ICR,v.into_bits());
+				match v.message_type()
+				{
+					ApicX2Icr::MESSAGE_TYPE_INIT|ApicX2Icr::MESSAGE_TYPE_SIPI=>
+					{
+						// If the message is INIT or SIPI, wait until target vCPU has completed setting up vCPU state.
+						let hv:&VtHypervisor=unsafe{&*self.hypervisor.cast()};
+						trace!("Sent special ICR message (0x{:X})! Awaiting completion...",v.into_bits());
+						match v.destination_shorthand()
+						{
+							ApicX2Icr::DSH_DESTINATION=>
+							{
+								if let Some(vcpu)=hv.vcpus.get(v.destination() as usize)
+								{
+									// Do not wait if the target vCPU will ignore SIPI.
+									if vcpu.waiting_for_sipi.load(Ordering::SeqCst) || v.message_type()!=ApicX2Icr::MESSAGE_TYPE_SIPI
+									{
+										while vcpu.special_icr_completed.compare_exchange(true,false,Ordering::SeqCst,Ordering::SeqCst).is_err()
+										{
+											spin_loop();
+										}
+									}
+								}
+							}
+							ApicX2Icr::DSH_ALL_EXCLUSIVE=>
+							{
+								for vcpu in &hv.vcpus
+								{
+									// Exclude current vCPU.
+									if vcpu.vcpu_id==self.vcpu_id
+									{
+										continue;
+									}
+									// Do not wait if the target vCPU will ignore SIPI.
+									if !vcpu.waiting_for_sipi.load(Ordering::SeqCst) && v.message_type()==ApicX2Icr::MESSAGE_TYPE_SIPI
+									{
+										continue;
+									}
+									while vcpu.special_icr_completed.compare_exchange(true,false,Ordering::SeqCst,Ordering::SeqCst).is_err()
+									{
+										spin_loop();
+									}
+								}
+							}
+							// It is virtually impossible that a guest will send INIT/SIPI to itself, and it is virtually equivalent to committing suicide.
+							// So, if destination-shorthand is self or all-including-self, we won't reach this place at all.
+							_=>unsafe{unreachable_unchecked()}
+						}
+						trace!("Special ICR message (0x{:X}) completed!",v.into_bits());
+					}
+					_=>{}
+				};
+				false
+			}
 			(0x40000000..0x80000000)=>
 			{
 				let f=dispatch_mshv_msr_handler(index);
 				let mut v=(context.gpr_state.rax&0xFFFFFFFF)|(context.gpr_state.rdx<<32);
-				f(&mut self.mshv_ctxt,true,&mut v)
+				!f(&mut self.mshv_ctxt,true,&mut v)
 			}
 			_=>
 			{
@@ -478,30 +626,42 @@ impl VtVcpu
 	{
 		let gpr_state=&mut context.gpr_state;
 		let index=gpr_state.rcx as u32;
-		let value=(gpr_state.rax&u32::MAX as u64)|(gpr_state.rdx<<32);
-		debug!("The xsetbv instruction is intercepted! Index={index}, Value=0x{value:16X}");
-		unsafe
+		if index==0
 		{
-			#[repr(C)] struct XcrContext
+			let stack=self.get_stack_top_mut();
+			let value=Xcr0::from_bits((gpr_state.rax&u32::MAX as u64)|(gpr_state.rdx<<32));
+			// x87 must be enabled in xcr0 in whatever circumstances.
+			let mut valid=value.x87();
+			// SSE must be enabled when AVX is enabled.
+			valid&=if value.avx() {value.sse()} else {true};
+			// AVX must be enabled when AVX-512 is enabled.
+			valid&=if value.opmask() || value.zmm_hi256() || value.hi16_zmm() {value.avx()} else {true};
+			// Reserved bits must be cleared.
+			valid&=!value.rsvd0() && value.rsvd1()==0;
+			// LWP and X are AMD's bits. Intel did not define them.
+			valid&=!(value.lwp() || value.x());
+			// TODO: Check other bits of XCR0 (MPX, MPK, AMX, etc.)
+			if valid
 			{
-				index:u32,
-				value:u64
+				stack.guest_xcr0=value.into_bits();
+				self.advance_rip();
 			}
-			extern "C" fn try_xsetbv(context:*mut c_void)
+			else
 			{
-				let ctxt:&mut XcrContext=unsafe{&mut *context.cast()};
-				unsafe{_xsetbv(ctxt.index,ctxt.value)};
-			}
-			let mut x=XcrContext{index,value};
-			// Expect an exception may come.
-			match try_task(try_xsetbv,(&raw mut x).cast())
-			{
-				Ok(_)=>self.advance_rip(),
-				Err(e)=>
+				error!("Invalid XCR0 value (0x{:X}) is specified in xsetbv instruction!!",value.into_bits());
+				unsafe
 				{
-					error!("The xsetbv task failed! Vector={}, Error-Code: {:X?}",e.vector,e.error_code);
-					inject_event(e.vector,EventType::HardwareException,e.error_code,true,0);
+					inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true,0);
 				}
+			}
+		}
+		else
+		{
+			let value=(gpr_state.rax&u32::MAX as u64)|(gpr_state.rdx<<32);
+			error!("Invalid XCR (index=0x{index:X}, value=0x{value:016X}) is specified in xsetbv instruction!");
+			unsafe
+			{
+				inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true,0);
 			}
 		}
 	}
@@ -564,7 +724,7 @@ impl VtVcpu
 	}
 }
 
-#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_exit_handler(context:*mut VtStackTop)
+#[unsafe(no_mangle)] unsafe extern "win64" fn nvc_vt_exit_handler(context:*mut VtStackTop)
 {
 	let ctxt=unsafe{&mut *context};
 	let vcpu=unsafe{&mut *ctxt.vcpu};
@@ -581,7 +741,7 @@ impl VtVcpu
 	vcpu.cached_ctxt.flush();
 }
 
-#[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_resume_failure(_context:*mut VtStackTop,_vmx_status:u8)
+#[unsafe(no_mangle)] unsafe extern "win64" fn nvc_vt_resume_failure(_context:*mut VtStackTop,_vmx_status:u8)
 {
 	panic!("VM-Entry failed on resume!");
 }

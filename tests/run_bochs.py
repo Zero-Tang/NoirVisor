@@ -37,7 +37,7 @@ def call_bochs():
 
 if __name__=="__main__":
 	# OVMF must be present.
-	subprocess.call(["python","download-ovmf.py"])
+	subprocess.call([sys.executable,"download-ovmf.py"])
 	# Search for Bochs Path.
 	if platform.system()=="Windows":
 		progpath=os.environ["ProgramFiles"]

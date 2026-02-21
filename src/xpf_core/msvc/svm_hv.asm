@@ -117,6 +117,7 @@ nvc_svm_subvert_processor_a proc frame
 	push rcx
 	.pushreg rcx
 	mov rcx,qword ptr[rcx+stacktop_offset_vcpu_ptr]
+	rdsspq r8
 	sub rsp,28h
 	.allocstack 28h
 	; First parameter is in rcx - vcpu

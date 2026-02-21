@@ -288,7 +288,7 @@ macro_rules! build_clean_method
 				if !self.clean_fields.$name()
 				{
 					self.clean_fields.[<set_ $name>](true);
-					self.$name=$type::from([<vmread $bitness>]($const).unwrap());
+					self.$name=$type::from(unsafe{asm_vmread_unchecked($const)} as [<u $bitness>]);
 				}
 			}
 
@@ -353,10 +353,21 @@ impl CachedExitContext
 
 	pub fn flush(&mut self)
 	{
-		if self.dirty_fields.proc_ctrl1()
+		macro_rules! flush_field
 		{
-			vmwrite32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,self.proc_ctrl1.0);
+			($field:tt,$const:expr,$value:expr)=>
+			{
+				if self.dirty_fields.$field()
+				{
+					unsafe
+					{
+						asm_vmwrite_unchecked($const,$value as usize);
+					}
+				}
+			};
 		}
+		flush_field!(proc_ctrl1,PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,self.proc_ctrl1.0);
+		flush_field!(interruptibility,GUEST_INTERRUPTIBILITY_STATE,self.interruptibility.0);
 		self.dirty_fields=DirtyExitFields::new();
 	}
 

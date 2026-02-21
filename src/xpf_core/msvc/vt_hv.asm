@@ -32,6 +32,8 @@ stacktop_offset_guest_gpr equ 090h
 stacktop_offset_guest_frame equ 110h
 stacktop_offset_vcpu_ptr equ 140h
 stacktop_offset_flags equ 15Ch
+stacktop_offset_guest_xcr0 equ 160h
+stacktop_offset_host_xcr0 equ 168h
 
 nvc_vt_resume_without_entry proc
 
@@ -56,6 +58,20 @@ nvc_vt_exit_handler_a proc frame
 	.pushframe code
 	; Save all GPRs, and pass to Exit Handler.
 	pushaq_fast stacktop_offset_guest_gpr
+	; Before saving volatile XMM state, save and restore xcr0.
+	xor ecx,ecx
+	xgetbv
+	mov dword ptr [rsp+stacktop_offset_guest_xcr0+0],eax
+	mov dword ptr [rsp+stacktop_offset_guest_xcr0+4],edx
+	; The xsetbv unconditionally causes VM-Exits, so avoid it if guest/host xcr0 equals.
+	shl rdx,32
+	or rax,rdx
+	cmp rax,qword ptr [rsp+stacktop_offset_host_xcr0]
+	je precall_gh_xcr0_equal
+	mov eax,dword ptr [rsp+stacktop_offset_host_xcr0+0]
+	mov edx,dword ptr [rsp+stacktop_offset_host_xcr0+4]
+	xsetbv
+precall_gh_xcr0_equal:
 	; Save volatile XMM State.
 	pushax_volatile_fast stacktop_offset_volatile_xmms
 	.allocstack 20h
@@ -67,6 +83,16 @@ nvc_vt_exit_handler_a proc frame
 resume_guest:
 	; Restore volatile XMM State.
 	popax_volatile_fast stacktop_offset_volatile_xmms
+	; After restoring volatile XMM state, load guest xcr0.
+	; The xsetbv unconditionally causes VM-Exits, so avoid it if guest/host xcr0 equals.
+	mov rax,qword ptr [rsp+stacktop_offset_guest_xcr0]
+	cmp rax,qword ptr [rsp+stacktop_offset_host_xcr0]
+	je postcall_gh_xcr0_equal
+	mov rdx,rax
+	shr rdx,32
+	xor ecx,ecx
+	xsetbv
+postcall_gh_xcr0_equal:
 	; Restore all GPRs.
 	popaq_fast stacktop_offset_guest_gpr
 	; Check if the VMCS is launched.
@@ -98,6 +124,7 @@ nvc_vt_subvert_processor_a proc frame
 	xor rax,rax		; Make sure it would return zero if vmlaunch succeeds.
 	pushaq
 	mov rdx,rsp
+	rdsspq r8
 	sub rsp,20h
 	.allocstack 20h
 	.endprolog

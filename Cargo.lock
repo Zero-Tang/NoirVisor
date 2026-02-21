@@ -217,9 +217,9 @@ dependencies = [
 
 [[package]]
 name = "uefi"
-version = "0.36.0"
+version = "0.36.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f123e69767fc287c44d70ee19af3b39d1bfb735dbaff5090e95b5b13cd656d16"
+checksum = "71fe9058b73ee2b6559524af9e33199c13b2485ddbf3ad1181b68051cdc50c17"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -244,9 +244,9 @@ dependencies = [
 
 [[package]]
 name = "uefi-raw"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8aff2f4f2b556a36a201d335a1e0a57754967a96857b1f47a52d5a23825cac84"
+checksum = "7f64fe59e11af447d12fd60a403c74106eb104309f34b4c6dbce6e927d97da9d"
 dependencies = [
  "bitflags",
  "uguid",

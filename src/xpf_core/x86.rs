@@ -963,6 +963,23 @@ pub mod descriptors
 		pub const CALL_GATE:u16=0xC;
 		pub const INTERRUPT_GATE:u16=0xE;
 		pub const TRAP_GATE:u16=0xF;
+
+		pub const DATA_READ_ONLY:u16=0x0;
+		pub const DATA_READ_ONLY_ACCESSED:u16=0x1;
+		pub const DATA_READ_WRITE:u16=0x2;
+		pub const DATA_READ_WRITE_ACCESSED:u16=0x3;
+		pub const DATA_READ_ONLY_EXPAND_DOWN:u16=0x4;
+		pub const DATA_READ_ONLY_EXPAND_DOWN_ACCESSED:u16=0x5;
+		pub const DATA_READ_WRITE_EXPAND_DOWN:u16=0x6;
+		pub const DATA_READ_WRITE_EXPAND_DOWN_ACCESSED:u16=0x7;
+		pub const CODE_EXECUTE_ONLY:u16=0x8;
+		pub const CODE_EXECUTE_ONLY_ACCESSED:u16=0x9;
+		pub const CODE_EXECUTE_READ:u16=0xA;
+		pub const CODE_EXECUTE_READ_ACCESSED:u16=0xB;
+		pub const CODE_EXECUTE_ONLY_CONFORMING:u16=0xC;
+		pub const CODE_EXECUTE_ONLY_CONFORMING_ACCESSED:u16=0xD;
+		pub const CODE_EXECUTE_READ_CONFORMING:u16=0xE;
+		pub const CODE_EXECUTE_READ_CONFORMING_ACCESSED:u16=0xF;
 	}
 
 	#[repr(C,packed)] pub struct UserSegmentDescriptor
@@ -1130,11 +1147,18 @@ pub mod crdr
 	define_bit!(CR4_FSGSBASE,16);
 	define_bit!(CR4_PCIDE,17);
 	define_bit!(CR4_OSXSAVE,18);
+	define_bit!(CR4_KL,19);
 	define_bit!(CR4_SMEP,20);
 	define_bit!(CR4_SMAP,21);
 	define_bit!(CR4_PKE,22);
 	define_bit!(CR4_CET,23);
 	define_bit!(CR4_PKS,24);
+	define_bit!(CR4_UINTR,25);
+	define_bit!(CR4_LASS,27);
+	define_bit!(CR4_LAM_SUP,28);
+	define_bit!(CR4_FRED,32);
+
+	pub const CR4_TLB_FLUSH_MASK:u64=CR4_PSE|CR4_PAE|CR4_PGE|CR4_PCIDE|CR4_SMEP;
 
 	define_bit!(DR6_B0,0);
 	define_bit!(DR6_B1,1);
@@ -1178,6 +1202,25 @@ pub mod crdr
 		pub const DATA_WRITE:u64=1;
 		pub const IO_BREAK:u64=2;
 		pub const DATA_READWRITE:u64=3;
+	}
+
+	#[bitfield(u64)] pub struct Xcr0
+	{
+		pub x87:bool,
+		pub sse:bool,
+		pub avx:bool,
+		pub bndreg:bool,
+		pub bndcsr:bool,
+		pub opmask:bool,
+		pub zmm_hi256:bool,
+		pub hi16_zmm:bool,
+		pub rsvd0:bool,
+		pub pkru:bool,
+		pub tileconfig:bool,
+		pub tiledata:bool,
+		#[bits(50)] pub rsvd1:u64,
+		pub lwp:bool,
+		pub x:bool
 	}
 }
 
@@ -2171,6 +2214,8 @@ pub mod msr
 
 pub mod apic
 {
+    use bitfield_struct::bitfield;
+
 	pub const APIC_OFFSET_ID:usize=0x20;
 	pub const APIC_OFFSET_VERSION:usize=0x30;
 	pub const APIC_OFFSET_TPR:usize=0x80;
@@ -2194,4 +2239,64 @@ pub mod apic
 	pub const APIC_OFFSET_TIMER_INITIAL_COUNT:usize=0x380;
 	pub const APIC_OFFSET_TIMER_CURRENT_COUNT:usize=0x390;
 	pub const APIC_OFFSET_TIMER_DIVIDE_CONFIG:usize=0x3E0;
+
+	#[bitfield(u64)] pub struct ApicBar
+	{
+		rsvd0:u8,
+		pub bsc:bool,
+		rsvd1:bool,
+		pub x2apic:bool,
+		pub enable:bool,
+		#[bits(40)] pub bar:u64,
+		#[bits(12)] rsvd2:u64
+	}
+
+	#[bitfield(u32)] pub struct ApicIcrLo
+	{
+		pub vector:u8,
+		#[bits(3)] pub message_type:u8,
+		pub destination_mode:bool,
+		pub delivery_status:bool,
+		rsvd0:bool,
+		pub level:bool,
+		pub trigger_mode:bool,
+		#[bits(2)] pub remote_read_status:u8,
+		#[bits(2)] pub destination_shorthand:u8,
+		#[bits(12)] rsvd1:u32
+	}
+
+	#[bitfield(u32)] pub struct ApicIcrHi
+	{
+		#[bits(24)] rsvd:u32,
+		pub destination:u8
+	}
+
+	#[bitfield(u64)] pub struct ApicX2Icr
+	{
+		pub vector:u8,
+		#[bits(3)] pub message_type:u8,
+		pub destination_mode:bool,
+		#[bits(2)] rsvd0:u8,
+		pub level:bool,
+		pub trigger_mode:bool,
+		#[bits(2)] rsvd1:u8,
+		#[bits(2)] pub destination_shorthand:u8,
+		#[bits(12)] rsvd2:u32,
+		pub destination:u32
+	}
+
+	impl ApicX2Icr
+	{
+		// Message Types.
+		pub const MESSAGE_TYPE_FIXED:u8=0;
+		pub const MESSAGE_TYPE_SMI:u8=2;
+		pub const MESSAGE_TYPE_NMI:u8=4;
+		pub const MESSAGE_TYPE_INIT:u8=5;
+		pub const MESSAGE_TYPE_SIPI:u8=6;
+		// Destination Shorthand
+		pub const DSH_DESTINATION:u8=0;
+		pub const DSH_SELF:u8=1;
+		pub const DSH_ALL_INCLUSIVE:u8=2;
+		pub const DSH_ALL_EXCLUSIVE:u8=3;
+	}
 }
