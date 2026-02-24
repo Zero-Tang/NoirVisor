@@ -1,7 +1,7 @@
 /*
  * NoirVisor Core in Rust
  * 
- * Copyright (c) Zero Tang, 2018-2025. All rights reserved.
+ * Copyright (c) Zero Tang, 2018-2026. All rights reserved.
  * 
  * This file defines x86 CVM of NoirVisor Core in Rust.
  * 

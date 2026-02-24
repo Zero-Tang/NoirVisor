@@ -1,7 +1,7 @@
 /*
   NoirVisor - Hardware-Accelerated Hypervisor solution
 
-  Copyright 2018-2025, Zero Tang. All rights reserved.
+  Copyright 2018-2026, Zero Tang. All rights reserved.
 
   This file is the invoker of the yaxpeax Disassembler Crate.
 

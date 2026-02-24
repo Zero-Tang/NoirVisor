@@ -1,7 +1,7 @@
 /*
  * NoirVisor Core in Rust
  * 
- * Copyright (c) Zero Tang, 2018-2025. All rights reserved.
+ * Copyright (c) Zero Tang, 2018-2026. All rights reserved.
  * 
  * This file manages VMCB in NoirVisor Core in Rust.
  * 
@@ -14,8 +14,31 @@ use core::{arch::asm, ffi::c_void, ops::{BitAndAssign, BitOrAssign, BitXorAssign
 use paste::paste;
 use bitfield_struct::bitfield;
 
-use crate::{xpf_core::x86::crdr::DR6_BS_BIT, *};
-use xpf_core::{x86::{interrupts::*, rflags::*}, nvbdk::SegmentRegister};
+use crate::xpf_core;
+use xpf_core::{x86::{interrupts::*, rflags::*, crdr::DR6_BS_BIT}, nvbdk::SegmentRegister};
+
+pub(super) trait VmcbOps
+{
+	fn get_vmcb(&self)->*mut c_void;
+
+	/// ## Safety
+	/// If `offset+size_of::<T>()` is not less than `PAGE_4KB_SIZE`, it may cause undefined behavior!
+	#[inline(always)] unsafe fn vmread<T:Sized+Copy>(&self,offset:usize)->T
+	{
+		unsafe
+		{
+			*self.get_vmcb().byte_add(offset).cast()
+		}
+	}
+
+	#[inline(always)] unsafe fn vmwrite<T:Sized+Copy>(&mut self,offset:usize,value:T)
+	{
+		unsafe
+		{
+			*self.get_vmcb().byte_add(offset).cast()=value;
+		}
+	}
+}
 
 #[inline] pub fn svm_attrib(attrib:u16)->u16
 {

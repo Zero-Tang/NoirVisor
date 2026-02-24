@@ -1,35 +1,38 @@
 #![no_main]
 #![no_std]
 
-use core::{arch::x86_64::__cpuid, mem::MaybeUninit};
-use uefi::*;
+extern crate alloc;
+
+use core::{arch::x86_64::__cpuid, char, mem::MaybeUninit, slice};
+use alloc::{string::String, vec::Vec};
+
+use uefi::{runtime::VariableVendor, *};
 use allocator::Allocator;
 use boot::{image_handle, open_protocol, OpenProtocolAttributes, OpenProtocolParams, LoadImageSource};
 use proto::{console::text::*,loaded_image::LoadedImage,device_path::{self,DevicePath,build::DevicePathBuilder}, BootPolicy};
-use system::{with_stdout,with_stdin};
+use system::with_stdout;
 use table::system_table_raw;
 
 #[global_allocator] static EFI_ALLOC:Allocator=Allocator;
 
-fn check_keystroke(key:char,stdin:&mut Input)->bool
+fn wait_for_keystroke()->char
 {
-	let uk=Char16::try_from(key).unwrap();
-	let mut evt=[stdin.wait_for_key_event().unwrap()];
-	let _=boot::wait_for_event(&mut evt).discard_errdata();
-	if let Some(k)=stdin.read_key().unwrap()
+	uefi::system::with_stdin(|stdin|
 	{
-		return k==Key::Printable(uk);
-	}
-	false
-}
-
-fn block_until_keystroke(key:char)
-{
-	loop
-	{
-		let r=with_stdin(|stdin| check_keystroke(key, stdin));
-		if r {break;}
-	}
+		loop
+		{
+			if let Ok(o)=stdin.read_key()
+			{
+				if let Some(k)=o
+				{
+					if let Key::Printable(p)=k
+					{
+						return p.into();
+					}
+				}
+			}
+		}
+	})
 }
 
 fn print_cpu_info()
@@ -111,6 +114,156 @@ fn load_hypervisor_driver()->Option<Handle>
 	}
 }
 
+// EFI_LOAD_OPTION is not implemented in uefi crate.
+#[repr(C,packed)] struct BootOption
+{
+	attributes:u32,
+	file_path_list_length:u16,
+	// description:[u16],
+	// file_path_list:[DevicePathProtocol],
+	// optional_data:[u8]
+}
+
+impl BootOption
+{
+	fn get_description(&self,limit:usize)->String
+	{
+		let p:*const u16=unsafe{(&raw const *self).byte_add(size_of::<Self>()).cast()};
+		let max_buff=unsafe{slice::from_raw_parts(p,(limit-size_of::<Self>())>>1)};
+		let len=max_buff.iter().position(|v| *v==0).unwrap_or(max_buff.len());
+		String::from_utf16_lossy(&max_buff[..len])
+	}
+
+	fn get_optional_data(&self,limit:usize)->Vec<u8>
+	{
+		let p:*const u16=unsafe{(&raw const *self).byte_add(size_of::<Self>()).cast()};
+		let max_buff=unsafe{slice::from_raw_parts(p,(limit-size_of::<Self>())>>1)};
+		let len=max_buff.iter().position(|v| *v==0).unwrap_or(max_buff.len());
+		unsafe
+		{
+			let q:*const u8=p.add(len+1).byte_add(self.file_path_list_length as usize).cast();
+			slice::from_raw_parts(q,limit-q.offset_from_unsigned((&raw const *self).cast())).to_vec()
+		}
+	}
+
+	fn get_device_path(&self,limit:usize)->Vec<u8>
+	{
+		let p:*const u16=unsafe{(&raw const *self).byte_add(size_of::<Self>()).cast()};
+		let max_buff=unsafe{slice::from_raw_parts(p,(limit-size_of::<Self>())>>1)};
+		let len=max_buff.iter().position(|v| *v==0).unwrap_or(max_buff.len());
+		unsafe
+		{
+			let q:*const u8=p.add(len+1).cast();
+			slice::from_raw_parts(q,self.file_path_list_length as usize).to_vec()
+		}
+	}
+}
+
+struct LoadOption
+{
+	name:String,
+	description:String,
+	device_path:Vec<u8>,
+	optional_data:Vec<u8>
+}
+
+fn select_boot_option()
+{
+	let mut name_buff_raw:MaybeUninit<[u16;100]>=MaybeUninit::uninit();
+	let name_buff=unsafe{name_buff_raw.assume_init_mut()}.as_mut_slice();
+	name_buff[0]=0;
+	let mut vendor=VariableVendor::GLOBAL_VARIABLE;
+	let mut options:Vec<LoadOption>=Vec::new();
+	loop
+	{
+		match runtime::get_next_variable_key(name_buff,&mut vendor)
+		{
+			Ok(_)=>
+			{
+				let len=name_buff.iter().position(|v| *v==0).unwrap_or(name_buff.len());
+				let name=String::from_utf16_lossy(&name_buff[..len]);
+				if name.starts_with("Boot") && name.len()==8
+				{
+					match runtime::get_variable_boxed(unsafe{CStr16::from_u16_with_nul_unchecked(name_buff)},&vendor)
+					{
+						Ok((raw,_attrib))=>
+						{
+							let boot_opt:&BootOption=unsafe{&*raw.as_ptr().cast()};
+							let description=boot_opt.get_description(raw.len());
+							let device_path=boot_opt.get_device_path(raw.len());
+							let optional_data=boot_opt.get_optional_data(raw.len());
+							options.push(LoadOption{name,description,device_path,optional_data});
+						}
+						Err(e)=>println!("Failed to GetVariable for {name}! Reason: {e}")
+					}
+				}
+			}
+			Err(e)=>
+			{
+				if e.status()!=Status::NOT_FOUND
+				{
+					println!("GetNextVariable failed! Reason: {e}");
+				}
+				break;
+			}
+		}
+	}
+	let mut position:usize=0;
+	let reprinter_fn=|pos:usize|
+	{
+		let _=with_stdout(|s| s.clear());
+		println!("Select the next boot option. Press Enter key to confirm selection.");
+		println!("Press W to move cursor upward. Press S to move cursor downward.");
+		for (i,opt) in options.iter().enumerate()
+		{
+			println!("{} {}: {} (Device-Path: {:02X?}, Optional-Data: {:02X?}",if i==pos {"----> "} else {""},opt.name,opt.description,opt.device_path,opt.optional_data);
+		}
+	};
+	reprinter_fn(position);
+	loop
+	{
+		let key=wait_for_keystroke();
+		match key
+		{
+			'w'|'W'=>if position==0
+			{
+				position=options.len()-1;
+			}
+			else
+			{
+				position-=1;
+			}
+			's'|'S'=>if position<options.len()-1
+			{
+				position+=1;
+			}
+			else
+			{
+				position=0;
+			}
+			'\r'=>
+			{
+				// Load the boot option.
+				let p:&DevicePath=unsafe{DevicePath::from_ffi_ptr(options[position].device_path.as_ptr().cast())};
+				match boot::load_image(image_handle(),LoadImageSource::FromDevicePath{device_path:p,boot_policy:BootPolicy::ExactMatch})
+				{
+					Ok(h)=>
+					{
+						if let Err(e)=boot::start_image(h)
+						{
+							println!("Failed to start image! Reason: {e}");
+						}
+					}
+					Err(e)=>println!("Failed to load image! Reason: {e}")
+				}
+				break;
+			}
+			_=>continue
+		}
+		reprinter_fn(position);
+	}
+}
+
 #[allow(dead_code)]
 fn test_exit_bs()->!
 {
@@ -145,8 +298,16 @@ fn test_exit_bs()->!
 		}
 		None=>println!("Failed to load image!")
 	}
-	println!("Press Enter key to continue...");
-	block_until_keystroke('\r');
+	println!("Press Enter key to enter boot selection. Press Space key to leave.");
+	loop
+	{
+		match wait_for_keystroke()
+		{
+			'\r'=>select_boot_option(),
+			' '=>break,
+			_=>continue
+		}
+	}
 	Status::SUCCESS
 }
 

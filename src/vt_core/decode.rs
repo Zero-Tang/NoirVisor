@@ -1,7 +1,7 @@
 /*
  * NoirVisor Core in Rust
  * 
- * Copyright (c) Zero Tang, 2018-2025. All rights reserved.
+ * Copyright (c) Zero Tang, 2018-2026. All rights reserved.
  * 
  * This file helps fetching and decoding instructions in Intel VT-x of
  * NoirVisor Core in Rust since it's not supported in the processor.
