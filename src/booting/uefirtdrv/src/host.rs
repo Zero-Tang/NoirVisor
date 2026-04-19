@@ -66,14 +66,18 @@ pub static IMAGE_INFO:AtomicPtr<loaded_image::Protocol>=AtomicPtr::new(null_mut(
 pub fn set_console_color(color:usize)
 {
 	let stdout=unsafe{&mut *STDOUT_PROTOCOL.load(Ordering::Relaxed)};
-	(stdout.set_attribute)(stdout,color);
+	unsafe
+	{
+		(stdout.set_attribute)(stdout,color);
+	}
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn handle_protocol<T>(handle:Handle,mut guid:Guid)->Result<*mut T,Status>
 {
 	let bs=unsafe{&*BS_TABLE.load(Ordering::Relaxed)};
 	let mut protocol:*mut T=null_mut();
-	let st=(bs.handle_protocol)(handle,&raw mut guid,(&raw mut protocol).cast());
+	let st=unsafe{(bs.handle_protocol)(handle,&raw mut guid,(&raw mut protocol).cast())};
 	if st.is_error()
 	{
 		Err(st)
@@ -102,7 +106,10 @@ pub unsafe fn efi_init(image_handle:Handle,system_table:*mut SystemTable)
 	};
 	// Multi-Processor Protocol. Useful to broadcast a routine to all CPUs.
 	let mut mp_guid=mp_services::PROTOCOL_GUID;
-	(bs.locate_protocol)(&raw mut mp_guid,null_mut(),MP_PROTOCOL.as_ptr().cast());
+	unsafe
+	{
+		(bs.locate_protocol)(&raw mut mp_guid,null_mut(),MP_PROTOCOL.as_ptr().cast());
+	}
 	// Loaded Image Protocol. Useful to get self-image.
 	IMAGE_INFO.store(handle_protocol(image_handle,loaded_image::PROTOCOL_GUID).unwrap(),Ordering::Relaxed);
 }
@@ -115,8 +122,11 @@ pub fn block_until_keystroke(unicode:u16)
 	while incoming.unicode_char!=unicode
 	{
 		let mut fi=0;
-		(bs.wait_for_event)(1,&raw mut stdin.wait_for_key,&raw mut fi);
-		(stdin.read_key_stroke)(stdin,&raw mut incoming);
+		unsafe
+		{
+			(bs.wait_for_event)(1,&raw mut stdin.wait_for_key,&raw mut fi);
+			(stdin.read_key_stroke)(stdin,&raw mut incoming);
+		}
 	}
 }
 
@@ -204,7 +214,7 @@ const PAGE_2MB_MASK_HI:u64=!PAGE_2MB_MASK_LO;
 {
 	let mut p=0;
 	let bs=unsafe{&*BS_TABLE.load(Ordering::Relaxed)};
-	let st=(bs.allocate_pages)(ALLOCATE_ANY_PAGES,RUNTIME_SERVICES_DATA,1024,&raw mut p);
+	let st=unsafe{(bs.allocate_pages)(ALLOCATE_ANY_PAGES,RUNTIME_SERVICES_DATA,1024,&raw mut p)};
 	if st.is_error()
 	{
 		println!("BootService->AllocatePages failed! Status=0x{:X}",st.as_usize());
@@ -212,30 +222,36 @@ const PAGE_2MB_MASK_HI:u64=!PAGE_2MB_MASK_LO;
 	}
 	else
 	{
-		// Get aligned address at 2MiB boundary.
-		let aligned_ptr=(p&PAGE_2MB_MASK_HI)+PAGE_2MB_SIZE;
-		// Release left-side pages.
-		let left_size=(aligned_ptr-p)>>PAGE_SHIFT;
-		if left_size!=0
+		unsafe
 		{
-			(bs.free_pages)(p,left_size as usize);
+			// Get aligned address at 2MiB boundary.
+			let aligned_ptr=(p&PAGE_2MB_MASK_HI)+PAGE_2MB_SIZE;
+			// Release left-side pages.
+			let left_size=(aligned_ptr-p)>>PAGE_SHIFT;
+			if left_size!=0
+			{
+				(bs.free_pages)(p,left_size as usize);
+			}
+			// Release right-side pages.
+			let right_size=(p+PAGE_2MB_SIZE-aligned_ptr)>>PAGE_SHIFT;
+			if right_size!=0
+			{
+				let right_ptr=p+PAGE_2MB_SIZE*2-aligned_ptr;
+				(bs.free_pages)(right_ptr,right_size as usize);
+			}
+			// Return.
+			aligned_ptr as *mut c_void
 		}
-		// Release right-side pages.
-		let right_size=(p+PAGE_2MB_SIZE-aligned_ptr)>>PAGE_SHIFT;
-		if right_size!=0
-		{
-			let right_ptr=p+PAGE_2MB_SIZE*2-aligned_ptr;
-			(bs.free_pages)(right_ptr,right_size as usize);
-		}
-		// Return.
-		aligned_ptr as *mut c_void
 	}
 }
 
 #[unsafe(no_mangle)] extern "C" fn noir_free_2mb_page(virtual_address:*mut c_void)
 {
 	let bs=unsafe{&*BS_TABLE.load(Ordering::Relaxed)};
-	(bs.free_pages)(virtual_address as u64,PAGE_2MB_SIZE as usize);
+	unsafe
+	{
+		(bs.free_pages)(virtual_address as u64,PAGE_2MB_SIZE as usize);
+	}
 }
 
 #[unsafe(no_mangle)] extern "C" fn noir_get_physical_address(virtual_address:*mut c_void)->u64
@@ -281,7 +297,10 @@ extern "efiapi" fn noir_generic_call_rt(argument:*mut c_void)
 	{
 		let mp=unsafe{&*mp_ptr};
 		let mut n:usize=0;
-		(mp.who_am_i)(mp_ptr,&raw mut n);
+		unsafe
+		{
+			(mp.who_am_i)(mp_ptr,&raw mut n);
+		}
 		n
 	};
 	(context.worker)(context.context,proc_id as u32);
@@ -300,7 +319,10 @@ extern "efiapi" fn noir_generic_call_rt(argument:*mut c_void)
 	if !mp_ptr.is_null()
 	{
 		let mp=unsafe{&*mp_ptr};
-		(mp.startup_all_aps)(mp_ptr,noir_generic_call_rt,Boolean::TRUE,null_mut(),0,(&raw mut worker_context).cast(),null_mut());
+		unsafe
+		{
+			(mp.startup_all_aps)(mp_ptr,noir_generic_call_rt,Boolean::TRUE,null_mut(),0,(&raw mut worker_context).cast(),null_mut());
+		}
 	}
 }
 
@@ -316,7 +338,7 @@ extern "efiapi" fn noir_generic_call_rt(argument:*mut c_void)
 		let mut n1=0;
 		let mut n2=0;
 		let mp=unsafe{&*mp_ptr};
-		let st=(mp.get_number_of_processors)(mp_ptr,&raw mut n1,&raw mut n2);
+		let st=unsafe{(mp.get_number_of_processors)(mp_ptr,&raw mut n1,&raw mut n2)};
 		if !st.is_error() {n1 as u32} else {1}
 	}
 }

@@ -144,6 +144,12 @@ If KVM is available:
 python run_qemu.py -accel kvm
 ```
 
+Note that QEMU TCG may output debug logs. Pass `-debug` argument to this script in order to give `-d` argument to QEMU. You might most likely be interested in giving `-d int` argument in order to log exceptions. In other words:
+```
+python run_qemu.py -debug int
+```
+Debug log is written into `qemu.log`.
+
 **Bochs**: In the `tests` directory, execute the `run_bochs.py` script. Note that only [Bochs-3.0](https://sourceforge.net/projects/bochs/files/bochs/3.0/) is supported. \
 To emulate Intel VT-x in Bochs:
 ```

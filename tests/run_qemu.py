@@ -6,6 +6,7 @@ if __name__=="__main__":
 	# OVMF must be present.
 	subprocess.call([sys.executable,"download-ovmf.py"])
 	accel_name="tcg"
+	debug_log=None
 	can_run=True
 	cpu_arg="{},hypervisor=off"
 	machine_arg="pc,smm=on,{}"
@@ -15,8 +16,11 @@ if __name__=="__main__":
 		if sys.argv[i]=="-accel":
 			i+=1
 			accel_name=sys.argv[i]
+		elif sys.argv[i]=="-debug":
+			i+=1
+			debug_log=sys.argv[i]
 		else:
-			print("Unknown argument: {}!".format(accel_name))
+			print("Unknown argument: {}!".format(sys.argv[i]))
 		i+=1
 	if accel_name=="tcg":
 		cpu_arg=cpu_arg.format("max")
@@ -61,4 +65,6 @@ if __name__=="__main__":
 			"-drive","if=pflash,format=raw,unit=1,readonly=on,file=ovmf-vars.fd",
 			"-drive","format=raw,file="+os.path.join("..","bin","compchk_uefix64","NoirVisor-Uefi.img"),
 			"-debugcon","stdio"]
+		if not debug_log is None:
+			cmd_list+=["-d",debug_log,"-D","qemu.log"]
 		subprocess.call(cmd_list)

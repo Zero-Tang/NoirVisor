@@ -10,19 +10,181 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::asm, ffi::c_void, ops::{BitAndAssign, BitOrAssign, BitXorAssign}};
+use core::{arch::x86_64::{_bittest, _bittestandcomplement, _bittestandreset, _bittestandset}, ffi::c_void};
 use paste::paste;
 use bitfield_struct::bitfield;
 
-use crate::xpf_core;
+use crate::{svm_core::SvmVcpu, xpf_core::{self, x86::{descriptors::SegmentFlags, msr::Efer}}};
 use xpf_core::{x86::{interrupts::*, rflags::*, crdr::DR6_BS_BIT}, nvbdk::SegmentRegister};
+
+macro_rules! define_rw_field
+{
+	($field_name:tt,$const_name:expr,$field_type:ty)=>
+	{
+		paste!
+		{
+			#[inline(always)] fn [<read_ $field_name:lower>](&self)->$field_type
+			{
+				unsafe
+				{
+					self.vmread($const_name)
+				}
+			}
+
+			#[inline(always)] fn [<write_ $field_name:lower>](&mut self,value:$field_type)
+			{
+				unsafe
+				{
+					self.vmwrite($const_name,value)
+				}
+			}
+
+			#[inline(always)] fn [<ref_ $field_name:lower>](&self)->&$field_type
+			{
+				unsafe
+				{
+					&*self.get_vmcb().byte_add($const_name).cast()
+				}
+			}
+
+			#[inline(always)] fn [<ref_ $field_name:lower _mut>](&mut self)->&mut $field_type
+			{
+				unsafe
+				{
+					&mut *self.get_vmcb().byte_add($const_name).cast()
+				}
+			}
+		}
+	};
+	($field_name:tt,$const_name:expr,$field_type:ty,$cache_name:tt)=>
+	{
+		paste!
+		{
+			#[inline(always)] fn [<read_ $field_name:lower>](&self)->$field_type
+			{
+				unsafe
+				{
+					self.vmread($const_name)
+				}
+			}
+
+			#[inline(always)] fn [<write_ $field_name:lower>](&mut self,value:$field_type)
+			{
+				unsafe
+				{
+					self.vmwrite($const_name,value);
+					self.clean_vmcb([<CLEAN_ $cache_name:upper _BIT>]);
+				}
+			}
+
+			#[inline(always)] fn [<ref_ $field_name:lower>](&self)->&$field_type
+			{
+				unsafe
+				{
+					&*self.get_vmcb().byte_add($const_name).cast()
+				}
+			}
+
+			#[inline(always)] fn [<ref_ $field_name:lower _mut>](&mut self)->&mut $field_type
+			{
+				unsafe
+				{
+					self.clean_vmcb([<CLEAN_ $cache_name:upper _BIT>]);
+					&mut *self.get_vmcb().byte_add($const_name).cast()
+				}
+			}
+		}
+	};
+}
+
+macro_rules! define_bt_methods
+{
+	($field_name:tt,$const_offset:expr)=>
+	{
+		paste!
+		{
+			#[inline(always)] fn [<bt_ $field_name:lower>](&self,bit:i32)->bool
+			{
+				unsafe
+				{
+					self.vmcb_bt($const_offset,bit)
+				}
+			}
+
+			#[inline(always)] fn [<bts_ $field_name:lower>](&mut self,bit:i32)->bool
+			{
+				unsafe
+				{
+					self.vmcb_bts($const_offset,bit)
+				}
+			}
+
+			#[inline(always)] fn [<btr_ $field_name:lower>](&mut self,bit:i32)->bool
+			{
+				unsafe
+				{
+					self.vmcb_btr($const_offset,bit)
+				}
+			}
+
+			#[inline(always)] fn [<btc_ $field_name:lower>](&mut self,bit:i32)->bool
+			{
+				unsafe
+				{
+					self.vmcb_btc($const_offset,bit)
+				}
+			}
+		}
+	};
+	($field_name:tt,$const_offset:expr,$cache_name:tt)=>
+	{
+		paste!
+		{
+			#[inline(always)] fn [<bt_ $field_name:lower>](&self,bit:i32)->bool
+			{
+				unsafe
+				{
+					self.vmcb_bt($const_offset,bit)
+				}
+			}
+
+			#[inline(always)] fn [<bts_ $field_name:lower>](&mut self,bit:i32)->bool
+			{
+				unsafe
+				{
+					self.clean_vmcb([<CLEAN_ $cache_name:upper _BIT>]);
+					self.vmcb_bts($const_offset,bit)
+				}
+			}
+
+			#[inline(always)] fn [<btr_ $field_name:lower>](&mut self,bit:i32)->bool
+			{
+				unsafe
+				{
+					self.clean_vmcb([<CLEAN_ $cache_name:upper _BIT>]);
+					self.vmcb_btr($const_offset,bit)
+				}
+			}
+
+			#[inline(always)] fn [<btc_ $field_name:lower>](&mut self,bit:i32)->bool
+			{
+				unsafe
+				{
+					self.clean_vmcb([<CLEAN_ $cache_name:upper _BIT>]);
+					self.vmcb_btc($const_offset,bit)
+				}
+			}
+		}
+	};
+}
 
 pub(super) trait VmcbOps
 {
 	fn get_vmcb(&self)->*mut c_void;
 
+	/// Reads an item from the VMCB of this vCPU given the `offset`.
 	/// ## Safety
-	/// If `offset+size_of::<T>()` is not less than `PAGE_4KB_SIZE`, it may cause undefined behavior!
+	/// You must ensure `offset` is a defined field and `size_of::<T>()` is correct.
 	#[inline(always)] unsafe fn vmread<T:Sized+Copy>(&self,offset:usize)->T
 	{
 		unsafe
@@ -31,6 +193,10 @@ pub(super) trait VmcbOps
 		}
 	}
 
+	/// Writes an item into the VMCB of this vCPU given the `offset`. \
+	/// Note that this routine will not flush the cached state in the processor.
+	/// ## Safety
+	/// You must ensure `offset` is a defined field and `size_of::<T>()` is correct.
 	#[inline(always)] unsafe fn vmwrite<T:Sized+Copy>(&mut self,offset:usize,value:T)
 	{
 		unsafe
@@ -38,16 +204,184 @@ pub(super) trait VmcbOps
 			*self.get_vmcb().byte_add(offset).cast()=value;
 		}
 	}
+
+	/// Writes a segment into the VMCB of this vCPU given the `offset` and automatically converts the segment attributes. \
+	/// Note that this routine will not flush the cached state in the processor.
+	/// ## Safety
+	/// You must ensure `offset` is a defined field and `size_of::<T>()` is correct.
+	#[inline(always)] unsafe fn vmwrite_segment(&mut self,offset:usize,segment:&SegmentRegister)
+	{
+		unsafe
+		{
+			self.vmwrite(offset,segment.selector);
+			self.vmwrite(offset+2,SvmSegmentFlags::from_flags(SegmentFlags::from_bits(segment.attrib)));
+			self.vmwrite(offset+4,segment.limit);
+			self.vmwrite(offset+8,segment.base);
+		}
+	}
+
+	/// Tests a bit of a certain field in the VMCB of this vCPU given the `offset`. \
+	/// ## Safety
+	/// You must ensure `offset` is a defined field and `bit` is within the field.
+	#[inline(always)] unsafe fn vmcb_bt(&self,offset:usize,bit:i32)->bool
+	{
+		unsafe
+		{
+			_bittest(self.get_vmcb().byte_add(offset).cast(),bit)!=0
+		}
+	}
+
+	#[inline(always)] unsafe fn vmcb_btc(&mut self,offset:usize,bit:i32)->bool
+	{
+		unsafe
+		{
+			_bittestandcomplement(self.get_vmcb().byte_add(offset).cast(),bit)!=0
+		}
+	}
+
+	#[inline(always)] unsafe fn vmcb_btr(&mut self,offset:usize,bit:i32)->bool
+	{
+		unsafe
+		{
+			_bittestandreset(self.get_vmcb().byte_add(offset).cast(),bit)!=0
+		}
+	}
+
+	#[inline(always)] unsafe fn vmcb_bts(&mut self,offset:usize,bit:i32)->bool
+	{
+		unsafe
+		{
+			_bittestandset(self.get_vmcb().byte_add(offset).cast(),bit)!=0
+		}
+	}
+
+	#[inline(always)] unsafe fn clean_vmcb(&mut self,cache_index:i32)
+	{
+		unsafe
+		{
+			self.vmcb_btr(VMCB_CLEAN_BITS,cache_index);
+		}
+	}
+
+	#[inline(always)] fn advance_rip_internal(&mut self,next_rip:u64)
+	{
+		self.write_rip(next_rip);
+		unsafe
+		{
+			if self.vmcb_bt(GUEST_RFLAGS,RFLAGS_TF_BIT as i32)
+			{
+				// In case the guest is single-step debugging, we should inject debug trace trap so that
+				// the next instruction won't be skipped in debugger, confusing the debugging personnel.
+				// If guest is single-step debugging, slight penalty due to branch predictor is acceptable.
+				self.inject_event(DEBUG_FAULT_OR_TRAP,EventType::HardwareException,None,true);
+				self.vmcb_bts(GUEST_DR6,DR6_BS_BIT as i32);
+				self.clean_vmcb(CLEAN_DR_BIT);
+			}
+		}
+	}
+
+	#[inline(always)] fn advance_rip(&mut self)
+	{
+		self.advance_rip_internal(self.read_next_rip());
+	}
+
+	#[inline(always)] fn advance_rip_manually(&mut self,length:usize)
+	{
+		let mut rip=self.read_rip();
+		rip+=length as u64;
+		if !unsafe{self.ref_efer().lma() && self.vmcb_bt(GUEST_CS_ATTRIB,9)}
+		{
+			// If the guest is not in long mode, the next rip must not exceed 32-bit boundary.
+			rip&=u32::MAX as u64;
+		}
+		self.advance_rip_internal(rip);
+	}
+
+	#[inline(always)] fn inject_event(&mut self,vector:u8,event_type:EventType,error_code:Option<u32>,valid:bool)
+	{
+		let evt=match error_code
+		{
+			Some(ec)=>EventInjection::construct(vector,event_type,true,valid,ec),
+			None=>EventInjection::construct(vector,event_type,false,valid,0)
+		};
+		unsafe
+		{
+			self.vmwrite(EVENT_INJECTION,evt.0);
+		}
+	}
+
+	#[inline(always)] fn instruction_bytes<'a,'b>(&'a self)->&'b [u8;15]
+	{
+		unsafe
+		{
+			&*self.get_vmcb().byte_add(GUEST_INSTRUCTION_BYTES).cast()
+		}
+	}
+
+	#[inline(always)] fn instruction_bytes_mut<'a,'b>(&'a mut self)->&'b mut [u8;15]
+	{
+		unsafe
+		{
+			&mut *self.get_vmcb().byte_add(GUEST_INSTRUCTION_BYTES).cast()
+		}
+	}
+
+	define_rw_field!(next_rip,NEXT_RIP,u64);
+
+	define_rw_field!(rax,GUEST_RAX,u64);
+	define_rw_field!(rip,GUEST_RIP,u64);
+	define_rw_field!(rsp,GUEST_RSP,u64);
+	define_rw_field!(rflags,GUEST_RFLAGS,u64);
+	define_rw_field!(dr6,GUEST_DR6,u64,DR);
+	define_rw_field!(dr7,GUEST_DR7,u64,DR);
+	define_rw_field!(efer,GUEST_EFER,Efer,CR);
+	define_rw_field!(cr0,GUEST_CR0,u64,CR);
+	define_rw_field!(cr3,GUEST_CR3,u64,CR);
+	define_rw_field!(cr4,GUEST_CR4,u64,CR);
+	define_rw_field!(cr2,GUEST_CR2,u64,CR2);
+
+	define_bt_methods!(dr6,GUEST_DR6,DR);
+	define_bt_methods!(dr7,GUEST_DR7,DR);
+	define_bt_methods!(efer,GUEST_EFER,CR);
+	define_bt_methods!(cr0,GUEST_CR0,CR);
+	define_bt_methods!(cr4,GUEST_CR4,CR);
+	define_bt_methods!(rflags,GUEST_RFLAGS);
 }
 
-#[inline] pub fn svm_attrib(attrib:u16)->u16
+impl VmcbOps for SvmVcpu
 {
-	((attrib&0xFF)|((attrib&0xF000)>>4))&0xfff
+	#[inline(always)] fn get_vmcb(&self)->*mut c_void
+	{
+		self.vmcb.virt
+	}
 }
 
-#[inline] pub fn svm_attrib_inverse(attrib:u16)->u16
+#[bitfield(u16)] pub struct SvmSegmentFlags
 {
-	((attrib&0xF00)<<4)|(attrib&0xFF)
+	#[bits(4)] pub segment_type:u16,
+	pub user_segment:bool,
+	#[bits(2)] pub dpl:u16,
+	pub present:bool,
+	pub avl:bool,
+	pub long_mode:bool,
+	pub default_big:bool,
+	pub granularity:bool,
+	#[bits(4)] rsvd:u16
+}
+
+impl SvmSegmentFlags
+{
+	#[inline(always)] pub const fn from_flags(flags:SegmentFlags)->Self
+	{
+		let f=flags.into_bits();
+		Self::from_bits((((f&0xF000)>>4)|(f&0xFF))&0xFFF)
+	}
+
+	#[inline(always)] pub const fn into_flags(self)->SegmentFlags
+	{
+		let f=self.into_bits();
+		SegmentFlags::from_bits(((f&0xF00)<<4)|(f&0xFF))
+	}
 }
 
 #[inline] pub fn svm_msrpm_bit(index:u32,operation:bool)->Option<u32>
@@ -61,182 +395,6 @@ pub(super) trait VmcbOps
 	};
 	base.map(|x| x+if operation {1} else {0})
 }
-
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn inject_event(vmcb:*mut c_void,vector:u8,event_type:EventType,error_code:Option<u32>,valid:bool)
-{
-	let evt=match error_code
-	{
-		Some(ec)=>EventInjection::construct(vector,event_type,true,valid,ec),
-		None=>EventInjection::construct(vector,event_type,false,valid,0)
-	};
-	unsafe
-	{
-		vmwrite(vmcb,EVENT_INJECTION,evt.0);
-	}
-}
-
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn advance_rip(vmcb:*mut c_void)
-{
-	unsafe
-	{
-		vmwrite(vmcb,GUEST_RIP,vmread::<u64>(vmcb,NEXT_RIP));
-		if vmcb_bt32(vmcb,GUEST_RFLAGS,RFLAGS_TF_BIT)
-		{
-			// In case the guest is single-step debugging, we should inject debug trace trap so that
-			// the next instruction won't be skipped in debugger, confusing the debugging personnel.
-			// If guest is single-step debugging, slight penalty due to branch predictor is acceptable.
-			inject_event(vmcb,DEBUG_FAULT_OR_TRAP,EventType::HardwareException,None,true);
-			vmcb_bts32(vmcb,GUEST_DR6,DR6_BS_BIT as u32);
-			vmcb_clean_dr(vmcb);
-		}
-	}
-}
-
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn advance_rip_manually(vmcb:*mut c_void,len:usize)
-{
-	unsafe
-	{
-		vmwrite(vmcb,NEXT_RIP,vmread::<u64>(vmcb,GUEST_RIP)+(len as u64));
-		advance_rip(vmcb)
-	}
-}
-
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn vmread_segment(vmcb:*mut c_void,offset:usize)->SegmentRegister
-{
-	unsafe
-	{
-		SegmentRegister
-		{
-			selector:vmread(vmcb,offset),
-			attrib:svm_attrib_inverse(vmread(vmcb,offset+2)),
-			limit:vmread(vmcb,offset+4),
-			base:vmread(vmcb,offset+8)
-		}
-	}
-}
-
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn vmwrite_segment(vmcb:*mut c_void,offset:usize,value:SegmentRegister)
-{
-	unsafe
-	{
-		vmwrite(vmcb,offset,value.selector);
-		vmwrite(vmcb,offset+2,svm_attrib(value.attrib));
-		vmwrite(vmcb,offset+4,value.limit);
-		vmwrite(vmcb,offset+8,value.base);
-	}
-}
-
-// Let's abuse generics here!
-
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn vmread<T>(vmcb:*mut c_void,offset:usize)->T
-{
-	unsafe
-	{
-		vmcb.byte_add(offset).cast::<T>().read()
-	}
-}
-
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn vmwrite<T>(vmcb:*mut c_void,offset:usize,value:T)
-{
-	unsafe
-	{
-		vmcb.byte_add(offset).cast::<T>().write(value)
-	}
-}
-
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn vmcopy<T>(dest:*mut c_void,src:*mut c_void,offset:usize)
-{
-	unsafe
-	{
-		vmwrite(dest,offset,vmread::<T>(src,offset))
-	}
-}
-
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn vmcb_and<T:BitAndAssign>(vmcb:*mut c_void,offset:usize,value:T)
-{
-	unsafe
-	{
-		*vmcb.byte_add(offset).cast::<T>()&=value
-	}
-}
-
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn vmcb_or<T:BitOrAssign>(vmcb:*mut c_void,offset:usize,value:T)
-{
-	unsafe
-	{
-		*vmcb.byte_add(offset).cast::<T>()|=value
-	}
-}
-
-/// # Safety
-/// The `vmcb` argument is not guaranteed to be valid.
-#[inline] pub unsafe fn vmcb_xor<T:BitXorAssign>(vmcb:*mut c_void,offset:usize,value:T)
-{
-	unsafe
-	{
-		*vmcb.byte_add(offset).cast::<T>()^=value
-	}
-}
-
-// It seems impossible to use generics to build bit-test operations on VMCB.
-// So let's abuse macros to make generate operations on VMCB.
-macro_rules! build_vmcb_bt
-{
-	($ins:tt,$size:tt,$bits:tt) =>
-	{
-		paste!
-		{
-			/// # Safety
-			/// The `vmcb` argument is not guaranteed to be valid.
-			#[inline] pub unsafe fn [<vmcb_ $ins $bits>](vmcb:*mut c_void,offset:usize,pos:u32)->bool
-			{
-				let flag:u8;
-				unsafe
-				{
-					let p=vmcb.byte_add(offset);
-					asm!
-					(
-						concat!(stringify!($ins)," ",$size," ptr [{p}],{b:e}"),
-						"setc {f}",
-						p=in(reg) p,
-						b=in(reg) pos,
-						f=out(reg_byte) flag
-					);
-				}
-				flag!=0
-			}
-		}
-	};
-}
-
-build_vmcb_bt!(bt,"dword",32);
-build_vmcb_bt!(bts,"dword",32);
-build_vmcb_bt!(btr,"dword",32);
-build_vmcb_bt!(btc,"dword",32);
-build_vmcb_bt!(bt,"qword",64);
-build_vmcb_bt!(bts,"qword",64);
-build_vmcb_bt!(btr,"qword",64);
-build_vmcb_bt!(btc,"qword",64);
 
 // Using offsets is much easier than defining a structure.
 // This is also how NoirVisor in C operates the VMCB.
@@ -394,28 +552,6 @@ pub const GUEST_IBS_DC_LINEAR_ADDRESS:usize=0xBB0;
 pub const GUEST_BP_IBSTGT_RIP:usize=0xBB8;
 pub const GUEST_IC_IBS_EXTD_CTRL:usize=0xBC0;
 
-macro_rules! derive_rw_method
-{
-	($offset:expr) =>
-	{
-		#[inline] pub unsafe fn read(vmcb:*mut c_void)->Self
-		{
-			unsafe
-			{
-				Self(vmread(vmcb,$offset))
-			}
-		}
-
-		#[inline] pub unsafe fn write(&self,vmcb:*mut c_void)
-		{
-			unsafe
-			{
-				vmwrite(vmcb,$offset,self.0);
-			}
-		}
-	};
-}
-
 // Vector 1 of Control Area
 #[bitfield(u32)] pub struct InterceptVector1
 {
@@ -451,11 +587,6 @@ macro_rules! derive_rw_method
 	pub task_switch:bool,
 	pub ferr_freeze:bool,
 	pub shutdown:bool
-}
-
-impl InterceptVector1
-{
-	derive_rw_method!(INTERCEPT_VECTOR1);
 }
 
 // Vector 2 of Control Area
@@ -495,11 +626,6 @@ impl InterceptVector1
 	pub post_w_cr15:bool
 }
 
-impl InterceptVector2
-{
-	derive_rw_method!(INTERCEPT_VECTOR2);
-}
-
 // Vector 3 of Control Area
 #[bitfield(u32)] pub struct InterceptVector3
 {
@@ -511,11 +637,6 @@ impl InterceptVector2
 	pub buslock:bool,
 	pub idle_hlt:bool,
 	#[bits(25)] pub reserved:u32
-}
-
-impl InterceptVector3
-{
-	derive_rw_method!(INTERCEPT_VECTOR3);
 }
 
 // TLB Control
@@ -547,22 +668,12 @@ pub const TLB_CONTROL_FLUSH_GUEST_NON_GLOBAL_TLB:u8=7;
 	#[bits(24)] rsvd4:u64
 }
 
-impl AvicControl
-{
-	derive_rw_method!(AVIC_CONTROL);
-}
-
 // Offset 0x068: Interrupt Control
 #[bitfield(u64)] pub struct InterruptControl
 {
 	pub interrupt_shadow:bool,
 	pub sev_es_rflags_if:bool,
 	#[bits(62)] rsvd:u64
-}
-
-impl InterruptControl
-{
-	derive_rw_method!(GUEST_INTERRUPT);
 }
 
 // Offset 0x090: Nested Paing
@@ -577,11 +688,6 @@ impl InterruptControl
 	pub enable_rogpt:bool,
 	pub enable_invlpgb:bool,
 	#[bits(56)] rsvd:u64
-}
-
-impl NptControl
-{
-	derive_rw_method!(NPT_CONTROL);
 }
 
 // Offset 0x0A8: Event Injection
@@ -619,56 +725,20 @@ impl EventInjection
 	#[bits(60)] rsvd:u64
 }
 
-impl LbrVirtualization
-{
-	derive_rw_method!(LBR_VIRTUALIZATION_CONTROL);
-}
-
 // Offset 0x0C0: VMCB Clean Bits
-pub const CLEAN_INTERCEPTION_BIT:u32=0;
-pub const CLEAN_IOMSRPM_BIT:u32=1;
-pub const CLEAN_ASID_BIT:u32=2;
-pub const CLEAN_TPR_BIT:u32=3;
-pub const CLEAN_NPT_BIT:u32=4;
-pub const CLEAN_CR_BIT:u32=5;
-pub const CLEAN_DR_BIT:u32=6;
-pub const CLEAN_DT_BIT:u32=7;
-pub const CLEAN_SEG_BIT:u32=8;
-pub const CLEAN_CR2_BIT:u32=9;
-pub const CLEAN_LBR_BIT:u32=10;
-pub const CLEAN_AVIC_BIT:u32=11;
-pub const CLEAN_CET_BIT:u32=12;
-
-macro_rules! build_clean_bit_fn
-{
-	($name:tt) =>
-	{
-		paste!
-		{
-			#[inline] pub unsafe fn [<vmcb_clean_ $name:lower>](vmcb:*mut c_void)
-			{
-				unsafe
-				{
-					vmcb_btr32(vmcb,VMCB_CLEAN_BITS,[<CLEAN_ $name:upper _BIT>]);
-				}
-			}
-		}
-	};
-}
-
-build_clean_bit_fn!(interception);
-build_clean_bit_fn!(iomsrpm);
-build_clean_bit_fn!(asid);
-build_clean_bit_fn!(tpr);
-build_clean_bit_fn!(npt);
-build_clean_bit_fn!(cr);
-build_clean_bit_fn!(dr);
-build_clean_bit_fn!(dt);
-build_clean_bit_fn!(seg);
-build_clean_bit_fn!(cr2);
-build_clean_bit_fn!(lbr);
-build_clean_bit_fn!(avic);
-build_clean_bit_fn!(cet);
+pub const CLEAN_INTERCEPTION_BIT:i32=0;
+pub const CLEAN_IOMSRPM_BIT:i32=1;
+pub const CLEAN_ASID_BIT:i32=2;
+pub const CLEAN_TPR_BIT:i32=3;
+pub const CLEAN_NPT_BIT:i32=4;
+pub const CLEAN_CR_BIT:i32=5;
+pub const CLEAN_DR_BIT:i32=6;
+pub const CLEAN_DT_BIT:i32=7;
+pub const CLEAN_SEG_BIT:i32=8;
+pub const CLEAN_CR2_BIT:i32=9;
+pub const CLEAN_LBR_BIT:i32=10;
+pub const CLEAN_AVIC_BIT:i32=11;
+pub const CLEAN_CET_BIT:i32=12;
 
 // Following definitions is for State Save Area with SEV-ES Enabled
 // You may notice the offset is 0x400 different from corresponding fields.

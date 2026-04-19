@@ -15,8 +15,6 @@
 // 1. alternate allocator (i.e. the `Allocator` trait)
 // 2. try-allocate (e.g.: `Box::try_new`, `Vec::try_reserve`)
 #![feature(allocator_api)]
-// For performance reasons, we may heavily rely on branch-prediction optimizations.
-#![feature(likely_unlikely)]
 
 extern crate alloc;
 

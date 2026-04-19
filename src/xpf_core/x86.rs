@@ -399,8 +399,7 @@ pub mod paging
 	use bitfield_struct::bitfield;
 	use paste::paste;
 
-	use crate::*;
-	use svm_core::amd64::msr::MSR_EFER_LMA;
+	use crate::{xpf_core::x86::msr::Efer, *};
 	use xpf_core::{nvbdk::*, x86::crdr::*};
 
 	macro_rules! build_paging_def
@@ -689,7 +688,7 @@ pub mod paging
 		fn get_cr0(&self)->u64;
 		fn get_cr3(&self)->u64;
 		fn get_cr4(&self)->u64;
-		fn get_efer(&self)->u64;
+		fn get_efer(&self)->Efer;
 		fn is_user_mode(&self)->bool;
 
 		fn read_phys_mem(&self,pa:u64,buffer:&mut [u8])->usize;
@@ -775,7 +774,7 @@ pub mod paging
 				// Physical-Address Extension is enabled!
 				let mut va:u64=va;
 				let efer=vcpu.get_efer();
-				if (efer&MSR_EFER_LMA)==MSR_EFER_LMA
+				if efer.lma()
 				{
 					// Long-Mode is activated. Virtual-Address is 64-bit!
 					let level=if (cr4&CR4_LA57)==CR4_LA57
@@ -1661,8 +1660,10 @@ pub mod cpuid
 
 	#[bitfield(u128)] pub struct ExtendedStateEnumeration0
 	{
-		pub mask:u64,
-		pub size:u64
+		pub mask_lo:u32,
+		pub enabled_size:u32,
+		pub supported_size:u32,
+		pub mask_hi:u32
 	}
 
 	derive_cpuid_trait!(ExtendedStateEnumeration0,0xD,Some(0));
@@ -2124,6 +2125,8 @@ pub mod interrupts
 
 pub mod msr
 {
+    use bitfield_struct::bitfield;
+
 	pub const MSR_TSC:u32=0x10;
 	pub const MSR_APIC_BASE:u32=0x1B;
 	pub const MSR_SPEC_CTRL:u32=0x48;
@@ -2210,6 +2213,27 @@ pub mod msr
 	pub const MSR_FS_BASE:u32=0xC0000100;
 	pub const MSR_GS_BASE:u32=0xC0000101;
 	pub const MSR_KERNEL_GS_BASE:u32=0xC0000102;
+
+	#[bitfield(u64)] pub struct Efer
+	{
+		pub sce:bool,
+		#[bits(7)] rsvd0:u64,
+		pub lme:bool,
+		rsvd1:bool,
+		pub lma:bool,
+		pub nxe:bool,
+		pub svme:bool,
+		pub lmsle:bool,
+		pub ffxsr:bool,
+		pub tce:bool,
+		rsvd2:bool,
+		pub mcommit:bool,
+		pub intwb:bool,
+		rsvd3:bool,
+		pub uaie:bool,
+		pub aibrse:bool,
+		#[bits(42)] rsvd4:u64
+	}
 }
 
 pub mod apic

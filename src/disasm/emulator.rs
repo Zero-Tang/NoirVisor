@@ -590,16 +590,16 @@ impl InvlpgInfo
 		{
 			p+=if base==16
 			{
-				vcpu.read_rip()
+				vcpu.get_rip()
 			}
 			else
 			{
-				vcpu.read_gpr(base as usize)
+				vcpu.get_gpr(base as usize)
 			};
 		}
 		if let Some((index,scale))=self.index_scale
 		{
-			p+=vcpu.read_gpr(index as usize)*scale as u64;
+			p+=vcpu.get_gpr(index as usize)*scale as u64;
 		}
 		p+=p.wrapping_add_signed(self.disp as i64);
 		p&=mask;
@@ -622,11 +622,11 @@ impl DisplaySink for InstructionMnemonic {}
 
 pub trait EmulatorOps
 {
-	fn read_gpr(&self,gpr_index:usize)->u64;
-	fn write_gpr(&mut self,gpr_index:usize,value:u64);
-	fn read_seg_selector(&self,seg_index:usize)->u16;
-	fn write_seg_selector(&self,seg_index:usize,value:u16);
-	fn read_rip(&self)->u64;
+	fn get_gpr(&self,gpr_index:usize)->u64;
+	fn set_gpr(&mut self,gpr_index:usize,value:u64);
+	fn get_seg_selector(&self,seg_index:usize)->u16;
+	fn set_seg_selector(&mut self,seg_index:usize,value:u16);
+	fn get_rip(&self)->u64;
 	fn read_gpa(&mut self,gpa:u64,value:&mut [u8]);
 	fn write_gpa(&mut self,gpa:u64,value:&[u8]);
 
@@ -643,12 +643,12 @@ pub trait EmulatorOps
 				MmioInstruction::MovFromImm16(v)=>p[..2].copy_from_slice(&v.to_le_bytes()),
 				MmioInstruction::MovFromImm32(v)=>p[..4].copy_from_slice(&v.to_le_bytes()),
 				MmioInstruction::MovFromImm64(v)=>p[..8].copy_from_slice(&v.to_le_bytes()),
-				MmioInstruction::MovWithGpr8(i)=>p[0]=self.read_gpr(i as usize) as u8,
-				MmioInstruction::MovWithGpr8Hi(i)=>p[0]=(self.read_gpr(i as usize)>>8) as u8,
-				MmioInstruction::MovWithGpr16(i)=>p[..2].copy_from_slice(&self.read_gpr(i as usize).to_le_bytes()[..2]),
-				MmioInstruction::MovWithGpr32(i)=>p[..4].copy_from_slice(&self.read_gpr(i as usize).to_le_bytes()[..4]),
-				MmioInstruction::MovWithGpr64(i)=>p[..8].copy_from_slice(&self.read_gpr(i as usize).to_le_bytes()[..8]),
-				MmioInstruction::MovWithSeg(i)=>p[..2].copy_from_slice(&self.read_seg_selector(i as usize).to_le_bytes())
+				MmioInstruction::MovWithGpr8(i)=>p[0]=self.get_gpr(i as usize) as u8,
+				MmioInstruction::MovWithGpr8Hi(i)=>p[0]=(self.get_gpr(i as usize)>>8) as u8,
+				MmioInstruction::MovWithGpr16(i)=>p[..2].copy_from_slice(&self.get_gpr(i as usize).to_le_bytes()[..2]),
+				MmioInstruction::MovWithGpr32(i)=>p[..4].copy_from_slice(&self.get_gpr(i as usize).to_le_bytes()[..4]),
+				MmioInstruction::MovWithGpr64(i)=>p[..8].copy_from_slice(&self.get_gpr(i as usize).to_le_bytes()[..8]),
+				MmioInstruction::MovWithSeg(i)=>p[..2].copy_from_slice(&self.get_seg_selector(i as usize).to_le_bytes())
 			}
 			self.write_gpa(gpa,&p[..len]);
 		}
@@ -663,21 +663,21 @@ pub trait EmulatorOps
 			let len=info.len();
 			match info
 			{
-				MmioInstruction::MovWithGpr8(i)=>p[..8].copy_from_slice(&self.read_gpr(i as usize).to_le_bytes()[..8]),
-				MmioInstruction::MovWithGpr8Hi(i)=>p[..8].copy_from_slice(&self.read_gpr(i as usize).to_le_bytes()[..8]),
-				MmioInstruction::MovWithGpr16(i)=>p[..8].copy_from_slice(&self.read_gpr(i as usize).to_le_bytes()[..8]),
+				MmioInstruction::MovWithGpr8(i)=>p[..8].copy_from_slice(&self.get_gpr(i as usize).to_le_bytes()[..8]),
+				MmioInstruction::MovWithGpr8Hi(i)=>p[..8].copy_from_slice(&self.get_gpr(i as usize).to_le_bytes()[..8]),
+				MmioInstruction::MovWithGpr16(i)=>p[..8].copy_from_slice(&self.get_gpr(i as usize).to_le_bytes()[..8]),
 				MmioInstruction::MovWithGpr32(_)=>p[4..8].copy_from_slice(&[0;4]),
 				_=>{}
 			}
 			self.read_gpa(gpa,&mut p[..len]);
 			match info
 			{
-				MmioInstruction::MovWithGpr8(i)=>self.write_gpr(i as usize,u64::from_le_bytes(p[..8].try_into().unwrap())),
-				MmioInstruction::MovWithGpr8Hi(i)=>self.write_gpr(i as usize,u64::from_le_bytes(p[..8].try_into().unwrap())),
-				MmioInstruction::MovWithGpr16(i)=>self.write_gpr(i as usize,u64::from_le_bytes(p[..8].try_into().unwrap())),
-				MmioInstruction::MovWithGpr32(i)=>self.write_gpr(i as usize,u64::from_le_bytes(p[..8].try_into().unwrap())),
-				MmioInstruction::MovWithGpr64(i)=>self.write_gpr(i as usize,u64::from_le_bytes(p[..8].try_into().unwrap())),
-				MmioInstruction::MovWithSeg(i)=>self.write_seg_selector(i as usize,u16::from_le_bytes(p[..2].try_into().unwrap())),
+				MmioInstruction::MovWithGpr8(i)=>self.set_gpr(i as usize,u64::from_le_bytes(p[..8].try_into().unwrap())),
+				MmioInstruction::MovWithGpr8Hi(i)=>self.set_gpr(i as usize,u64::from_le_bytes(p[..8].try_into().unwrap())),
+				MmioInstruction::MovWithGpr16(i)=>self.set_gpr(i as usize,u64::from_le_bytes(p[..8].try_into().unwrap())),
+				MmioInstruction::MovWithGpr32(i)=>self.set_gpr(i as usize,u64::from_le_bytes(p[..8].try_into().unwrap())),
+				MmioInstruction::MovWithGpr64(i)=>self.set_gpr(i as usize,u64::from_le_bytes(p[..8].try_into().unwrap())),
+				MmioInstruction::MovWithSeg(i)=>self.set_seg_selector(i as usize,u16::from_le_bytes(p[..2].try_into().unwrap())),
 				_=>warn!("Unexpected MMIO form!")
 			}
 		}

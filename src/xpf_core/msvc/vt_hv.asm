@@ -27,13 +27,13 @@ extern nvc_vt_resume_failure:proc
 
 ifdef _amd64
 
-stacktop_offset_volatile_xmms equ 20h
-stacktop_offset_guest_gpr equ 090h
-stacktop_offset_guest_frame equ 110h
-stacktop_offset_vcpu_ptr equ 140h
-stacktop_offset_flags equ 15Ch
-stacktop_offset_guest_xcr0 equ 160h
-stacktop_offset_host_xcr0 equ 168h
+stacktop_offset_guest_gpr equ 020h
+stacktop_offset_guest_frame equ 0A0h
+stacktop_offset_xsave_state equ 0D0h
+stacktop_offset_vcpu_ptr equ 0D8h
+stacktop_offset_flags equ 0F4h
+stacktop_offset_guest_xcr0 equ 0F8h
+stacktop_offset_host_xcr0 equ 100h
 
 nvc_vt_resume_without_entry proc
 
@@ -73,7 +73,8 @@ nvc_vt_exit_handler_a proc frame
 	xsetbv
 precall_gh_xcr0_equal:
 	; Save volatile XMM State.
-	pushax_volatile_fast stacktop_offset_volatile_xmms
+	mov rax,[rsp+stacktop_offset_xsave_state]
+	save_volatile_xmm rax
 	.allocstack 20h
 	.endprolog
 	; Just pass the stack to the exit handler.
@@ -82,7 +83,8 @@ precall_gh_xcr0_equal:
 	call nvc_vt_exit_handler
 resume_guest:
 	; Restore volatile XMM State.
-	popax_volatile_fast stacktop_offset_volatile_xmms
+	mov rax,[rsp+stacktop_offset_xsave_state]
+	restore_volatile_xmm rax
 	; After restoring volatile XMM state, load guest xcr0.
 	; The xsetbv unconditionally causes VM-Exits, so avoid it if guest/host xcr0 equals.
 	mov rax,qword ptr [rsp+stacktop_offset_guest_xcr0]

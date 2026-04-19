@@ -26,17 +26,17 @@ extern nvc_svm_exit_handler:proc
 
 ifdef _amd64
 
-stacktop_offset_volatile_xmms equ 20h
-stacktop_offset_guest_gpr equ 090h
-stacktop_offset_guest_frame equ 110h
-stacktop_offset_gvmcb_pa equ 140h
-stacktop_offset_hvmcb_pa equ 148h
-stacktop_offset_vcpu_ptr equ 150h
-stacktop_offset_cvcpu_ptr equ 158h
-stacktop_offset_nvcpu_ptr equ 160h
-stacktop_offset_proc_id equ 168h
-stacktop_offset_guest_xcr0 equ 170h
-stacktop_offset_host_xcr0 equ 178h
+stacktop_offset_guest_gpr equ 020h
+stacktop_offset_guest_frame equ 0A0h
+stacktop_offset_xsave_state equ 0D0h
+stacktop_offset_gvmcb_pa equ 0D8h
+stacktop_offset_hvmcb_pa equ 0E0h
+stacktop_offset_vcpu_ptr equ 0E8h
+stacktop_offset_cvcpu_ptr equ 0F0h
+stacktop_offset_nvcpu_ptr equ 0F8h
+stacktop_offset_proc_id equ 100h
+stacktop_offset_guest_xcr0 equ 108h
+stacktop_offset_host_xcr0 equ 110h
 
 nvc_svm_return proc
 
@@ -76,11 +76,18 @@ nvc_svm_exit_handler_a proc frame
 	xgetbv
 	mov dword ptr [rsp+stacktop_offset_guest_xcr0+0],eax
 	mov dword ptr [rsp+stacktop_offset_guest_xcr0+4],edx
+	; The xsetbv may cause VM-Exits, so avoid it if guest/host xcr0 equals.
+	shl rdx,32
+	or rax,rdx
+	cmp rax,qword ptr [rsp+stacktop_offset_host_xcr0]
+	je precall_gh_xcr0_equal
 	mov eax,dword ptr [rsp+stacktop_offset_host_xcr0+0]
 	mov edx,dword ptr [rsp+stacktop_offset_host_xcr0+4]
 	xsetbv
-	; Save XMM States.
-	pushax_volatile_fast stacktop_offset_volatile_xmms
+precall_gh_xcr0_equal:
+	; Save all volatile XMMs.
+	mov rax,[rsp+stacktop_offset_xsave_state]
+	save_volatile_xmm rax
 	.allocstack 20h
 	.endprolog
 	; Just pass the stack to the handler
@@ -89,12 +96,18 @@ nvc_svm_exit_handler_a proc frame
 	; Call Exit Handler
 	call nvc_svm_exit_handler
 	; Restore all volatile XMMs.
-	popax_volatile_fast stacktop_offset_volatile_xmms
+	mov rax,[rsp+stacktop_offset_xsave_state]
+	restore_volatile_xmm rax
 	; Switch back to the guest XCR0.
-	mov eax,dword ptr [rsp+stacktop_offset_guest_xcr0+0]
-	mov edx,dword ptr [rsp+stacktop_offset_guest_xcr0+4]
+	mov rax,qword ptr [rsp+stacktop_offset_guest_xcr0]
+	; If guest xcr0 equals to host xcr0, there's no need to switch xcr0.
+	cmp rax,qword ptr [rsp+stacktop_offset_host_xcr0]
+	je postcall_gh_xcr0_equal
+	mov rdx,rax
 	xor ecx,ecx
+	shr rdx,32
 	xsetbv
+postcall_gh_xcr0_equal:
 	; Restore all the GPRs.
 	; Certain context should be revised by VMM.
 	popaq_fast stacktop_offset_guest_gpr

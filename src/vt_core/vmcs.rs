@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_bittest, fmt::{self,Display}, ops::{BitAndAssign, BitOrAssign}};
+use core::{arch::x86_64::_bittest, fmt, ops::{BitAndAssign, BitOrAssign}};
 
 use bitfield_struct::bitfield;
 use paste::paste;
@@ -288,7 +288,7 @@ macro_rules! build_clean_method
 				if !self.clean_fields.$name()
 				{
 					self.clean_fields.[<set_ $name>](true);
-					self.$name=$type::from(unsafe{asm_vmread_unchecked($const)} as [<u $bitness>]);
+					self.$name=$type::from(unsafe{vmread_unchecked($const)} as [<u $bitness>]);
 				}
 			}
 
@@ -361,7 +361,7 @@ impl CachedExitContext
 				{
 					unsafe
 					{
-						asm_vmwrite_unchecked($const,$value as usize);
+						vmwrite_unchecked($const,$value as usize);
 					}
 				}
 			};
@@ -437,7 +437,7 @@ impl VtVcpu
 	vmwrite32(VMENTRY_INSTRUCTION_LENGTH,length);
 }
 
-impl<T:Display> Display for VmxResult<T>
+impl<T:fmt::Display> fmt::Display for VmxResult<T>
 {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
 	{
@@ -446,15 +446,15 @@ impl<T:Display> Display for VmxResult<T>
 			VmxResult::Ok(v)=>write!(f,"VMX Instruction succeeded and returned {v}!"),
 			VmxResult::Err(e)=>match VMX_INSTRUCTION_ERROR_MESSAGE.get(*e as usize)
 			{
-				Some(v)=>write!(f,"VMX Instruction failed! Reason: {}",*v),
-				None=>write!(f,"VMX Instruction failed with invalid number {}!",*e)
+				Some(&v)=>write!(f,"VMX Instruction failed! Reason: {v}"),
+				None=>write!(f,"VMX Instruction failed with invalid number {e}!")
 			},
-			VmxResult::NoVmcs=>write!(f,"VMX Instruction failed while no VMCS was loaded!")
+			VmxResult::NoVmcs=>f.write_str("VMX Instruction failed while no VMCS was loaded!")
 		}
 	}
 }
 
-pub const VMX_INSTRUCTION_ERROR_MESSAGE:[&str;0x20]=
+pub const VMX_INSTRUCTION_ERROR_MESSAGE:[&str;29]=
 [
 	"Invalid Error, Number=0!",										// Error=0
 	"vmcall is executed in VMX Root Operation!",					// Error=1
@@ -490,9 +490,6 @@ pub const VMX_INSTRUCTION_ERROR_MESSAGE:[&str;0x20]=
 	"VM-Entry failed due to events blocked by mov ss!",				// Error=26,
 	"Invalid Error, Number=27!",										// Error=27
 	"Invalid Operand to invept/invvpid Instructions!",				// Error=28
-	"Invalid Error, Number=29!",									// Error=29
-	"Invalid Error, Number=30!",									// Error=30
-	"Invalid Error, Number=31!"										// Error=31
 ];
 
 #[derive(Default, Clone, Copy)]

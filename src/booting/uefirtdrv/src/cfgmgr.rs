@@ -66,7 +66,7 @@ impl ConfigurationList
 			{
 				let file_sys=unsafe{&*file_sys_ptr};
 				let mut root_file_ptr:*mut file::Protocol=null_mut();
-				let st=(file_sys.open_volume)(file_sys_ptr,&raw mut root_file_ptr);
+				let st=unsafe{(file_sys.open_volume)(file_sys_ptr,&raw mut root_file_ptr)};
 				if st.is_error()
 				{
 					println!("OpenVolume failed! Status=0x{:X}",st.as_usize());
@@ -76,7 +76,7 @@ impl ConfigurationList
 					let root_file=unsafe{&*root_file_ptr};
 					let mut cfg_file_ptr:*mut file::Protocol=null_mut();
 					let mut cfg_file_path=utf16_null!("NoirVisorConfig.bin");
-					let st=(root_file.open)(root_file_ptr,&raw mut cfg_file_ptr,cfg_file_path.as_mut_ptr(),file::MODE_READ,0);
+					let st=unsafe{(root_file.open)(root_file_ptr,&raw mut cfg_file_ptr,cfg_file_path.as_mut_ptr(),file::MODE_READ,0)};
 					if st.is_error()
 					{
 						println!("OpenFile failed! Status=0x{:X}",st.as_usize());
@@ -85,7 +85,7 @@ impl ConfigurationList
 					{
 						let mut fsize:usize=buffer.len();
 						let cfg_file=unsafe{&*cfg_file_ptr};
-						let st=(cfg_file.read)(cfg_file_ptr,&raw mut fsize,buffer.as_mut_ptr().cast());
+						let st=unsafe{(cfg_file.read)(cfg_file_ptr,&raw mut fsize,buffer.as_mut_ptr().cast())};
 						if st.is_error()
 						{
 							println!("Failed to read config file! Status=0x{:X}, Needed size: {fsize}",st.as_usize());

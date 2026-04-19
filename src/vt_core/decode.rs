@@ -15,7 +15,7 @@ use core::ffi::c_void;
 
 use paste::paste;
 
-use crate::{svm_core::amd64::msr::MSR_EFER_LMA, vt_core::{vmcs::*, VtVcpu}, xpf_core::{asm::vt::{vmread32, vmread64}, nvbdk::memcpy, x86::paging::{read_virtual_address, PageTranslationHelper}}};
+use crate::{vt_core::{VtVcpu, vmcs::*}, xpf_core::{asm::vt::{vmread32, vmread64}, nvbdk::memcpy, x86::{msr::Efer, paging::{PageTranslationHelper, read_virtual_address}}}};
 
 macro_rules! build_get_reg_helper
 {
@@ -37,9 +37,9 @@ impl PageTranslationHelper for VtVcpu
 	build_get_reg_helper!(cr3);
 	build_get_reg_helper!(cr4);
 	
-	fn get_efer(&self)->u64
+	fn get_efer(&self)->Efer
 	{
-		vmread64(GUEST_MSR_IA32_EFER).unwrap()
+		Efer::from_bits(vmread64(GUEST_MSR_IA32_EFER).unwrap())
 	}
 
 	fn is_user_mode(&self)->bool
@@ -73,15 +73,15 @@ impl VtVcpu
 	{
 		let cs_ar=SegmentAccessRights::from_bits(vmread32(GUEST_CS_ACCESS_RIGHTS).unwrap());
 		let efer=self.get_efer();
-		if (efer&MSR_EFER_LMA)==0
-		{
-			// Long-Mode is inactive. It could be either 16-bit or 32-bit.
-			if cs_ar.default_size() {32} else {16}
-		}
-		else
+		if efer.lma()
 		{
 			// Long-Mode is active. It could be either 32-bit or 64-bit.
 			if cs_ar.long_mode() {64} else {32}
+		}
+		else
+		{
+			// Long-Mode is inactive. It could be either 16-bit or 32-bit.
+			if cs_ar.default_size() {32} else {16}
 		}
 	}
 

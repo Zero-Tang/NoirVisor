@@ -15,10 +15,8 @@ use core::{ffi::c_void, hint::{spin_loop, unreachable_unchecked}, sync::atomic::
 use paste::paste;
 use log::*;
 
-#[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
 use static_collections::bitmap::RefBitmap;
-#[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall, nvc_forward_memory_mapped_hypercall};
-use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, svm_core::amd64::msr::{MSR_EFER_LMA, MSR_EFER_LME}, vt_core::{VtIrqInterruptibilityState, hvcall::dispatch_hypercall}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::{rdmsr, wrmsr}, vt::*}, ci::is_ci_phys_page, x86::{apic::ApicX2Icr, cpuid::*, crdr::*, descriptors::SegmentFlags, interrupts::{EventType, GENERAL_PROTECTION_FAULT}, msr::MSR_X2APIC_ICR}}, *};
+use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, vt_core::{VtIrqInterruptibilityState, hvcall::dispatch_hypercall}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::{rdmsr, wrmsr}, vt::*}, ci::is_ci_phys_page, x86::{apic::ApicX2Icr, cpuid::*, crdr::*, descriptors::SegmentFlags, interrupts::{EventType, GENERAL_PROTECTION_FAULT}, msr::MSR_X2APIC_ICR, paging::PageTranslationHelper}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, VtStackTop};
 
 impl VtVcpu
@@ -97,9 +95,9 @@ impl VtVcpu
 				gpr_state.write(i,0);
 			}
 			gpr_state.rdx=self.cpuid_fms as u64;
-			asm_vmwrite_unchecked(GUEST_RSP,0);
-			asm_vmwrite_unchecked(GUEST_RIP,0xFFF0);
-			asm_vmwrite_unchecked(GUEST_RFLAGS,2);
+			vmwrite_unchecked(GUEST_RSP,0);
+			vmwrite_unchecked(GUEST_RIP,0xFFF0);
+			vmwrite_unchecked(GUEST_RFLAGS,2);
 			// Control Registers
 			// CR0.ET is always set during INIT.
 			let mut cr0=CR0_ET as usize;
@@ -108,25 +106,25 @@ impl VtVcpu
 			cr0&=rdmsr(MSR_VMX_CR0_FIXED0) as usize;
 			// CR0.PE and CR0.PG are cleared by INIT.
 			cr0&=!(CR0_PE|CR0_PG) as usize;
-			asm_vmwrite_unchecked(GUEST_CR0,cr0);
-			asm_vmwrite_unchecked(CR0_READ_SHADOW,cr0);
+			vmwrite_unchecked(GUEST_CR0,cr0);
+			vmwrite_unchecked(CR0_READ_SHADOW,cr0);
 			write_cr2(0);
-			asm_vmwrite_unchecked(GUEST_CR3,0);
+			vmwrite_unchecked(GUEST_CR3,0);
 			// CR4 is cleared to 0 upon INIT. But as a guest, CR4.VMXE must be set.
 			let mut cr4=0;
 			cr4|=rdmsr(MSR_VMX_CR4_FIXED0) as usize;
 			cr4&=rdmsr(MSR_VMX_CR4_FIXED1) as usize;
-			asm_vmwrite_unchecked(GUEST_CR4,cr4);
-			asm_vmwrite_unchecked(CR4_READ_SHADOW,0);
+			vmwrite_unchecked(GUEST_CR4,cr4);
+			vmwrite_unchecked(CR4_READ_SHADOW,0);
 			// EFER is cleared to 0 upon INIT.
-			asm_vmwrite_unchecked(GUEST_MSR_IA32_EFER,0);
+			vmwrite_unchecked(GUEST_MSR_IA32_EFER,0);
 			// Debug Registers
 			write_dr0(0);
 			write_dr1(0);
 			write_dr2(0);
 			write_dr3(0);
 			write_dr6(0xffff0ff0);
-			asm_vmwrite_unchecked(GUEST_DR7,0x400);
+			vmwrite_unchecked(GUEST_DR7,0x400);
 			// Segment Registers
 			macro_rules! vmcs_write_seg
 			{
@@ -134,10 +132,10 @@ impl VtVcpu
 				{
 					paste!
 					{
-						asm_vmwrite_unchecked([<GUEST_ $name:upper _SELECTOR>],$sel as usize);
-						asm_vmwrite_unchecked([<GUEST_ $name:upper _ACCESS_RIGHTS>],$ar as usize);
-						asm_vmwrite_unchecked([<GUEST_ $name:upper _LIMIT>],$lim as usize);
-						asm_vmwrite_unchecked([<GUEST_ $name:upper _BASE>],$base);
+						vmwrite_unchecked([<GUEST_ $name:upper _SELECTOR>],$sel as usize);
+						vmwrite_unchecked([<GUEST_ $name:upper _ACCESS_RIGHTS>],$ar as usize);
+						vmwrite_unchecked([<GUEST_ $name:upper _LIMIT>],$lim as usize);
+						vmwrite_unchecked([<GUEST_ $name:upper _BASE>],$base);
 					}
 				};
 			}
@@ -159,16 +157,16 @@ impl VtVcpu
 			ar.set_segment_type(SegmentFlags::BUSY_TSS as u32);
 			vmcs_write_seg!(tr,0,ar.into_bits(),0xFFFF,0);
 			// IDTR & GDTR
-			asm_vmwrite_unchecked(GUEST_GDTR_BASE,0);
-			asm_vmwrite_unchecked(GUEST_IDTR_BASE,0);
-			asm_vmwrite_unchecked(GUEST_GDTR_LIMIT,0xFFFF);
-			asm_vmwrite_unchecked(GUEST_IDTR_LIMIT,0xFFFF);
+			vmwrite_unchecked(GUEST_GDTR_BASE,0);
+			vmwrite_unchecked(GUEST_IDTR_BASE,0);
+			vmwrite_unchecked(GUEST_GDTR_LIMIT,0xFFFF);
+			vmwrite_unchecked(GUEST_IDTR_LIMIT,0xFFFF);
 			// VM-Entry Controls: Guest is definitely not in IA-32e mode.
-			let mut entry_ctrl=VmxEntryControls::from_bits(asm_vmread_unchecked(VMENTRY_CONTROLS) as u32);
+			let mut entry_ctrl=VmxEntryControls::from_bits(vmread_unchecked(VMENTRY_CONTROLS) as u32);
 			entry_ctrl.set_ia32e_mode_guest(false);
-			asm_vmwrite_unchecked(VMENTRY_CONTROLS,entry_ctrl.into_bits() as usize);
+			vmwrite_unchecked(VMENTRY_CONTROLS,entry_ctrl.into_bits() as usize);
 			// Upon INIT, vCPU enters inactive state to wait for Startup-IPI.
-			asm_vmwrite_unchecked(GUEST_ACTIVITY_STATE,ActivityState::WAIT_FOR_SIPI as usize);
+			vmwrite_unchecked(GUEST_ACTIVITY_STATE,ActivityState::WAIT_FOR_SIPI as usize);
 		}
 		// We've finished handling the INIT signal. Signal the INIT-sender.
 		self.waiting_for_sipi.store(true,Ordering::SeqCst);
@@ -179,15 +177,15 @@ impl VtVcpu
 	{
 		unsafe
 		{
-			let vector=asm_vmread_unchecked(VMEXIT_QUALIFICATION);
+			let vector=vmread_unchecked(VMEXIT_QUALIFICATION);
 			info!("SIPI-signal is intercepted for CPU {}! Vector=0x{vector:X}",self.vcpu_id);
-			asm_vmwrite_unchecked(GUEST_CS_SELECTOR,vector<<8);
-			asm_vmwrite_unchecked(GUEST_CS_BASE,vector<<12);
-			asm_vmwrite_unchecked(GUEST_RIP,0);
+			vmwrite_unchecked(GUEST_CS_SELECTOR,vector<<8);
+			vmwrite_unchecked(GUEST_CS_BASE,vector<<12);
+			vmwrite_unchecked(GUEST_RIP,0);
 			// Startup-IPI is received. Resume to active state.
-			asm_vmwrite_unchecked(GUEST_ACTIVITY_STATE,ActivityState::ACTIVE as usize);
+			vmwrite_unchecked(GUEST_ACTIVITY_STATE,ActivityState::ACTIVE as usize);
 			// Invalid TLB since paging is switched off.
-			let ivc=InvvpidContext::Single(asm_vmread_unchecked(GUEST_VPID) as u16);
+			let ivc=InvvpidContext::Single(vmread_unchecked(GUEST_VPID) as u16);
 			invvpid(&ivc);
 		}
 		// Dump some codes.
@@ -296,6 +294,9 @@ impl VtVcpu
 		{
 			// This hypercall might be compliant to Microsoft TLFS.
 			// Check if forwarder exists.
+			/*
+			#[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
+			#[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall, nvc_forward_memory_mapped_hypercall};
 			#[cfg(windows)]
 			if hv.mshvcall_forwarder.is_some()
 			{
@@ -324,7 +325,7 @@ impl VtVcpu
 					}
 				}
 			}
-			else
+			else*/
 			{
 				unimplemented!("Microsoft TLFS Hypercall handler is not implemented yet!");
 			}
@@ -363,11 +364,14 @@ impl VtVcpu
 						vmwriteptr(GUEST_CR0,new_cr0 as usize);
 						vmwriteptr(CR0_READ_SHADOW,new_cr0 as usize);
 						// May affect EFER.LMA bit.
-						let mut efer=vmread64(GUEST_MSR_IA32_EFER).unwrap();
+						let mut efer=self.get_efer();
 						let pg=(new_cr0&CR0_PG)!=0;
-						let lme=(efer&MSR_EFER_LME)!=0;
-						efer|=if pg && lme {MSR_EFER_LMA} else {0};
-						vmwrite64(GUEST_MSR_IA32_EFER,efer);
+						let lme=efer.lme();
+						if pg && lme
+						{
+							efer.set_lma(true);
+						}
+						vmwrite64(GUEST_MSR_IA32_EFER,efer.into_bits());
 						// Also write to VM-Entry Controls.
 						let mut entry_ctrl=VmxEntryControls::from_bits(vmread32(VMENTRY_CONTROLS).unwrap());
 						entry_ctrl.set_ia32e_mode_guest(pg&&lme);

@@ -42,9 +42,9 @@ mod hvcall;
 #[repr(C)] pub struct SvmStackTop
 {
 	pub arg_home:[u64;4],
-	pub volatile_xmms:VolatileXmmState,
 	pub gpr_state:GprState,
 	pub guest_frame:InterruptStackFrameWithErrorCode,
+	pub xsave_state:*mut c_void,
 	pub guest_vmcb_pa:u64,
 	pub host_vmcb_pa:u64,
 	pub vcpu:*mut SvmVcpu,
@@ -73,6 +73,8 @@ pub struct SvmVcpu
 	pub hv_stack:MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>,
 	pub hypervisor:*mut c_void,
 	pub ist:[MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>;8],
+	// Used for preserving XSAVE state.
+	pub host_xsave:Vec<u8>,
 	pub vcpu_id:u32,
 	pub apic_id:u8,
 	pub x2apic_id:u32,
@@ -123,6 +125,7 @@ impl SvmVcpu
 			hv_stack:MemoryDescriptor::null(),
 			hypervisor:null_mut(),
 			ist:[const{MemoryDescriptor::null()};8],
+			host_xsave:Vec::new(),
 			vcpu_id:0,
 			apic_id:0,
 			x2apic_id:0,
@@ -180,6 +183,14 @@ impl SvmVcpu
 			&mut *self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast()
 		}
 	}
+
+	#[inline(always)] unsafe fn host_vmwrite<T:Sized+Copy>(&mut self,offset:usize,value:T)
+	{
+		unsafe
+		{
+			*self.hvmcb.virt.byte_add(offset).cast()=value;
+		}
+	}
 	
 	fn subvert_i(&mut self,gsp:u64,gssp:u64)->u64
 	{
@@ -198,7 +209,7 @@ impl SvmVcpu
 			iv1.set_io(true);
 			iv1.set_msr(true);
 			iv1.set_shutdown(true);
-			iv1.write(self.vmcb.virt);
+			self.vmwrite(INTERCEPT_VECTOR1,iv1.into_bits());
 			let mut iv2=InterceptVector2::from_bits(0);
 			iv2.set_vmrun(true);
 			iv2.set_vmmcall(true);
@@ -207,7 +218,7 @@ impl SvmVcpu
 			iv2.set_stgi(true);
 			iv2.set_clgi(true);
 			iv2.set_skinit(true);
-			iv2.write(self.vmcb.virt);
+			self.vmwrite(INTERCEPT_VECTOR2,iv2.into_bits());
 			// Setup Host State.
 			let mut ist:[*mut c_void;8]=[null_mut();8];
 			ist[1]=self.ist[1].virt.byte_add(HYPERVISOR_STACK_SIZE);
@@ -238,59 +249,60 @@ impl SvmVcpu
 			stack.guest_xcr0=_xgetbv(0);
 			trace!("Using Guest XCR0 as 0x{:X}, Host XCR0 as 0x{:X}...",stack.guest_xcr0,stack.host_xcr0);
 			// Save Segment States.
-			vmwrite_segment(self.vmcb.virt,GUEST_CS_SELECTOR,state.cs);
-			vmwrite_segment(self.vmcb.virt,GUEST_DS_SELECTOR,state.ds);
-			vmwrite_segment(self.vmcb.virt,GUEST_ES_SELECTOR,state.es);
-			vmwrite_segment(self.vmcb.virt,GUEST_FS_SELECTOR,state.fs);
-			vmwrite_segment(self.vmcb.virt,GUEST_GS_SELECTOR,state.gs);
-			vmwrite_segment(self.vmcb.virt,GUEST_SS_SELECTOR,state.ss);
-			vmwrite_segment(self.vmcb.virt,GUEST_TR_SELECTOR,state.tr);
-			vmwrite_segment(self.vmcb.virt,GUEST_LDTR_SELECTOR,state.ldtr);
-			vmwrite_segment(self.vmcb.virt,GUEST_IDTR_SELECTOR,state.idtr);
-			vmwrite_segment(self.vmcb.virt,GUEST_GDTR_SELECTOR,state.gdtr);
+			self.vmwrite_segment(GUEST_CS_SELECTOR,&state.cs);
+			self.vmwrite_segment(GUEST_DS_SELECTOR,&state.ds);
+			self.vmwrite_segment(GUEST_ES_SELECTOR,&state.es);
+			self.vmwrite_segment(GUEST_FS_SELECTOR,&state.fs);
+			self.vmwrite_segment(GUEST_GS_SELECTOR,&state.gs);
+			self.vmwrite_segment(GUEST_SS_SELECTOR,&state.ss);
+			self.vmwrite_segment(GUEST_TR_SELECTOR,&state.tr);
+			self.vmwrite_segment(GUEST_LDTR_SELECTOR,&state.ldtr);
+			self.vmwrite_segment(GUEST_IDTR_SELECTOR,&state.idtr);
+			self.vmwrite_segment(GUEST_GDTR_SELECTOR,&state.gdtr);
 			// Save Control Registers.
-			vmwrite(self.vmcb.virt,GUEST_CR0,state.cr0);
-			vmwrite(self.vmcb.virt,GUEST_CR2,state.cr2);
-			vmwrite(self.vmcb.virt,GUEST_CR3,state.cr3);
-			vmwrite(self.vmcb.virt,GUEST_CR4,state.cr4);
+			self.vmwrite(GUEST_CR0,state.cr0);
+			self.vmwrite(GUEST_CR2,state.cr2);
+			self.vmwrite(GUEST_CR3,state.cr3);
+			self.vmwrite(GUEST_CR4,state.cr4);
 			// Save Task Priority Register (CR8)
 			let mut avic_ctrl=AvicControl::from_bits(0);
 			avic_ctrl.set_v_tpr(state.cr8 as u8);
-			avic_ctrl.write(self.vmcb.virt);
+			self.vmwrite(AVIC_CONTROL,avic_ctrl.into_bits());
 			// Save Debug Registers.
-			vmwrite(self.vmcb.virt,GUEST_DR6,state.dr6);
-			vmwrite(self.vmcb.virt,GUEST_DR7,state.dr7);
+			self.vmwrite(GUEST_DR6,state.dr6);
+			self.vmwrite(GUEST_DR7,state.dr7);
 			// Save rflags, rsp and rip.
-			vmwrite(self.vmcb.virt,GUEST_RFLAGS,2u64);
-			vmwrite(self.vmcb.virt,GUEST_SSP,gssp);
-			vmwrite(self.vmcb.virt,GUEST_RSP,gsp);
-			vmwrite(self.vmcb.virt,GUEST_RIP,nvc_svm_guest_start as *const c_void as u64);
+			self.vmwrite(GUEST_RFLAGS,2u64);
+			self.vmwrite(GUEST_SSP,gssp);
+			self.vmwrite(GUEST_RSP,gsp);
+			self.vmwrite(GUEST_RIP,nvc_svm_guest_start as *const c_void as u64);
 			// Save Processor Hidden State.
 			vmsave(self.hvmcb.phys);
-			vmwrite(self.hvmcb.virt,GUEST_GS_BASE,&raw mut self.gs_context as u64);
+			let host_gsbase=&raw mut self.gs_context as u64;
+			self.host_vmwrite(GUEST_GS_BASE,host_gsbase);
 			// Save Model-Specific Registers.
-			vmwrite(self.vmcb.virt,GUEST_PAT,state.pat);
-			vmwrite(self.vmcb.virt,GUEST_EFER,state.efer);
-			vmwrite(self.vmcb.virt,GUEST_STAR,state.star);
-			vmwrite(self.vmcb.virt,GUEST_LSTAR,state.lstar);
-			vmwrite(self.vmcb.virt,GUEST_CSTAR,state.cstar);
-			vmwrite(self.vmcb.virt,GUEST_SFMASK,state.sfmask);
-			vmwrite(self.vmcb.virt,GUEST_KERNEL_GS_BASE,state.gsswap);
-			vmwrite(self.vmcb.virt,GUEST_SYSENTER_CS,state.sysenter_cs);
-			vmwrite(self.vmcb.virt,GUEST_SYSENTER_ESP,state.sysenter_esp);
-			vmwrite(self.vmcb.virt,GUEST_SYSENTER_EIP,state.sysenter_eip);
+			self.vmwrite(GUEST_PAT,state.pat);
+			self.vmwrite(GUEST_EFER,state.efer);
+			self.vmwrite(GUEST_STAR,state.star);
+			self.vmwrite(GUEST_LSTAR,state.lstar);
+			self.vmwrite(GUEST_CSTAR,state.cstar);
+			self.vmwrite(GUEST_SFMASK,state.sfmask);
+			self.vmwrite(GUEST_KERNEL_GS_BASE,state.gsswap);
+			self.vmwrite(GUEST_SYSENTER_CS,state.sysenter_cs);
+			self.vmwrite(GUEST_SYSENTER_ESP,state.sysenter_esp);
+			self.vmwrite(GUEST_SYSENTER_EIP,state.sysenter_eip);
 			// Setup IOPM and MSRPM.
 			let hv=self.hypervisor as *mut SvmHypervisor;
-			vmwrite(self.vmcb.virt,IOPM_PHYSICAL_ADDRESS,(*hv).iopm.phys);
-			vmwrite(self.vmcb.virt,MSRPM_PHYSICAL_ADDRESS,(*hv).msrpm.phys);
+			self.vmwrite(IOPM_PHYSICAL_ADDRESS,(*hv).iopm.phys);
+			self.vmwrite(MSRPM_PHYSICAL_ADDRESS,(*hv).msrpm.phys);
 			// Setup NPT.
 			// Note that Host CR4.LA57 bit determines whether NPT uses 5-level paging or not.
-			vmwrite(self.vmcb.virt,NPT_CR3,if (state.cr4 & CR4_LA57 as usize)!=0 {(*hv).nptm.pml5e.phys} else {(*hv).nptm.pml4e.phys});
+			self.vmwrite(NPT_CR3,if (state.cr4 & CR4_LA57 as usize)!=0 {(*hv).nptm.pml5e.phys} else {(*hv).nptm.pml4e.phys});
 			let mut npt_ctrl=NptControl::from_bits(0);
 			npt_ctrl.set_enable_npt(true);
-			vmwrite(self.vmcb.virt,NPT_CONTROL,npt_ctrl);
+			self.vmwrite(NPT_CONTROL,npt_ctrl);
 			// ASID is required in AMD-V.
-			vmwrite(self.vmcb.virt,GUEST_ASID,1u32);
+			self.vmwrite(GUEST_ASID,1u32);
 			// Load Guest State.
 			vmload(self.vmcb.phys);
 		}
@@ -303,8 +315,10 @@ impl SvmVcpu
 	{
 		info!("Processor {} entered subversion routine!",self.vcpu_id);
 		// Enable SVM in EFER.
-		let efer=rdmsr(MSR_EFER)|MSR_EFER_SVME|MSR_EFER_NXE;
-		wrmsr(MSR_EFER,efer);
+		let mut efer=Efer::from_bits(rdmsr(MSR_EFER));
+		efer.set_svme(true);
+		efer.set_nxe(true);
+		wrmsr(MSR_EFER,efer.into_bits());
 		// Block A20M & Redirect INIT
 		// Intel blocks A20M in vmxon, why not we do this as well?
 		// Redirecting INIT signal to #SX exception will allow us to
@@ -335,8 +349,9 @@ impl SvmVcpu
 		// Leave Guest Mode by vmmcall.
 		vmmcall(NOIR_HYPERCALL_CODE_CALLEXIT,self as *mut Self as usize);
 		// Clear EFER.SVME bit.
-		let efer=rdmsr(MSR_EFER)&!MSR_EFER_SVME;
-		wrmsr(MSR_EFER,efer);
+		let mut efer=Efer::from_bits(rdmsr(MSR_EFER));
+		efer.set_svme(false);
+		wrmsr(MSR_EFER,efer.into_bits());
 		// Unblock and Enable A20M.
 		// Intel unblocks A20M in vmxoff, so why not we do this as well?
 		// Also stop redirecting INIT signals.
@@ -360,6 +375,7 @@ pub struct SvmHypervisor
 	pub image_size:u32,
 	pub asid_max:u32,
 	pub asid_pool:Vec<u64>,
+	pub xsave_size:usize,
 	pub features:EnabledFeatures,
 	#[cfg(windows)] pub mshvcall_forwarder:Option<MshvCallForwarder>
 }
@@ -411,6 +427,7 @@ impl Default for SvmHypervisor
 			asid_quotient+=1;
 		}
 		let mut asid_pool:Vec<u64>=vec![0;asid_quotient];
+		let xstate_cpuid=ExtendedStateEnumeration0::cpuid();
 		// ASID 0 and 1 are reserved.
 		asid_pool[0]=3;
 		Self
@@ -427,6 +444,7 @@ impl Default for SvmHypervisor
 			image_size:0,
 			asid_max:svm_feat.asid(),
 			asid_pool,
+			xsave_size:xstate_cpuid.supported_size() as usize,
 			features:EnabledFeatures::get(),
 			#[cfg(windows)] mshvcall_forwarder:MshvCallForwarder::new()
 		}
@@ -562,6 +580,12 @@ impl HypervisorEssentials for SvmHypervisor
 				None=>fail_cleanup!("Failed to allocate host IST1 stack for processor {}!",i)
 			}
 			vcpu.hypervisor=self as *mut Self as *mut c_void;
+			// Allocate XSAVE state size.
+			vcpu.host_xsave.reserve_exact(self.xsave_size);
+			unsafe
+			{
+				vcpu.host_xsave.set_len(self.xsave_size);
+			}
 			vcpu.vcpu_id=i;
 			self.vcpus.push(vcpu);
 		}

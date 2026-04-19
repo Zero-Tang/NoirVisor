@@ -443,14 +443,14 @@ pub mod svm
 
 pub mod vt
 {
-	use core::{arch::{asm, naked_asm},fmt::*,mem::MaybeUninit};
+	use core::{arch::asm, fmt, hint::cold_path};
 	const VM_INSTRUCTION_ERROR:usize=0x4400;
 
-	pub struct EmptyUnit(pub ());
+	pub struct EmptyUnit;
 
-	impl Display for EmptyUnit
+	impl fmt::Display for EmptyUnit
 	{
-		fn fmt(&self, _f: &mut Formatter<'_>) -> Result
+		fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result
 		{
 			Ok(())
 		}
@@ -463,9 +463,17 @@ pub mod vt
 			match $e
 			{
 				0=>VmxResult::Ok($v),
-				1=>VmxResult::Err(unsafe{asm_vmread_unchecked(VM_INSTRUCTION_ERROR) as u32}),
+				1=>
+				{
+					cold_path();
+					VmxResult::Err(unsafe{vmread_unchecked(VM_INSTRUCTION_ERROR) as u32})
+				}
 				2=>VmxResult::NoVmcs,
-				_=>panic!("Unexpected VMX Fail Flag: {}!",$e)
+				_=>
+				{
+					cold_path();
+					panic!("Unexpected VMX Fail Flag: {}!",$e);
+				}
 			}
 		};
 	}
@@ -489,7 +497,7 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		dispatch_vmx_result!(vmx_err,EmptyUnit)
 	}
 
 	/// ## Safety
@@ -510,7 +518,7 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		dispatch_vmx_result!(vmx_err,EmptyUnit)
 	}
 
 	/// ## Safety
@@ -530,7 +538,7 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		dispatch_vmx_result!(vmx_err,EmptyUnit)
 	}
 
 	/// ## Safety
@@ -551,7 +559,7 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		dispatch_vmx_result!(vmx_err,EmptyUnit)
 	}
 
 	/// ## Safety
@@ -572,7 +580,7 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		dispatch_vmx_result!(vmx_err,EmptyUnit)
 	}
 
 	/// ## Safety
@@ -614,55 +622,80 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
-	}
-
-	#[unsafe(naked)] pub extern "win64" fn asm_vmread(field:usize,value:*mut usize)->u8
-	{
-		naked_asm!
-		(
-			// Avoid using memory-operand to improve nested virtualization performance.
-			"vmread rax,rcx",
-			"mov [rdx],rax",
-			"setc al",
-			"setz cl",
-			"adc al,cl",
-			"ret"
-		)
-	}
-
-	#[unsafe(naked)] pub extern "win64" fn asm_vmwrite(field:usize,value:usize)->u8
-	{
-		naked_asm!
-		(
-			"vmwrite rcx,rdx",
-			"setc al",
-			"setz cl",
-			"adc al,cl",
-			"ret"
-		)
+		dispatch_vmx_result!(vmx_err,EmptyUnit)
 	}
 
 	/// ## Safety
 	/// This routine does not check if vmread is successful.
-	#[unsafe(naked)] pub unsafe extern "win64" fn asm_vmread_unchecked(field:usize)->usize
+	#[inline(always)] pub unsafe fn vmread_unchecked(field:usize)->usize
 	{
-		naked_asm!
-		(
-			"vmread rax,rcx",
-			"ret"
-		)
+		unsafe
+		{
+			let r:usize;
+			asm!
+			(
+				"vmread {r},{f}",
+				r=out(reg) r,
+				f=in(reg) field
+			);
+			r
+		}
+	}
+
+	#[inline(always)] pub fn vmread(field:usize)->VmxResult<usize>
+	{
+		let r:usize;
+		let vmx_err:u8;
+		unsafe
+		{
+			asm!
+			(
+				"vmread {r},{f}",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				f=in(reg) field,
+				r=out(reg) r,
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+		}
+		dispatch_vmx_result!(vmx_err,r)
 	}
 
 	/// ## Safety
 	/// This routine does not check if vmwrite is successful.
-	#[unsafe(naked)] pub unsafe extern "win64" fn asm_vmwrite_unchecked(field:usize,value:usize)
+	#[inline(always)] pub unsafe fn vmwrite_unchecked(field:usize,value:usize)
 	{
-		naked_asm!
-		(
-			"vmwrite rcx,rdx",
-			"ret"
-		)
+		unsafe
+		{
+			asm!
+			(
+				"vmread {f},{v}",
+				v=in(reg) value,
+				f=in(reg) field
+			);
+		}
+	}
+
+	#[inline(always)] pub fn vmwrite(field:usize,value:usize)->VmxResult<EmptyUnit>
+	{
+		let vmx_err:u8;
+		unsafe
+		{
+			asm!
+			(
+				"vmwrite {f},{v}",
+				"setc {cf}",
+				"setz {zf}",
+				"adc {cf},{zf}",
+				f=in(reg) field,
+				v=in(reg) value,
+				zf=out(reg_byte) _,
+				cf=out(reg_byte) vmx_err
+			);
+		}
+		dispatch_vmx_result!(vmx_err,EmptyUnit)
 	}
 
 	const INVEPT_SINGLE:usize=1;
@@ -712,7 +745,7 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		dispatch_vmx_result!(vmx_err,EmptyUnit)
 	}
 
 	const INVVPID_INDIVIDUAL_ADDRESS:usize=0;
@@ -770,7 +803,7 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit(()))
+		dispatch_vmx_result!(vmx_err,EmptyUnit)
 	}
 	
 	// Unfortunately, we won't be able to abuse generics to read/write VMCS...
@@ -799,20 +832,12 @@ pub mod vt
 		($f:tt,$t:ty) =>
 		{
 			{
-				let mut v:MaybeUninit<usize>=MaybeUninit::uninit();
-				let r=asm_vmread($f,v.as_mut_ptr());
-				dispatch_vmx_result!(r,(unsafe{v.assume_init()} as $t))
-			}
-		};
-	}
-	
-	macro_rules! vmwrite_proc
-	{
-		($f:tt,$v:tt) =>
-		{
-			{
-				let r=asm_vmwrite($f,$v as usize);
-				dispatch_vmx_result!(r,EmptyUnit(()))
+				match vmread($f)
+				{
+					VmxResult::Ok(v)=>VmxResult::Ok(v as $t),
+					VmxResult::Err(e)=>VmxResult::Err(e),
+					VmxResult::NoVmcs=>VmxResult::NoVmcs
+				}
 			}
 		};
 	}
@@ -857,29 +882,29 @@ pub mod vt
 	
 	#[inline] pub fn vmwrite16(field:usize,value:u16)->VmxResult<EmptyUnit>
 	{
-		vmwrite_proc!(field,value)
+		vmwrite(field,value as usize)
 	}
 	
 	#[inline] pub fn vmwrite32(field:usize,value:u32)->VmxResult<EmptyUnit>
 	{
-		vmwrite_proc!(field,value)
+		vmwrite(field,value as usize)
 	}
 	
 	#[inline] pub fn vmwriteptr(field:usize,value:usize)->VmxResult<EmptyUnit>
 	{
-		vmwrite_proc!(field,value)
+		vmwrite(field,value as usize)
 	}
 	
 	#[inline] pub fn vmwrite64(field:usize,value:u64)->VmxResult<EmptyUnit>
 	{
 		#[cfg(target_arch="x86_64")]
 		{
-			vmwrite_proc!(field,value)
+			vmwrite(field,value as usize)
 		}
 		#[cfg(not(target_arch="x86_64"))]
 		match vmwrite32(field,value as u32)
 		{
-			VmxResult::Ok(EmptyUnit(()))=>vmwrite32(field+1,(value>>32) as u32),
+			VmxResult::Ok(EmptyUnit)=>vmwrite32(field+1,(value>>32) as u32),
 			VmxResult::Err(e)=>VmxResult::Err(e),
 			VmxResult::NoVmcs=>VmxResult::NoVmcs
 		}

@@ -53,12 +53,12 @@ impl VtStackContextFlags
 	pub const REQUEST_FULL_CONTEXT:u32=2;
 }
 
-#[repr(C)] pub struct VtStackTop
+#[repr(C,align(16))] pub struct VtStackTop
 {
 	pub arg_home:[u64;4],
-	pub volatile_xmms:VolatileXmmState,
 	pub gpr_state:GprState,
 	pub guest_frame:InterruptStackFrameWithErrorCode,
+	pub xsave_state:*mut c_void,
 	pub vcpu:*mut VtVcpu,
 	pub custom_vcpu:*mut c_void,	// NOT IMPLEMENTED IN RUST
 	pub nested_vcpu:*mut c_void,	// NOT IMPLEMENTED IN RUST
@@ -89,6 +89,7 @@ pub struct VtVcpu
 	pub hv_stack:MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>,
 	pub hypervisor:*mut c_void,
 	pub ist:[MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>;8],
+	pub host_xsave:Vec<u8>,
 	pub cpuid_fms:u32,
 	pub vcpu_id:u32,
 	pub under_hvm:bool,
@@ -119,6 +120,7 @@ impl Default for VtVcpu
 			hv_stack:MemoryDescriptor::null(),
 			hypervisor:null_mut(),
 			ist:[const{MemoryDescriptor::null()};8],
+			host_xsave:Vec::new(),
 			cpuid_fms:(std_leaf.ext_model()<<16)|0x600,
 			vcpu_id:0,
 			under_hvm:false,
@@ -196,7 +198,7 @@ impl VtVcpu
 		}
 	}
 
-	#[inline(always)] pub fn get_stack_top_mut(&mut self)->&mut VtStackTop
+	#[inline(always)] pub fn get_stack_top_mut<'a,'b>(&'a mut self)->&'b mut VtStackTop
 	{
 		unsafe
 		{
@@ -537,6 +539,7 @@ impl VtVcpu
 		{
 			let cpu_feat_id=StandardProcessorFeatureIdentifiers::cpuid();
 			let stack=self.get_stack_top_mut();
+			stack.xsave_state=self.host_xsave.as_mut_ptr().cast();
 			// Set to the maximum XCR0.
 			// Current implementation would only support up to AVX, AVX512 excluded.
 			stack.host_xcr0=1;
@@ -634,6 +637,7 @@ pub struct VtHypervisor
 	pub mmio_space:IoAddressSpace<u64>,
 	pub image_base:*mut c_void,
 	pub image_size:u32,
+	pub xsave_size:usize,
 	pub features:EnabledFeatures,
 	#[cfg(windows)] pub mshvcall_forwarder:Option<MshvCallForwarder>
 }
@@ -652,6 +656,7 @@ impl Default for VtHypervisor
 {
 	fn default() -> Self
 	{
+		let xsave_cpuid=ExtendedStateEnumeration0::cpuid();
 		Self
 		{
 			vcpus:Vec::with_capacity(unsafe{noir_get_processor_count() as usize}),
@@ -664,6 +669,7 @@ impl Default for VtHypervisor
 			mmio_space:IoAddressSpace{regions:Vec::new()},
 			image_base:null_mut(),
 			image_size:0,
+			xsave_size:xsave_cpuid.supported_size() as usize,
 			features:EnabledFeatures::get(),
 			#[cfg(windows)] mshvcall_forwarder:MshvCallForwarder::new()
 		}
@@ -881,6 +887,11 @@ impl HypervisorEssentials for VtHypervisor
 				None=>fail_cleanup!("Failed to allocate host IST1 stack for processor {i}!")
 			}
 			vcpu.hypervisor=self as *mut Self as *mut c_void;
+			vcpu.host_xsave.reserve_exact(self.xsave_size);
+			unsafe
+			{
+				vcpu.host_xsave.set_len(self.xsave_size);
+			}
 			vcpu.vcpu_id=i;
 			self.vcpus.push(vcpu);
 		}

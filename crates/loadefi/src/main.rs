@@ -21,15 +21,9 @@ fn wait_for_keystroke()->char
 	{
 		loop
 		{
-			if let Ok(o)=stdin.read_key()
+			if let Ok(o)=stdin.read_key() && let Some(k)=o && let Key::Printable(p)=k
 			{
-				if let Some(k)=o
-				{
-					if let Key::Printable(p)=k
-					{
-						return p.into();
-					}
-				}
+				return p.into();
 			}
 		}
 	})
@@ -159,6 +153,7 @@ impl BootOption
 	}
 }
 
+#[allow(dead_code)]
 struct LoadOption
 {
 	name:String,
@@ -216,7 +211,7 @@ fn select_boot_option()
 		println!("Press W to move cursor upward. Press S to move cursor downward.");
 		for (i,opt) in options.iter().enumerate()
 		{
-			println!("{} {}: {} (Device-Path: {:02X?}, Optional-Data: {:02X?}",if i==pos {"----> "} else {""},opt.name,opt.description,opt.device_path,opt.optional_data);
+			println!("{} {}: {} (Device-Path: {:02X?}",if i==pos {"----> "} else {""},opt.name,opt.description,opt.device_path);
 		}
 	};
 	reprinter_fn(position);

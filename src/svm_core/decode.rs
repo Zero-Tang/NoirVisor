@@ -11,7 +11,6 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use alloc::slice;
 use paste::paste;
 
 use crate::disasm::emulator::{EmulatorOps, Instruction, MovCrInfo, MovDrInfo};
@@ -29,7 +28,7 @@ macro_rules! build_get_reg_helper
 			{
 				unsafe
 				{
-					vmread(self.vmcb.virt,[<GUEST_ $name:upper>])
+					self.vmread([<GUEST_ $name:upper>])
 				}
 			}
 		}
@@ -41,11 +40,15 @@ impl PageTranslationHelper for SvmVcpu
 	build_get_reg_helper!(cr0);
 	build_get_reg_helper!(cr3);
 	build_get_reg_helper!(cr4);
-	build_get_reg_helper!(efer);
+	
+	fn get_efer(&self)->Efer
+	{
+		self.read_efer()
+	}
 
 	fn is_user_mode(&self)->bool
 	{
-		let cpl:u8=unsafe{vmread(self.vmcb.virt,GUEST_CPL)};
+		let cpl:u8=unsafe{self.vmread(GUEST_CPL)};
 		cpl==3
 	}
 
@@ -70,44 +73,41 @@ impl PageTranslationHelper for SvmVcpu
 
 impl EmulatorOps for SvmVcpu
 {
-	fn read_gpr(&self,gpr_index:usize)->u64
+	fn get_gpr(&self,gpr_index:usize)->u64
 	{
 		let stk_top=self.get_stack_top();
 		stk_top.gpr_state.read(gpr_index).unwrap()
 	}
 
-	fn write_gpr(&mut self,gpr_index:usize,value:u64)
+	fn set_gpr(&mut self,gpr_index:usize,value:u64)
 	{
 		let stk_top=self.get_stack_top_mut();
 		stk_top.gpr_state.write(gpr_index,value);
 	}
 
-	fn read_seg_selector(&self,seg_index:usize)->u16
+	fn get_seg_selector(&self,seg_index:usize)->u16
 	{
 		unsafe
 		{
-			vmread(self.vmcb.virt,GUEST_ES_SELECTOR+(seg_index<<4))
+			self.vmread(GUEST_ES_SELECTOR+(seg_index<<4))
 		}
 	}
 
-	fn write_seg_selector(&self,seg_index:usize,value:u16)
+	fn set_seg_selector(&mut self,seg_index:usize,value:u16)
 	{
 		unsafe
 		{
-			vmwrite(self.vmcb.virt,GUEST_ES_SELECTOR+(seg_index<<4),value);
+			self.vmwrite(GUEST_ES_SELECTOR+(seg_index<<4),value);
 			if seg_index<4
 			{
-				vmcb_clean_seg(self.vmcb.virt);
+				self.clean_vmcb(CLEAN_SEG_BIT);
 			}
 		}
 	}
 
-	fn read_rip(&self)->u64
+	fn get_rip(&self)->u64
 	{
-		unsafe
-		{
-			vmread(self.vmcb.virt,GUEST_RIP)
-		}
+		self.read_rip()
 	}
 
 	fn read_gpa(&mut self,gpa:u64,value:&mut [u8])
@@ -129,11 +129,11 @@ impl SvmVcpu
 	{
 		unsafe
 		{
-			if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)	// The CS.L bit.
+			if self.ref_efer().lma() && self.vmcb_bt(GUEST_CS_ATTRIB,9)	// The CS.L bit.
 			{
 				64
 			}
-			else if vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,10)	// The CS.D bit.
+			else if self.vmcb_bt(GUEST_CS_ATTRIB,10)	// The CS.D bit.
 			{
 				32
 			}
@@ -147,14 +147,15 @@ impl SvmVcpu
 	fn decode_unknown(&mut self)
 	{
 		// This interception means NoirVisor does not know such interception at all. So panic on interception.
-		let exit_reason:i64=unsafe{vmread(self.vmcb.virt,EXIT_CODE)};
+		let exit_reason:i64=unsafe{self.vmread(EXIT_CODE)};
 		panic!("Unknown interception decode request! Intercept Code: 0x{:016X}",exit_reason);
 	}
 
 	fn fetch_instruction(&mut self)
 	{
-		let rip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
-		let buff=unsafe{slice::from_raw_parts_mut(self.vmcb.virt.cast::<u8>().add(GUEST_INSTRUCTION_BYTES),15)};
+		let rip:u64=self.read_rip();
+		// let buff:&mut [u8;15]=unsafe{&mut *self.vmcb.virt.byte_add(GUEST_INSTRUCTION_BYTES).cast()};
+		let buff=self.instruction_bytes_mut();
 		let mut fault_pa:Option<u64>=None;
 		if let Err(e)=read_virtual_address(rip,self,buff,&mut fault_pa)
 		{
@@ -165,7 +166,7 @@ impl SvmVcpu
 
 	fn decode_instruction_internal(&mut self)->Option<Instruction>
 	{
-		let rip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
+		let rip:u64=self.read_rip();
 		let buff:&mut [u8;15]=unsafe{&mut *self.vmcb.virt.byte_add(GUEST_INSTRUCTION_BYTES).cast()};
 		// Fetch instructions.
 		self.fetch_instruction();
@@ -178,11 +179,11 @@ impl SvmVcpu
 			// If the vCPU is in compatibility mode, advancing rip should drop the higher 32 bits.
 			unsafe
 			{
-				if !vmcb_bt32(self.vmcb.virt,GUEST_CS_ATTRIB,9)
+				if !(self.vmcb_bt(GUEST_CS_ATTRIB,9) && self.ref_efer().lma())
 				{
 					nrip&=u32::MAX as u64;
 				}
-				vmwrite(self.vmcb.virt,NEXT_RIP,nrip);
+				self.write_next_rip(nrip);
 			}
 			return Some(ins);
 		}
@@ -232,7 +233,7 @@ impl SvmVcpu
 				};
 				unsafe
 				{
-					vmwrite(self.vmcb.virt,EXIT_INFO1,v);
+					self.vmwrite(EXIT_INFO1,v);
 				}
 			}
 		}
@@ -264,7 +265,7 @@ impl SvmVcpu
 				};
 				unsafe
 				{
-					vmwrite(self.vmcb.virt,EXIT_INFO1,v);
+					self.vmwrite(EXIT_INFO1,v);
 				}
 			}
 		}
@@ -276,7 +277,7 @@ impl SvmVcpu
 		{
 			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
 			// We will have to emulate this on our own.
-			let fault_code=PageFaultErrorCode::from_bits(unsafe{vmread(self.vmcb.virt,EXIT_INFO1)});
+			let fault_code=PageFaultErrorCode::from_bits(unsafe{self.vmread(EXIT_INFO1)});
 			if fault_code.execute()
 			{
 				// Fetching instruction is only needed if the operation is not instruction fetch!
@@ -300,7 +301,7 @@ impl SvmVcpu
 				let v=ins.decode_swint().unwrap_or(0) as u64;
 				unsafe
 				{
-					vmwrite(self.vmcb.virt,EXIT_INFO1,v);
+					self.vmwrite(EXIT_INFO1,v);
 				}
 			}
 		}
@@ -321,7 +322,7 @@ impl SvmVcpu
 				// Then put the results back.
 				unsafe
 				{
-					vmwrite(self.vmcb.virt,EXIT_INFO1,p);
+					self.vmwrite(EXIT_INFO1,p);
 				}
 			}
 		}
@@ -336,8 +337,8 @@ impl SvmVcpu
 		{
 			unsafe
 			{
-				let nrip:u64=vmread(self.vmcb.virt,EXIT_INFO2);
-				vmwrite(self.vmcb.virt,NEXT_RIP,nrip);
+				let nrip:u64=self.vmread(EXIT_INFO2);
+				self.write_next_rip(nrip);
 			}
 		}
 	}
@@ -348,7 +349,7 @@ impl SvmVcpu
 		{
 			// In Linux KVM, Decode-Assists is not supported in nested virtualization.
 			// We will have to emulate this on our own.
-			let fault_code=NptFaultCode::from_bits(unsafe{vmread(self.vmcb.virt,EXIT_INFO1)});
+			let fault_code=NptFaultCode::from_bits(unsafe{self.vmread(EXIT_INFO1)});
 			if !fault_code.code_fetch()
 			{
 				// Fetching instruction is only needed if the operation is not instruction fetch!

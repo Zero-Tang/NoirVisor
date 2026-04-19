@@ -147,20 +147,6 @@ pub mod msr
 	pub const MSR_RMP_END:u32=0xC0010133;
 	pub const MSR_GUEST_TSC_FREQ:u32=0xC0010134;
 
-	// EFER
-	pub const MSR_EFER_SCE:u64=0x00000001;
-	pub const MSR_EFER_LME:u64=0x00000100;
-	pub const MSR_EFER_LMA:u64=0x00000400;
-	pub const MSR_EFER_NXE:u64=0x00000800;
-	pub const MSR_EFER_SVME:u64=0x00001000;
-	pub const MSR_EFER_LMSLE:u64=0x00002000;
-	pub const MSR_EFER_FFXSR:u64=0x00004000;
-	pub const MSR_EFER_TCE:u64=0x00008000;
-	pub const MSR_EFER_MCOMMIT:u64=0x00020000;
-	pub const MSR_EFER_INTWB:u64=0x00040000;
-	pub const MSR_EFER_UAIE:u64=0x00100000;
-	pub const MSR_EFER_AIBRSE:u64=0x00200000;
-
 	// SVM Control Register Flags
 	pub const MSR_VMCR_DPD:u64=0x00000001;
 	pub const MSR_VMCR_R_INIT:u64=0x00000002;

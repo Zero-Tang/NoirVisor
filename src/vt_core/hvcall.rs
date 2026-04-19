@@ -35,7 +35,7 @@ impl VtVcpu
 		let gpr_state=&mut self.get_stack_top_mut().gpr_state;
 		let saved_state:GprState=GprState
 		{
-			rax:nrip as u64,
+			rax:nrip,
 			rcx:gflags as u64,
 			rdx:gpr_state.rsp,
 			rbx:gpr_state.rbx,

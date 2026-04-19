@@ -72,6 +72,7 @@ def main():
 	i=1
 	config="build-windows.json"
 	optimizer_enabled=False
+	target="unknown"
 	# NoirVisor usually doesn't use more than 20KB of heap.
 	# 256KiB of heap granularity should be quite enough.
 	os.environ["DEFAULT_MMAP_GRANULARITY"]="0x40000"
@@ -79,6 +80,7 @@ def main():
 		if sys.argv[i]=="/target":
 			i+=1
 			config="build-{}.json".format(sys.argv[i])
+			target=sys.argv[1]
 		elif sys.argv[i].startswith("/opt:"):
 			expr=sys.argv[i][5:]
 			if expr.lower()=="yes" or expr.lower()=="true":
@@ -103,7 +105,8 @@ def main():
 		pl.run()
 
 if __name__=="__main__":
-	if platform.system()!="Windows":
+	known_platforms={"Windows","Linux"}
+	if not platform.system() in known_platforms:
 		print("Host OS {} is unsupported by this build script!".format(platform.system()))
 		exit()
 	t1:float=time.time()

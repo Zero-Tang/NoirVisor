@@ -162,6 +162,30 @@ popax_volatile_fast macro rsp_offset
 
 endm
 
+save_volatile_xmm macro xstate_ptr
+
+	stmxcsr dword ptr [xstate_ptr+18h]
+	movaps xmmword ptr [xstate_ptr+0A0h],xmm0
+	movaps xmmword ptr [xstate_ptr+0B0h],xmm1
+	movaps xmmword ptr [xstate_ptr+0C0h],xmm2
+	movaps xmmword ptr [xstate_ptr+0D0h],xmm3
+	movaps xmmword ptr [xstate_ptr+0E0h],xmm4
+	movaps xmmword ptr [xstate_ptr+0F0h],xmm5
+
+endm
+
+restore_volatile_xmm macro xstate_ptr
+
+	movaps xmm0,xmmword ptr [xstate_ptr+0A0h]
+	movaps xmm1,xmmword ptr [xstate_ptr+0B0h]
+	movaps xmm2,xmmword ptr [xstate_ptr+0C0h]
+	movaps xmm3,xmmword ptr [xstate_ptr+0D0h]
+	movaps xmm4,xmmword ptr [xstate_ptr+0E0h]
+	movaps xmm5,xmmword ptr [xstate_ptr+0F0h]
+	ldmxcsr dword ptr [xstate_ptr+18h]
+
+endm
+
 else
 
 endif

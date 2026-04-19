@@ -10,15 +10,13 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{mem::MaybeUninit, slice};
+use core::{hint::cold_path, mem::MaybeUninit, slice};
 
 use paste::paste;
 
 use decode::dispatch_decoder;
 use npt::NptFaultCode;
 use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::interrupts::*, trytask::try_task};
-#[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall,nvc_forward_memory_mapped_hypercall};
-#[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
 use disasm::emulator::{EmulatorOps, Instruction};
 use super::{*,hvcall::dispatch_hypercall};
 use mshv_core::{cpuid::*,msr::dispatch_mshv_msr_handler};
@@ -45,8 +43,7 @@ impl SvmVcpu
 {
 	fn handle_unknown(&mut self,_context:&mut SvmStackTop)
 	{
-		let vmcb=self.vmcb.virt;
-		let intercept_code:i64=unsafe{vmread(vmcb,EXIT_CODE)};
+		let intercept_code:i64=unsafe{self.vmread(EXIT_CODE)};
 		panic!("Unknown VM-Exit is intercepted! Code: 0x{:016X}",intercept_code);
 	}
 
@@ -101,7 +98,7 @@ impl SvmVcpu
 		gpr_state.rcx=c as u64;
 		gpr_state.rdx=d as u64;
 		// Advance the rip.
-		unsafe{advance_rip(self.vmcb.virt);}
+		self.advance_rip();
 	}
 
 	/// # `handle_rdmsr`
@@ -130,7 +127,7 @@ impl SvmVcpu
 				Err(e)=>
 				{
 					error!("Failed to pass-thru Microsoft TLFS MSR-read (index=0x{index:X}) request! Vector={}, Error-Code: {:X?}",e.vector,e.error_code);
-					unsafe{inject_event(self.vmcb.virt,e.vector,EventType::HardwareException,e.error_code,true);}
+					self.inject_event(e.vector,EventType::HardwareException,e.error_code,true);
 					return None;
 				}
 			}
@@ -153,21 +150,18 @@ impl SvmVcpu
 			MSR_EFER=>
 			{
 				// Read the EFER value from VMCB.
-				let v:u64=unsafe{vmread(self.vmcb.virt,GUEST_EFER)};
+				let mut v=self.read_efer();
 				// The SVME bit should be filtered.
-				if self.nested_hvm.svme
+				if !self.nested_hvm.svme
 				{
-					Some(v)
+					v.set_svme(false);
 				}
-				else
-				{
-					Some(v&!MSR_EFER_SVME)
-				}
+				Some(v.into_bits())
 			}
 			MSR_TSC_RATIO=>
 			{
-				// TSC Ratio is not supported.
-				unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+				error!("TSC Ratio rdmsr handler is not implemented!");
+				self.inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
 				None
 			}
 			MSR_VMCR=>
@@ -181,7 +175,7 @@ impl SvmVcpu
 			MSR_SMM_CTRL=>
 			{
 				error!("SMM_CTRL rdmsr handler is not implemented!");
-				unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+				self.inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
 				None
 			}
 			MSR_HSAVE_PA=>
@@ -203,10 +197,7 @@ impl SvmVcpu
 					Err(e)=>
 					{
 						error!("The rdmsr task failed! Vector={}, Error-Code: {:X?}",e.vector,e.error_code);
-						unsafe
-						{
-							inject_event(self.vmcb.virt,e.vector,EventType::HardwareException,e.error_code,true);
-						}
+						self.inject_event(e.vector,EventType::HardwareException,e.error_code,true);
 						None
 					}
 				}
@@ -241,7 +232,7 @@ impl SvmVcpu
 				Err(e)=>
 				{
 					error!("Failed to pass-thru Microsoft TLFS MSR-write (index=0x{index:X}) request! Vector={}, Error-Code: {:X?}",e.vector,e.error_code);
-					unsafe{inject_event(self.vmcb.virt,e.vector,EventType::HardwareException,e.error_code,true);}
+					self.inject_event(e.vector,EventType::HardwareException,e.error_code,true);
 					return false;
 				}
 			}
@@ -256,21 +247,17 @@ impl SvmVcpu
 			}
 			MSR_EFER=>
 			{
-				let svme=(value&MSR_EFER_SVME)==MSR_EFER_SVME;
-				self.nested_hvm.svme=svme;
-				unsafe
-				{
-					// SVME bit should always be set.
-					vmwrite(self.vmcb.virt,GUEST_EFER,value|MSR_EFER_SVME);
-					// We have updated EFER. Therefore, Control-Register fields should be invalidated.
-					vmcb_clean_cr(self.vmcb.virt);
-				};
+				let efer=self.ref_efer_mut();
+				*efer=Efer::from_bits(value);
+				self.nested_hvm.svme=efer.svme();
+				// SVME bit should always be set.
+				self.ref_efer_mut().set_svme(true);
 				true
 			}
 			MSR_TSC_RATIO=>
 			{
 				// TSC Ratio is not supported.
-				unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+				self.inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
 				false
 			}
 			MSR_VMCR=>
@@ -282,7 +269,7 @@ impl SvmVcpu
 				// Only the lowest bit can be set to 1.
 				if (value&(u64::MAX-1))!=0
 				{
-					unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+					self.inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
 					false
 				}
 				else
@@ -294,7 +281,7 @@ impl SvmVcpu
 			MSR_SMM_CTRL=>
 			{
 				error!("SMM_CTRL wrmsr handler is not implemented!");
-				unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+				self.inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
 				false
 			}
 			MSR_HSAVE_PA=>
@@ -302,7 +289,7 @@ impl SvmVcpu
 				// HSAVE must be aligned on page-boundary.
 				if page_4kb_offset(value)!=0
 				{
-					unsafe{inject_event(self.vmcb.virt,GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true)};
+					self.inject_event(GENERAL_PROTECTION_FAULT,EventType::HardwareException,Some(0),true);
 					false
 				}
 				else
@@ -325,10 +312,7 @@ impl SvmVcpu
 					Err(e)=>
 					{
 						error!("The wrmsr task failed! Vector={}, Error-Code: {:X?}",e.vector,e.error_code);
-						unsafe
-						{
-							inject_event(self.vmcb.virt,e.vector,EventType::HardwareException,e.error_code,true);
-						}
+						self.inject_event(e.vector,EventType::HardwareException,e.error_code,true);
 						false
 					}
 				}
@@ -339,14 +323,14 @@ impl SvmVcpu
 	fn handle_msr(&mut self,context:&mut SvmStackTop)
 	{
 		let index=context.gpr_state.rcx as u32;
-		let op_write:bool=unsafe{vmread(self.vmcb.virt,EXIT_INFO1)};
+		let op_write:bool=unsafe{self.vmread(EXIT_INFO1)};
 		if op_write
 		{
 			let value=(context.gpr_state.rax&u32::MAX as u64)|(context.gpr_state.rdx<<32);
 			if self.handle_wrmsr(index,value)
 			{
 				// Advance rip.
-				unsafe{advance_rip(self.vmcb.virt)};
+				self.advance_rip();
 			}
 		}
 		else if let Some(value)=self.handle_rdmsr(index)
@@ -358,15 +342,15 @@ impl SvmVcpu
 			{
 				(&raw mut context.gpr_state.rax).cast::<u32>().write(lo);
 				(&raw mut context.gpr_state.rdx).cast::<u32>().write(hi);
-				advance_rip(self.vmcb.virt);
+				self.advance_rip();
 			}
 		}
 	}
 
 	fn handle_shutdown(&mut self,_context:&mut SvmStackTop)
 	{
-		let gdt_base:u64=unsafe{vmread(self.vmcb.virt,GUEST_GDTR_BASE)};
-		let idt_base:u64=unsafe{vmread(self.vmcb.virt,GUEST_IDTR_BASE)};
+		let gdt_base:u64=unsafe{self.vmread(GUEST_GDTR_BASE)};
+		let idt_base:u64=unsafe{self.vmread(GUEST_IDTR_BASE)};
 		info!("GDT-Base: 0x{gdt_base:X}, IDT-Base: 0x{idt_base:X}");
 		panic!("Shutdown occured!");
 	}
@@ -379,7 +363,7 @@ impl SvmVcpu
 	fn handle_vmmcall(&mut self,context:&mut SvmStackTop)
 	{
 		let gpr_state=&mut context.gpr_state;
-		let grip:u64=unsafe{vmread(self.vmcb.virt,GUEST_RIP)};
+		let grip:u64=self.read_rip();
 		let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
 		if hv.is_rip_from_hypervisor(grip)
 		{
@@ -391,15 +375,12 @@ impl SvmVcpu
 				{
 					// This hypercall is known. Put status in rax register.
 					gpr_state.rax=st.0 as u64;
-					unsafe
-					{
-						advance_rip(self.vmcb.virt);
-					}
+					self.advance_rip();
 				}
-				Err((vector,error_code))=>unsafe
+				Err((vector,error_code))=>
 				{
 					// Exception happened while servicing the hypercall. Inject into the Guest.
-					inject_event(self.vmcb.virt,vector,EventType::HardwareException,error_code,true);
+					self.inject_event(vector,EventType::HardwareException,error_code,true);
 				}
 			}
 		}
@@ -407,9 +388,11 @@ impl SvmVcpu
 		{
 			// This hypercall might be compliant to Microsoft TLFS.
 			// Check if forwarder exists.
-			#[cfg(windows)]
+			/*#[cfg(windows)]
 			if let Some(_fwder)=&hv.mshvcall_forwarder
 			{
+				use xpf_core::nvbdk::{nvc_forward_fast_hypercall,nvc_forward_memory_mapped_hypercall};
+				use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
 				let stack:*mut SvmStackTop=unsafe{self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast()};
 				let hvcall_code=TlfsHypercallCode::from_bits(gpr_state.rcx);
 				// Construct the forward stack.
@@ -435,7 +418,7 @@ impl SvmVcpu
 					}
 				}
 			}
-			else
+			else*/
 			{
 				unimplemented!("Microsoft TLFS Hypercall handler is not implemented yet!");
 			}
@@ -445,50 +428,49 @@ impl SvmVcpu
 	fn handle_vmload(&mut self,context:&mut SvmStackTop)
 	{
 		error!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",context.gpr_state.rax);
-		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
+		self.inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true);
 	}
 
 	fn handle_vmsave(&mut self,context:&mut SvmStackTop)
 	{
 		error!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",context.gpr_state.rax);
-		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
+		self.inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true);
 	}
 
 	fn handle_stgi(&mut self,_context:&mut SvmStackTop)
 	{
 		error!("Nested virtualization is unsupported!");
-		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
+		self.inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true);
 	}
 
 	fn handle_clgi(&mut self,_context:&mut SvmStackTop)
 	{
 		error!("Nested virtualization is unsupported!");
-		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
+		self.inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true);
 	}
 
 	fn handle_skinit(&mut self,_context:&mut SvmStackTop)
 	{
 		error!("Nested virtualization is unsupported!");
-		unsafe{inject_event(self.vmcb.virt,INVALID_OPCODE_FAULT,EventType::HardwareException,None,true)};
+		self.inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true);
 	}
 
 	fn handle_npf(&mut self,_context:&mut SvmStackTop)
 	{
-		let vmcb=self.vmcb.virt;
-		let fault:NptFaultCode=unsafe{vmread(vmcb,EXIT_INFO1)};
-		let gpa:u64=unsafe{vmread(vmcb,EXIT_INFO2)};
-		let rip:u64=unsafe{vmread(vmcb,GUEST_RIP)};
+		let fault:NptFaultCode=unsafe{self.vmread(EXIT_INFO1)};
+		let gpa:u64=unsafe{self.vmread(EXIT_INFO2)};
+		let rip:u64=self.read_rip();
 		// Check if this #NPF is due to Code Integrity violation.
 		if is_ci_phys_page(gpa)
 		{
 			// Decode the instruction length.
-			let ins_bytes:&[u8]=unsafe{slice::from_raw_parts(self.vmcb.virt.byte_add(GUEST_INSTRUCTION_BYTES).cast(),15)};
+			let ins_bytes=self.instruction_bytes();
 			let mut ins=Instruction::default();
 			ins.copy_from_slice(ins_bytes);
 			ins.decode(self.get_current_bitness());
 			error!("CI-fault for GPA=0x{gpa:016X} is intercepted! rip=0x{rip:016X}, Fault-Reason: {fault}, Instruction-Length: {}",ins.len());
 			debug!("CI-fault Instruction: {:02X?} | {ins}",&ins_bytes[..ins.len()]);
-			unsafe{advance_rip_manually(vmcb,ins.len())};
+			self.advance_rip_manually(ins.len());
 		}
 		else if !fault.code_fetch()
 		{
@@ -498,7 +480,7 @@ impl SvmVcpu
 			let mut ins=Instruction::default();
 			ins.copy_from_slice(ins_bytes);
 			ins.decode(self.get_current_bitness());
-			trace!("Intercepted filtered MMIO! Instruction: {ins}");
+			// trace!("Intercepted filtered MMIO! Instruction: {ins}");
 			if fault.write()
 			{
 				self.emulate_mmio_output(&ins,gpa);
@@ -507,7 +489,7 @@ impl SvmVcpu
 			{
 				self.emulate_mmio_input(&ins,gpa);
 			}
-			unsafe{advance_rip_manually(vmcb,ins.len())};
+			self.advance_rip_manually(ins.len());
 		}
 		else
 		{
@@ -517,7 +499,7 @@ impl SvmVcpu
 
 	fn handle_invalid(&mut self,_context:&mut SvmStackTop)
 	{
-		let intercept_code:i64=unsafe{vmread(self.vmcb.virt,EXIT_CODE)};
+		let intercept_code:i64=unsafe{self.vmread(EXIT_CODE)};
 		panic!("Invalid State! Exit Code: 0x{:X}",intercept_code);
 	}
 }
@@ -525,7 +507,7 @@ impl SvmVcpu
 /// # Safety
 /// This function is unsafe is because it's called from assembly.
 /// DO NOT CALL THIS FUNCTION FROM RUST CODE!
-#[unsafe(no_mangle)] unsafe extern "C" fn nvc_svm_exit_handler(stack:*mut SvmStackTop)
+#[unsafe(no_mangle)] unsafe extern "win64" fn nvc_svm_exit_handler(stack:*mut SvmStackTop)
 {
 	unsafe
 	{
@@ -533,30 +515,32 @@ impl SvmVcpu
 		let gpr=&mut (*stack).gpr_state;
 		if (*stack).guest_vmcb_pa==vcpu.vmcb.phys
 		{
-			// This VM-Exit is intercepted from the subverted system.
-			let cur_vmcb=vcpu.vmcb.virt;
 			// Allow debugger to display the stack trace from the guest.
 			// Note: this stack trace is only meaningful from subverted host.
-			(*stack).guest_frame.return_rip=vmread(cur_vmcb,GUEST_RIP);
-			(*stack).guest_frame.return_rsp=vmread(cur_vmcb,GUEST_RSP);
+			(*stack).guest_frame.return_rip=vcpu.read_rip();
+			(*stack).guest_frame.return_rsp=vcpu.read_rsp();
 			// Intercept code is supposed to be 64-bit, but Linux KVM has a bug that treats the intercept code as 32-bit.
-			let intercept_code:i32=vmread(cur_vmcb,EXIT_CODE);
+			let intercept_code:i32=vcpu.vmread(EXIT_CODE);
 			let decoder=dispatch_decoder(intercept_code as i64);
 			let handler=dispatch_handler(intercept_code as i64);
 			// If VMCB-Clean-Bits is supported, we may cache the VMCB fields.
-			if vcpu.svm_feats.vmcb_clean() {vmwrite(vcpu.vmcb.virt,VMCB_CLEAN_BITS,u32::MAX)};
+			if vcpu.svm_feats.vmcb_clean()
+			{
+				vcpu.vmwrite(VMCB_CLEAN_BITS,u32::MAX);
+			}
 			// Handle the VM-Exit!
-			gpr.rax=vmread(cur_vmcb,GUEST_RAX);
-			gpr.rsp=vmread(cur_vmcb,GUEST_RSP);
+			gpr.rax=vcpu.vmread(GUEST_RAX);
+			gpr.rsp=vcpu.vmread(GUEST_RSP);
 			decoder(vcpu);
 			handler(vcpu,&mut *stack);
-			vmwrite(vcpu.vmcb.virt,GUEST_RAX,gpr.rax);
+			vcpu.write_rax(gpr.rax);
 			// The rax in GPR state should be the physical address of VMCB
 			// in order to execute the vmrun instruction properly.
 			// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.
 		}
 		else
 		{
+			cold_path();
 			panic!("Current VMCB Physical-Address (0x{:X}) is unexpected!",(*stack).guest_vmcb_pa);
 		}
 		gpr.rax=(*stack).guest_vmcb_pa;
@@ -746,6 +730,7 @@ pub(super) const SVM_EXIT_HANDLER_GROUP_LIMITS:[usize;SVM_MAXIMUM_GROUPS]=[SVM_M
 {
 	if intercept_code<0
 	{
+		cold_path();
 		let index:usize=!intercept_code as usize;
 		match SVM_EXIT_HANDLER_GROUP_NEGATIVE.get(index)
 		{

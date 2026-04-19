@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-r-efi = "5.3.0"
+r-efi = "6.0.0"
 static-collections = "*"
 utf16_lit = "2.0.2"

@@ -28,9 +28,9 @@ impl SvmVcpu
 
 	fn hvcall_restore(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
 	{
-		let gcr3:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR3)};
-		let nrip:u64=unsafe{vmread(self.vmcb.virt,NEXT_RIP)};
-		let gflags:u64=unsafe{vmread(self.vmcb.virt,GUEST_RFLAGS)};
+		let gcr3:u64=self.read_cr3();
+		let nrip:u64=self.read_next_rip();
+		let gflags:u64=self.read_rflags();
 		let gpr_state=&mut self.get_stack_top_mut().gpr_state;
 		let saved_state:GprState=GprState
 		{
@@ -52,7 +52,7 @@ impl SvmVcpu
 			r15:gpr_state.r15,
 		};
 		// Switch to Restored Control Registers.
-		let gcr4:u64=unsafe{vmread(self.vmcb.virt,GUEST_CR4)};
+		let gcr4:u64=self.read_cr4();
 		write_cr3(gcr3);
 		write_cr4(gcr4);
 		// Restore the processor's hidden state.
@@ -62,15 +62,15 @@ impl SvmVcpu
 			// Switch to Restored IDT.
 			let gidtr:DescriptorTable=DescriptorTable
 			{
-				limit:vmread(self.vmcb.virt,GUEST_IDTR_LIMIT),
-				base:vmread(self.vmcb.virt,GUEST_IDTR_BASE)
+				limit:self.vmread(GUEST_IDTR_LIMIT),
+				base:self.vmread(GUEST_IDTR_BASE)
 			};
 			write_idtr(&raw const gidtr);
 			// Switch to Restored GDT.
 			let ggdtr:DescriptorTable=DescriptorTable
 			{
-				limit:vmread(self.vmcb.virt,GUEST_GDTR_LIMIT),
-				base:vmread(self.vmcb.virt,GUEST_GDTR_BASE)
+				limit:self.vmread(GUEST_GDTR_LIMIT),
+				base:self.vmread(GUEST_GDTR_BASE)
 			};
 			write_gdtr(&raw const ggdtr);
 			// Note that TSS is switched in previous vmload.
@@ -102,12 +102,8 @@ impl SvmVcpu
 						error!("Failed to write ASID back! Error-Code: {e}, Linear-Address: 0x{:X}",fault_va.unwrap());
 						// Free this ASID as we can't write it back.
 						hv.free_asid(asid);
-						unsafe
-						{
-							// Inject #PF.
-							vmwrite(self.vmcb.virt,GUEST_CR2,fault_va.unwrap());
-							vmcb_clean_cr2(self.vmcb.virt);
-						}
+						// Inject #PF.
+						self.write_cr2(fault_va.unwrap());
 						Err((PAGE_FAULT,Some(e.into_bits())))
 					}
 				}
