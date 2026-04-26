@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::ffi::c_void;
+use core::{arch::global_asm, ffi::c_void};
 
 use log::*;
 
@@ -514,3 +514,5 @@ unsafe extern "C"
 	fn noir_simd_floating_point_fault_handler_a()->!;
 	fn noir_control_protection_fault_handler_a()->!;
 }
+
+global_asm!(include_str!("x86_interrupt.s"));

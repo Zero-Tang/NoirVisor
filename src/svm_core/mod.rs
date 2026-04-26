@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_xgetbv, ffi::c_void, ptr::*};
+use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::*};
 use alloc::{vec::Vec, vec};
 use static_collections::bitmap::RefBitmap;
 
@@ -39,7 +39,7 @@ mod hvcall;
 #[allow(dead_code)] pub mod custom;
 #[allow(dead_code)] mod iommu;
 
-#[repr(C)] pub struct SvmStackTop
+#[repr(C,align(16))] pub struct SvmStackTop
 {
 	pub arg_home:[u64;4],
 	pub gpr_state:GprState,
@@ -154,6 +154,8 @@ unsafe extern "win64"
 	fn nvc_svm_guest_start();
 	pub fn nvc_svm_return(stack:*const GprState)->!;
 }
+
+global_asm!(include_str!("svm_hv.s"));
 
 /// # Safety
 /// This function is unsafe because it's called from assembly. \

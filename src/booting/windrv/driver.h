@@ -131,7 +131,6 @@ IO_DISPATCH_ROUTINE* NoirDispatchIoGroups[16]=
 };
 
 void __isa_available_init();
-extern ULONG32 __isa_available;
 
 extern ULONG32 noir_cvm_exit_context_size;
 

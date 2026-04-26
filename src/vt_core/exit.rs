@@ -750,6 +750,11 @@ impl VtVcpu
 	panic!("VM-Entry failed on resume!");
 }
 
+#[unsafe(no_mangle)] unsafe extern "win64" fn nvc_vt_inject_nmi_to_subverted_host()
+{
+	panic!("NMI happened in host context!");
+}
+
 pub const INTERCEPTED_EXCEPTION_NMI:u32=0;
 pub const INTERCEPTED_EXTERNAL_INTERRUPT:u32=1;
 pub const INTERCEPTED_TRIPLE_FAULT:u32=2;

@@ -139,8 +139,6 @@ NTSTATUS NoirDriverEntry(IN PDRIVER_OBJECT DriverObject,IN PUNICODE_STRING Regis
 	UNICODE_STRING uniLinkName=RTL_CONSTANT_STRING(LINK_NAME);
 	// Initialize Microsoft-optimized CRT constants (for memcpy, memset, etc.)
 	__isa_available_init();
-	// Purposefully disable AVX when we use memcpy, memset, etc.
-	if(__isa_available>__ISA_AVAILABLE_SSE42)__isa_available=__ISA_AVAILABLE_SSE42;
 	// Setup Dispatch Routines
 	DriverObject->MajorFunction[IRP_MJ_CREATE]=NoirDispatchCreate;
 	DriverObject->MajorFunction[IRP_MJ_CLOSE]=NoirDispatchClose;

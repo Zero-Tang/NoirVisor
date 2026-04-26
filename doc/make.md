@@ -8,6 +8,13 @@ Download [Python](https://www.python.org/downloads/windows/) from Python's offic
 The minimal version of Rust compiler is 1.85.0 since NoirVisor uses Rust 2024 edition. \
 Download [Rust](https://www.rust-lang.org/tools/install) from Rust-lang's official website. Note that you must install the `nightly` toolchain.
 
+There is no known minimal version requirement for Netwide Assembler (NASM). Just install the newest version you can find. \
+Download [NASM](https://nasm.us/) from NASM's official site. It is recommended to use stable versions.
+
+There is no known minimal version requirement for LLVM. Just install the newest version you can find. \
+Download [LLVM](https://github.com/llvm/llvm-project/releases) from LLVM's GitHub repository release page. \
+LLVM is only required for building NoirVisor for UEFI.
+
 You must execute the python script inside a Visual Studio prompt environment. This means you don't have to mount EWDK image if you have already installed Visual Studio.
 
 ### NoirVisor Core
@@ -30,7 +37,6 @@ rustup target add x86_64-pc-windows-msvc
 ```
 
 ### EFI Application and Runtime Driver
-To build a UEFI runtime driver, you should either install Visual Studio or mount Enterprise WDK. \
 Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. \
 After NoirVisor 7th Anniversary, the [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) is obsolete. NoirVisor for UEFI will be fully written in Rust. You do not have to setup `edk2` anymore in order build NoirVisor for UEFI.
 
@@ -38,6 +44,15 @@ You must install `x86_64-unknown-uefi` target host for Rust. This is not install
 ```
 rustup target add x86_64-unknown-uefi
 ```
+
+#### Build EFI Application and Runtime Driver on Linux
+It is possible to build NoirVisor for UEFI on Linux.
+
+On Ubuntu 26.04 LTS, in addition to Rust compiler, you should install the following dependencies:
+```
+sudo apt install clang lld llvm mtools nasm
+```
+For other Linux distributions, your goal is to guarantee `clang-cl`, `lld-link`, `llvm-ar`, `mcopy`, `mmd`, `mformat` and `nasm` are available.
 
 ## VSCode Setup
 You may setup VSCode with VS Tools Command Prompt so that you do not have to use a separate window to run the make script.
@@ -62,13 +77,22 @@ If you have mounted EWDK to, for example, `V:`, add the following entry in `"ter
 ```
 
 ## Synopsis
+For Windows, if you configured default application for `.py` files, you may simply execute:
 ```
 make [/target windows|uefi] [/opt:yes|no]
+```
+Otherwise:
+```
+python make.py [/target windows|uefi] [/opt:yes|no]
+```
+For Linux:
+```
+python3 make.py [/target windows|uefi] [/opt:yes|no]
 ```
 
 ### Arguments
 `/target windows|uefi` specifies the target binary to be built. \
-Valid options are `windows` and `uefi`. Default is `windows`.
+Valid options are `windows` and `uefi`. Default is `windows`. If you are building NoirVisor on Linux, `uefi` is the only available option.
 
 `/opt:yes|no` specifies whether optimizer is enabled. Default is `no`.
 

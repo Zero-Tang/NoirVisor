@@ -117,7 +117,7 @@ class Pipeline:
 		self.optimizer_flags:dict[str,list[str]]=self._raw["opt_flags"] if "opt_flags" in self._raw else dict()
 		self.internal_variables:dict[str,str]=self._raw["internal_var"] if "internal_var" in self._raw else dict()
 		self.global_variable:dict[str,str]={
-			"objpath":".\\bin\\{}\\Intermediate".format(self.internal_variables["outdir_"+("rel" if opt else "dev")] if outdir is None else outdir),
+			"objpath":"./bin/{}/Intermediate".format(self.internal_variables["outdir_"+("rel" if opt else "dev")] if outdir is None else outdir),
 			"outdir":self.internal_variables["outdir_"+("rel" if opt else "dev")] if outdir is None else outdir,
 			"cargo_preset":"release" if opt else "debug",
 			"cd":os.getcwd()}|os.environ|extra_vars

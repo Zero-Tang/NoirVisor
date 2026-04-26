@@ -2324,3 +2324,40 @@ pub mod apic
 		pub const DSH_ALL_EXCLUSIVE:u8=3;
 	}
 }
+
+mod crt
+{
+    use core::{arch::x86_64::_bittest64, sync::atomic::{AtomicU32, AtomicU64, Ordering}};
+
+    use crate::xpf_core::x86::cpuid::{CpuidLeaf, MaxStandardLeafAndVendorString, StandardProcessorFeatureIdentifiers};
+
+	#[unsafe(no_mangle)] static __favor:AtomicU32=AtomicU32::new(0);
+	#[unsafe(no_mangle)] static __memset_fast_string_threshold:AtomicU64=AtomicU64::new(0x80000);
+
+	#[unsafe(no_mangle)] extern "win64" fn __isa_available_init()
+	{
+		let vendor=MaxStandardLeafAndVendorString::cpuid();
+		let feat=StandardProcessorFeatureIdentifiers::cpuid();
+		if vendor.vendor_name()=="GenuineIntel"
+		{
+			// This is Intel CPU. Check Family, Model, Stepping.
+			// Ask Microsoft and/or Intel why these certain family, model and steppings should favor enhanced fast strings.
+			let fms=feat.into_bits() as u32;
+			let mut favor_enfstr=false;
+			if fms==0x106C0
+			{
+				__memset_fast_string_threshold.store(0x8000,Ordering::Relaxed);
+				favor_enfstr=true;
+			}
+			favor_enfstr|=fms==0x20660;
+			favor_enfstr|=fms==0x20670;
+			let b=(fms-0x30650) as i64;
+			if (0x30650..=0x30670).contains(&fms)
+			{
+				let tmp:i64=0x100010001;
+				favor_enfstr|=unsafe{_bittest64(&raw const tmp,b)}!=0;
+			}
+			__favor.store(if favor_enfstr {1} else {0},Ordering::Relaxed);
+		}
+	}
+}

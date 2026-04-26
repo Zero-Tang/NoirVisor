@@ -310,7 +310,7 @@ pub(super) trait VmcbOps
 		}
 	}
 
-	#[inline(always)] fn instruction_bytes<'a,'b>(&'a self)->&'b [u8;15]
+	#[inline(always)] fn instruction_bytes<'a>(&self)->&'a [u8;15]
 	{
 		unsafe
 		{
@@ -318,7 +318,7 @@ pub(super) trait VmcbOps
 		}
 	}
 
-	#[inline(always)] fn instruction_bytes_mut<'a,'b>(&'a mut self)->&'b mut [u8;15]
+	#[inline(always)] fn instruction_bytes_mut<'a>(&mut self)->&'a mut [u8;15]
 	{
 		unsafe
 		{

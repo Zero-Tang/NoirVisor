@@ -6,59 +6,56 @@
 			"cmd":["cargo","build","--target","x86_64-unknown-uefi","--package","loadefi","--package","nvcore","--package","uefirtdrv"],
 			"progressive":true
 		},
-		"svm_hv":
+		"memcpy":
 		{
-			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\svm_hv.asm"},
-			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\svm_hv.asm",".\\src\\xpf_core\\msvc\\noirhv.inc"]
+			"cmd":["nasm","./src/xpf_core/crt/x64/memcpy.asm"],
+			"cancel_if_intact":["./src/xpf_core/crt/x64/memcpy.asm"]
 		},
-		"vt_hv":
+		"memset":
 		{
-			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\vt_hv.asm"},
-			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\vt_hv.asm",".\\src\\xpf_core\\msvc\\noirhv.inc"]
+			"cmd":["nasm","./src/xpf_core/crt/x64/memset.asm"],
+			"cancel_if_intact":["./src/xpf_core/crt/x64/memset.asm"]
 		},
-		"interrupt":
+		"memcmp":
 		{
-			"cmd":["ml64"],
-			"var":{"src":".\\src\\xpf_core\\msvc\\interrupt.asm"},
-			"cancel_if_intact":[".\\src\\xpf_core\\msvc\\interrupt.asm",".\\src\\xpf_core\\msvc\\noirhv.inc"]
+			"cmd":["nasm","./src/xpf_core/crt/x64/memcmp.asm"],
+			"cancel_if_intact":["./src/xpf_core/crt/x64/memcmp.asm"]
 		},
-		"msvcrt":
+		"strlen":
 		{
-			"cmd":["python","build_msvcrt.py","--outdir","{outdir}"],
-			"cancel_if_intact":[".\\build-msvcrt.json",".\\build_msvcrt.py"]
+			"cmd":["nasm","./src/xpf_core/crt/x64/strlen.asm"],
+			"cancel_if_intact":["./src/xpf_core/crt/x64/strlen.asm"]
 		},
 		"config":
 		{
-			"cmd":["python",".\\build\\makeueficonfig.py",".\\build\\DefaultUefiConfig.json",".\\bin\\{outdir}\\NoirVisorConfig.bin"]
+			"cmd":["{python}","./build/makeueficonfig.py","./build/DefaultUefiConfig.json","./bin/{outdir}/NoirVisorConfig.bin"]
 		},
 		"NoirVisor":
 		{
-			"cmd":["link","{objpath}\\svm_hv.obj","{objpath}\\vt_hv.obj","{objpath}\\interrupt.obj",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\libnvcore.a",".\\bin\\{outdir}\\msvcrt-static.lib","/OUT:.\\bin\\{outdir}\\NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:.\\bin\\{outdir}\\NoirVisor.pdb"],
-			"dependencies":["cargo","svm_hv","vt_hv","interrupt","msvcrt"]
+			"cmd":["lld-link","./target/x86_64-unknown-uefi/{cargo_preset}/libnvcore.a","{objpath}/memcpy.obj","{objpath}/memset.obj","{objpath}/memcmp.obj","/OUT:./bin/{outdir}/NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:./bin/{outdir}/NoirVisor.pdb"],
+			"dependencies":["cargo","memcpy","memset","memcmp","strlen"]
 		},
 		"image":
 		{
-			"cmd":["python","mkimg.py","-md","::/EFI","-md","::/EFI/BOOT","-c",".\\target\\x86_64-unknown-uefi\\{cargo_preset}\\loadefi.efi|::/EFI/BOOT/bootx64.efi","-c","bin\\{outdir}\\NoirVisor.efi|::/","-c","bin\\{outdir}\\NoirVisorConfig.bin|::/","-o",".\\bin\\{outdir}\\NoirVisor-Uefi.img"],
+			"cmd":["{python}","mkimg.py","-md","::/EFI","-md","::/EFI/BOOT","-c","./target/x86_64-unknown-uefi/{cargo_preset}/loadefi.efi|::/EFI/BOOT/bootx64.efi","-c","bin/{outdir}/NoirVisor.efi|::/","-c","bin/{outdir}/NoirVisorConfig.bin|::/","-o","./bin/{outdir}/NoirVisor-Uefi.img"],
 			"dependencies":["NoirVisor","config"]
 		}
 	},
 	"common_flags":
 	{
-		"ml64":["/W3","/WX","/Zf","/Zd","/Zi","/I.\\src\\xpf_core\\msvc","/D_amd64","/D_msvc","/D_efi","/Fo{objpath}\\{instruction}.obj","/c","/nologo","{src}"],
-		"link":["/NODEFAULTLIB","/NOLOGO","/DEBUG","/Machine:X64","/ERRORREPORT:QUEUE"]
+		"nasm":["-fwin64","-D_VCRUNTIME_BUILD_QSPECTRE","-g","-o","{objpath}/{instruction}.obj","-l","{objpath}/{instruction}.lst"],
+		"lld-link":["/NODEFAULTLIB","/NOLOGO","/DEBUG","/Machine:X64","/ERRORREPORT:QUEUE"]
 	},
 	"opt_flags":
 	{
-		"link":["/OPT:REF","/OPT:ICF"],
+		"lld-link":["/OPT:REF","/OPT:ICF"],
 		"cargo":["--release"]
 	},
 	"extra_env":
 	{
-		"ar":"python {cd}\\build\\ar-lib.py",
-		"cc":"cl",
-		"cflags":"/GS-"
+		"AR_x86_64-unknown-uefi":"llvm-ar",
+		"CC_x86_64-unknown-uefi":"clang-cl",
+		"CFLAGS_x86_64-unknown-uefi":"/GS- --target=x86_64-pc-windows-msvc -gcodeview"
 	},
 	"internal_var":
 	{

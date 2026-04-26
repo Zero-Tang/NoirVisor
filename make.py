@@ -70,9 +70,8 @@ def confirm_msvc()->bool:
 
 def main():
 	i=1
-	config="build-windows.json"
 	optimizer_enabled=False
-	target="unknown"
+	target="windows"
 	# NoirVisor usually doesn't use more than 20KB of heap.
 	# 256KiB of heap granularity should be quite enough.
 	os.environ["DEFAULT_MMAP_GRANULARITY"]="0x40000"
@@ -80,7 +79,7 @@ def main():
 		if sys.argv[i]=="/target":
 			i+=1
 			config="build-{}.json".format(sys.argv[i])
-			target=sys.argv[1]
+			target=sys.argv[i]
 		elif sys.argv[i].startswith("/opt:"):
 			expr=sys.argv[i][5:]
 			if expr.lower()=="yes" or expr.lower()=="true":
@@ -92,16 +91,23 @@ def main():
 		else:
 			print("Ignoring unknown argument {}!".format(sys.argv[i]))
 		i+=1
-	if confirm_cargo() and confirm_msvc():
-		sdk_path=os.environ["WindowsSdkDir"]
-		if "WindowsSDKVersion" in os.environ:
-			sdk_ver=os.environ["WindowsSDKVersion"]
+	config="build-{}.json".format(target)
+	if confirm_cargo():
+		if target=="windows":
+			if confirm_msvc():
+				sdk_path=os.environ["WindowsSdkDir"]
+				if "WindowsSDKVersion" in os.environ:
+					sdk_ver=os.environ["WindowsSDKVersion"]
+				else:
+					sdk_ver=os.environ["WindowsTargetPlatformVersion"]
+				msvc_path=os.environ["VCToolsInstallDir"]
+				inc_path=os.path.join(sdk_path,"Include",sdk_ver)
+				lib_path=os.path.join(sdk_path,"Lib",sdk_ver)
+				pl=Pipeline(config,optimizer_enabled,extra_vars={"ddkpath":msvc_path,"incpath":inc_path,"libpath":lib_path,"python":sys.executable})
+			else:
+				exit()
 		else:
-			sdk_ver=os.environ["WindowsTargetPlatformVersion"]
-		msvc_path=os.environ["VCToolsInstallDir"]
-		inc_path=os.path.join(sdk_path,"Include",sdk_ver)
-		lib_path=os.path.join(sdk_path,"Lib",sdk_ver)
-		pl=Pipeline(config,optimizer_enabled,extra_vars={"ddkpath":msvc_path,"incpath":inc_path,"libpath":lib_path})
+			pl=Pipeline(config,optimizer_enabled,extra_vars={"python":sys.executable})
 		pl.run()
 
 if __name__=="__main__":

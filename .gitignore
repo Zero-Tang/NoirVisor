@@ -60,6 +60,9 @@ dkms.conf
 # VSCode Settings
 .vscode/
 
+# Assembly Extra Outputs
+*.lst
+
 # Compiler Logs
 *.log
 
@@ -68,6 +71,10 @@ target/
 
 # Python cache
 __pycache__/
+
+# Random stuff for developer's internal use.
+# Debugging dumps, logs, notes, etc.
+scratch/
 
 bin/
 tests/*.bxrc

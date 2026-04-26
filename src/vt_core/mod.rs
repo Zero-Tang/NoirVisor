@@ -13,7 +13,7 @@
 use alloc::vec::Vec;
 use bitfield_struct::bitfield;
 use static_collections::bitmap::RefBitmap;
-use core::{arch::x86_64::_xgetbv, ffi::c_void, ptr::null_mut, sync::atomic::AtomicBool};
+use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::null_mut, sync::atomic::AtomicBool};
 
 use ia32::msr::*;
 use vmcs::*;
@@ -148,6 +148,8 @@ unsafe extern "C"
 	fn nvc_vt_resume_without_entry(gpr_state:*const GprState)->!;
 }
 
+global_asm!(include_str!("vt_hv.s"));
+
 #[unsafe(no_mangle)] unsafe extern "C" fn nvc_vt_subvert_processor_i(vcpu:*mut VtVcpu,gsp:usize,gssp:usize)
 {
 	unsafe
@@ -190,7 +192,7 @@ impl VtVcpu
 		vcpu.vcpu_id
 	}
 
-	#[inline(always)] pub fn get_stack_top(&self)->&VtStackTop
+	#[inline(always)] pub fn get_stack_top<'a>(&self)->&'a VtStackTop
 	{
 		unsafe
 		{
@@ -198,7 +200,7 @@ impl VtVcpu
 		}
 	}
 
-	#[inline(always)] pub fn get_stack_top_mut<'a,'b>(&'a mut self)->&'b mut VtStackTop
+	#[inline(always)] pub fn get_stack_top_mut<'a>(&mut self)->&'a mut VtStackTop
 	{
 		unsafe
 		{

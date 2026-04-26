@@ -892,7 +892,7 @@ pub mod vt
 	
 	#[inline] pub fn vmwriteptr(field:usize,value:usize)->VmxResult<EmptyUnit>
 	{
-		vmwrite(field,value as usize)
+		vmwrite(field,value)
 	}
 	
 	#[inline] pub fn vmwrite64(field:usize,value:u64)->VmxResult<EmptyUnit>
