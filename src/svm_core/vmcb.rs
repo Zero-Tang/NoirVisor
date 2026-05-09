@@ -10,12 +10,13 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::{_bittest, _bittestandcomplement, _bittestandreset, _bittestandset}, ffi::c_void};
+use core::ffi::c_void;
 use paste::paste;
 use bitfield_struct::bitfield;
 
-use crate::{svm_core::SvmVcpu, xpf_core::{self, x86::{descriptors::SegmentFlags, msr::Efer}}};
-use xpf_core::{x86::{interrupts::*, rflags::*, crdr::DR6_BS_BIT}, nvbdk::SegmentRegister};
+use crate::*;
+use super::SvmVcpu;
+use xpf_core::{x86::{interrupts::*, rflags::*, crdr::*, descriptors::SegmentFlags, msr::Efer}, nvbdk::SegmentRegister};
 
 macro_rules! define_rw_field
 {
@@ -73,7 +74,7 @@ macro_rules! define_rw_field
 				unsafe
 				{
 					self.vmwrite($const_name,value);
-					self.clean_vmcb([<CLEAN_ $cache_name:upper _BIT>]);
+					self.ref_clean_field_mut().[<set_ $cache_name:lower>](false);
 				}
 			}
 
@@ -89,89 +90,8 @@ macro_rules! define_rw_field
 			{
 				unsafe
 				{
-					self.clean_vmcb([<CLEAN_ $cache_name:upper _BIT>]);
+					self.ref_clean_field_mut().[<set_ $cache_name:lower>](false);
 					&mut *self.get_vmcb().byte_add($const_name).cast()
-				}
-			}
-		}
-	};
-}
-
-macro_rules! define_bt_methods
-{
-	($field_name:tt,$const_offset:expr)=>
-	{
-		paste!
-		{
-			#[inline(always)] fn [<bt_ $field_name:lower>](&self,bit:i32)->bool
-			{
-				unsafe
-				{
-					self.vmcb_bt($const_offset,bit)
-				}
-			}
-
-			#[inline(always)] fn [<bts_ $field_name:lower>](&mut self,bit:i32)->bool
-			{
-				unsafe
-				{
-					self.vmcb_bts($const_offset,bit)
-				}
-			}
-
-			#[inline(always)] fn [<btr_ $field_name:lower>](&mut self,bit:i32)->bool
-			{
-				unsafe
-				{
-					self.vmcb_btr($const_offset,bit)
-				}
-			}
-
-			#[inline(always)] fn [<btc_ $field_name:lower>](&mut self,bit:i32)->bool
-			{
-				unsafe
-				{
-					self.vmcb_btc($const_offset,bit)
-				}
-			}
-		}
-	};
-	($field_name:tt,$const_offset:expr,$cache_name:tt)=>
-	{
-		paste!
-		{
-			#[inline(always)] fn [<bt_ $field_name:lower>](&self,bit:i32)->bool
-			{
-				unsafe
-				{
-					self.vmcb_bt($const_offset,bit)
-				}
-			}
-
-			#[inline(always)] fn [<bts_ $field_name:lower>](&mut self,bit:i32)->bool
-			{
-				unsafe
-				{
-					self.clean_vmcb([<CLEAN_ $cache_name:upper _BIT>]);
-					self.vmcb_bts($const_offset,bit)
-				}
-			}
-
-			#[inline(always)] fn [<btr_ $field_name:lower>](&mut self,bit:i32)->bool
-			{
-				unsafe
-				{
-					self.clean_vmcb([<CLEAN_ $cache_name:upper _BIT>]);
-					self.vmcb_btr($const_offset,bit)
-				}
-			}
-
-			#[inline(always)] fn [<btc_ $field_name:lower>](&mut self,bit:i32)->bool
-			{
-				unsafe
-				{
-					self.clean_vmcb([<CLEAN_ $cache_name:upper _BIT>]);
-					self.vmcb_btc($const_offset,bit)
 				}
 			}
 		}
@@ -220,63 +140,16 @@ pub(super) trait VmcbOps
 		}
 	}
 
-	/// Tests a bit of a certain field in the VMCB of this vCPU given the `offset`. \
-	/// ## Safety
-	/// You must ensure `offset` is a defined field and `bit` is within the field.
-	#[inline(always)] unsafe fn vmcb_bt(&self,offset:usize,bit:i32)->bool
-	{
-		unsafe
-		{
-			_bittest(self.get_vmcb().byte_add(offset).cast(),bit)!=0
-		}
-	}
-
-	#[inline(always)] unsafe fn vmcb_btc(&mut self,offset:usize,bit:i32)->bool
-	{
-		unsafe
-		{
-			_bittestandcomplement(self.get_vmcb().byte_add(offset).cast(),bit)!=0
-		}
-	}
-
-	#[inline(always)] unsafe fn vmcb_btr(&mut self,offset:usize,bit:i32)->bool
-	{
-		unsafe
-		{
-			_bittestandreset(self.get_vmcb().byte_add(offset).cast(),bit)!=0
-		}
-	}
-
-	#[inline(always)] unsafe fn vmcb_bts(&mut self,offset:usize,bit:i32)->bool
-	{
-		unsafe
-		{
-			_bittestandset(self.get_vmcb().byte_add(offset).cast(),bit)!=0
-		}
-	}
-
-	#[inline(always)] unsafe fn clean_vmcb(&mut self,cache_index:i32)
-	{
-		unsafe
-		{
-			self.vmcb_btr(VMCB_CLEAN_BITS,cache_index);
-		}
-	}
-
 	#[inline(always)] fn advance_rip_internal(&mut self,next_rip:u64)
 	{
 		self.write_rip(next_rip);
-		unsafe
+		if self.ref_rflags().tf()
 		{
-			if self.vmcb_bt(GUEST_RFLAGS,RFLAGS_TF_BIT as i32)
-			{
-				// In case the guest is single-step debugging, we should inject debug trace trap so that
-				// the next instruction won't be skipped in debugger, confusing the debugging personnel.
-				// If guest is single-step debugging, slight penalty due to branch predictor is acceptable.
-				self.inject_event(DEBUG_FAULT_OR_TRAP,EventType::HardwareException,None,true);
-				self.vmcb_bts(GUEST_DR6,DR6_BS_BIT as i32);
-				self.clean_vmcb(CLEAN_DR_BIT);
-			}
+			// In case the guest is single-step debugging, we should inject debug trace trap so that
+			// the next instruction won't be skipped in debugger, confusing the debugging personnel.
+			// If guest is single-step debugging, slight penalty due to branch predictor is acceptable.
+			self.inject_event(DEBUG_FAULT_OR_TRAP,EventType::HardwareException,None,true);
+			self.ref_dr6_mut().set_bs(true);
 		}
 	}
 
@@ -289,7 +162,7 @@ pub(super) trait VmcbOps
 	{
 		let mut rip=self.read_rip();
 		rip+=length as u64;
-		if !unsafe{self.ref_efer().lma() && self.vmcb_bt(GUEST_CS_ATTRIB,9)}
+		if !(self.ref_efer().lma() && self.ref_cs().attrib.long_mode())
 		{
 			// If the guest is not in long mode, the next rip must not exceed 32-bit boundary.
 			rip&=u32::MAX as u64;
@@ -327,25 +200,29 @@ pub(super) trait VmcbOps
 	}
 
 	define_rw_field!(next_rip,NEXT_RIP,u64);
+	define_rw_field!(clean_field,VMCB_CLEAN_BITS,VmcbCleanField);
 
+	define_rw_field!(es,GUEST_ES_SELECTOR,SvmSegmentRegister,SEG);
+	define_rw_field!(cs,GUEST_CS_SELECTOR,SvmSegmentRegister,SEG);
+	define_rw_field!(ds,GUEST_CS_SELECTOR,SvmSegmentRegister,SEG);
+	define_rw_field!(ss,GUEST_CS_SELECTOR,SvmSegmentRegister,SEG);
+	define_rw_field!(fs,GUEST_FS_SELECTOR,SvmSegmentRegister);
+	define_rw_field!(gs,GUEST_GS_SELECTOR,SvmSegmentRegister);
+	define_rw_field!(gdtr,GUEST_GDTR_SELECTOR,SvmSegmentRegister,DT);
+	define_rw_field!(ldtr,GUEST_LDTR_SELECTOR,SvmSegmentRegister);
+	define_rw_field!(idtr,GUEST_IDTR_SELECTOR,SvmSegmentRegister,DT);
+	define_rw_field!(tr,GUEST_TR_SELECTOR,SvmSegmentRegister);
 	define_rw_field!(rax,GUEST_RAX,u64);
 	define_rw_field!(rip,GUEST_RIP,u64);
 	define_rw_field!(rsp,GUEST_RSP,u64);
-	define_rw_field!(rflags,GUEST_RFLAGS,u64);
-	define_rw_field!(dr6,GUEST_DR6,u64,DR);
-	define_rw_field!(dr7,GUEST_DR7,u64,DR);
+	define_rw_field!(rflags,GUEST_RFLAGS,Rflags);
+	define_rw_field!(dr6,GUEST_DR6,Dr6,DR);
+	define_rw_field!(dr7,GUEST_DR7,Dr7,DR);
 	define_rw_field!(efer,GUEST_EFER,Efer,CR);
-	define_rw_field!(cr0,GUEST_CR0,u64,CR);
+	define_rw_field!(cr0,GUEST_CR0,Cr0,CR);
 	define_rw_field!(cr3,GUEST_CR3,u64,CR);
-	define_rw_field!(cr4,GUEST_CR4,u64,CR);
+	define_rw_field!(cr4,GUEST_CR4,Cr4,CR);
 	define_rw_field!(cr2,GUEST_CR2,u64,CR2);
-
-	define_bt_methods!(dr6,GUEST_DR6,DR);
-	define_bt_methods!(dr7,GUEST_DR7,DR);
-	define_bt_methods!(efer,GUEST_EFER,CR);
-	define_bt_methods!(cr0,GUEST_CR0,CR);
-	define_bt_methods!(cr4,GUEST_CR4,CR);
-	define_bt_methods!(rflags,GUEST_RFLAGS);
 }
 
 impl VmcbOps for SvmVcpu
@@ -382,6 +259,15 @@ impl SvmSegmentFlags
 		let f=self.into_bits();
 		SegmentFlags::from_bits(((f&0xF00)<<4)|(f&0xFF))
 	}
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(C)] pub struct SvmSegmentRegister
+{
+	pub selector:u16,
+	pub attrib:SvmSegmentFlags,
+	pub limit:u32,
+	pub base:u64
 }
 
 #[inline] pub fn svm_msrpm_bit(index:u32,operation:bool)->Option<u32>
@@ -726,19 +612,23 @@ impl EventInjection
 }
 
 // Offset 0x0C0: VMCB Clean Bits
-pub const CLEAN_INTERCEPTION_BIT:i32=0;
-pub const CLEAN_IOMSRPM_BIT:i32=1;
-pub const CLEAN_ASID_BIT:i32=2;
-pub const CLEAN_TPR_BIT:i32=3;
-pub const CLEAN_NPT_BIT:i32=4;
-pub const CLEAN_CR_BIT:i32=5;
-pub const CLEAN_DR_BIT:i32=6;
-pub const CLEAN_DT_BIT:i32=7;
-pub const CLEAN_SEG_BIT:i32=8;
-pub const CLEAN_CR2_BIT:i32=9;
-pub const CLEAN_LBR_BIT:i32=10;
-pub const CLEAN_AVIC_BIT:i32=11;
-pub const CLEAN_CET_BIT:i32=12;
+#[bitfield(u32)] pub struct VmcbCleanField
+{
+	pub interception:bool,
+	pub iomsrpm:bool,
+	pub asid:bool,
+	pub tpr:bool,
+	pub npt:bool,
+	pub cr:bool,
+	pub dr:bool,
+	pub dt:bool,
+	pub seg:bool,
+	pub cr2:bool,
+	pub lbr:bool,
+	pub avic:bool,
+	pub cet:bool,
+	#[bits(19)] rsvd:u32
+}
 
 // Following definitions is for State Save Area with SEV-ES Enabled
 // You may notice the offset is 0x400 different from corresponding fields.

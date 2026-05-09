@@ -9,7 +9,7 @@ def call_bochs():
 	print("Detected Bochs installed at {}!".format(bochs_path))
 	old_path=os.environ["PATH"]
 	os.environ["PATH"]+=";"+bochs_path
-	var_dict={"cpu-model":"corei7_icelake_u","bochs-path":bochs_path}
+	var_dict={"cpu-model":"corei7_icelake_u","bochs-path":bochs_path,"build-preset":"chk"}
 	# Parse Command-Line Arguments
 	i=1
 	while i<len(sys.argv):
@@ -19,6 +19,8 @@ def call_bochs():
 			# To emulate Intel: "corei7_icelake_u" (default)
 			# To emulate AMD: "ryzen"
 			var_dict["cpu-model"]=sys.argv[i]
+		elif sys.argv[i]=="--release":
+			var_dict["build-preset"]="fre"
 		else:
 			print("Unknown argument: {}!".format(sys.argv[i]))
 		i+=1

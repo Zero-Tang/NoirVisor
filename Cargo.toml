@@ -22,7 +22,9 @@ opt-level = "s"
 panic = "abort"
 debug = "full"
 codegen-units = 1
-lto = true
+# If lto is set to "fat" or true, the linker might drop the platform-specific crate.
+# Therefore, resort to "thin" lto.
+lto = "thin"
 opt-level = 3
 
 [workspace]

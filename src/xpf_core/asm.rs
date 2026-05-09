@@ -363,13 +363,12 @@ pub mod msr
 pub mod svm
 {
 	use core::arch::asm;
-	#[cfg(test)]
-	use crate::xpf_core::tests::svm_hv::mock_vmmcall;
 
 	#[inline] pub fn vmmcall(index:u32,context:usize)->u32
 	{
 		#[cfg(test)]
 		{
+			use crate::xpf_core::tests::svm_hv::mock_vmmcall;
 			mock_vmmcall(index,context)
 		}
 		#[cfg(not(test))]

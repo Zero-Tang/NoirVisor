@@ -17,32 +17,15 @@ use bitfield_struct::bitfield;
 use log::*;
 
 use acpi::{Ivhd, IvhdLarge};
-use paging::{SvmIommuPmlManager, SvmIommuPte};
-use crate::{svm_core::iommu::{mmio::*, paging::SvmIommuPde}, xpf_core::{asm::io::{mmio_read, mmio_write}, ci::CI_MANAGER}, *};
+use paging::{SvmIommuPmlManager, SvmIommuPde, SvmIommuPte};
+use crate::*;
 use drv_core::acpi::{search_acpi_table, tables::{AcpiSystemDescriptorSignature, IoVirtualizationReportingStructure}};
-use xpf_core::{nvbdk::*, ioflt::IoRegion};
-use mmio::DeviceTableBaseRegister;
+use xpf_core::{asm::io::{mmio_read, mmio_write}, ci::CI_MANAGER, nvbdk::*};
+use mmio::*;
 
 mod acpi;
 mod paging;
 mod mmio;
-
-pub(super) fn svm_iommu_output_handler(_region:&IoRegion<u64>,address:u64,size:u64,value:*const c_void,_context:*mut c_void)
-{
-	debug!("Intercepted writes to IOMMU! Address=0x{address:X}, Size: {size}");
-	// Current implementation is simply pass-thru.
-	unsafe
-	{
-		match size
-		{
-			1=>(address as *mut u8).write(value.cast::<u8>().read()),
-			2=>(address as *mut u16).write(value.cast::<u16>().read()),
-			4=>(address as *mut u32).write(value.cast::<u32>().read()),
-			8=>(address as *mut u64).write(value.cast::<u64>().read()),
-			_=>panic!("Unknown size: {size}!")
-		}
-	}
-}
 
 pub struct SvmIommuManager
 {

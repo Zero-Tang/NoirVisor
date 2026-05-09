@@ -16,8 +16,8 @@ use paste::paste;
 use log::*;
 
 use static_collections::bitmap::RefBitmap;
-use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, vt_core::{VtIrqInterruptibilityState, hvcall::dispatch_hypercall}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::{rdmsr, wrmsr}, vt::*}, ci::is_ci_phys_page, x86::{apic::ApicX2Icr, cpuid::*, crdr::*, descriptors::SegmentFlags, interrupts::{EventType, GENERAL_PROTECTION_FAULT}, msr::MSR_X2APIC_ICR, paging::PageTranslationHelper}}, *};
-use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, VtVcpu, VtStackTop};
+use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::{rdmsr, wrmsr}, vt::*}, ci::is_ci_phys_page, x86::{apic::ApicX2Icr, cpuid::*, crdr::*, descriptors::SegmentFlags, interrupts::{EventType, GENERAL_PROTECTION_FAULT}, msr::MSR_X2APIC_ICR, paging::PageTranslationHelper}}, *};
+use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, hvcall::dispatch_hypercall, VtVcpu, VtStackTop, VtIrqInterruptibilityState};
 
 impl VtVcpu
 {
@@ -100,14 +100,15 @@ impl VtVcpu
 			vmwrite_unchecked(GUEST_RFLAGS,2);
 			// Control Registers
 			// CR0.ET is always set during INIT.
-			let mut cr0=CR0_ET as usize;
+			let mut cr0=Cr0::new().with_et(true);
 			// Fix CR0 bits
-			cr0|=rdmsr(MSR_VMX_CR0_FIXED1) as usize;
-			cr0&=rdmsr(MSR_VMX_CR0_FIXED0) as usize;
+			cr0|=rdmsr(MSR_VMX_CR0_FIXED1);
+			cr0&=rdmsr(MSR_VMX_CR0_FIXED0);
 			// CR0.PE and CR0.PG are cleared by INIT.
-			cr0&=!(CR0_PE|CR0_PG) as usize;
-			vmwrite_unchecked(GUEST_CR0,cr0);
-			vmwrite_unchecked(CR0_READ_SHADOW,cr0);
+			cr0.set_pe(false);
+			cr0.set_pg(false);
+			vmwrite_unchecked(GUEST_CR0,cr0.into_bits() as usize);
+			vmwrite_unchecked(CR0_READ_SHADOW,cr0.into_bits() as usize);
 			write_cr2(0);
 			vmwrite_unchecked(GUEST_CR3,0);
 			// CR4 is cleared to 0 upon INIT. But as a guest, CR4.VMXE must be set.
@@ -357,15 +358,18 @@ impl VtVcpu
 							invvpid(&ivc);
 						}
 						// Fix CR0 value.
-						let mut new_cr0=new_value as u64;
-						new_cr0|=rdmsr(MSR_VMX_CR0_FIXED0)&!(CR0_PG|CR0_PE);
+						let mut new_cr0=Cr0::from_bits(new_value as u64);
+						let mut fixed0_mask=Cr0::from_bits(rdmsr(MSR_VMX_CR0_FIXED0));
+						fixed0_mask.set_pe(false);
+						fixed0_mask.set_pg(false);
+						new_cr0|=fixed0_mask.into_bits();
 						new_cr0&=rdmsr(MSR_VMX_CR0_FIXED1);
-						info!("Changed new cr0 to 0x{new_cr0:X} (intended to be 0x{new_value:X})!");
-						vmwriteptr(GUEST_CR0,new_cr0 as usize);
-						vmwriteptr(CR0_READ_SHADOW,new_cr0 as usize);
+						info!("Changed new cr0 to 0x{:X} (intended to be 0x{new_value:X})!",new_cr0.into_bits());
+						vmwriteptr(GUEST_CR0,new_cr0.into_bits() as usize);
+						vmwriteptr(CR0_READ_SHADOW,new_cr0.into_bits() as usize);
 						// May affect EFER.LMA bit.
 						let mut efer=self.get_efer();
-						let pg=(new_cr0&CR0_PG)!=0;
+						let pg=new_cr0.pg();
 						let lme=efer.lme();
 						if pg && lme
 						{
@@ -381,8 +385,8 @@ impl VtVcpu
 					{
 						// Check if new CR4 will require flushing TLB...
 						let old_cr4=vmreadptr(GUEST_CR4).unwrap();
-						let old_masked=old_cr4&CR4_TLB_FLUSH_MASK as usize;
-						let new_masked=new_value&CR4_TLB_FLUSH_MASK as usize;
+						let old_masked=old_cr4&Cr4::TLB_FLUSH_MASK as usize;
+						let new_masked=new_value&Cr4::TLB_FLUSH_MASK as usize;
 						if old_masked!=new_masked
 						{
 							let ivc=InvvpidContext::Single(1);
@@ -391,7 +395,9 @@ impl VtVcpu
 								invvpid(&ivc);
 							}
 						}
-						vmwriteptr(GUEST_CR4,new_value|CR4_VMXE as usize);
+						let mut new_cr4=Cr4::from_bits(new_value as u64);
+						new_cr4.set_vmxe(true);
+						vmwriteptr(GUEST_CR4,new_cr4.into_bits() as usize);
 						vmwriteptr(CR4_READ_SHADOW,new_value);
 					}
 					x=>
@@ -598,7 +604,7 @@ impl VtVcpu
 				let mut instruction=Instruction::new(self.fetch_instruction());
 				instruction.decode(self.get_current_bitness());
 				inslen=instruction.len() as u32;
-				debug!("CI-fault instruction bytes: {:02X?} | {}",&instruction.instruction_bytes[..inslen as usize],&instruction);
+				debug!("CI-fault instruction bytes: {:02X?} | {}",&instruction.instruction_bytes[..inslen as usize],instruction);
 			}
 			self.advance_rip_manually(inslen);
 		}

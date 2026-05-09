@@ -10,12 +10,12 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_bittest, fmt, ops::{BitAndAssign, BitOrAssign}};
+use core::{fmt, ops::{BitAndAssign, BitOrAssign}};
 
 use bitfield_struct::bitfield;
 use paste::paste;
 
-use crate::{vt_core::VtVcpu, xpf_core::{asm::vt::*, x86::{crdr::DR6_BS, interrupts::EventType, rflags::RFLAGS_TF_BIT}}, *};
+use crate::{vt_core::VtVcpu, xpf_core::{asm::vt::*, x86::{crdr::Dr6, interrupts::EventType, rflags::Rflags}}, *};
 
 // 16-Bit Control Fields
 pub const GUEST_VPID:usize=0x0;
@@ -81,9 +81,11 @@ pub const PID_POINTER_TABLE_ADDRESS:usize=0x2042;
 pub const SECONDARY_VMEXIT_CONTROLS:usize=0x2044;
 pub const SPEC_CTRL_MASK:usize=0x204A;
 pub const SPEC_CTRL_SHADOW:usize=0x204C;
+pub const INJECTED_EVENT_DATA:usize=0x2052;
 // 64-Bit Read-Only Fields
 pub const GUEST_PHYSICAL_ADDRESS:usize=0x2400;
 pub const GUEST_MSR_LIST_DATA:usize=0x2402;
+pub const ORIGINAL_EVENT_DATA:usize=0x2404;
 // 64-Bit Guest State Fields
 pub const VMCS_LINK_POINTER:usize=0x2800;
 pub const GUEST_MSR_IA32_DEBUG_CTRL:usize=0x2802;
@@ -98,11 +100,27 @@ pub const GUEST_MSR_IA32_BOUND_CONFIG:usize=0x2812;
 pub const GUEST_MSR_IA32_RTIT_CTRL:usize=0x2814;
 pub const GUEST_MSR_IA32_LBR_CTRL:usize=0x2816;
 pub const GUEST_MSR_IA32_PKRS:usize=0x2818;
+pub const GUEST_MSR_IA32_FRED_CONFIG:usize=0x281A;
+pub const GUEST_MSR_IA32_FRED_RSP1:usize=0x281C;
+pub const GUEST_MSR_IA32_FRED_RSP2:usize=0x281E;
+pub const GUEST_MSR_IA32_FRED_RSP3:usize=0x2820;
+pub const GUEST_MSR_IA32_FRED_STKLVLS:usize=0x2822;
+pub const GUEST_MSR_IA32_FRED_SSP1:usize=0x2824;
+pub const GUEST_MSR_IA32_FRED_SSP2:usize=0x2826;
+pub const GUEST_MSR_IA32_FRED_SSP3:usize=0x2828;
 // 64-Bit Host State Fields
 pub const HOST_MSR_IA32_PAT:usize=0x2C00;
 pub const HOST_MSR_IA32_EFER:usize=0x2C02;
 pub const HOST_MSR_IA32_PERF_GLOBAL_CTRL:usize=0x2C04;
 pub const HOST_MSR_IA32_PKRS:usize=0x2C06;
+pub const HOST_MSR_IA32_FRED_CONFIG:usize=0x2C08;
+pub const HOST_MSR_IA32_FRED_RSP1:usize=0x2C0A;
+pub const HOST_MSR_IA32_FRED_RSP2:usize=0x2C0C;
+pub const HOST_MSR_IA32_FRED_RSP3:usize=0x2C0E;
+pub const HOST_MSR_IA32_FRED_STKLVLS:usize=0x2C10;
+pub const HOST_MSR_IA32_FRED_SSP1:usize=0x2C12;
+pub const HOST_MSR_IA32_FRED_SSP2:usize=0x2C14;
+pub const HOST_MSR_IA32_FRED_SSP3:usize=0x2C16;
 // 32-Bit Control Fields
 pub const PIN_BASED_VM_EXECUTION_CONTROLS:usize=0x4000;
 pub const PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS:usize=0x4002;
@@ -123,6 +141,7 @@ pub const SECONDARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS:usize=0x401E;
 pub const PLE_GAP:usize=0x4020;
 pub const PLE_WINDOW:usize=0x4022;
 pub const INSTRUCTION_TIMEOUT_CONTROL:usize=0x4024;
+pub const SEAM_GUEST_KEY_ID:usize=0x4026;
 // 32-Bit Read-Only Fields
 pub const VM_INSTRUCTION_ERROR:usize=0x4400;
 pub const VMEXIT_REASON:usize=0x4402;
@@ -224,7 +243,7 @@ pub struct VmcsSegment
 	pub base:usize
 }
 
-#[macro_export] macro_rules! read_guest_segment
+macro_rules! read_guest_segment
 {
 	($name:tt) =>
 	{
@@ -269,7 +288,7 @@ pub struct CachedExitContext
 	dirty_fields:DirtyExitFields,
 	pub rip:u64,
 	pub rsp:u64,
-	rflags:u64,
+	rflags:Rflags,
 	cs_ar:SegmentAccessRights,
 	pub exit_reason:VmxExitReason,
 	interruptibility:InterruptibilityState,
@@ -372,7 +391,7 @@ impl CachedExitContext
 	}
 
 	build_clean_method!(cs_ar,GUEST_CS_ACCESS_RIGHTS,SegmentAccessRights,32);
-	build_clean_method!(rflags,GUEST_RFLAGS,u64,64);
+	build_clean_method!(rflags,GUEST_RFLAGS,Rflags,64);
 	build_clean_method!(exit_instruction_length,VMEXIT_INSTRUCTION_LENGTH,u32,32);
 	build_clean_method!(interruptibility,GUEST_INTERRUPTIBILITY_STATE,InterruptibilityState,32);
 	build_dirty_method!(proc_ctrl1,VmxPrimaryProcessorControls);
@@ -387,28 +406,26 @@ impl VtVcpu
 	/// This method **will not modify** the `rip` in the `CachedExitContext`.
 	#[inline(always)] pub fn advance_rip_manually(&mut self,length:u32)
 	{
-		let rflags:i32=self.cached_ctxt.rflags() as i32;
+		let rflags=self.cached_ctxt.rflags();
 		let mut rip=self.cached_ctxt.rip+length as u64;
-		unsafe
+		if rflags.tf()
 		{
-			if _bittest(&raw const rflags,RFLAGS_TF_BIT as i32)!=0
-			{
-				// Single-Stepping is enabled! Injecting #DB exception...
-				let pending_de=vmreadptr(GUEST_PENDING_DEBUG_EXCEPTIONS).unwrap();
-				vmwriteptr(GUEST_PENDING_DEBUG_EXCEPTIONS,pending_de|DR6_BS as usize);
-				// Remove the interrupt shadowing.
-				let interruptibility=self.cached_ctxt.get_interruptibility_mut();
-				interruptibility.set_blocking_by_sti(false);
-				interruptibility.set_blocking_by_mov_ss(false);
-			}
-			let cs_ar=self.cached_ctxt.cs_ar();
-			if !cs_ar.long_mode()
-			{
-				// The rip might overflow if the guest is not in long mode.
-				rip&=u32::MAX as u64;
-			}
-			vmwrite64(GUEST_RIP,rip);
+			// Single-Stepping is enabled! Injecting #DB exception...
+			let mut new_dr6=Dr6::from_bits(vmreadptr(GUEST_PENDING_DEBUG_EXCEPTIONS).unwrap() as u64);
+			new_dr6.set_bs(true);
+			vmwriteptr(GUEST_PENDING_DEBUG_EXCEPTIONS,new_dr6.into_bits() as usize);
+			// Remove the interrupt shadowing.
+			let interruptibility=self.cached_ctxt.get_interruptibility_mut();
+			interruptibility.set_blocking_by_sti(false);
+			interruptibility.set_blocking_by_mov_ss(false);
 		}
+		let cs_ar=self.cached_ctxt.cs_ar();
+		if !cs_ar.long_mode()
+		{
+			// The rip might overflow if the guest is not in long mode.
+			rip&=u32::MAX as u64;
+		}
+		vmwrite64(GUEST_RIP,rip);
 	}
 
 	/// ## `advance_rip` method
@@ -446,50 +463,50 @@ impl<T:fmt::Display> fmt::Display for VmxResult<T>
 			VmxResult::Ok(v)=>write!(f,"VMX Instruction succeeded and returned {v}!"),
 			VmxResult::Err(e)=>match VMX_INSTRUCTION_ERROR_MESSAGE.get(*e as usize)
 			{
-				Some(&v)=>write!(f,"VMX Instruction failed! Reason: {v}"),
-				None=>write!(f,"VMX Instruction failed with invalid number {e}!")
+				Some(Some(v))=>write!(f,"VMX Instruction failed! Reason: {v}"),
+				_=>write!(f,"VMX Instruction failed with invalid number {e}!")
 			},
 			VmxResult::NoVmcs=>f.write_str("VMX Instruction failed while no VMCS was loaded!")
 		}
 	}
 }
 
-pub const VMX_INSTRUCTION_ERROR_MESSAGE:[&str;29]=
+pub const VMX_INSTRUCTION_ERROR_MESSAGE:[Option<&str>;29]=
 [
-	"Invalid Error, Number=0!",										// Error=0
-	"vmcall is executed in VMX Root Operation!",					// Error=1
-	"vmclear is given invalid physical address as operand!",		// Error=2
-	"vmclear is given vmxon region as operand!",					// Error=3
-	"vmlaunch is given non-clear vmcs as operand!",					// Error=4
-	"vmresume is given non-launched vmcs as operand!",				// Error=5
-	"vmresume is executed after vmxoff!",							// Error=6
-	"VM-Entry failed due to invalid control fields!",				// Error=7
-	"VM-Entry failed due to invalid host state!",					// Error=8
-	"vmptrld is given invalid physical address as operand!",		// Error=9
-	"vmptrld is given vmxon region as operand!",					// Error=10
-	"vmptrld is given vmcs with incorrect revision id!",			// Error=11
-	"vmread/vmwrite is given unsupported field as operand!",		// Error=12
-	"vmwrite is given read-only field as operand!",					// Error=13
-	"Invalid Error, Number=14!",									// Error=14
-	"vmxon is executed in VMX Root Operation!",						// Error=15
-	"VM-Entry failed due to invalid executive-vmcs!",				// Error=16
-	"VM-Entry failed due to non-launched executive-vmcs!",			// Error=17
+	Some("Invalid Error, Number=0!"),								// Error=0
+	Some("vmcall is executed in VMX Root Operation!"),				// Error=1
+	Some("vmclear is given invalid physical address as operand!"),	// Error=2
+	Some("vmclear is given vmxon region as operand!"),				// Error=3
+	Some("vmlaunch is given non-clear vmcs as operand!"),			// Error=4
+	Some("vmresume is given non-launched vmcs as operand!"),		// Error=5
+	Some("vmresume is executed after vmxoff!"),						// Error=6
+	Some("VM-Entry failed due to invalid control fields!"),			// Error=7
+	Some("VM-Entry failed due to invalid host state!"),				// Error=8
+	Some("vmptrld is given invalid physical address as operand!"),	// Error=9
+	Some("vmptrld is given vmxon region as operand!"),				// Error=10
+	Some("vmptrld is given vmcs with incorrect revision id!"),		// Error=11
+	Some("vmread/vmwrite is given unsupported field as operand!"),	// Error=12
+	Some("vmwrite is given read-only field as operand!"),			// Error=13
+	None,															// Error=14
+	Some("vmxon is executed in VMX Root Operation!"),				// Error=15
+	Some("VM-Entry failed due to invalid executive-vmcs!"),			// Error=16
+	Some("VM-Entry failed due to non-launched executive-vmcs!"),	// Error=17
 	// Error=18
-	"VM-Entry failed due to executive-vmcs not vmxon region! (Are you attempting to deactivate dual-monitor treatment?)",
+	Some("VM-Entry failed due to executive-vmcs not vmxon region! (Are you attempting to deactivate dual-monitor treatment?)"),
 	// Error=19
-	"VM-Entry failed due to non-clear vmcs! (Are you attempting to deactivate dual-monitor treatment?)",
-	"vmcall is given invalid vmexit control fields!",				// Error=20
-	"Invalid Error, Number=21!",									// Error=21
+	Some("VM-Entry failed due to non-clear vmcs! (Are you attempting to deactivate dual-monitor treatment?)"),
+	Some("vmcall is given invalid vmexit control fields!"),			// Error=20
+	None,															// Error=21
 	// Error=22
-	"vmcall is given incorrect mseg revision id! (Are you attempting to deactivate dual-monitor treatment?)",
-	"vmxoff is executed under dual-monitor treatment!",				// Error=23
+	Some("vmcall is given incorrect mseg revision id! (Are you attempting to deactivate dual-monitor treatment?)"),
+	Some("vmxoff is executed under dual-monitor treatment!"),		// Error=23
 	// Error=24
-	"vmcall is given invalid SMM-Monitor features! (Are you attempting to activate dual-monitor treatment?)",
+	Some("vmcall is given invalid SMM-Monitor features! (Are you attempting to activate dual-monitor treatment?)"),
 	// Error=25
-	"VM-Entry failed due to invalid VM-Execution Control! (Are attempting to return from SMM?)",
-	"VM-Entry failed due to events blocked by mov ss!",				// Error=26,
-	"Invalid Error, Number=27!",										// Error=27
-	"Invalid Operand to invept/invvpid Instructions!",				// Error=28
+	Some("VM-Entry failed due to invalid VM-Execution Control! (Are attempting to return from SMM?)"),
+	Some("VM-Entry failed due to events blocked by mov ss!"),		// Error=26,
+	None,															// Error=27
+	Some("Invalid Operand to invept/invvpid Instructions!"),		// Error=28
 ];
 
 #[derive(Default, Clone, Copy)]

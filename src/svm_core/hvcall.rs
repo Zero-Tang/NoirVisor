@@ -30,12 +30,12 @@ impl SvmVcpu
 	{
 		let gcr3:u64=self.read_cr3();
 		let nrip:u64=self.read_next_rip();
-		let gflags:u64=self.read_rflags();
+		let gflags=self.read_rflags();
 		let gpr_state=&mut self.get_stack_top_mut().gpr_state;
 		let saved_state:GprState=GprState
 		{
 			rax:nrip,
-			rcx:gflags,
+			rcx:gflags.into_bits(),
 			rdx:gpr_state.rsp,
 			rbx:gpr_state.rbx,
 			rsp:gpr_state.rsp,
@@ -52,9 +52,8 @@ impl SvmVcpu
 			r15:gpr_state.r15,
 		};
 		// Switch to Restored Control Registers.
-		let gcr4:u64=self.read_cr4();
 		write_cr3(gcr3);
-		write_cr4(gcr4);
+		write_cr4(self.read_cr4().into_bits());
 		// Restore the processor's hidden state.
 		vmload(self.vmcb.phys);
 		unsafe

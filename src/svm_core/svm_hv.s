@@ -75,12 +75,12 @@ nvc_svm_exit_handler_a:
 	mov qword ptr [rsp+STACKTOP_OFFSET_GUEST_XCR0],rax
 	// The xsetbv instruction may cause VM-Exits. Avoid it if Guest/Host XCR0 equals.
 	cmp rax,qword ptr [rsp+STACKTOP_OFFSET_HOST_XCR0]
-	je precall_gh_xcr0_equal
+	je svm_precall_gh_xcr0_equal
 	// Guest's XCR0 does not equal to host's. Load Host XCR0.
 	mov eax,dword ptr [rsp+STACKTOP_OFFSET_HOST_XCR0+0]
 	mov edx,dword ptr [rsp+STACKTOP_OFFSET_HOST_XCR0+4]
 	xsetbv
-precall_gh_xcr0_equal:
+svm_precall_gh_xcr0_equal:
 	// Save all volatile XMM registers.
 	mov rax,qword ptr [rsp+STACKTOP_OFFSET_XSAVE_STATE]
 	save_volatile_xmm rax
@@ -94,12 +94,12 @@ precall_gh_xcr0_equal:
 	mov rax,qword ptr [rsp+STACKTOP_OFFSET_GUEST_XCR0]
 	// If guest XCR0 equals to host XCR0, there's no need to switch XCR0.
 	cmp rax,qword ptr [rsp+STACKTOP_OFFSET_HOST_XCR0]
-	je post_gh_xcr0_equal
+	je svm_post_gh_xcr0_equal
 	mov rdx,rax
 	xor ecx,ecx
 	shr rdx,32
 	xsetbv
-post_gh_xcr0_equal:
+svm_post_gh_xcr0_equal:
 	// Restore all GPRs.
 	popaq_fast STACKTOP_OFFSET_GUEST_GPR
 	// The rax register should already contain the VMCB physical address.
@@ -128,7 +128,7 @@ nvc_svm_subvert_processor_a:
 	call nvc_svm_subvert_processor_i
 	// Return value is physical address of VMCB.
 	// Switch the stack pointer to host stack.
-	mov rsp,qword ptr [rsp+0x28]
+	mov rsp,qword ptr [rsp+0x30]
 	// Stack is switched. Launch the guest now.
 	vmrun rax
 	// VM-Exit occurs here. Jump to VM-Exit Handler.

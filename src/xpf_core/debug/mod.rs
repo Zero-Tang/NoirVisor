@@ -12,7 +12,7 @@
 
 use bitfield_struct::bitfield;
 use log::*;
-use spin::Mutex;
+use spin::{Mutex, MutexGuard};
 
 use nvcvm::status::Status;
 use static_collections::string::StaticString;
@@ -176,33 +176,48 @@ static DEBUGGER:Mutex<LazyCell<Box<dyn DebuggerBackend>>>=Mutex::new(
 	)
 );
 
+// Avoid copying the formatted string. Directly pass-thru to the debugger output.
+struct FormattedDebugOutput(MutexGuard<'static,LazyCell<Box<dyn DebuggerBackend>>>);
+
+impl fmt::Write for FormattedDebugOutput
+{
+	fn write_str(&mut self, s: &str) -> fmt::Result
+	{
+		let r=unsafe{self.0.write(s.as_ptr(),s.len())};
+		if r
+		{
+			Ok(())
+		}
+		else
+		{
+			Err(fmt::Error)
+		}
+	}
+}
+
 pub fn dbg_print(args: fmt::Arguments)
 {
-	let mut w:StaticString<512>=StaticString::new();
-	let r=fmt::write(&mut w, args);
-	if r.is_ok()
+	let mut w=FormattedDebugOutput(DEBUGGER.lock());
+	unsafe
 	{
-		unsafe
-		{
-			// Interrupts may cause mutex recursion, so disable interrupts.
-			// However, NMIs might still cause recursion and cause deadlocks.
-			use core::arch::asm;
-			let old_rflags:usize;
-			asm!
-			(
-				"pushfq",
-				"pop {flags}",
-				"cli",
-				flags=out(reg) old_rflags
-			);
-			noir_debug_output(w.as_bytes().as_ptr(),w.as_bytes().len());
-			asm!
-			(
-				"push {flags}",
-				"popfq",
-				flags=in(reg) old_rflags
-			);
-		}
+		// Interrupts may cause mutex recursion, so disable interrupts.
+		// However, NMIs might still cause recursion and cause deadlocks.
+		use core::arch::asm;
+		let old_rflags:usize;
+		asm!
+		(
+			"pushfq",
+			"pop {flags}",
+			"cli",
+			flags=out(reg) old_rflags
+		);
+		let _=fmt::write(&mut w,args);
+		asm!
+		(
+			"push {flags}",
+			"popfq",
+			flags=in(reg) old_rflags
+		);
 	}
 }
 

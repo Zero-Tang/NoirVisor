@@ -18,12 +18,13 @@ use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::null_mut, sync
 use ia32::msr::*;
 use vmcs::*;
 use ept::VtEptManager;
-use crate::{xpf_core::x86::{apic::APIC_OFFSET_ICR_HI, msr::MSR_X2APIC_ICR}, *};
+use crate::{xpf_core::x86::{apic::APIC_OFFSET_ICR_HI, msr::MSR_X2APIC_ICR, xstate::BoxedXState}, *};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 use mshv_core::{MshvVcpuContext,MshvVcpuOps};
-use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{apic::*, caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_APIC_BASE,MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}, rflags::RFLAGS_IF_BIT}};
+use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{apic::*, caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_APIC_BASE,MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
 
 #[allow(dead_code)] mod ia32;
+#[macro_use]
 #[allow(dead_code)] mod vmcs;
 #[allow(dead_code)] mod exit;
 mod hvcall;
@@ -89,7 +90,7 @@ pub struct VtVcpu
 	pub hv_stack:MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>,
 	pub hypervisor:*mut c_void,
 	pub ist:[MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>;8],
-	pub host_xsave:Vec<u8>,
+	pub host_xsave:BoxedXState,
 	pub cpuid_fms:u32,
 	pub vcpu_id:u32,
 	pub under_hvm:bool,
@@ -120,7 +121,7 @@ impl Default for VtVcpu
 			hv_stack:MemoryDescriptor::null(),
 			hypervisor:null_mut(),
 			ist:[const{MemoryDescriptor::null()};8],
-			host_xsave:Vec::new(),
+			host_xsave:BoxedXState::null(),
 			cpuid_fms:(std_leaf.ext_model()<<16)|0x600,
 			vcpu_id:0,
 			under_hvm:false,
@@ -211,7 +212,7 @@ impl VtVcpu
 	fn is_interruptible(&mut self,irq:u8)->VtIrqInterruptibilityState
 	{
 		let rflags=self.cached_ctxt.rflags();
-		if (rflags&(1<<RFLAGS_IF_BIT))==0
+		if rflags.r#if()
 		{
 			// Not interruptible because it's masked in rflags.
 			// trace!("Current rflags: 0x{rflags:X} and IRQ-Vector 0x{irq:X} will be masked.");
@@ -316,7 +317,7 @@ impl VtVcpu
 		let cr4=(state.cr4|rdmsr(MSR_VMX_CR4_FIXED0) as usize)&rdmsr(MSR_VMX_CR4_FIXED1) as usize;
 		vmwriteptr(HOST_CR0,cr0);
 		vmwriteptr(HOST_CR3,unsafe{(*hv).host.paging.cr3.phys} as usize);
-		vmwriteptr(HOST_CR4,cr4&!(CR4_CET as usize));
+		vmwriteptr(HOST_CR4,cr4);
 		vmwrite64(HOST_MSR_IA32_EFER,state.efer);
 		// Host State Area - Stack Pointer, Instruction Pointer
 		vmwriteptr(HOST_RSP,stack as usize);
@@ -383,7 +384,7 @@ impl VtVcpu
 		vmwriteptr(GUEST_CR3,state.cr3);
 		vmwriteptr(GUEST_CR4,state.cr4);
 		// vmwriteptr(CR0_READ_SHADOW,state.cr0);
-		vmwriteptr(CR4_READ_SHADOW,state.cr4&(!CR4_VMXE as usize));
+		vmwriteptr(CR4_READ_SHADOW,Cr4::from_bits(state.cr4 as u64).with_vmxe(false).into_bits() as usize);
 		// CR8 is special. It's located in Virtual APIC Page.
 		unsafe
 		{
@@ -519,7 +520,7 @@ impl VtVcpu
 			let hv:*const VtHypervisor=self.hypervisor.cast();
 			let apic_base=page_base(rdmsr(MSR_APIC_BASE));
 			// vmwriteptr(CR0_GUEST_HOST_MASK,CR0_PG as usize);
-			vmwriteptr(CR4_GUEST_HOST_MASK,CR4_VMXE as usize);
+			vmwriteptr(CR4_GUEST_HOST_MASK,Cr4::new().with_vmxe(true).into_bits() as usize);
 			vmwrite64(ADDRESS_OF_MSR_BITMAP,(*hv).msr_bitmap.phys);
 			vmwrite64(ADDRESS_OF_IO_BITMAP_A,(*hv).io_bitmap_a.phys);
 			vmwrite64(ADDRESS_OF_IO_BITMAP_B,(*hv).io_bitmap_b.phys);
@@ -573,11 +574,13 @@ impl VtVcpu
 		write_cr0(cr0);
 		// In addition to CR4.VMXE, we also add following bits.
 		// CR4.OSXSAVE bit is required to execute xsetbv instruction.
-		let mut cr4=read_cr4();
-		cr4|=CR4_OSFXSR|CR4_OSXMMEXCEPT|CR4_OSXSAVE;
+		let mut cr4=Cr4::from_bits(read_cr4());
+		cr4.set_osfxsr(true);
+		cr4.set_osxmmexcpt(true);
+		cr4.set_osxsave(true);
 		cr4|=rdmsr(MSR_VMX_CR4_FIXED0);
 		cr4&=rdmsr(MSR_VMX_CR4_FIXED1);
-		write_cr4(cr4);
+		write_cr4(cr4.into_bits());
 		match unsafe{vmxon(&raw const self.vmxon.phys)}
 		{
 			VmxResult::Ok(_)=>
@@ -620,8 +623,8 @@ impl VtVcpu
 			// Turn off VMX.
 			vmxoff();
 			// Clear CR4.VMXE bit.
-			let cr4=read_cr4()&!CR4_VMXE;
-			write_cr4(cr4);
+			let cr4=Cr4::from_bits(read_cr4()).with_vmxe(false);
+			write_cr4(cr4.into_bits());
 			sysdprintln!("Processor {} completed restoration!",self.vcpu_id);
 		}
 	}
@@ -635,8 +638,8 @@ pub struct VtHypervisor
 	pub io_bitmap_b:MemoryDescriptor<1,usize>,
 	pub eptm:VtEptManager,
 	pub host:HostSystem,
-	pub pio_space:IoAddressSpace<u16>,
-	pub mmio_space:IoAddressSpace<u64>,
+	pub pio_space:IoAddressSpace,
+	pub mmio_space:IoAddressSpace,
 	pub image_base:*mut c_void,
 	pub image_size:u32,
 	pub xsave_size:usize,
@@ -889,11 +892,7 @@ impl HypervisorEssentials for VtHypervisor
 				None=>fail_cleanup!("Failed to allocate host IST1 stack for processor {i}!")
 			}
 			vcpu.hypervisor=self as *mut Self as *mut c_void;
-			vcpu.host_xsave.reserve_exact(self.xsave_size);
-			unsafe
-			{
-				vcpu.host_xsave.set_len(self.xsave_size);
-			}
+			vcpu.host_xsave.init(self.xsave_size);
 			vcpu.vcpu_id=i;
 			self.vcpus.push(vcpu);
 		}

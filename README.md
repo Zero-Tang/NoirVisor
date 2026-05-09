@@ -143,6 +143,18 @@ If KVM is available:
 ```
 python run_qemu.py -accel kvm
 ```
+If you want to emulate more processors:
+```
+python run_qemu.py -smp 4
+```
+If you want to run the optimized binary:
+```
+python run_qemu.py -release
+```
+If you want to enable GDB debug stub at `localhost:1234`:
+```
+python run_qemu.py -gdb
+```
 
 Note that QEMU TCG may output debug logs. Pass `-debug` argument to this script in order to give `-d` argument to QEMU. You might most likely be interested in giving `-d int` argument in order to log exceptions. In other words:
 ```
@@ -158,6 +170,10 @@ python run_bochs.py --cpu-model corei7_icelake_u
 To emulate AMD-V in Bochs:
 ```
 python run_bochs.py --cpu-model ryzen
+```
+To run the optimized binary in Bochs:
+```
+python run_bochs.py --release
 ```
 
 # Documents

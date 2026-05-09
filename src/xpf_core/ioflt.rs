@@ -10,56 +10,29 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::c_void,cmp::Ordering,ops::Add};
-use alloc::vec::Vec;
+use core::{cmp::Ordering, ffi::c_void};
+use alloc::{alloc::{Allocator, Global}, boxed::Box, vec::Vec};
 
 use log::info;
 use nvcvm::status::Status;
-use static_collections::string::StaticString;
 
-pub type IoInputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*mut c_void,context:*mut c_void);
-pub type IoOutputFilterHandler<T>=fn(region:&IoRegion<T>,address:T,size:T,value:*const c_void,context:*mut c_void);
-
-// Use generics on I/O filtering architecture, as the sizes of addresses can vary.
-// For example, in x86 systems, there are two I/O subsystems: Port I/O and Memory-Mapped I/O.
-// PIO is 16-bit addressing, and MMIO is 64-bit addressing.
-// So PIO will use IoRegion<u16>, and MMIO will use IoRegion<u64>.
-// There might be some other weirdo addressing modes (probably not even simple integers) of I/O in other architectures, so use generics to reduce problems.
-pub struct IoRegion<T>
+pub trait IoRegionOps
 {
-	pub name:StaticString<32>,
-	pub input_handler:Option<IoInputFilterHandler<T>>,
-	pub output_handler:IoOutputFilterHandler<T>,
-	pub addr:T,
-	pub size:T
-}
+	fn name(&self)->&str;
+	fn input(&mut self,address:u64,value:&mut [u8],context:*mut c_void)->Status;
+	fn output(&mut self,address:u64,value:&[u8],context:*mut c_void)->Status;
+	fn base_size(&self)->(u64,usize);
+	fn forward_input(&self)->bool;
+	fn forward_output(&self)->bool;
 
-impl<T:PartialOrd+Add<Output=T>+Copy> IoRegion<T>
-{
-	/// ## `new` method
-	/// This method will create a new I/O region. \
-	/// You must also use `add_region` method from `IoAddressSpace` to bind the new region to a specific I/O address space.
-	pub fn new(name:&str,input_handler:Option<IoInputFilterHandler<T>>,output_handler:IoOutputFilterHandler<T>,addr:T,size:T)->Self
+	fn binary_search_helper(&self,addr:u64)->Ordering
 	{
-		Self
-		{
-			name:StaticString::from(name),
-			input_handler,
-			output_handler,
-			addr,
-			size
-		}
-	}
-
-	/// ## `try_dispatch` method
-	/// This is an internal method which helps binary search when dispatching I/O.
-	fn try_dispatch(&self,addr:T)->Ordering
-	{
-		if addr<self.addr
+		let (b,s)=self.base_size();
+		if addr<b
 		{
 			Ordering::Less
 		}
-		else if addr>=self.addr+self.size
+		else if addr>=(b+s as u64)
 		{
 			Ordering::Greater
 		}
@@ -70,45 +43,19 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoRegion<T>
 	}
 }
 
-impl<T:PartialEq> PartialEq for IoRegion<T>
+pub struct IoAddressSpace<A:Allocator=Global>
 {
-	fn eq(&self, other: &Self) -> bool
-	{
-		self.addr==other.addr
-	}
+	pub regions:Vec<Box<dyn IoRegionOps,A>,A>
 }
 
-impl<T:PartialOrd> PartialOrd for IoRegion<T>
-{
-	fn partial_cmp(&self, other: &Self) -> Option<Ordering>
-	{
-		if self.addr<other.addr
-		{
-			Some(Ordering::Less)
-		}
-		else if self.addr>other.addr
-		{
-			Some(Ordering::Greater)
-		}
-		else
-		{
-			Some(Ordering::Equal)
-		}
-	}
-}
-
-pub struct IoAddressSpace<T>
-{
-	pub regions:Vec<IoRegion<T>>
-}
-
-impl<T:PartialOrd+Add<Output=T>+Copy> IoAddressSpace<T>
+impl<A:Allocator> IoAddressSpace<A>
 {
 	/// ## `add_region` method
 	/// This method binds a region to this I/O address space. 
-	pub fn add_region(&mut self,region:IoRegion<T>)
+	pub fn add_region(&mut self,region:Box<dyn IoRegionOps,A>)
 	{
-		if let Err(i)=self.regions.binary_search_by(|r| r.try_dispatch(region.addr))
+		let (base,_)=region.base_size();
+		if let Err(i)=self.regions.binary_search_by(|r| r.binary_search_helper(base))
 		{
 			info!("Inserting region to index {i}...");
 			self.regions.insert(i,region);
@@ -117,34 +64,27 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoAddressSpace<T>
 
 	/// ## `try_dispatch` method
 	/// This is an internal method which uses binary search to dispatch I/O.
-	fn try_dispatch(&self,addr:T)->Option<&IoRegion<T>>
+	fn try_dispatch(&mut self,addr:u64)->Option<&mut dyn IoRegionOps>
 	{
 		// Use binary search.
-		match self.regions.binary_search_by(|r| r.try_dispatch(addr))
+		match self.regions.binary_search_by(|r| r.binary_search_helper(addr))
 		{
-			Ok(i)=>Some(&self.regions[i]),
+			Ok(i)=>Some(&mut *self.regions[i]),
 			Err(_)=>None
 		}
 	}
 
 	/// ## `dispatch_input` method
 	/// This method dispatches an input operation to the corresponding handler.
-	pub fn dispatch_input(&self,addr:T,size:T,value:*mut c_void,context:*mut c_void)->Result<(),Status>
+	pub fn dispatch_input(&mut self,addr:u64,value:&mut [u8],context:*mut c_void)->Result<(),Status>
 	{
 		let io_region=self.try_dispatch(addr);
 		match io_region
 		{
-			Some(r)=>
+			Some(r)=>match r.input(addr,value,context)
 			{
-				match r.input_handler
-				{
-					Some(f)=>
-					{
-						f(r,addr,size,value,context);
-						Ok(())
-					}
-					None=>Err(Status::DISPATCH_FAILURE)
-				}
+				Status::SUCCESS=>Ok(()),
+				st=>Err(st)
 			}
 			None=>Err(Status::DISPATCH_FAILURE)
 		}
@@ -152,15 +92,15 @@ impl<T:PartialOrd+Add<Output=T>+Copy> IoAddressSpace<T>
 
 	/// ## `dispatch_output` method
 	/// This method dispatches an output operation to the corresponding handler.
-	pub fn dispatch_output(&self,addr:T,size:T,value:*const c_void,context:*mut c_void)->Result<(),Status>
+	pub fn dispatch_output(&mut self,addr:u64,value:&[u8],context:*mut c_void)->Result<(),Status>
 	{
 		let io_region=self.try_dispatch(addr);
 		match io_region
 		{
-			Some(r)=>
+			Some(r)=>match r.output(addr,value,context)
 			{
-				(r.output_handler)(r,addr,size,value,context);
-				Ok(())
+				Status::SUCCESS=>Ok(()),
+				st=>Err(st)
 			}
 			None=>Err(Status::DISPATCH_FAILURE)
 		}

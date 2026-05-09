@@ -9,13 +9,21 @@ The minimal version of Rust compiler is 1.85.0 since NoirVisor uses Rust 2024 ed
 Download [Rust](https://www.rust-lang.org/tools/install) from Rust-lang's official website. Note that you must install the `nightly` toolchain.
 
 There is no known minimal version requirement for Netwide Assembler (NASM). Just install the newest version you can find. \
-Download [NASM](https://nasm.us/) from NASM's official site. It is recommended to use stable versions.
+Download [NASM](https://nasm.us/) from NASM's official site. It is recommended to use stable versions. \
+Installer of NASM for Windows does not add itself to `PATH` environment variable. You must add it to `PATH` on your own.
 
 There is no known minimal version requirement for LLVM. Just install the newest version you can find. \
 Download [LLVM](https://github.com/llvm/llvm-project/releases) from LLVM's GitHub repository release page. \
-LLVM is only required for building NoirVisor for UEFI.
+LLVM is only required for building NoirVisor for UEFI. \
+Installer of LLVM for Windows is somewhat buggy on adding itself to `PATH` environment variable. Check the `PATH` after installation. Add it if it's missing.
 
-You must execute the python script inside a Visual Studio prompt environment. This means you don't have to mount EWDK image if you have already installed Visual Studio.
+There is no known minimal version requirement for QEMU. Just install the newest version you can find. \
+Download [QEMU](https://qemu.weilnetz.de/w64/) from Stefan Weil's website. \
+QEMU is only required for building NoirVisor for UEFI in order to convert raw images into VHDX (Microsoft Hyper-V) and VMDK (VMware Workstation). \
+Installer of QEMU for Windows does not add itself to `PATH` environment variable. You must add it to `PATH` on your own.
+
+The GNU `mtools` are required to make raw images for NoirVisor. I have uploaded the [pre-built `mtools` binaries for Windows to GitHub](https://github.com/Zero-Tang/NoirVisor/files/12706542/mtools-4.0.43-bin.zip). \
+Extract the files to a certain directory, and add that directory to `PATH` environment variable.
 
 ### NoirVisor Core
 NoirVisor Core is written in Rust. See [documentation for NoirVisor in Rust](./rust.md).
@@ -36,6 +44,8 @@ You must install `x86_64-pc-windows-msvc` target host for Rust. This should be i
 rustup target add x86_64-pc-windows-msvc
 ```
 
+You must execute the python script inside a Visual Studio prompt environment. This means you don't have to mount EWDK image if you have already installed Visual Studio.
+
 ### EFI Application and Runtime Driver
 Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. \
 After NoirVisor 7th Anniversary, the [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) is obsolete. NoirVisor for UEFI will be fully written in Rust. You do not have to setup `edk2` anymore in order build NoirVisor for UEFI.
@@ -45,17 +55,24 @@ You must install `x86_64-unknown-uefi` target host for Rust. This is not install
 rustup target add x86_64-unknown-uefi
 ```
 
-#### Build EFI Application and Runtime Driver on Linux
-It is possible to build NoirVisor for UEFI on Linux.
+You do not have to execute the python script inside a Visual Studio prompt environment.
 
-On Ubuntu 26.04 LTS, in addition to Rust compiler, you should install the following dependencies:
+#### Build EFI Application and Runtime Driver on Linux
+It is possible to build NoirVisor for UEFI on Linux. \
+In addition to Rust compiler, you should install the dependencies so that `clang-cl`, `lld-link`, `llvm-ar`, `mcopy`, `mmd`, `mformat`, `qemu-img`, and `nasm` are available.`
+
+For Ubuntu 26.04 LTS:
 ```
-sudo apt install clang lld llvm mtools nasm
+sudo apt install clang lld llvm mtools nasm qemu
 ```
-For other Linux distributions, your goal is to guarantee `clang-cl`, `lld-link`, `llvm-ar`, `mcopy`, `mmd`, `mformat` and `nasm` are available.
+For Fedora 44:
+```
+sudo dnf install clang lld llvm mtools nasm qemu
+```
 
 ## VSCode Setup
-You may setup VSCode with VS Tools Command Prompt so that you do not have to use a separate window to run the make script.
+You may setup VSCode with VS Tools Command Prompt so that you do not have to use a separate window to run the make script. \
+You do not have to setup VS Tools Command Prompt if you are building NoirVisor for UEFI.
 
 ### Visual Studio 2022
 If you have installed Visual Studio 2022, add the following entry in `"terminal.integrated.profiles.windows"` of `settings.json` file:
@@ -63,9 +80,18 @@ If you have installed Visual Studio 2022, add the following entry in `"terminal.
 "VC2022 Native x64 Prompt": {
 	"path": "${env:windir}\\System32\\cmd.exe",
 	"args": ["/k", "${env:ProgramFiles}\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"]
-},
+}
 ```
 Then you may launch `cmd` with VC2022-related environment variables.
+
+### Visual Studio 2026
+Visual Studio 2026 is similar to VS2022. The only difference is the path to `vcvars64.bat` file:
+```json
+"VC2026 Native x64 Prompt": {
+	"path": "${env:windir}\\System32\\cmd.exe",
+	"args": ["/k", "${env:ProgramFiles}\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"]
+}
+```
 
 ### Enterprise WDK
 If you have mounted EWDK to, for example, `V:`, add the following entry in `"terminal.integrated.profiles.windows"` of `settings.json` file:

@@ -32,13 +32,23 @@
 		},
 		"NoirVisor":
 		{
-			"cmd":["lld-link","./target/x86_64-unknown-uefi/{cargo_preset}/libnvcore.a","{objpath}/memcpy.obj","{objpath}/memset.obj","{objpath}/memcmp.obj","/OUT:./bin/{outdir}/NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:./bin/{outdir}/NoirVisor.pdb"],
+			"cmd":["lld-link","./target/x86_64-unknown-uefi/{cargo_preset}/libnvcore.a","{objpath}/memcpy.obj","{objpath}/memset.obj","{objpath}/memcmp.obj","{objpath}/strlen.obj","/OUT:./bin/{outdir}/NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:./bin/{outdir}/NoirVisor.pdb"],
 			"dependencies":["cargo","memcpy","memset","memcmp","strlen"]
 		},
 		"image":
 		{
 			"cmd":["{python}","mkimg.py","-md","::/EFI","-md","::/EFI/BOOT","-c","./target/x86_64-unknown-uefi/{cargo_preset}/loadefi.efi|::/EFI/BOOT/bootx64.efi","-c","bin/{outdir}/NoirVisor.efi|::/","-c","bin/{outdir}/NoirVisorConfig.bin|::/","-o","./bin/{outdir}/NoirVisor-Uefi.img"],
 			"dependencies":["NoirVisor","config"]
+		},
+		"vhdx":
+		{
+			"cmd":["qemu-img","convert","-f","raw","-O","vhdx","./bin/{outdir}/NoirVisor-Uefi.img","./bin/{outdir}/NoirVisor-Uefi.vhdx"],
+			"dependencies":["image"]
+		},
+		"vmdk":
+		{
+			"cmd":["qemu-img","convert","-f","raw","-O","vmdk","./bin/{outdir}/NoirVisor-Uefi.img","./bin/{outdir}/NoirVisor-Uefi.vmdk"],
+			"dependencies":["image"]
 		}
 	},
 	"common_flags":

@@ -11,35 +11,27 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use paste::paste;
-
 use crate::disasm::emulator::{EmulatorOps, Instruction, MovCrInfo, MovDrInfo};
 use exit::*;
 use npt::NptFaultCode;
-use super::{xpf_core::x86::paging::*,svm_core::*};
-
-macro_rules! build_get_reg_helper
-{
-	($name:tt) =>
-	{
-		paste!
-		{
-			#[inline] fn [<get_ $name:lower>](&self)->u64
-			{
-				unsafe
-				{
-					self.vmread([<GUEST_ $name:upper>])
-				}
-			}
-		}
-	};
-}
+use super::{xpf_core::x86::{crdr::*,paging::*},svm_core::*};
 
 impl PageTranslationHelper for SvmVcpu
 {
-	build_get_reg_helper!(cr0);
-	build_get_reg_helper!(cr3);
-	build_get_reg_helper!(cr4);
+	fn get_cr0(&self)->Cr0
+	{
+		self.read_cr0()
+	}
+
+	fn get_cr3(&self)->u64
+	{
+		self.read_cr3()
+	}
+
+	fn get_cr4(&self)->Cr4
+	{
+		self.read_cr4()
+	}
 	
 	fn get_efer(&self)->Efer
 	{
@@ -100,7 +92,7 @@ impl EmulatorOps for SvmVcpu
 			self.vmwrite(GUEST_ES_SELECTOR+(seg_index<<4),value);
 			if seg_index<4
 			{
-				self.clean_vmcb(CLEAN_SEG_BIT);
+				self.ref_clean_field_mut().set_seg(false);
 			}
 		}
 	}
@@ -113,13 +105,13 @@ impl EmulatorOps for SvmVcpu
 	fn read_gpa(&mut self,gpa:u64,value:&mut [u8])
 	{
 		let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
-		let _=hv.mmio_space.dispatch_input(gpa,value.len() as u64,value.as_mut_ptr().cast(),self as *mut Self as *mut c_void);
+		let _=hv.mmio_space.dispatch_input(gpa,value,self as *mut Self as *mut c_void);
 	}
 
 	fn write_gpa(&mut self,gpa:u64,value:&[u8])
 	{
 		let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
-		let _=hv.mmio_space.dispatch_output(gpa,value.len() as u64,value.as_ptr().cast(),self as *mut Self as *mut c_void);
+		let _=hv.mmio_space.dispatch_output(gpa,value,self as *mut Self as *mut c_void);
 	}
 }
 
@@ -127,20 +119,17 @@ impl SvmVcpu
 {
 	pub(super) fn get_current_bitness(&self)->u32
 	{
-		unsafe
+		if self.ref_efer().lma() && self.ref_cs().attrib.long_mode()	// The CS.L bit.
 		{
-			if self.ref_efer().lma() && self.vmcb_bt(GUEST_CS_ATTRIB,9)	// The CS.L bit.
-			{
-				64
-			}
-			else if self.vmcb_bt(GUEST_CS_ATTRIB,10)	// The CS.D bit.
-			{
-				32
-			}
-			else
-			{
-				16
-			}
+			64
+		}
+		else if self.ref_cs().attrib.default_big()	// The CS.D bit.
+		{
+			32
+		}
+		else
+		{
+			16
 		}
 	}
 
@@ -177,14 +166,11 @@ impl SvmVcpu
 		{
 			let mut nrip:u64=rip+ins.len() as u64;
 			// If the vCPU is in compatibility mode, advancing rip should drop the higher 32 bits.
-			unsafe
+			if !(self.ref_efer().lma() && self.ref_cs().attrib.long_mode())
 			{
-				if !(self.vmcb_bt(GUEST_CS_ATTRIB,9) && self.ref_efer().lma())
-				{
-					nrip&=u32::MAX as u64;
-				}
-				self.write_next_rip(nrip);
+				nrip&=u32::MAX as u64;
 			}
+			self.write_next_rip(nrip);
 			return Some(ins);
 		}
 		None

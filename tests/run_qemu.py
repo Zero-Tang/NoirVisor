@@ -10,6 +10,9 @@ if __name__=="__main__":
 	can_run=True
 	cpu_arg="{},hypervisor=off"
 	machine_arg="pc,smm=on,{}"
+	smp_count=1
+	gdb=False
+	build_preset="chk"
 	# Check command-line arguments
 	i=1
 	while i<len(sys.argv):
@@ -19,6 +22,13 @@ if __name__=="__main__":
 		elif sys.argv[i]=="-debug":
 			i+=1
 			debug_log=sys.argv[i]
+		elif sys.argv[i]=="-smp":
+			i+=1
+			smp_count=int(sys.argv[i])
+		elif sys.argv[i]=="-gdb":
+			gdb=True
+		elif sys.argv[i]=="-release":
+			build_preset="fre"
 		else:
 			print("Unknown argument: {}!".format(sys.argv[i]))
 		i+=1
@@ -61,10 +71,14 @@ if __name__=="__main__":
 			"qemu-system-x86_64",
 			"-machine",machine_arg,
 			"-cpu",cpu_arg,
+			"-smp",str(smp_count),
 			"-drive","if=pflash,format=raw,unit=0,readonly=on,file=ovmf-code.fd",
 			"-drive","if=pflash,format=raw,unit=1,readonly=on,file=ovmf-vars.fd",
-			"-drive","format=raw,file="+os.path.join("..","bin","compchk_uefix64","NoirVisor-Uefi.img"),
+			"-drive","format=raw,file="+os.path.join("..","bin","comp{}_uefix64".format(build_preset),"NoirVisor-Uefi.img"),
 			"-debugcon","stdio"]
 		if not debug_log is None:
 			cmd_list+=["-d",debug_log,"-D","qemu.log"]
+		if gdb:
+			cmd_list.append("-s")
+		print(cmd_list)
 		subprocess.call(cmd_list)

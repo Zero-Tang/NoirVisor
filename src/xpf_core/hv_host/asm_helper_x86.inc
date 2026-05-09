@@ -8,6 +8,11 @@
 // without any warranty (no matter implied warranty of merchantability or
 // fitness for a particular purpose, etc.).
 
+// If optimizer is enabled, all files referenced in `global_asm!` may be merged together.
+// Therefore, use traditional method to make sure this header file is included for only once.
+.ifndef HELPER_INC
+HELPER_INC=1
+
 // Special macro that returns from NMI without unblocking it.
 .macro nmiret
 	push rax
@@ -100,3 +105,5 @@
 	movaps xmm5,xmmword ptr [\xstate+0xF0]
 	ldmxcsr dword ptr [\xstate+0x18]
 .endm
+
+.endif

@@ -269,7 +269,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 	error!("Dumping Exception Frame:\n{}",frame);
 	error!("Dumping GPR State:\n{}",unsafe{&*gpr_state});
 	debug!("Current GS-Base: {:p}",gs_ctxt as *mut PerCpuGsException);
-	debug!("Current GS-State: {:?}",&gs_ctxt.state);
+	debug!("Current GS-State: {:?}",gs_ctxt.state);
 	match &gs_ctxt.state
 	{
 		AwaitExecution=>
@@ -281,7 +281,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 		}
 		_=>unsafe
 		{
-			panic!("Host is not expecting for exception! Frame: {}, Vector: {vector} ({exception_name})",&*exception_frame);
+			panic!("Host is not expecting for exception! Frame: {}, Vector: {vector} ({exception_name})",*exception_frame);
 		}
 	}
 }
@@ -295,7 +295,7 @@ pub type AsmInterruptHandler=unsafe extern "C" fn()->!;
 	error!("Dumping Exception Frame:\n{}",frame);
 	error!("Dumping GPR State:\n{}",unsafe{&*gpr_state});
 	debug!("Current GS-Base: {:p}",gs_ctxt as *mut PerCpuGsException);
-	debug!("Current GS-State: {:?}",&gs_ctxt.state);
+	debug!("Current GS-State: {:?}",gs_ctxt.state);
 	match &gs_ctxt.state
 	{
 		AwaitExecution=>

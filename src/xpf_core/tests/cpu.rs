@@ -46,11 +46,6 @@ unsafe extern "system"
 	0
 }
 
-#[unsafe(no_mangle)] extern "C" fn nvc_call_try_task(_procedure:extern "C" fn(*mut c_void),_context:*mut c_void)->u32
-{
-	0
-}
-
 #[unsafe(no_mangle)] extern "C" fn noir_acquire_pushlock_exclusive(push_lock:*mut usize)
 {
 	#[cfg(windows)]

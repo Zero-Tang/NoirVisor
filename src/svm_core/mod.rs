@@ -14,13 +14,11 @@ use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::*};
 use alloc::{vec::Vec, vec};
 use static_collections::bitmap::RefBitmap;
 
-#[cfg(target_os="uefi")]
-use exit::svm_apic_output_handler;
-use iommu::{svm_iommu_output_handler, SvmIommuManager};
+use iommu::SvmIommuManager;
 use log::*;
 use npt::SvmNptManager;
-use crate::*;
-use xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, hv_host::{x86::*, *}, ioflt::{IoAddressSpace, IoRegion}, nvbdk::*, x86::{cpuid::*, crdr::{CR4_LA57, CR4_OSFXSR, CR4_OSXSAVE}, interrupts::InterruptStackFrameWithErrorCode, msr::*}};
+use crate::{xpf_core::x86::xstate::BoxedXState, *};
+use xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, hv_host::{x86::*, *}, ioflt::IoAddressSpace, nvbdk::*, x86::{cpuid::*, crdr::Cr4, interrupts::InterruptStackFrameWithErrorCode, msr::*}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 #[cfg(not(target_os="uefi"))]
 use crate::{cvm_core::CUSTOMIZABLE_HYPERVISOR, xpf_core::allocator::kmalloc::KernelAllocator,  svm_core::custom::SvmCustomHypervisor};
@@ -74,7 +72,7 @@ pub struct SvmVcpu
 	pub hypervisor:*mut c_void,
 	pub ist:[MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT,c_void>;8],
 	// Used for preserving XSAVE state.
-	pub host_xsave:Vec<u8>,
+	pub host_xsave:BoxedXState,
 	pub vcpu_id:u32,
 	pub apic_id:u8,
 	pub x2apic_id:u32,
@@ -125,7 +123,7 @@ impl SvmVcpu
 			hv_stack:MemoryDescriptor::null(),
 			hypervisor:null_mut(),
 			ist:[const{MemoryDescriptor::null()};8],
-			host_xsave:Vec::new(),
+			host_xsave:BoxedXState::null(),
 			vcpu_id:0,
 			apic_id:0,
 			x2apic_id:0,
@@ -233,7 +231,11 @@ impl SvmVcpu
 			write_tr(self.host_cpu.tr_sel);
 			write_cr3((*hv).host.paging.cr3.phys);
 			// The FXSR and XSAVE features must be required for CVM features.
-			write_cr4(state.cr4 as u64|CR4_OSFXSR|CR4_OSXSAVE);
+			let mut cr4=Cr4::from_bits(state.cr4 as u64);
+			cr4.set_osfxsr(true);
+			cr4.set_osxmmexcpt(true);
+			cr4.set_osxsave(true);
+			write_cr4(cr4.into_bits());
 			// Setup APIC ID.
 			let cpu_feat_id=StandardProcessorFeatureIdentifiers::cpuid();
 			let ext_topo_enum:ExtendedTopologyEnumeration<0>=ExtendedTopologyEnumeration::cpuid();
@@ -299,7 +301,7 @@ impl SvmVcpu
 			self.vmwrite(MSRPM_PHYSICAL_ADDRESS,(*hv).msrpm.phys);
 			// Setup NPT.
 			// Note that Host CR4.LA57 bit determines whether NPT uses 5-level paging or not.
-			self.vmwrite(NPT_CR3,if (state.cr4 & CR4_LA57 as usize)!=0 {(*hv).nptm.pml5e.phys} else {(*hv).nptm.pml4e.phys});
+			self.vmwrite(NPT_CR3,if cr4.la57() {(*hv).nptm.pml5e.phys} else {(*hv).nptm.pml4e.phys});
 			let mut npt_ctrl=NptControl::from_bits(0);
 			npt_ctrl.set_enable_npt(true);
 			self.vmwrite(NPT_CONTROL,npt_ctrl);
@@ -371,8 +373,8 @@ pub struct SvmHypervisor
 	pub nptm:SvmNptManager,
 	pub host:HostSystem,
 	pub iommu_manager:Option<SvmIommuManager>,
-	pub pio_space:IoAddressSpace<u16>,
-	pub mmio_space:IoAddressSpace<u64>,
+	pub pio_space:IoAddressSpace,
+	pub mmio_space:IoAddressSpace,
 	pub image_base:*mut c_void,
 	pub image_size:u32,
 	pub asid_max:u32,
@@ -583,20 +585,17 @@ impl HypervisorEssentials for SvmHypervisor
 			}
 			vcpu.hypervisor=self as *mut Self as *mut c_void;
 			// Allocate XSAVE state size.
-			vcpu.host_xsave.reserve_exact(self.xsave_size);
-			unsafe
-			{
-				vcpu.host_xsave.set_len(self.xsave_size);
-			}
+			vcpu.host_xsave.init(self.xsave_size);
 			vcpu.vcpu_id=i;
 			self.vcpus.push(vcpu);
 		}
 		// Intercept APIC Accesses.
-		#[cfg(target_os="uefi")]
+		/*#[cfg(target_os="uefi")]
 		{
+			use exit::svm_apic_output_handler;
 			let apic_bar=rdmsr(MSR_APIC_BASE);
 			self.mmio_space.add_region(IoRegion::new("lapic",None,svm_apic_output_handler,page_4kb_base(apic_bar),PAGE_SIZE as u64));
-		}
+		}*/
 		// Initialize CVM Module
 		#[cfg(not(target_os="uefi"))]
 		{
@@ -616,9 +615,9 @@ impl HypervisorEssentials for SvmHypervisor
 			{
 				Ok(mut mgr)=>
 				{
-					for bar in &mgr.iommu_bars
+					for _bar in &mgr.iommu_bars
 					{
-						self.mmio_space.add_region(IoRegion::new("iommu",None,svm_iommu_output_handler,bar.bar.phys,PAGE_SIZE as u64));
+						// self.mmio_space.add_region(IoRegion::new("iommu",None,svm_iommu_output_handler,bar.bar.phys,PAGE_SIZE as u64));
 					}
 					mgr.protect_ci();
 					mgr.activate();
@@ -643,6 +642,7 @@ impl HypervisorEssentials for SvmHypervisor
 		unsafe
 		{
 			nvc_store_image_info(&raw mut self.image_base,&raw mut self.image_size);
+			debug!("Base: {:p}, Size: 0x{:X}",self.image_base,self.image_size);
 			noir_generic_call(subvert_processor_thunk,self as *mut Self as *mut c_void);
 		}
 		info!("System subversion completed!");

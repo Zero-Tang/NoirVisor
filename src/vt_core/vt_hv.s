@@ -77,11 +77,11 @@ nvc_vt_exit_handler_a:
 	mov qword ptr [rsp+STACKTOP_OFFSET_GUEST_XCR0],rax
 	// The xsetbv unconditionally causes VM-Exits, so avoid it if guest/host xcr0 equals.
 	cmp rax,qword ptr [rsp+STACKTOP_OFFSET_HOST_XCR0]
-	je precall_gh_xcr0_equal
+	je vt_precall_gh_xcr0_equal
 	mov eax,dword ptr [rsp+STACKTOP_OFFSET_HOST_XCR0+0]
 	mov edx,dword ptr [rsp+STACKTOP_OFFSET_HOST_XCR0+4]
 	xsetbv
-precall_gh_xcr0_equal:
+vt_precall_gh_xcr0_equal:
 	// Save volatile XMM state.
 	mov rax,qword ptr [rsp+STACKTOP_OFFSET_XSAVE_STATE]
 	save_volatile_xmm rax
@@ -95,12 +95,12 @@ resume_guest:
 	// After restoring the volatile XMM state, load guest XCR0.
 	mov rax,qword ptr [rsp+STACKTOP_OFFSET_GUEST_XCR0]
 	cmp rax,qword ptr [rsp+STACKTOP_OFFSET_HOST_XCR0]
-	je post_gh_xcr0_equal
+	je vt_post_gh_xcr0_equal
 	mov rdx,rax
 	xor ecx,ecx
 	shr rdx,32
 	xsetbv
-post_gh_xcr0_equal:
+vt_post_gh_xcr0_equal:
 	// Restore all GPRs.
 	popaq_fast STACKTOP_OFFSET_GUEST_GPR
 	// Check if the VMCS is launched.

@@ -21,22 +21,6 @@ use disasm::emulator::{EmulatorOps, Instruction};
 use super::{*,hvcall::dispatch_hypercall};
 use mshv_core::{cpuid::*,msr::dispatch_mshv_msr_handler};
 
-pub(super) fn svm_apic_output_handler(_region:&IoRegion<u64>,address:u64,size:u64,value:*const c_void,_context:*mut c_void)
-{
-	// Current implementation is simply pass-thru.
-	unsafe
-	{
-		match size
-		{
-			1=>(address as *mut u8).write(value.cast::<u8>().read()),
-			2=>(address as *mut u16).write(value.cast::<u16>().read()),
-			4=>(address as *mut u32).write(value.cast::<u32>().read()),
-			8=>(address as *mut u64).write(value.cast::<u64>().read()),
-			_=>panic!("Unknown size: {size}!")
-		}
-	}
-}
-
 // Place all VM-Exit handlers from the subverted host into this implementation!
 // Rules of thumb in implementing VM-Exit Handlers: Do not allocate memories from heap!
 impl SvmVcpu

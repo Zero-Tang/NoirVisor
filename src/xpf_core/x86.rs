@@ -397,21 +397,25 @@ pub mod paging
 	use core::{fmt::{self,Display,Formatter}, slice};	
 
 	use bitfield_struct::bitfield;
-	use paste::paste;
 
 	use crate::{xpf_core::x86::msr::Efer, *};
 	use xpf_core::{nvbdk::*, x86::crdr::*};
 
-	macro_rules! build_paging_def
+	#[bitfield(u64)] struct CommonPmle
 	{
-		($prefix:tt,$def:tt,$shift:literal) =>
-		{
-			paste!
-			{
-				pub const [<$prefix:upper _PAGING_ $def:upper _BIT>]:u64=$shift;
-				pub const [<$prefix:upper _PAGING_ $def:upper>]:u64=1<<$shift;
-			}
-		};
+		pub present:bool,
+		pub write:bool,
+		pub user:bool,
+		pub pwt:bool,
+		pub pcd:bool,
+		pub accessed:bool,
+		pub dirty:bool,
+		pub page_size:bool,
+		pub global:bool,
+		#[bits(3)] pub avl:u64,
+		#[bits(40)] pub address:u64,
+		#[bits(11)] pub available:u64,
+		pub nx:bool
 	}
 
 	// Page-Map-Level-4 Entry (Bits 39-47)
@@ -431,20 +435,6 @@ pub mod paging
 		pub nx:bool
 	}
 
-	build_paging_def!(x86,present,0);
-	build_paging_def!(x86,write,1);
-	build_paging_def!(x86,user,2);
-	build_paging_def!(x86,pwt,3);
-	build_paging_def!(x86,pcd,4);
-	build_paging_def!(x86,accessed,5);
-	build_paging_def!(x86,dirty,6);
-	build_paging_def!(x86,page_size,7);
-	build_paging_def!(x86,pte_pat,7);
-	build_paging_def!(x86,global,8);
-	build_paging_def!(x86,pat,12);
-	build_paging_def!(x86,nx,63);
-
-	pub const PAGING_AVL_BIT:u64=9;
 	impl Pml4e
 	{
 		pub fn construct(present:bool,write:bool,user:bool,pdpte_base:u64,nx:bool)->Self
@@ -685,9 +675,9 @@ pub mod paging
 			write_virtual_address(va,self,buffer,fault_va)
 		}
 
-		fn get_cr0(&self)->u64;
+		fn get_cr0(&self)->Cr0;
 		fn get_cr3(&self)->u64;
-		fn get_cr4(&self)->u64;
+		fn get_cr4(&self)->Cr4;
 		fn get_efer(&self)->Efer;
 		fn is_user_mode(&self)->bool;
 
@@ -709,15 +699,15 @@ pub mod paging
 		let mut pml_raw:[u8;8]=[0;8];
 		let rsize=vcpu.read_phys_mem(pml_pa,&mut pml_raw);
 		assert_eq!(pml_raw.len(),rsize);
-		let pml_e:u64=u64::from_le_bytes(pml_raw);
-		let pml_p=(pml_e&X86_PAGING_PRESENT)==X86_PAGING_PRESENT;
-		let pml_w=(pml_e&X86_PAGING_WRITE)==X86_PAGING_WRITE;
-		let pml_u=(pml_e&X86_PAGING_USER)==X86_PAGING_USER;
-		let pml_nx=(pml_e&X86_PAGING_NX)==X86_PAGING_NX;
-		let pml_ps=(pml_e&X86_PAGING_PAGE_SIZE)==X86_PAGING_PAGE_SIZE;
+		let pml_e=CommonPmle::from_bits(u64::from_le_bytes(pml_raw));
+		let pml_p=pml_e.present();
+		let pml_w=pml_e.write();
+		let pml_u=pml_e.user();
+		let pml_nx=pml_e.nx();
+		let pml_ps=pml_e.page_size();
 		// Set accessed & dirty bits.
-		let new_pml_d:u64=pml_e|X86_PAGING_ACCESSED|if w {X86_PAGING_DIRTY} else {0};
-		vcpu.write_phys_mem(pml_pa,&new_pml_d.to_le_bytes());
+		let new_pml_d=pml_e.with_accessed(true).with_dirty(w).into_bits().to_le_bytes();
+		vcpu.write_phys_mem(pml_pa,&new_pml_d);
 		// Check access rights.
 		if !pml_p
 		{
@@ -739,7 +729,7 @@ pub mod paging
 		{
 			// This is the last level!
 			// Check Shadow-Stack: R/W bit is cleared while D bit is set means a shadow-stack page.
-			let pml_d=(pml_e&X86_PAGING_DIRTY)==X86_PAGING_DIRTY;
+			let pml_d=pml_e.dirty();
 			let pml_ss=pml_d&!pml_w;
 			if pml_ss && !ss
 			{
@@ -748,7 +738,7 @@ pub mod paging
 			else
 			{
 				let offset_mask:u64=(1<<shift_amount)-1;
-				let base:u64=(pml_e>>shift_amount)<<shift_amount;
+				let base:u64=(pml_e.into_bits()>>shift_amount)<<shift_amount;
 				let pa=(va&offset_mask)|phys_addr_mask(base);
 				Ok(pa)
 			}
@@ -756,7 +746,7 @@ pub mod paging
 		else
 		{
 			// This is the intermediate level!
-			let next_pt_base=phys_page_4kb_base(pml_e);
+			let next_pt_base=phys_page_4kb_base(pml_e.into_bits());
 			translate_64bit_va_routine(va,vcpu,next_pt_base,level-1,w,x,ss)
 		}
 	}
@@ -764,12 +754,12 @@ pub mod paging
 	pub fn translate_virtual_address(va:u64,vcpu:&mut impl PageTranslationHelper,w:bool,x:bool,ss:bool)->Result<u64,PageFaultErrorCode>
 	{
 		let cr0=vcpu.get_cr0();
-		if (cr0&CR0_PG)==CR0_PG
+		if cr0.pg()
 		{
 			let cr3=vcpu.get_cr3();
 			// Paging is enabled! Determine which mode we are working with!
 			let cr4=vcpu.get_cr4();
-			if (cr4&CR4_PAE)==CR4_PAE
+			if cr4.pae()
 			{
 				// Physical-Address Extension is enabled!
 				let mut va:u64=va;
@@ -777,16 +767,7 @@ pub mod paging
 				if efer.lma()
 				{
 					// Long-Mode is activated. Virtual-Address is 64-bit!
-					let level=if (cr4&CR4_LA57)==CR4_LA57
-					{
-						// 5-level 57-bit Linear-Address.
-						5
-					}
-					else
-					{
-						// 4-level 48-bit Linear-Address.
-						4
-					};
+					let level=if cr4.la57() {5} else {4};
 					translate_64bit_va_routine(va,vcpu,cr3,level,w,x,ss)
 				}
 				else
@@ -796,16 +777,16 @@ pub mod paging
 					let pdpe_index=va>>PAGE_1GB_SHIFT;
 					let mut pdpe_buff:[u8;8]=[0;8];
 					vcpu.read_phys_mem(vcpu.get_cr3()+(pdpe_index<<3),&mut pdpe_buff);
-					let pdpe_pa=u64::from_le_bytes(pdpe_buff);
+					let pdpe_pa=CommonPmle::from_bits(u64::from_le_bytes(pdpe_buff));
 					// PDPE only has a present bit, no W/NX bits.
-					if (pdpe_pa&X86_PAGING_PRESENT)==0
+					if pdpe_pa.present()
 					{
-						Err(PageFaultErrorCode(0))
+						// Only 2 levels remaining.
+						translate_64bit_va_routine(va,vcpu,page_4kb_base(pdpe_pa.into_bits()),2,w,x,ss)
 					}
 					else
 					{
-						// Only 2 levels remaining.
-						translate_64bit_va_routine(va,vcpu,page_4kb_base(pdpe_pa),2,w,x,ss)
+						Err(PageFaultErrorCode(0))
 					}
 				}
 			}
@@ -1101,72 +1082,125 @@ pub mod descriptors
 
 pub mod crdr
 {
-	use bitfield_struct::bitfield;
-	use paste::paste;
+	use core::ops::{BitAndAssign, BitOrAssign};
 
-	#[macro_export] macro_rules! define_bit
+	use bitfield_struct::bitfield;
+
+	#[bitfield(u64)] pub struct Cr0
 	{
-		($name:tt,$pos:literal) =>
+		pub pe:bool,
+		pub mp:bool,
+		pub em:bool,
+		pub ts:bool,
+		pub et:bool,
+		pub ne:bool,
+		#[bits(10)] rsvd0:u32,
+		pub wp:bool,
+		rsvd1:bool,
+		pub am:bool,
+		#[bits(10)] rsvd2:u32,
+		pub nw:bool,
+		pub cd:bool,
+		pub pg:bool,
+		rsvd3:u32
+	}
+
+	impl BitAndAssign<u64> for Cr0
+	{
+		fn bitand_assign(&mut self, rhs: u64)
 		{
-			paste!
-			{
-				pub const [<$name:upper _BIT>]:u64=$pos;
-				pub const [<$name:upper>]:u64=1<<$pos;
-			}
+			self.0&=rhs;
+		}
+	}
+
+	impl BitOrAssign<u64> for Cr0
+	{
+		fn bitor_assign(&mut self, rhs: u64)
+		{
+			self.0|=rhs;
+		}
+	}
+
+	#[bitfield(u64)] pub struct Cr4
+	{
+		pub vme:bool,
+		pub pvi:bool,
+		pub tsd:bool,
+		pub de:bool,
+		pub pse:bool,
+		pub pae:bool,
+		pub mce:bool,
+		pub pge:bool,
+		pub pce:bool,
+		pub osfxsr:bool,
+		pub osxmmexcpt:bool,
+		pub umip:bool,
+		pub la57:bool,
+		pub vmxe:bool,
+		pub smxe:bool,
+		rsvd0:bool,
+		pub fsgsbase:bool,
+		pub pcide:bool,
+		pub osxsave:bool,
+		pub kl:bool,
+		pub smep:bool,
+		pub smap:bool,
+		pub pke:bool,
+		pub cet:bool,
+		pub pks:bool,
+		pub uintr:bool,
+		#[bits(2)] rsvd1:u32,
+		pub lam_sup:bool,
+		#[bits(3)] rsvd2:u32,
+		pub fred:bool,
+		#[bits(31)] rsvd3:u32
+	}
+
+	impl BitAndAssign<u64> for Cr4
+	{
+		fn bitand_assign(&mut self, rhs: u64)
+		{
+			self.0&=rhs;
+		}
+	}
+
+	impl BitOrAssign<u64> for Cr4
+	{
+		fn bitor_assign(&mut self, rhs: u64)
+		{
+			self.0|=rhs;
+		}
+	}
+
+	impl Cr4
+	{
+		pub const TLB_FLUSH_MASK:u64=
+		{
+			let mut x=Cr4::new();
+			x.set_pse(true);
+			x.set_pae(true);
+			x.set_pge(true);
+			x.set_pcide(true);
+			x.set_smep(true);
+			x.into_bits()
 		};
 	}
 
-	define_bit!(CR0_PE,0);
-	define_bit!(CR0_MP,1);
-	define_bit!(CR0_EM,2);
-	define_bit!(CR0_TS,3);
-	define_bit!(CR0_ET,4);
-	define_bit!(CR0_NE,5);
-	define_bit!(CR0_WP,16);
-	define_bit!(CR0_AM,18);
-	define_bit!(CR0_NW,29);
-	define_bit!(CR0_CD,30);
-	define_bit!(CR0_PG,31);
-
-	define_bit!(CR4_VME,0);
-	define_bit!(CR4_PVI,1);
-	define_bit!(CR4_TSD,2);
-	define_bit!(CR4_DE,3);
-	define_bit!(CR4_PSE,4);
-	define_bit!(CR4_PAE,5);
-	define_bit!(CR4_MCE,6);
-	define_bit!(CR4_PGE,7);
-	define_bit!(CR4_PCE,8);
-	define_bit!(CR4_OSFXSR,9);
-	define_bit!(CR4_OSXMMEXCEPT,10);
-	define_bit!(CR4_UMIP,11);
-	define_bit!(CR4_LA57,12);
-	define_bit!(CR4_VMXE,13);
-	define_bit!(CR4_SMXE,14);
-	define_bit!(CR4_FSGSBASE,16);
-	define_bit!(CR4_PCIDE,17);
-	define_bit!(CR4_OSXSAVE,18);
-	define_bit!(CR4_KL,19);
-	define_bit!(CR4_SMEP,20);
-	define_bit!(CR4_SMAP,21);
-	define_bit!(CR4_PKE,22);
-	define_bit!(CR4_CET,23);
-	define_bit!(CR4_PKS,24);
-	define_bit!(CR4_UINTR,25);
-	define_bit!(CR4_LASS,27);
-	define_bit!(CR4_LAM_SUP,28);
-	define_bit!(CR4_FRED,32);
-
-	pub const CR4_TLB_FLUSH_MASK:u64=CR4_PSE|CR4_PAE|CR4_PGE|CR4_PCIDE|CR4_SMEP;
-
-	define_bit!(DR6_B0,0);
-	define_bit!(DR6_B1,1);
-	define_bit!(DR6_B2,2);
-	define_bit!(DR6_B3,3);
-	define_bit!(DR6_BUSLOCK_DETECTED,11);
-	define_bit!(DR6_BD,13);
-	define_bit!(DR6_BS,14);
-	define_bit!(DR6_BT,15);
+	#[bitfield(u64)] pub struct Dr6
+	{
+		pub b0:bool,
+		pub b1:bool,
+		pub b2:bool,
+		pub b3:bool,
+		#[bits(7)] rsvd0:u32,
+		pub buslock_detected:bool,
+		rsvd1:bool,
+		pub bd:bool,
+		pub bs:bool,
+		pub bt:bool,
+		rsvd2:u16,
+		rsvd3:u32
+	}
 
 	#[bitfield(u64)] pub struct Dr7
 	{
@@ -1685,11 +1719,19 @@ pub mod cpuid
 
 	derive_cpuid_trait!(ExtendedStateEnumeration1,0xD,Some(1));
 
+	#[bitfield(u32)] pub struct ExtendedStateEnumerationNEcx
+	{
+		pub supported:bool,
+		pub align_64b:bool,
+		pub xfd:bool,
+		#[bits(29)] rsvd:u32
+	}
+
 	pub struct ExtendedStateEnumerationN<const N:u32>
 	{
 		pub size:u32,
 		pub offset:u32,
-		pub rsvd_c:u32,
+		pub rsvd_c:ExtendedStateEnumerationNEcx,
 		pub rsvd_d:u32
 	}
 
@@ -1703,7 +1745,7 @@ pub mod cpuid
 			assert!(N>=0x2 && N<=0x3E);
 			self.size=result.eax;
 			self.offset=result.ebx;
-			self.rsvd_c=result.ecx;
+			self.rsvd_c=ExtendedStateEnumerationNEcx::from_bits(result.ecx);
 			self.rsvd_d=result.edx;
 		}
 
@@ -1713,7 +1755,7 @@ pub mod cpuid
 			{
 				eax:self.size,
 				ebx:self.offset,
-				ecx:self.rsvd_c,
+				ecx:self.rsvd_c.into_bits(),
 				edx:self.rsvd_d
 			}
 		}
@@ -2027,22 +2069,34 @@ pub mod cpuid
 
 pub mod rflags
 {
-	pub const RFLAGS_CF_BIT:u32=0;
-	pub const RFLAGS_PF_BIT:u32=2;
-	pub const RFLAGS_AF_BIT:u32=4;
-	pub const RFLAGS_ZF_BIT:u32=6;
-	pub const RFLAGS_SF_BIT:u32=7;
-	pub const RFLAGS_TF_BIT:u32=8;
-	pub const RFLAGS_IF_BIT:u32=9;
-	pub const RFLAGS_DF_BIT:u32=10;
-	pub const RFLAGS_OF_BIT:u32=11;
-	pub const RFLAGS_NT_BIT:u32=14;
-	pub const RFLAGS_RF_BIT:u32=16;
-	pub const RFLAGS_VM_BIT:u32=17;
-	pub const RFLAGS_AC_BIT:u32=18;
-	pub const RFLAGS_VIF_BIT:u32=19;
-	pub const RFLAGS_VIP_BIT:u32=20;
-	pub const RFLAGS_ID_BIT:u32=21;
+    use bitfield_struct::bitfield;
+
+	#[bitfield(u64)] pub struct Rflags
+	{
+		pub cf:bool,
+		pub must_be_1:bool,
+		pub pf:bool,
+		rsvd0:bool,
+		pub af:bool,
+		rsvd1:bool,
+		pub zf:bool,
+		pub sf:bool,
+		pub tf:bool,
+		pub r#if:bool,
+		pub df:bool,
+		pub of:bool,
+		#[bits(2)] rsvd2:u32,
+		pub nt:bool,
+		rsvd3:bool,
+		pub rf:bool,
+		pub vm:bool,
+		pub ac:bool,
+		pub vif:bool,
+		pub vip:bool,
+		pub id:bool,
+		#[bits(10)] rsvd4:u32,
+		rsvd5:u32
+	}
 }
 
 pub mod interrupts
@@ -2322,6 +2376,320 @@ pub mod apic
 		pub const DSH_SELF:u8=1;
 		pub const DSH_ALL_INCLUSIVE:u8=2;
 		pub const DSH_ALL_EXCLUSIVE:u8=3;
+	}
+}
+
+pub mod xstate
+{
+	use core::{alloc::Layout, ptr::{NonNull, null_mut}};
+	use alloc::alloc::{Allocator, Global};
+
+	use bitfield_struct::bitfield;
+
+	#[bitfield(u64)] pub struct XFeatureBitmap
+	{
+		pub x87:bool,
+		pub sse:bool,
+		pub avx:bool,
+		pub bnd_regs:bool,
+		pub bnd_csr:bool,
+		pub opmask:bool,
+		pub zmm_hi256:bool,
+		pub hi16_zmm:bool,
+		pub pt:bool,
+		pub mpk:bool,
+		pub pasid:bool,
+		pub cet_u:bool,
+		pub cet_s:bool,
+		pub hdc:bool,
+		pub uintr:bool,
+		pub lbr:bool,
+		pub hwp:bool,
+		pub tilecfg:bool,
+		pub tiledata:bool,
+		#[bits(43)] rsvd:u64,
+		pub lwp:bool,
+		pub x:bool
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C,align(16))] pub struct FxState
+	{
+		pub fcw:u16,
+		pub fsw:u16,
+		pub ftw:u16,
+		rsvd0:u8,
+		pub fop:u8,
+		pub rip:u64,
+		pub rdp:u64,
+		pub mxcsr:u32,
+		pub mxcsr_mask:u32,
+		pub st:[u128;8],
+		pub xmm:[u128;16],
+		rsvd1:[u128;6]
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C,align(16))] pub struct XStateHeader
+	{
+		pub xstate_bv:XFeatureBitmap,
+		pub xcomp_bv:XFeatureBitmap,
+		rsvd:[u64;6]
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C,align(16))] pub struct XStateAvx
+	{
+		pub ymm_hi128:[u128;16]
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C,align(16))] pub struct XStateMpxRegs
+	{
+		pub bnd0_lo:u64,
+		pub bnd0_hi:u64,
+		pub bnd1_lo:u64,
+		pub bnd1_hi:u64,
+		pub bnd2_lo:u64,
+		pub bnd2_hi:u64,
+		pub bnd3_lo:u64,
+		pub bnd3_hi:u64,
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct XStateMpxCsr
+	{
+		pub bndcfgu:u64,
+		pub bndstatus:u64
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct XStateOpmask
+	{
+		pub k:[u64;8]
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C,align(32))] pub struct XStateZmmHi256
+	{
+		pub zmm_hi256:[u128;32]
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C,align(64))] pub struct XStateHi16Zmm
+	{
+		pub zmm_hi8_0:[u128;32],
+		pub zmm_hi8_1:[u128;32]
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct XStatePt
+	{
+		pub rtit_ctl:u64,
+		pub rtit_output_base:u64,
+		pub rtit_output_mask_ptrs:u64,
+		pub rtit_status:u64,
+		pub rtit_cr3_match:u64,
+		pub rtit_addr0_a:u64,
+		pub rtit_addr0_b:u64,
+		pub rtit_addr1_a:u64,
+		pub rtit_addr1_b:u64
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct XStateMpk
+	{
+		pub pkru:u32
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct XStatePasid
+	{
+		pub pasid:u64
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct XStateCetU
+	{
+		pub u_cet:u64,
+		pub pl3_ssp:u64
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct XStateCetS
+	{
+		pub pl0_ssp:u64,
+		pub pl1_ssp:u64,
+		pub pl2_ssp:u64
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct XStateHdc
+	{
+		pub pm_ctl1:u64
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct XStateUintr
+	{
+		pub uintr_handler:u64,
+		pub uintr_stack_adjust:u64,
+		pub uintr_misc:u64,
+		pub uintr_pd:u64,
+		pub uintr_rr:u64,
+		pub uintr_tt:u64
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct LbrTriplet
+	{
+		pub from:u64,
+		pub to:u64,
+		pub info:u64
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct XStateLbr
+	{
+		pub lbr_ctl:u64,
+		pub lbr_depth:u64,
+		pub ler:LbrTriplet,
+		pub lbr:[LbrTriplet;32]
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C)] pub struct XStateHwp
+	{
+		pub hwp_request:u64
+	}
+
+	#[derive(Clone, Copy)]
+	#[repr(C,align(64))] pub struct AmxTile
+	{
+		pub tile_bytes:[u8;1024]
+	}
+
+	impl Default for AmxTile
+	{
+		fn default() -> Self
+		{
+			Self
+			{
+				tile_bytes:[0;1024]
+			}
+		}
+	}
+
+	#[derive(Default, Clone, Copy)]
+	#[repr(C,align(64))] pub struct XStateAmxTileData
+	{
+		pub tmm:[AmxTile;8]
+	}
+
+	/// The `BoxedXState` stores a pointer to and the size of the XState.
+	pub struct BoxedXState<A:Allocator=Global>
+	{
+		ptr:*mut u8,
+		size:usize,
+		allocator:A
+	}
+
+	impl BoxedXState
+	{
+		pub fn new(size:usize)->Self
+		{
+			Self
+			{
+				ptr:unsafe{alloc::alloc::alloc(Self::layout(size))},
+				size,
+				allocator:Global
+			}
+		}
+
+		pub const fn null()->Self
+		{
+			Self
+			{
+				ptr:null_mut(),
+				size:0,
+				allocator:Global
+			}
+		}
+
+		pub fn init(&mut self,size:usize)
+		{
+			log::info!("Requested 0x{size:X} bytes for XState!");
+			self.size=size;
+			self.ptr=unsafe{alloc::alloc::alloc_zeroed(Self::layout(size))};
+		}
+	}
+
+	impl<A:Allocator> BoxedXState<A>
+	{
+		pub fn new_in(size:usize,allocator:A)->Self
+		{
+			let p=allocator.allocate_zeroed(Self::layout(size)).unwrap();
+			Self
+			{
+				ptr:p.addr().get() as *mut u8,
+				size,
+				allocator
+			}
+		}
+
+		#[inline(always)] pub fn fxstate(&self)->&FxState
+		{
+			unsafe
+			{
+				&*self.ptr.cast()
+			}
+		}
+
+		#[inline(always)] pub fn fxstate_mut(&mut self)->&mut FxState
+		{
+			unsafe
+			{
+				&mut *self.ptr.cast()
+			}
+		}
+
+		#[inline(always)] pub fn header(&self)->&XStateHeader
+		{
+			unsafe
+			{
+				&*self.ptr.byte_add(size_of::<FxState>()).cast()
+			}
+		}
+
+		#[inline(always)] pub fn header_mut(&mut self)->&mut XStateHeader
+		{
+			unsafe
+			{
+				&mut *self.ptr.byte_add(size_of::<FxState>()).cast()
+			}
+		}
+
+		#[inline(always)] pub fn as_mut_ptr(&mut self)->*mut u8
+		{
+			self.ptr
+		}
+
+		#[inline(always)] fn layout(size:usize)->Layout
+		{
+			// XState must be aligned on 64-byte boundary.
+			Layout::from_size_align(size,0x40).unwrap()
+		}
+	}
+
+	impl<A:Allocator> Drop for BoxedXState<A>
+	{
+		fn drop(&mut self)
+		{
+			unsafe
+			{
+				self.allocator.deallocate(NonNull::new_unchecked(self.ptr),Self::layout(self.size));
+			}
+		}
 	}
 }
 

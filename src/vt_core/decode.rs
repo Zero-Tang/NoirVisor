@@ -13,29 +13,24 @@
 
 use core::ffi::c_void;
 
-use paste::paste;
-
-use crate::{vt_core::{VtVcpu, vmcs::*}, xpf_core::{asm::vt::{vmread32, vmread64}, nvbdk::memcpy, x86::{msr::Efer, paging::{PageTranslationHelper, read_virtual_address}}}};
-
-macro_rules! build_get_reg_helper
-{
-	($name:tt) =>
-	{
-		paste!
-		{
-			#[inline] fn [<get_ $name:lower>](&self)->u64
-			{
-				vmread64([<GUEST_ $name:upper>]).unwrap()
-			}
-		}
-	};
-}
+use crate::{vt_core::{VtVcpu, vmcs::*}, xpf_core::{asm::vt::{vmread32, vmread64, vmreadptr}, nvbdk::memcpy, x86::{crdr::{Cr0, Cr4}, msr::Efer, paging::{PageTranslationHelper, read_virtual_address}}}};
 
 impl PageTranslationHelper for VtVcpu
 {
-	build_get_reg_helper!(cr0);
-	build_get_reg_helper!(cr3);
-	build_get_reg_helper!(cr4);
+	fn get_cr0(&self)->Cr0
+	{
+		Cr0::from_bits(vmreadptr(GUEST_CR0).unwrap() as u64)
+	}
+
+	fn get_cr3(&self)->u64
+	{
+		vmreadptr(GUEST_CR3).unwrap() as u64
+	}
+
+	fn get_cr4(&self)->Cr4
+	{
+		Cr4::from_bits(vmreadptr(GUEST_CR4).unwrap() as u64)
+	}
 	
 	fn get_efer(&self)->Efer
 	{

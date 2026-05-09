@@ -37,12 +37,10 @@ use log::*;
 use nvcvm::status::Status;
 // We do not directly use the uefirtdrv crate by Rust's import method.
 // However, in order to link it, it must be imported.
-#[allow(unused_imports)]
 #[cfg(target_os="uefi")]
-use uefirtdrv;
+pub use uefirtdrv as platform;
 
 use xpf_core::{x86::cpuid::*, nvbdk::PAGE_4KB_SHIFT};
-pub use xpf_core::debug::*;
 use vt_core::VtHypervisor;
 use svm_core::SvmHypervisor;
 
