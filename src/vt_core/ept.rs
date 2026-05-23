@@ -507,7 +507,8 @@ impl VtEptManager
 		let ci=CI_MANAGER.read();
 		for p in ci.into_iter()
 		{
-			self.update_pte(*p,None,None,Some(false),None);
+			let phys=page_mult(p.pfn());
+			self.update_pte(phys,None,None,Some(p.delay()),None);
 		}
 	}
 

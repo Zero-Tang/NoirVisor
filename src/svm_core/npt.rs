@@ -599,7 +599,8 @@ impl SvmNptManager
 		let ci=CI_MANAGER.read();
 		for p in ci.into_iter()
 		{
-			self.update_pte(*p,*p,true,false,true);
+			let phys=page_mult(p.pfn());
+			self.update_pte(phys,phys,true,p.delay(),true);
 		}
 	}
 

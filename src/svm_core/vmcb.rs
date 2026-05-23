@@ -199,8 +199,12 @@ pub(super) trait VmcbOps
 		}
 	}
 
-	define_rw_field!(next_rip,NEXT_RIP,u64);
+	define_rw_field!(tlb_control,TLB_CONTROL,u8);
+	define_rw_field!(exit_code,EXIT_CODE,i64);
+	define_rw_field!(exit_info1,EXIT_INFO1,u64);
+	define_rw_field!(exit_info2,EXIT_INFO2,u64);
 	define_rw_field!(clean_field,VMCB_CLEAN_BITS,VmcbCleanField);
+	define_rw_field!(next_rip,NEXT_RIP,u64);
 
 	define_rw_field!(es,GUEST_ES_SELECTOR,SvmSegmentRegister,SEG);
 	define_rw_field!(cs,GUEST_CS_SELECTOR,SvmSegmentRegister,SEG);

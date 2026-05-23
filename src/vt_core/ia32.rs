@@ -50,10 +50,6 @@ pub mod msr
 	pub const MSR_VMX_PROC_BASED_CTLS3:u32=0x492;
 	pub const MSR_VMX_EXIT_CTLS2:u32=0x493;
 
-	pub const MSR_FEATURE_CONTROL_LOCK:u64=0x1;
-	pub const MSR_FEATURE_CONTROL_VMXON_IN_SMX:u64=0x2;
-	pub const MSR_FEATURE_CONTROL_VMXON_OUT_SMX:u64=0x4;
-
 	macro_rules! build_rdmsr_method
 	{
 		($const:expr) =>
@@ -71,6 +67,27 @@ pub mod msr
 				Self(rdmsr(if use_true_msr {$true_const} else {$const}))
 			}
 		}
+	}
+
+	#[bitfield(u64)] pub struct Ia32FeatureControl
+	{
+		pub lock:bool,
+		pub vmx_in_smx:bool,
+		pub vmx_out_smx:bool,
+		#[bits(5)] rsvd0:u8,
+		#[bits(7)] pub senter_local:u8,
+		pub senter_global:bool,
+		rsvd1:bool,
+		pub sgx_launch_control_enable:bool,
+		pub sgx_global_enable:bool,
+		rsvd2:bool,
+		pub lmce_on:bool,
+		#[bits(43)] rsvd3:u64
+	}
+
+	impl Ia32FeatureControl
+	{
+		build_rdmsr_method!(MSR_FEATURE_CONTROL);
 	}
 
 	#[bitfield(u64)] pub struct VmxBasicMsr

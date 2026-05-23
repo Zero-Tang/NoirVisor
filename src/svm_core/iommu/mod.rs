@@ -209,7 +209,8 @@ impl SvmIommuManager
 		let ci=CI_MANAGER.read();
 		for p in ci.into_iter()
 		{
-			self.update_pml1e(*p,*p,false,false);
+			let phys=page_mult(p.pfn());
+			self.update_pml1e(phys,phys,false,false);
 		}
 	}
 

@@ -180,7 +180,7 @@ python run_bochs.py --release
 This repository provides [additional documents](/doc/readme.md) which help new developers to join development.
 
 # Detection of NoirVisor
-As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]` indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors defines leaf 0x40000000 is used to identify hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is `VMwareVMware`. In NoirVisor, hypervisor vendor string is defined as `NoirVisor ZT`.
+As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]` indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors would use leaf 0x40000000 in order to identify itself as the hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is `VMwareVMware`. In NoirVisor, hypervisor vendor string is defined as `NoirVisor ZT`.
 
 You may disable the detection for NoirVisor in Windows via setting up the registry. \
 Locate the registry key: `HKLM\Software\Zero-Tang\NoirVisor`. If this key does not exist then create it. \
@@ -188,6 +188,13 @@ Edit the `CpuidPresence` Key Value to 0. Feel free to execute the following comm
 ```bat
 reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 0 /f
 ```
+
+You may disable the detection for NoirVisor in UEFI via building the custom binary configuration file. \
+You may copy the [DefaultUefiConfig.json](./build/DefaultUefiConfig.json), and set the `CpuidPresence` to `false`. Then use the provided python script to build it:
+```
+python makeueficonfig.py NewUefiConfig.json NoirVisorConfig.bin
+```
+You should see a generated file called `NoirVisorConfig.bin`. Place it to the root directory of the boot medium.
 
 ## NoirVisor as a Nested Hypervisor
 If NoirVisor is subverting a system under a virtualized environment with exposed detection (e.g: VMware virtual machines with `hypervisor.cpuid.v0 = TRUE` configuration) as a Type-II hypervisor, the operating system may have already been using functionalities provided by the hypervisor. In this regard, NoirVisor should pass-through the access to hypervisor functionalities (e.g: `cpuid` instructions, accesses to Microsoft Synthetic MSRs, hypercalls, etc.)

@@ -1174,16 +1174,14 @@ pub mod crdr
 
 	impl Cr4
 	{
-		pub const TLB_FLUSH_MASK:u64=
+		pub const TLB_FLUSH_MASK:u64=Self::new().with_pse(true).with_pae(true).with_pge(true).with_pcide(true).with_smep(true).into_bits();
+
+		pub const fn require_flush_tlb(&self,new:Self)->bool
 		{
-			let mut x=Cr4::new();
-			x.set_pse(true);
-			x.set_pae(true);
-			x.set_pge(true);
-			x.set_pcide(true);
-			x.set_smep(true);
-			x.into_bits()
-		};
+			let a=self.into_bits();
+			let b=new.into_bits();
+			((a^b)&Self::TLB_FLUSH_MASK)!=0
+		}
 	}
 
 	#[bitfield(u64)] pub struct Dr6
@@ -1282,6 +1280,8 @@ pub mod cpuid
 	pub const CPUID_EXT_L2_L3_CACHE_TLBS:u32=0x80000006;
 	pub const CPUID_EXT_POWER_MANAGEMENT_RAS_CAPABILITY:u32=0x80000007;
 	pub const CPUID_EXT_PROCESSOR_CAPABILITY_PARAMETERS_EXTENDED_ID:u32=0x80000008;
+	/// Use this flag for CPUID[EAX=0x00000001].ECX
+	pub const CPUID_OSXSAVE:u32=1<<27;
 	/// Use this flag for CPUID[EAX=0x00000001].ECX
 	pub const CPUID_AVX:u32=1<<28;
 	/// Use this flag for CPUID[EAX=0x00000001].ECX

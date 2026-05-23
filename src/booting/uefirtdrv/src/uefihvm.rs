@@ -10,7 +10,7 @@
   or fitness for a particular purpose, etc.).
 */
 
-use core::{arch::naked_asm, ffi::c_void, mem::offset_of, ptr::null_mut, slice, sync::atomic::Ordering};
+use core::{arch::{asm, naked_asm}, ffi::c_void, mem::offset_of, ptr::null_mut, slice, sync::atomic::Ordering};
 #[cfg(target_arch="x86_64")]
 use core::arch::x86_64::__cpuid;
 #[cfg(target_arch="x86")]
@@ -24,7 +24,7 @@ unsafe extern "C"
 {
 	fn noir_configure_qemu_debug_console(port:u16)->u32;
 	fn noir_configure_serial_port_debugger(port_number:u8,port_base:u16,baud_rate:u32)->u32;
-	fn noir_add_section_to_ci(base:*mut c_void,size:u32,enable_scan:bool)->bool;
+	fn noir_add_section_to_ci(base:*mut c_void,size:u32,delay:bool)->bool;
 	fn noir_activate_ci()->bool;
 	fn nvc_logger_initialize(level:u32)->bool;
 	fn nvc_build_hypervisor()->u32;
@@ -197,13 +197,24 @@ pub fn init_ci()->bool
 			let section_headers:&[IMAGE_SECTION_HEADER]=unsafe{slice::from_raw_parts(image_base.byte_add(dos_head.e_lfanew as usize+size_of::<IMAGE_NT_HEADERS>()).cast(),nt_head.FileHeader.NumberOfSections as usize)};
 			for section in section_headers
 			{
-				let section_name:&str=unsafe{str::from_utf8_unchecked(slice::from_raw_parts(section.Name.as_ptr(),strlen(section.Name.as_ptr())))};
-				if matches!(section_name,".text"|"hvtext")
+				let section_name:&str=unsafe{str::from_utf8_unchecked(slice::from_raw_parts(section.Name.as_ptr(),core::cmp::min(strlen(section.Name.as_ptr()),IMAGE_SIZEOF_SHORT_NAME)))};
+				let base=unsafe{image_base.byte_add(section.VirtualAddress as usize)};
+				let size=section.SizeOfRawData;
+				if matches!(section_name,".text"|".eh_fram"|".rdata"|".pdata")
+				{
+					println!("Adding section {section_name} (Base: {base:p}, Size: 0x{size:X}) to CI...");
+					if !unsafe{noir_add_section_to_ci(base,size,false)}
+					{
+						println!("Failed to add section {section_name} to CI!");
+						return false;
+					}
+				}
+				else if section_name==".data"
 				{
 					let base=unsafe{image_base.byte_add(section.VirtualAddress as usize)};
 					let size=section.SizeOfRawData;
-					println!("Adding section {section_name} (Base: {base:p}, Size: 0x{size:X}) to CI...");
-					if !unsafe{noir_add_section_to_ci(base,size,false)}
+					println!("Delaying section {section_name} (Base: {base:p}, Size: 0x{size:X}) to CI...");
+					if !unsafe{noir_add_section_to_ci(base,size,true)}
 					{
 						println!("Failed to add section {section_name} to CI!");
 						return false;
@@ -248,6 +259,28 @@ pub fn test_ci()
 				}
 			}
 		}
+	}
+}
+
+#[allow(dead_code)]
+pub fn test_init()
+{
+	unsafe
+	{
+		let apic_base:*mut u32;
+		asm!
+		(
+			"rdmsr",
+			"shl rdx,32",
+			"and eax,0xFFFFF000",
+			"or rax,rdx",
+			in("ecx") 0x1b,
+			out("rax") apic_base
+		);
+		println!("Sending INIT (APIC-Base={apic_base:p}...");
+		apic_base.byte_add(0x310).write_volatile(0);
+		apic_base.byte_add(0x300).write_volatile(0x4500);
+		println!("Sent INIT!");
 	}
 }
 

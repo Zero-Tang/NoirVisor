@@ -13,12 +13,12 @@
 use alloc::vec::Vec;
 use bitfield_struct::bitfield;
 use static_collections::bitmap::RefBitmap;
-use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::null_mut, sync::atomic::AtomicBool};
+use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::null_mut};
 
 use ia32::msr::*;
 use vmcs::*;
 use ept::VtEptManager;
-use crate::{xpf_core::x86::{apic::APIC_OFFSET_ICR_HI, msr::MSR_X2APIC_ICR, xstate::BoxedXState}, *};
+use crate::{xpf_core::x86::{apic::APIC_OFFSET_ICR_HI, xstate::BoxedXState}, *};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 use mshv_core::{MshvVcpuContext,MshvVcpuOps};
 use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{apic::*, caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_APIC_BASE,MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
@@ -102,8 +102,6 @@ pub struct VtVcpu
 	pub msr_auto_guest:[VmxMsrAutoItem;5],
 	pub cached_ctxt:CachedExitContext,
 	pub irq_bmp:[u64;4],
-	pub special_icr_completed:AtomicBool,
-	pub waiting_for_sipi:AtomicBool,
 	// This context handles exceptions.
 	pub gs_context:PerCpuGsException
 }
@@ -133,8 +131,6 @@ impl Default for VtVcpu
 			msr_auto_guest:[VmxMsrAutoItem::default();5],
 			cached_ctxt:CachedExitContext::default(),
 			irq_bmp:[0;4],
-			special_icr_completed:AtomicBool::new(false),
-			waiting_for_sipi:AtomicBool::new(false),
 			gs_context:PerCpuGsException::default()
 		}
 	}
@@ -313,11 +309,9 @@ impl VtVcpu
 		vmwriteptr(HOST_FS_BASE,state.fs.base as usize);
 		vmwriteptr(HOST_GS_BASE,&raw mut self.gs_context as usize);
 		// Host State Area - Control Registers
-		let cr0=(state.cr0|rdmsr(MSR_VMX_CR0_FIXED0) as usize)&rdmsr(MSR_VMX_CR0_FIXED1) as usize;
-		let cr4=(state.cr4|rdmsr(MSR_VMX_CR4_FIXED0) as usize)&rdmsr(MSR_VMX_CR4_FIXED1) as usize;
-		vmwriteptr(HOST_CR0,cr0);
+		vmwriteptr(HOST_CR0,state.cr0);
 		vmwriteptr(HOST_CR3,unsafe{(*hv).host.paging.cr3.phys} as usize);
-		vmwriteptr(HOST_CR4,cr4);
+		vmwriteptr(HOST_CR4,state.cr4);
 		vmwrite64(HOST_MSR_IA32_EFER,state.efer);
 		// Host State Area - Stack Pointer, Instruction Pointer
 		vmwriteptr(HOST_RSP,stack as usize);
@@ -551,6 +545,8 @@ impl VtVcpu
 			stack.guest_xcr0=unsafe{_xgetbv(0)};
 			trace!("Using Guest XCR0 as 0x{:X}, Host XCR0 as 0x{:X}...",stack.guest_xcr0,stack.host_xcr0);
 		}
+		let cr4=vmreadptr(HOST_CR4).unwrap();
+		info!("Using Host CR4=0x{cr4:X}");
 		info!("Processor {} completed setting up VMCS!",self.vcpu_id);
 		// xpf_core::asm::misc::int3();
 		let r=unsafe{vmlaunch()};
@@ -598,10 +594,6 @@ impl VtVcpu
 								{
 									nvc_vt_subvert_processor_a(self as *mut Self);
 									sysdprintln!("Processor {} completed subversion!",self.vcpu_id);
-									// Test INIT
-									// let apic_base=page_base(rdmsr(crate::xpf_core::x86::msr::MSR_APIC_BASE));
-									// (apic_base as *mut u32).byte_add(crate::xpf_core::x86::apic::APIC_OFFSET_ICR_HI).write(0);
-									// (apic_base as *mut u32).byte_add(crate::xpf_core::x86::apic::APIC_OFFSET_ICR_LO).write(0x44500);
 								}
 							}
 							r=>panic!("Failed to execute vmptrld! Reason: {r}")
@@ -766,16 +758,18 @@ impl HypervisorCapabilities for VtHypervisor
 
 	fn check_enabled()->bool
 	{
-		let mut feat_ctrl=rdmsr(MSR_FEATURE_CONTROL);
-		sysdprintln!("IA32_FEATURE_CONTROL= 0x{feat_ctrl:X}");
-		if (feat_ctrl&MSR_FEATURE_CONTROL_LOCK)==0
+		let mut feat_ctrl=Ia32FeatureControl::read();
+		sysdprintln!("IA32_FEATURE_CONTROL= 0x{:X}",feat_ctrl.into_bits());
+		if !feat_ctrl.lock()
 		{
 			// In Bochs, VMX is disabled by default, but it's not locked.
 			sysdprintln!("Enabling VMX since it's not locked...");
-			wrmsr(MSR_FEATURE_CONTROL,MSR_FEATURE_CONTROL_LOCK|MSR_FEATURE_CONTROL_VMXON_OUT_SMX);
-			feat_ctrl=rdmsr(MSR_FEATURE_CONTROL);
+			feat_ctrl.set_vmx_out_smx(true);
+			feat_ctrl.set_lock(true);
+			wrmsr(MSR_FEATURE_CONTROL,feat_ctrl.into_bits());
+			feat_ctrl=Ia32FeatureControl::read();
 		}
-		feat_ctrl&MSR_FEATURE_CONTROL_VMXON_OUT_SMX==MSR_FEATURE_CONTROL_VMXON_OUT_SMX
+		feat_ctrl.vmx_out_smx()
 	}
 }
 
@@ -847,8 +841,6 @@ impl HypervisorEssentials for VtHypervisor
 				set_interception(MSR_VMX_VMFUNC,true,false);
 				set_interception(MSR_VMX_PROC_BASED_CTLS3,true,false);
 				set_interception(MSR_VMX_EXIT_CTLS2,true,false);
-				// Intercept accesses to x2APIC ICR
-				set_interception(MSR_X2APIC_ICR,false,true);
 			}
 			None=>fail_cleanup!("Failed to alloate MSR-Bitmap!")
 		}

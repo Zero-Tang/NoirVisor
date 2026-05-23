@@ -38,7 +38,6 @@ memcmp:
     jz      short mcmp20            ; if aligned, skip alignment loop
 
 ; Align buf1 to an 8-byte boundary
-    align   16
 mcmp10:
     mov     al, [rcx]               ; compare single byte
     cmp     al, [rcx + rdx]         ;
@@ -77,7 +76,6 @@ mcmp_not_equal:
     ret
 
 ; Compare 32-byte blocks
-    align 16
 mcmp50:
     shr     r9, 2                   ; compute number of 32-byte blocks
     jz      short mcmp70            ; if none, skip to 8-byte blocks
@@ -85,16 +83,16 @@ mcmp50:
 mcmp60:
     mov     rax, [rcx]              ; check first 8 bytes
     cmp     rax, [rcx + rdx]        ;
-    jne     mcmp_adjust0            ;
+    jne     short mcmp_adjust0      ;
     mov     rax, [rcx + 8]          ; check second 8 bytes
     cmp     rax, [rcx + rdx + 8]    ;
-    jne     mcmp_adjust8            ;
+    jne     short mcmp_adjust8      ;
     mov     rax, [rcx + 16]         ; check third 8 bytes
     cmp     rax, [rcx + rdx + 16]   ;
-    jne     mcmp_adjust16           ;
+    jne     short mcmp_adjust16     ;
     mov     rax, [rcx + 24]         ; check fourth 8 bytes
     cmp     rax, [rcx + rdx + 24]   ;
-    jne     mcmp_adjust24           ;
+    jne     short mcmp_adjust24     ;
     add     rcx, 32                 ; advance 32 bytes
     dec     r9                      ; loop counter
     jnz     short mcmp60            ;

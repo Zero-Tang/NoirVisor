@@ -24,14 +24,12 @@ global memmove
 
 ; the code implementing memory copy via rep movsb (enhanced strings)
 memcpy_repmovs:
-	push     rdi
-	push     rsi
-	mov      rdi, rcx
-	mov      rsi, rdx
-	mov      rcx, r8
+	xchg     rdi, rcx
+	xchg     rsi, rdx
+	xchg     rcx, r8
 	rep      movsb
-	pop      rsi
-	pop      rdi
+	mov      rsi, rdx
+	mov      rdi, r8
 	ret
 
 ; Main memmove/memcpy routine implementation
@@ -43,7 +41,6 @@ memmove:
 	ja       MoveAbove15
 
 ; move blocks of less than 16 bytes in length
-	align    16
 %ifdef _VCRUNTIME_BUILD_QSPECTRE
 	and      r8, 0Fh
 %endif
@@ -53,8 +50,6 @@ memmove:
 
 MoveSmall0:
 	ret
-
-	align    16
 MoveSmall15:
 	mov      r8, [rdx]                                       ; handle 15 bytes (8+4+2+1)
 	mov      ecx, [rdx + 8]
@@ -77,8 +72,6 @@ MoveSmall2:
 	movzx    ecx, word [rdx]                                 ; handle 2 bytes (2)
 	mov      [rax], cx
 	ret
-
-	align    16
 MoveSmall7:
 	mov      ecx, [rdx]                                      ; handle 7 bytes (4+2+1)
 	movzx    r8d, word [rdx + 4]
@@ -101,8 +94,6 @@ MoveSmall3:
 	mov      [rax], cx
 	mov      [rax + 2], r8b
 	ret
-
-	align    16
 MoveSmall13:
 	mov      r8, [rdx]                                       ; handle 13 bytes (8+4+1)
 	mov      ecx, [rdx + 8]
@@ -129,8 +120,6 @@ MoveSmall12:
 	mov      [rax], r8
 	mov      [rax + 8], ecx
 	ret
-
-	align    16
 MoveSmall6:
 	mov      ecx, [rdx]                                      ; handle 6 bytes (4+2)
 	movzx    r8d, word [rdx + 4]
@@ -157,10 +146,9 @@ MoveSmall4:
 	ret
 
 ; move blocks of 16 bytes or more in length
-	align    16
 MoveAbove15:
 	cmp      r8, 32                                          ; dispatch to code handling blocks over 32 bytes
-	ja       MoveAbove32
+	ja       short MoveAbove32
 
 	movdqu   xmm1, [rdx]
 	movdqu   xmm2, [rdx + r8 - 16]
@@ -184,7 +172,7 @@ NoAVX:
 	%define __FAST_STRING_SSE_THRESHOLD (2 * KB)
 
 	cmp      r8, __FAST_STRING_SSE_THRESHOLD
-	jbe      MoveWithXMM
+	jbe      short MoveWithXMM
 
 	test     byte [rel __favor], (1 << __FAVOR_ENFSTRG)
 	jnz      memcpy_repmovs
@@ -202,9 +190,8 @@ MoveWithXMM:
 	sub      rdx, r9
 	add      r8, r9
 	cmp      r8, __SSE_LOOP_LEN
-	jbe      MovUpTo128WithXMM
+	jbe      short MovUpTo128WithXMM
 
-	align    16
 XmmLoop:
 	movdqu   xmm1, [rdx + __SSE_STEP_LEN*0]
 	movdqu   xmm2, [rdx + __SSE_STEP_LEN*1]
@@ -226,7 +213,7 @@ XmmLoop:
 	add      rdx, __SSE_LOOP_LEN
 	sub      r8, __SSE_LOOP_LEN
 	cmp      r8, __SSE_LOOP_LEN
-	jae      XmmLoop
+	jae      short XmmLoop
 
 MovUpTo128WithXMM:
 	lea      r9, [r8 + __SSE_STEP_LEN - 1]
@@ -268,7 +255,6 @@ Mov0XmmBlocks:
 	ret
 
 ; memmove: Copy Down implementation
-	align    16
 CopyDown:
 	movups   xmm2, [rdx]
 	sub      rdx, rcx
@@ -278,7 +264,7 @@ CopyDown:
 	sub      r8, 16
 
 	test     cl, 0Fh
-	jz       XmmMovLargeTest
+	jz       short XmmMovLargeTest
 
 XmmMovAlign:
 	mov      r9, rcx
@@ -292,11 +278,10 @@ XmmMovAlign:
 XmmMovLargeTest:
 	mov      r9, r8
 	shr      r9, 7
-	jz       XmmMovSmallTest
+	jz       short XmmMovSmallTest
 	movaps   [rcx], xmm0
-	jmp      XmmMovLargeInner
+	jmp      short XmmMovLargeInner
 
-	align    16
 XmmMovLargeOuter:
 	movaps   [rcx + 128 - 112], xmm0
 	movaps   [rcx + 128 - 128], xmm1
@@ -317,7 +302,7 @@ XmmMovLargeInner:
 	movaps   [rcx + 128 - 96], xmm1
 	movups   xmm0, [rcx + rdx + 128 - 112]
 	movups   xmm1, [rcx + rdx + 128 - 128]
-	jnz      XmmMovLargeOuter
+	jnz      short XmmMovLargeOuter
 
 	movaps   [rcx + 128 - 112], xmm0
 	and      r8, 7Fh
@@ -326,19 +311,18 @@ XmmMovLargeInner:
 XmmMovSmallTest:
 	mov      r9, r8
 	shr      r9, 4
-	jz       XmmMovTrailing
+	jz       short XmmMovTrailing
 
-	align    16
 XmmMovSmallLoop:
 	movups   [rcx], xmm0
 	sub      rcx, 16
 	movups   xmm0, [rcx + rdx]
 	dec      r9
-	jnz      XmmMovSmallLoop
+	jnz      short XmmMovSmallLoop
 
 XmmMovTrailing:
 	and      r8, 0Fh
-	jz       XmmMovReturn
+	jz       short XmmMovReturn
 	movups   [rax], xmm2
 
 XmmMovReturn:

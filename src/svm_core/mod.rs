@@ -10,15 +10,16 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::*};
+use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::*, sync::atomic::{AtomicBool, AtomicU8}};
 use alloc::{vec::Vec, vec};
+use bitfield_struct::bitfield;
 use static_collections::bitmap::RefBitmap;
 
 use iommu::SvmIommuManager;
 use log::*;
 use npt::SvmNptManager;
-use crate::{xpf_core::x86::xstate::BoxedXState, *};
-use xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, hv_host::{x86::*, *}, ioflt::IoAddressSpace, nvbdk::*, x86::{cpuid::*, crdr::Cr4, interrupts::InterruptStackFrameWithErrorCode, msr::*}};
+use crate::*;
+use xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, hv_host::{x86::*, *}, ioflt::IoAddressSpace, nvbdk::*, x86::{cpuid::*, crdr::Cr4, interrupts::*, msr::*, xstate::BoxedXState}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 #[cfg(not(target_os="uefi"))]
 use crate::{cvm_core::CUSTOMIZABLE_HYPERVISOR, xpf_core::allocator::kmalloc::KernelAllocator,  svm_core::custom::SvmCustomHypervisor};
@@ -56,11 +57,17 @@ mod hvcall;
 
 pub struct SvmNestedVcpu
 {
-	pub svme:bool,
-	pub ignne:bool,
+	pub ignne:u64,
 	pub hsave_pa:u64,
 	pub vmcr:u64,
 	pub svm_key:u64
+}
+
+#[bitfield(u64)] pub struct SvmVcpuFlags
+{
+	pub svme:bool,
+	pub mce:bool,
+	#[bits(62)] rsvd:u64
 }
 
 pub struct SvmVcpu
@@ -81,6 +88,9 @@ pub struct SvmVcpu
 	pub mshv_ctxt:MshvVcpuContext,
 	pub nested_hvm:SvmNestedVcpu,
 	pub under_hvm:bool,
+	pub wait_for_sipi:AtomicBool,
+	pub sipi_vector:AtomicU8,
+	pub flags:SvmVcpuFlags,
 	// Features supported by the processors.
 	pub svm_feats:SvmFeatureIdentifier,
 	// This context handles exceptions.
@@ -132,13 +142,15 @@ impl SvmVcpu
 			mshv_ctxt:MshvVcpuContext::new(&SVM_MSHV_VCPU_OPS),
 			nested_hvm:SvmNestedVcpu
 			{
-				svme:false,
-				ignne:false,
+				ignne:0,
 				hsave_pa:0,
 				vmcr:0,
 				svm_key:0
 			},
 			under_hvm:false,
+			wait_for_sipi:AtomicBool::new(false),
+			sipi_vector:AtomicU8::new(0),
+			flags:SvmVcpuFlags::new(),
 			svm_feats:SvmFeatureIdentifier::new(),
 			gs_context:PerCpuGsException::default()
 		}
@@ -203,6 +215,9 @@ impl SvmVcpu
 			let hv=self.hypervisor as *mut SvmHypervisor;
 			let state=ProcessorState::new();
 			// Setup Control Area.
+			self.vmwrite(INTERCEPT_READ_CR,1u16<<4);
+			self.vmwrite(INTERCEPT_WRITE_CR,1u16<<4);
+			self.vmwrite(INTERCEPT_EXCEPTIONS,1u32<<SECURITY_EXCEPTION_FAULT);
 			let mut iv1=InterceptVector1::from_bits(0);
 			iv1.set_cpuid(true);
 			iv1.set_invlpga(true);
@@ -231,10 +246,12 @@ impl SvmVcpu
 			write_tr(self.host_cpu.tr_sel);
 			write_cr3((*hv).host.paging.cr3.phys);
 			// The FXSR and XSAVE features must be required for CVM features.
+			// #MC should be enabled to expect Machine-Check-induced system abort.
 			let mut cr4=Cr4::from_bits(state.cr4 as u64);
 			cr4.set_osfxsr(true);
 			cr4.set_osxmmexcpt(true);
 			cr4.set_osxsave(true);
+			cr4.set_mce(true);
 			write_cr4(cr4.into_bits());
 			// Setup APIC ID.
 			let cpu_feat_id=StandardProcessorFeatureIdentifiers::cpuid();
@@ -327,8 +344,8 @@ impl SvmVcpu
 		// Intel blocks A20M in vmxon, why not we do this as well?
 		// Redirecting INIT signal to #SX exception will allow us to
 		// intercept INIT signal without leaving it pending.
-		let vmcr=rdmsr(MSR_VMCR)|MSR_VMCR_R_INIT|MSR_VMCR_DISA20M;
-		wrmsr(MSR_VMCR,vmcr);
+		let vmcr=VmCr::from_bits(rdmsr(MSR_VMCR)).with_disa20m(true).with_r_init(true);
+		wrmsr(MSR_VMCR,vmcr.into_bits());
 		// Set the HSAVE Area.
 		wrmsr(MSR_HSAVE_PA,self.hsave.phys);
 		// Initialize Hypervisor Context stack.
@@ -359,8 +376,8 @@ impl SvmVcpu
 		// Unblock and Enable A20M.
 		// Intel unblocks A20M in vmxoff, so why not we do this as well?
 		// Also stop redirecting INIT signals.
-		let vmcr=rdmsr(MSR_VMCR)&!(MSR_VMCR_DISA20M|MSR_VMCR_R_INIT);
-		wrmsr(MSR_VMCR,vmcr);
+		let vmcr=VmCr::from_bits(rdmsr(MSR_VMCR)).with_disa20m(false).with_r_init(false);
+		wrmsr(MSR_VMCR,vmcr.into_bits());
 		info!("Processor {} completed restoration!",self.vcpu_id);
 	}
 }
@@ -479,8 +496,8 @@ impl HypervisorCapabilities for SvmHypervisor
 
 	fn check_enabled()->bool
 	{
-		let vmcr=rdmsr(MSR_VMCR);
-		(vmcr&MSR_VMCR_SVMDIS)==0
+		let vmcr=VmCr::from_bits(rdmsr(MSR_VMCR));
+		!vmcr.svmdis()
 	}
 }
 
@@ -545,6 +562,7 @@ impl HypervisorEssentials for SvmHypervisor
 				set_interception(MSR_HSAVE_PA,true,true);
 				// There is no need to intercept read because the processor will always return zero on reads.
 				set_interception(MSR_SVM_KEY,false,true);
+				set_interception(MSR_SMM_KEY,false,true);
 			}
 			None=>fail_cleanup!("Failed to allocate MSR Permission-Map!")
 		}

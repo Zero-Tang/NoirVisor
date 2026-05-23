@@ -10,26 +10,62 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::*, slice};
+use core::{ffi::*, slice, cmp::Ordering};
 use alloc::vec::Vec;
 
+use bitfield_struct::bitfield;
 use spin::RwLock;
 use log::*;
 
-use crate::xpf_core::nvbdk::page_4kb_base;
-use super::nvbdk::{bytes_to_pages, noir_get_physical_address, page_mult};
+use super::nvbdk::{bytes_to_pages, noir_get_physical_address, page_mult, page_count};
+
+#[bitfield(u64)] pub struct CiPage
+{
+	/// PFN of the protected page.
+	#[bits(40)] pub pfn:u64,
+	#[bits(23)] rsvd:u64,
+	/// Whether or not this page should be delayed.
+	pub delay:bool
+}
+
+impl Eq for CiPage {}
+
+impl Ord for CiPage
+{
+	fn cmp(&self, other: &Self) -> Ordering
+	{
+		self.pfn().cmp(&other.pfn())
+	}
+}
+
+impl PartialEq for CiPage
+{
+	fn eq(&self, other: &Self) -> bool
+	{
+		self.0==other.0
+	}
+}
+
+impl PartialOrd for CiPage
+{
+	fn partial_cmp(&self, other: &Self) -> Option<Ordering>
+	{
+		self.pfn().partial_cmp(&other.pfn())
+	}
+}
 
 pub struct CiManager
 {
-	pages:Vec<u64>
+	pages:Vec<CiPage>
 }
 
 impl CiManager
 {
-	fn add_page(&mut self,phys:u64)
+	fn add_page(&mut self,phys:u64,delay:bool)
 	{
 		// Push-all-then-sort is faster than binary-search-then-insert.
-		self.pages.push(phys);
+		let x=CiPage::new().with_pfn(page_count(phys)).with_delay(delay);
+		self.pages.push(x);
 	}
 
 	fn activate(&mut self)
@@ -40,8 +76,8 @@ impl CiManager
 
 	fn in_ci(&self,phys:u64)->bool
 	{
-		let phys=page_4kb_base(phys);
-		self.pages.binary_search(&phys).is_ok()
+		let page=CiPage::new().with_pfn(page_count(phys));
+		self.pages.binary_search(&page).is_ok()
 	}
 
 	const fn new()->Self
@@ -55,8 +91,8 @@ impl CiManager
 
 impl<'a> IntoIterator for &'a CiManager
 {
-	type Item = &'a u64;
-	type IntoIter = slice::Iter<'a,u64>;
+	type Item = &'a CiPage;
+	type IntoIter = slice::Iter<'a,CiPage>;
 	fn into_iter(self) -> Self::IntoIter
 	{
 		self.pages.iter()
@@ -73,7 +109,7 @@ pub fn is_ci_phys_page(phys:u64)->bool
 
 /// # Safety
 /// `noir_add_section_to_ci` must be called by C functions.
-#[unsafe(no_mangle)] unsafe extern "C" fn noir_add_section_to_ci(base:*mut c_void,size:usize,_enable_scan:bool)->bool
+#[unsafe(no_mangle)] unsafe extern "C" fn noir_add_section_to_ci(base:*mut c_void,size:usize,delay:bool)->bool
 {
 	let page_num=bytes_to_pages(size);
 	let mut ci=CI_MANAGER.write();
@@ -84,7 +120,7 @@ pub fn is_ci_phys_page(phys:u64)->bool
 			let virt=base.byte_add(page_mult(i));
 			noir_get_physical_address(virt)
 		};
-		ci.add_page(phys);
+		ci.add_page(phys,delay);
 	}
 	true
 }

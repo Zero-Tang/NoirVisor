@@ -17,7 +17,7 @@ use r_efi::efi::{Handle, Status, SystemTable};
 
 use host::{efi_init,block_until_keystroke};
 use cfgmgr::ConfigurationList;
-use uefihvm::{init_internal_debugger,init_disasm,init_logger,init_ci,test_ci,build_hypervisor,register_exit_boot_services_event,suppress_image_relocation};
+use uefihvm::*;
 
 pub mod host;
 #[allow(non_camel_case_types,non_snake_case)]
@@ -71,5 +71,6 @@ unsafe extern "C"
 	println!("Subverting the system...");
 	build_hypervisor();
 	test_ci();
+	// test_init();
 	Status::SUCCESS
 }

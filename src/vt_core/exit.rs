@@ -10,13 +10,13 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::c_void, hint::{spin_loop, unreachable_unchecked}, sync::atomic::Ordering};
+use core::{ffi::c_void, hint::unreachable_unchecked};
 
 use paste::paste;
 use log::*;
 
 use static_collections::bitmap::RefBitmap;
-use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::{rdmsr, wrmsr}, vt::*}, ci::is_ci_phys_page, x86::{apic::ApicX2Icr, cpuid::*, crdr::*, descriptors::SegmentFlags, interrupts::{EventType, GENERAL_PROTECTION_FAULT}, msr::MSR_X2APIC_ICR, paging::PageTranslationHelper}}, *};
+use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, ci::is_ci_phys_page, x86::{cpuid::*, crdr::*, descriptors::SegmentFlags, interrupts::{EventType, GENERAL_PROTECTION_FAULT}, paging::PageTranslationHelper}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, hvcall::dispatch_hypercall, VtVcpu, VtStackTop, VtIrqInterruptibilityState};
 
 impl VtVcpu
@@ -155,7 +155,7 @@ impl VtVcpu
 			ar.set_segment_type(SegmentFlags::LDT as u32);
 			ar.set_descriptor_type(false);
 			vmcs_write_seg!(ldtr,0,ar.into_bits(),0xFFFF,0);
-			ar.set_segment_type(SegmentFlags::BUSY_TSS as u32);
+			ar.set_segment_type(SegmentFlags::BUSY_TSS_16BIT as u32);
 			vmcs_write_seg!(tr,0,ar.into_bits(),0xFFFF,0);
 			// IDTR & GDTR
 			vmwrite_unchecked(GUEST_GDTR_BASE,0);
@@ -169,9 +169,7 @@ impl VtVcpu
 			// Upon INIT, vCPU enters inactive state to wait for Startup-IPI.
 			vmwrite_unchecked(GUEST_ACTIVITY_STATE,ActivityState::WAIT_FOR_SIPI as usize);
 		}
-		// We've finished handling the INIT signal. Signal the INIT-sender.
-		self.waiting_for_sipi.store(true,Ordering::SeqCst);
-		self.special_icr_completed.store(true,Ordering::SeqCst);
+		info!("INIT-signal is completed for CPU {}! Awaiting SIPI...",self.vcpu_id);
 	}
 
 	fn handle_sipi(&mut self,_context:&mut VtStackTop)
@@ -188,13 +186,10 @@ impl VtVcpu
 			// Invalid TLB since paging is switched off.
 			let ivc=InvvpidContext::Single(vmread_unchecked(GUEST_VPID) as u16);
 			invvpid(&ivc);
+			// Dump some codes.
+			let codes=&*((vector<<12) as *const [u8;32]);
+			info!("SIPI Vector Code Bytes: {codes:02X?}");
 		}
-		// Dump some codes.
-		// let codes=unsafe{&*((vector<<12) as *const [u8;32])};
-		// info!("SIPI Vector Code Bytes: {codes:02X?}");
-		// We've finished handling the SIPI signal. Signal the SIPI-sender.
-		self.special_icr_completed.store(true,Ordering::SeqCst);
-		self.waiting_for_sipi.store(false,Ordering::SeqCst);
 	}
 
 	fn handle_interrupt_window(&mut self,_context:&mut VtStackTop)
@@ -240,6 +235,12 @@ impl VtVcpu
 			{
 				c|=if hv.features.cpuid_hv_presence() {CPUID_UNDER_HYPERVISOR} else {0};
 				c&=!CPUID_VMX;
+				let cr4=self.get_cr4();
+				if !cr4.osxsave()
+				{
+					// The OSXSAVE bit of CPUID must equal to CR4.OSXSAVE!
+					c&=!CPUID_OSXSAVE;
+				}
 			}
 			(a,b,c,d)
 		};
@@ -474,64 +475,6 @@ impl VtVcpu
 			// Prevent the Guest from updating microcode.
 			// Do so by ignoring the update request.
 			MSR_BIOS_UPDATE_TRIGGER=>false,
-			MSR_X2APIC_ICR=>
-			{
-				// Guest is issuing IPIs.
-				let v=ApicX2Icr::from_bits((context.gpr_state.rax&0xFFFFFFFF)|(context.gpr_state.rdx<<32));
-				wrmsr(MSR_X2APIC_ICR,v.into_bits());
-				match v.message_type()
-				{
-					ApicX2Icr::MESSAGE_TYPE_INIT|ApicX2Icr::MESSAGE_TYPE_SIPI=>
-					{
-						// If the message is INIT or SIPI, wait until target vCPU has completed setting up vCPU state.
-						let hv:&VtHypervisor=unsafe{&*self.hypervisor.cast()};
-						trace!("Sent special ICR message (0x{:X})! Awaiting completion...",v.into_bits());
-						match v.destination_shorthand()
-						{
-							ApicX2Icr::DSH_DESTINATION=>
-							{
-								if let Some(vcpu)=hv.vcpus.get(v.destination() as usize)
-								{
-									// Do not wait if the target vCPU will ignore SIPI.
-									if vcpu.waiting_for_sipi.load(Ordering::SeqCst) || v.message_type()!=ApicX2Icr::MESSAGE_TYPE_SIPI
-									{
-										while vcpu.special_icr_completed.compare_exchange(true,false,Ordering::SeqCst,Ordering::SeqCst).is_err()
-										{
-											spin_loop();
-										}
-									}
-								}
-							}
-							ApicX2Icr::DSH_ALL_EXCLUSIVE=>
-							{
-								for vcpu in &hv.vcpus
-								{
-									// Exclude current vCPU.
-									if vcpu.vcpu_id==self.vcpu_id
-									{
-										continue;
-									}
-									// Do not wait if the target vCPU will ignore SIPI.
-									if !vcpu.waiting_for_sipi.load(Ordering::SeqCst) && v.message_type()==ApicX2Icr::MESSAGE_TYPE_SIPI
-									{
-										continue;
-									}
-									while vcpu.special_icr_completed.compare_exchange(true,false,Ordering::SeqCst,Ordering::SeqCst).is_err()
-									{
-										spin_loop();
-									}
-								}
-							}
-							// It is virtually impossible that a guest will send INIT/SIPI to itself, and it is virtually equivalent to committing suicide.
-							// So, if destination-shorthand is self or all-including-self, we won't reach this place at all.
-							_=>unsafe{unreachable_unchecked()}
-						}
-						trace!("Special ICR message (0x{:X}) completed!",v.into_bits());
-					}
-					_=>{}
-				};
-				false
-			}
 			(0x40000000..0x80000000)=>
 			{
 				let f=dispatch_mshv_msr_handler(index);
@@ -843,7 +786,7 @@ const VT_MAXIMUM_CODE:usize=80;
 type VtExitHandler=fn(&mut VtVcpu,&mut VtStackTop);
 
 // Defining sparse array is much easier in Rust than in C!
-const VT_EXIT_HANDLERS:[VtExitHandler;VT_MAXIMUM_CODE]=
+static VT_EXIT_HANDLERS:[VtExitHandler;VT_MAXIMUM_CODE]=
 {
 	let mut array:[VtExitHandler;VT_MAXIMUM_CODE]=[VtVcpu::handle_unknown;VT_MAXIMUM_CODE];
 	array[INTERCEPTED_EXTERNAL_INTERRUPT as usize]=VtVcpu::handle_extint;

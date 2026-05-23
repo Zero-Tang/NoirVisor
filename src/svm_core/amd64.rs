@@ -120,6 +120,8 @@ pub mod cpuid
 
 pub mod msr
 {
+    use bitfield_struct::bitfield;
+
 	pub const MSR_HWCR:u32=0xC0010015;
 
 	// SVM/SMM-related MSRs
@@ -147,17 +149,30 @@ pub mod msr
 	pub const MSR_RMP_END:u32=0xC0010133;
 	pub const MSR_GUEST_TSC_FREQ:u32=0xC0010134;
 
+	// SVM-related exceptions
+	pub const HYPERVISOR_INJECTION_FAULT:u8=28;
+	pub const VMM_COMMUNICATION_FAULT:u8=29;
+	pub const SECURITY_EXCEPTION_FAULT:u8=30;
+
 	// SVM Control Register Flags
-	pub const MSR_VMCR_DPD:u64=0x00000001;
-	pub const MSR_VMCR_R_INIT:u64=0x00000002;
-	pub const MSR_VMCR_DISA20M:u64=0x00000004;
-	pub const MSR_VMCR_LOCK:u64=0x00000008;
-	pub const MSR_VMCR_SVMDIS:u64=0x00000010;
+	#[bitfield(u64)] pub struct VmCr
+	{
+		pub dpd:bool,
+		pub r_init:bool,
+		pub disa20m:bool,
+		pub lock:bool,
+		pub svmdis:bool,
+		#[bits(59)] rsvd:u64
+	}
 
 	// SMM Control Register Flags
-	pub const MSR_SMMCTRL_DISMISS:u64=0x00000001;
-	pub const MSR_SMMCTRL_ENTER:u64=0x00000002;
-	pub const MSR_SMMCTRL_SMI_CYCLE:u64=0x00000004;
-	pub const MSR_SMMCTRL_EXIT:u64=0x00000008;
-	pub const MSR_SMMCTRL_RSM_CYCLE:u64=0x00000010;
+	#[bitfield(u64)] pub struct SmmCtrl
+	{
+		pub dismiss:bool,
+		pub enter:bool,
+		pub smi_cycle:bool,
+		pub exit:bool,
+		pub rsm_cycle:bool,
+		#[bits(59)] rsvd:u64
+	}
 }

@@ -53,12 +53,12 @@
 	},
 	"common_flags":
 	{
-		"nasm":["-fwin64","-D_VCRUNTIME_BUILD_QSPECTRE","-g","-o","{objpath}/{instruction}.obj","-l","{objpath}/{instruction}.lst"],
-		"lld-link":["/NODEFAULTLIB","/NOLOGO","/DEBUG","/Machine:X64","/ERRORREPORT:QUEUE"]
+		"nasm":["-fwin64","-D_VCRUNTIME_BUILD_QSPECTRE","-g","-o","{objpath}/{instruction}.obj","-l","{objpath}/{instruction}.lst","-Ox"],
+		"lld-link":["/NODEFAULTLIB","/NOLOGO","/DEBUG","/OPT:REF","/Machine:X64","/ERRORREPORT:QUEUE"]
 	},
 	"opt_flags":
 	{
-		"lld-link":["/OPT:REF","/OPT:ICF"],
+		"lld-link":["/OPT:ICF"],
 		"cargo":["--release"]
 	},
 	"extra_env":

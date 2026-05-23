@@ -30,7 +30,7 @@ fn nvc_mshv_cpuid_hypervisor_vendor_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u3
 
 fn nvc_mshv_cpuid_hypervisor_interface_id_handler(_ia:u32,_ic:u32)->(u32,u32,u32,u32)
 {
-	let a=u32::from_le_bytes(*b"Hv#0");
+	let a=u32::from_le_bytes(*b"Hv#1");
 	let b=0;
 	let c=0;
 	let d=0;

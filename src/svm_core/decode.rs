@@ -210,8 +210,8 @@ impl SvmVcpu
 					{
 						match info
 						{
-							MovCrInfo::MovToCr(rd,_rs)=>rd as u64|(1<<63),
-							MovCrInfo::MovFromCr(_rd,rs)=>rs as u64|(1<<63),
+							MovCrInfo::MovToCr(_rd,rs)=>rs as u64|(1<<63),
+							MovCrInfo::MovFromCr(rd,_rs)=>rd as u64|(1<<63),
 							MovCrInfo::Lmsw|MovCrInfo::Smsw|MovCrInfo::Clts=>0
 						}
 					}
@@ -243,8 +243,8 @@ impl SvmVcpu
 					{
 						match info
 						{
-							MovDrInfo::MovToDr(rd,_rs)=>rd as u64,
-							MovDrInfo::MovFromDr(_rd,rs)=>rs as u64
+							MovDrInfo::MovToDr(_rd,rs)=>rs as u64,
+							MovDrInfo::MovFromDr(rd,_rs)=>rd as u64
 						}
 					}
 					None=>0

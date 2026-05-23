@@ -18,15 +18,15 @@ strlen:
 	mov   rax, rcx
 	neg   rcx          ; save negative of original pointer for length calculation
 	test  rax, 7
-	jz    main_loop_entry
+	jz    short main_loop_entry
 
 byte_loop_begin:
 	mov   dl, [rax]
 	inc   rax
 	test  dl, dl
-	jz    return_byte_7
+	jz    short return_byte_7
 	test  al, 7
-	jnz   byte_loop_begin
+	jnz   short byte_loop_begin
 
 main_loop_entry:
 	mov   r8, 0x7efefefefefefeff
@@ -41,30 +41,30 @@ main_loop_begin:
 	not   rdx
 	xor   rdx, r9
 	and   rdx, r11
-	je    main_loop_begin
+	je    short main_loop_begin
 
 main_loop_end:
 	mov   rdx, [rax - 8]
 
 	test  dl, dl
-	jz    return_byte_0
+	jz    short return_byte_0
 	test  dh, dh
-	jz    return_byte_1
+	jz    short return_byte_1
 	shr   rdx, 16
 	test  dl, dl
-	jz    return_byte_2
+	jz    short return_byte_2
 	test  dh, dh
-	jz    return_byte_3
+	jz    short return_byte_3
 	shr   rdx, 16
 	test  dl, dl
-	jz    return_byte_4
+	jz    short return_byte_4
 	test  dh, dh
-	jz    return_byte_5
+	jz    short return_byte_5
 	shr   edx, 16
 	test  dl, dl
-	jz    return_byte_6
+	jz    short return_byte_6
 	test  dh, dh
-	jnz   main_loop_begin
+	jnz   short main_loop_begin
 
 return_byte_7:
 	lea   rax, [rax + rcx - 1]

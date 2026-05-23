@@ -21,13 +21,13 @@ global memset
 
 ; the code implementing memory set via rep stosb (enhanced strings)
 memset_repstos:
-	push     rdi
+	xchg     rdi, rcx
 	mov      eax, edx
 	mov      rdi, rcx
-	mov      rcx, r8
+	xchg     rcx, r8
 	rep      stosb
 	mov      rax, r9
-	pop      rdi
+	mov      rdi, r8
 	ret
 
 ; Main memset routine implementation
@@ -40,10 +40,9 @@ memset:
 	imul     r11, rdx                                        ; expand into 64-bit fill value
 	movq     xmm0, r11                                       ; expand into 64-bit XMM fill value
 	cmp      r8, 15                                          ; dispatch to code handling block sizes of 16 bytes or more
-	ja       SetAbove15
+	ja       short SetAbove15
 
 ; set blocks of less than 16 bytes in length
-	align    16
 %ifdef _VCRUNTIME_BUILD_QSPECTRE
 	and      r8, 0Fh
 %endif
@@ -70,16 +69,12 @@ SetSmall6:
 SetSmall2:
 	mov      [rcx - 2], r11w                                 ; handle 2 bytes (2)
 	ret
-
-	align    16
 SetSmall13:
 	mov      [rcx - 13], r11                                 ; handle 13 bytes (8+4+1)
 SetSmall5:
 	mov      [rcx - 5], r11d                                 ; handle 5 bytes (4+1)
 	mov      [rcx - 1], r11b
 	ret
-
-	align    16
 SetSmall12:
 	mov      [rcx - 12], r11                                 ; handle 12 bytes (8+4)
 SetSmall4:
@@ -96,23 +91,19 @@ SetSmall9:
 	mov      [rcx - 9], r11                                  ; handle 9 bytes (8+1)
 	mov      [rcx - 1], r11b
 	ret
-
-	align    16
 SetSmall10:
 	mov      [rcx - 10], r11                                 ; handle 10 bytes (8+2)
 	mov      [rcx - 2], r11w
 	ret
-
 SetSmall8:
 	mov      [rcx - 8], r11                                  ; handle 8 bytes (8)
 	ret
 
 ; set blocks of 16 bytes or more in length
-	align    16
 SetAbove15:
 	punpcklqdq xmm0, xmm0                                    ; expand into 128-bit fill pattern
 	cmp      r8, 32
-	ja       SetAbove32
+	ja       short SetAbove32
 
 	movdqu   [rcx], xmm0
 	movdqu   [rcx + r8 - 16], xmm0
@@ -125,7 +116,7 @@ SetAbove32:
 	%define __SSE_LOOP_LEN (__SSE_STEP_LEN * 8)
 
 	cmp      r8, [rel __memset_fast_string_threshold]
-	jbe      SetWithXMM
+	jbe      short SetWithXMM
 
 	test     byte [rel __favor], (1 << __FAVOR_ENFSTRG)
 	jnz      memset_repstos
@@ -138,9 +129,7 @@ SetWithXMM:
 	sub      rdx, r9
 	add      r8, r9
 	cmp      r8, __SSE_LOOP_LEN
-	jbe      SetUpTo128WithXMM
-
-	align    16
+	jbe      short SetUpTo128WithXMM
 XmmLoop:
 	movdqa   [rcx + __SSE_STEP_LEN*0], xmm0
 	movdqa   [rcx + __SSE_STEP_LEN*1], xmm0
@@ -153,7 +142,7 @@ XmmLoop:
 	add      rcx, __SSE_LOOP_LEN
 	sub      r8, __SSE_LOOP_LEN
 	cmp      r8, __SSE_LOOP_LEN
-	jae      XmmLoop
+	jae      short XmmLoop
 
 SetUpTo128WithXMM:
 	lea      r9, [r8 + __SSE_STEP_LEN - 1]

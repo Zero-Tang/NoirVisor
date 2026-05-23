@@ -10,15 +10,17 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{hint::cold_path, mem::MaybeUninit, slice};
+use core::{hint::{cold_path, spin_loop}, mem::MaybeUninit, slice, sync::atomic::Ordering};
 
 use paste::paste;
 
 use decode::dispatch_decoder;
 use npt::NptFaultCode;
-use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::interrupts::*, trytask::try_task};
+use hvcall::dispatch_hypercall;
+use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::{crdr::*, descriptors::SegmentFlags, rflags::Rflags}, trytask::try_task};
 use disasm::emulator::{EmulatorOps, Instruction};
-use super::{*,hvcall::dispatch_hypercall};
+
+use super::*;
 use mshv_core::{cpuid::*,msr::dispatch_mshv_msr_handler};
 
 // Place all VM-Exit handlers from the subverted host into this implementation!
@@ -29,6 +31,101 @@ impl SvmVcpu
 	{
 		let intercept_code:i64=unsafe{self.vmread(EXIT_CODE)};
 		panic!("Unknown VM-Exit is intercepted! Code: 0x{:016X}",intercept_code);
+	}
+
+	fn handle_cr4_read(&mut self,_context:&mut SvmStackTop)
+	{
+		let gpr_index=(self.read_exit_info1()&0xF) as usize;
+		// Virtualize CR4.MCE bit.
+		self.set_gpr(gpr_index,self.read_cr4().with_mce(self.flags.mce()).into_bits());
+		self.advance_rip();
+	}
+
+	fn handle_cr4_write(&mut self,_context:&mut SvmStackTop)
+	{
+		let gpr_index=(self.read_exit_info1()&0xF) as usize;
+		// Virtualize CR4.MCE bit.
+		let mut new_value=Cr4::from_bits(self.get_gpr(gpr_index));
+		self.flags.set_mce(new_value.mce());
+		// Flush TLB if certain bits are cleared.
+		if new_value.require_flush_tlb(self.read_cr4())
+		{
+			self.write_tlb_control(TLB_CONTROL_FLUSH_GUEST_TLB);
+		}
+		// Force MCE bit in guest mode.
+		new_value.set_mce(true);
+		self.write_cr4(new_value);
+		self.advance_rip();
+	}
+
+	fn handle_sx(&mut self,context:&mut SvmStackTop)
+	{
+		// #SX exception happened! This means INIT signal is converted to #SX.
+		let err_code:u32=unsafe{self.vmread(EXIT_INFO1)};
+		assert_eq!(err_code,1,"#SX error code is not 1! (actual: 0x{err_code:X})");
+		self.wait_for_sipi.store(true,Ordering::SeqCst);
+		// General-Purpose Registers
+		for i in 0..16usize
+		{
+			context.gpr_state.write(i,0);
+		}
+		self.write_rsp(0);
+		self.write_rip(0xFFF0);
+		self.write_rflags(Rflags::from_bits(2));
+		// Control Registers.
+		let old_cr0=self.read_cr0();
+		let cr0=Cr0::new().with_et(true).with_cd(old_cr0.cd()).with_nw(old_cr0.nw());
+		self.write_cr0(cr0);
+		self.write_cr2(0);
+		self.write_cr3(0);
+		self.write_cr4(Cr4::new());
+		// INIT clears EFER to 0, but SVME bit must be set as a guest.
+		self.write_efer(Efer::new().with_svme(true));
+		// Segment Registers
+		let mut attrib=SvmSegmentFlags::new().with_segment_type(SegmentFlags::CODE_EXECUTE_READ_ACCESSED).with_user_segment(true).with_present(true);
+		self.write_cs(SvmSegmentRegister{selector:0xF000,attrib,limit:0xFFFF,base:0xFFFF0000});
+		attrib.set_segment_type(SegmentFlags::DATA_READ_WRITE_ACCESSED);
+		let data_seg=SvmSegmentRegister{selector:0,attrib,limit:0xFFFF,base:0};
+		self.write_ds(data_seg);
+		self.write_es(data_seg);
+		self.write_fs(data_seg);
+		self.write_gs(data_seg);
+		self.write_ss(data_seg);
+		{
+			let idtr=self.ref_idtr_mut();
+			idtr.limit=0xFFFF;
+			idtr.base=0;
+		}
+		{
+			let gdtr=self.ref_gdtr_mut();
+			gdtr.limit=0xFFFF;
+			gdtr.base=0;
+		}
+		attrib.set_user_segment(false);
+		attrib.set_segment_type(SegmentFlags::LDT);
+		self.write_ldtr(SvmSegmentRegister{selector:0,attrib,limit:0xFFFF,base:0});
+		attrib.set_segment_type(SegmentFlags::BUSY_TSS_16BIT);
+		self.write_tr(SvmSegmentRegister{selector:0,attrib,limit:0xFFFF,base:0});
+		// Debug Registers
+		self.write_dr6(Dr6::from_bits(0xFFFF0FF0));
+		self.write_dr7(Dr7::from_bits(0x400));
+		// Emulate the wait-for-SIPI via spin-locking.
+		info!("INIT signal is successfully emulated! Waiting for SIPI now...");
+		while self.wait_for_sipi.load(Ordering::SeqCst)
+		{
+			spin_loop();
+		}
+		// Startup-IPI is received. Resume.
+		{
+			let vector=self.sipi_vector.load(Ordering::SeqCst);
+			info!("Received SIPI with vector 0x{vector:02X}!");
+			let cs=self.ref_cs_mut();
+			cs.selector=(vector as u16)<<8;
+			cs.base=(vector as u64)<<12;
+		}
+		self.write_rip(0);
+		// Because CR0/CR4 are changed, flush the TLBs.
+		self.write_tlb_control(TLB_CONTROL_FLUSH_GUEST_TLB);
 	}
 
 	fn handle_cpuid(&mut self,context:&mut SvmStackTop)
@@ -68,7 +165,14 @@ impl SvmVcpu
 			let (mut a,mut b,mut c,mut d)=cpuid2(ia,ic);
 			match ia
 			{
-				CPUID_STD_PROCESSOR_FEATURE=>c|=if hv.features.cpuid_hv_presence() {CPUID_UNDER_HYPERVISOR} else {0},
+				CPUID_STD_PROCESSOR_FEATURE=>
+				{
+					c|=if hv.features.cpuid_hv_presence() {CPUID_UNDER_HYPERVISOR} else {0};
+					if !self.ref_cr4().osxsave()
+					{
+						c&=!CPUID_OSXSAVE;
+					}
+				}
 				// NoirVisor currently does not support nested virtualization.
 				CPUID_EXT_PROCESSOR_FEATURE=>c&=!CPUID_SVM,
 				CPUID_EXT_SECURE_VIRTUAL_MACHINE_FEATURE=>(a,b,c,d)=(0,0,0,0),
@@ -136,10 +240,7 @@ impl SvmVcpu
 				// Read the EFER value from VMCB.
 				let mut v=self.read_efer();
 				// The SVME bit should be filtered.
-				if !self.nested_hvm.svme
-				{
-					v.set_svme(false);
-				}
+				v.set_svme(self.flags.svme());
 				Some(v.into_bits())
 			}
 			MSR_TSC_RATIO=>
@@ -154,7 +255,7 @@ impl SvmVcpu
 			}
 			MSR_IGNNE=>
 			{
-				Some(if self.nested_hvm.ignne {1} else {0})
+				Some(self.nested_hvm.ignne)
 			}
 			MSR_SMM_CTRL=>
 			{
@@ -231,11 +332,10 @@ impl SvmVcpu
 			}
 			MSR_EFER=>
 			{
-				let efer=self.ref_efer_mut();
-				*efer=Efer::from_bits(value);
-				self.nested_hvm.svme=efer.svme();
+				let efer=Efer::from_bits(value);
+				self.flags.set_svme(efer.svme());
 				// SVME bit should always be set.
-				self.ref_efer_mut().set_svme(true);
+				self.write_efer(efer.with_svme(true));
 				true
 			}
 			MSR_TSC_RATIO=>
@@ -258,7 +358,7 @@ impl SvmVcpu
 				}
 				else
 				{
-					self.nested_hvm.ignne=value==1;
+					self.nested_hvm.ignne=value;
 					true
 				}
 			}
@@ -341,7 +441,8 @@ impl SvmVcpu
 
 	fn handle_vmrun(&mut self,context:&mut SvmStackTop)
 	{
-		panic!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",context.gpr_state.rax);
+		error!("Nested virtualization is unsupported! Nested VMCB RAX=0x{:016X}",context.gpr_state.rax);
+		self.inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true);
 	}
 
 	fn handle_vmmcall(&mut self,context:&mut SvmStackTop)
@@ -518,6 +619,7 @@ impl SvmVcpu
 			decoder(vcpu);
 			handler(vcpu,&mut *stack);
 			vcpu.write_rax(gpr.rax);
+			vcpu.write_rsp(gpr.rsp);
 			// The rax in GPR state should be the physical address of VMCB
 			// in order to execute the vmrun instruction properly.
 			// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.
@@ -674,9 +776,12 @@ pub const INVALID_PMC:i64=-4;
 type SvmExitHandler=fn(&mut SvmVcpu,&mut SvmStackTop);
 
 // Defining sparse array is much easier in Rust than in C!
-const SVM_EXIT_HANDLER_GROUP1:[SvmExitHandler;SVM_MAXIMUM_CODE1]=
+static SVM_EXIT_HANDLER_GROUP1:[SvmExitHandler;SVM_MAXIMUM_CODE1]=
 {
 	let mut array:[SvmExitHandler;SVM_MAXIMUM_CODE1]=[SvmVcpu::handle_unknown;SVM_MAXIMUM_CODE1];
+	array[INTERCEPTED_CR4_READ as usize]=SvmVcpu::handle_cr4_read;
+	array[INTERCEPTED_CR4_WRITE as usize]=SvmVcpu::handle_cr4_write;
+	array[INTERCEPTED_SX_EXCEPTION as usize]=SvmVcpu::handle_sx;
 	array[INTERCEPTED_CPUID as usize]=SvmVcpu::handle_cpuid;
 	array[INTERCEPTED_MSR as usize]=SvmVcpu::handle_msr;
 	array[INTERCEPTED_SHUTDOWN as usize]=SvmVcpu::handle_shutdown;
@@ -690,22 +795,21 @@ const SVM_EXIT_HANDLER_GROUP1:[SvmExitHandler;SVM_MAXIMUM_CODE1]=
 	array
 };
 
-const SVM_EXIT_HANDLER_GROUP2:[SvmExitHandler;SVM_MAXIMUM_CODE2]=
+static SVM_EXIT_HANDLER_GROUP2:[SvmExitHandler;SVM_MAXIMUM_CODE2]=
 {
 	let mut array:[SvmExitHandler;SVM_MAXIMUM_CODE2]=[SvmVcpu::handle_unknown;SVM_MAXIMUM_CODE2];
 	array[(NESTED_PAGE_FAULT-0x400) as usize]=SvmVcpu::handle_npf;
 	array
 };
 
-const SVM_EXIT_HANDLER_GROUP_NEGATIVE:[SvmExitHandler;SVM_MAXIMUM_NEGATIVE]=
+static SVM_EXIT_HANDLER_GROUP_NEGATIVE:[SvmExitHandler;SVM_MAXIMUM_NEGATIVE]=
 {
 	let mut array:[SvmExitHandler;SVM_MAXIMUM_NEGATIVE]=[SvmVcpu::handle_unknown;SVM_MAXIMUM_NEGATIVE];
 	array[!INVALID_GUEST_STATE as usize]=SvmVcpu::handle_invalid;
 	array
 };
 
-const SVM_EXIT_HANDLER_GROUPS:[&[SvmExitHandler];SVM_MAXIMUM_GROUPS]=[&SVM_EXIT_HANDLER_GROUP1,&SVM_EXIT_HANDLER_GROUP2];
-pub(super) const SVM_EXIT_HANDLER_GROUP_LIMITS:[usize;SVM_MAXIMUM_GROUPS]=[SVM_MAXIMUM_CODE1,SVM_MAXIMUM_CODE2];
+static SVM_EXIT_HANDLER_GROUPS:[&[SvmExitHandler];SVM_MAXIMUM_GROUPS]=[&SVM_EXIT_HANDLER_GROUP1,&SVM_EXIT_HANDLER_GROUP2];
 
 // This function is supposed to be time-sensitive!
 // The O(1) method of dispatching handler.
