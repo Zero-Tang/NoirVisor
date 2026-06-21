@@ -350,7 +350,7 @@ impl PageAllocationInformation
 	}
 }
 
-struct PageAllocationManager
+pub struct PageAllocationManager
 {
 	list:[PageAllocationInformation;64],
 	count:usize
@@ -369,8 +369,53 @@ struct PageAllocationManager
 	}
 }
 
+pub struct PageAllocIter<'a>
+{
+	index:usize,
+	source:&'a PageAllocationManager
+}
+
+impl<'a> Iterator for PageAllocIter<'a>
+{
+	type Item = u64;
+
+	fn next(&mut self) -> Option<Self::Item>
+	{
+		if self.index>=self.source.count
+		{
+			None
+		}
+		else
+		{
+			let mut ret=None;
+			while self.index<self.source.count
+			{
+				if matches!(self.source.list[self.index].alloc_type,PageAllocationType::Valid(_))
+				{
+					ret=Some(self.source.list[self.index].descriptor.phys);
+				}
+				self.index+=1;
+				if ret.is_some()
+				{
+					break;
+				}
+			}
+			ret
+		}
+	}
+}
+
 impl PageAllocationManager
 {
+	pub fn iter(&self)->PageAllocIter<'_>
+	{
+		PageAllocIter
+		{
+			index:0,
+			source:self
+		}
+	}
+
 	fn new_blank(&mut self)
 	{
 		if self.count>=self.list.len()
@@ -495,7 +540,7 @@ impl PageAllocationManager
 	}
 }
 
-static PAGE_ALLOC_MANAGER:Mutex<PageAllocationManager>=Mutex::new(PageAllocationManager::empty());
+pub static PAGE_ALLOC_MANAGER:Mutex<PageAllocationManager>=Mutex::new(PageAllocationManager::empty());
 
 pub fn print_allocation()
 {
@@ -635,20 +680,5 @@ impl<T:Sized> MemoryDescriptor<PAGE_TABLE_ENTRIES64,T>
 		let mut lk=PAGE_ALLOC_MANAGER.lock();
 		lk.new_full();
 		Some(unsafe{MemoryDescriptor::new(lk.list[lk.count-1].descriptor.virt.cast(),lk.list[lk.count-1].descriptor.phys)})
-	}
-}
-
-pub fn enum_allocated_large_pages(callback_rt:PhysicalRangeCallback,context:*mut c_void)
-{
-	let mut i:usize=0;
-	loop
-	{
-		let count={PAGE_ALLOC_MANAGER.lock().count};
-		if i>=count {break;}
-		let phys={PAGE_ALLOC_MANAGER.lock().list[i].descriptor.phys};
-		// The callback routine may allocate memories.
-		// Therefore, there mustn't be any lock holders on allocation manager.
-		callback_rt(phys,PAGE_2MB_SIZE as u64,context);
-		i+=1;
 	}
 }

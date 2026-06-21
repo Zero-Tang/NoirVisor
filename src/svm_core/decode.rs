@@ -11,10 +11,11 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use crate::disasm::emulator::{EmulatorOps, Instruction, MovCrInfo, MovDrInfo};
+use super::*;
 use exit::*;
 use npt::NptFaultCode;
-use super::{xpf_core::x86::{crdr::*,paging::*},svm_core::*};
+use disasm::emulator::{EmulatorOps, Instruction, MovCrInfo, MovDrInfo};
+use xpf_core::x86::{crdr::*,paging::*};
 
 impl PageTranslationHelper for SvmVcpu
 {
@@ -46,19 +47,15 @@ impl PageTranslationHelper for SvmVcpu
 
 	fn read_phys_mem(&self,pa:u64,buffer:&mut [u8])->usize
 	{
-		unsafe
-		{
-			memcpy(buffer.as_mut_ptr().cast(),pa as *const c_void,buffer.len());
-		}
+		let src=unsafe{slice::from_raw_parts(pa as *const u8,buffer.len())};
+		buffer.copy_from_slice(src);
 		buffer.len()
 	}
 
 	fn write_phys_mem(&self,pa:u64,buffer:&[u8])->usize
 	{
-		unsafe
-		{
-			memcpy(pa as *mut c_void,buffer.as_ptr().cast(),buffer.len());
-		}
+		let dest=unsafe{slice::from_raw_parts_mut(pa as *mut u8,buffer.len())};
+		dest.copy_from_slice(buffer);
 		buffer.len()
 	}
 }

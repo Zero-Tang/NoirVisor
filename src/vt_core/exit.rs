@@ -553,7 +553,7 @@ impl VtVcpu
 		}
 		else
 		{
-			panic!("Unexpected EPT Violation happened! GPA=0x{gpa:X}, rip=0x{rip:X}");
+			panic!("Unexpected EPT Violation happened! GPA=0x{gpa:X}, rip=0x{rip:X}, Qualification: {qual:?}");
 		}
 	}
 

@@ -105,7 +105,7 @@ pub fn hpet_read_counter()->u64
 
 #[unsafe(no_mangle)] extern "C" fn nvc_hpet_initialize()->Status
 {
-	let mut hpet_acpi_ptr:*mut HighPrecisionEventTimerTable=null_mut();
+	let mut hpet_acpi_ptr:*const HighPrecisionEventTimerTable=null_mut();
 	search_acpi_table(AcpiSystemDescriptorSignature::HIGH_PRECISION_EVENT_TIMER_TABLE,|x| { hpet_acpi_ptr=x.cast(); false});
 	if hpet_acpi_ptr.is_null()
 	{

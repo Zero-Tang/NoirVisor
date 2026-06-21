@@ -403,8 +403,8 @@ impl From<&MemoryDescriptor> for MemoryRange
 
 #[unsafe(no_mangle)] extern "C" fn noir_enum_physical_memory_ranges(callback:extern "C" fn(u64,u64,*mut c_void),context:*mut c_void)
 {
-	let mut descriptors:MaybeUninit<[MemoryDescriptor;128]>=MaybeUninit::uninit();
-	let mut map_size=size_of::<MemoryDescriptor>()*128;
+	let mut descriptors:MaybeUninit<[MemoryDescriptor;256]>=MaybeUninit::uninit();
+	let mut map_size=size_of::<MemoryDescriptor>()*256;
 	let mut key:usize=0;
 	let mut desc_size:usize=0;
 	let mut desc_ver:u32=0;
@@ -422,22 +422,17 @@ impl From<&MemoryDescriptor> for MemoryRange
 		while offset<map_size
 		{
 			let map:&MemoryDescriptor=unsafe{&*descriptors.as_ptr().byte_add(offset).cast()};
-			match map.r#type
+			if matches!(map.r#type,LOADER_CODE|LOADER_DATA|BOOT_SERVICES_CODE|BOOT_SERVICES_DATA|RUNTIME_SERVICES_CODE|RUNTIME_SERVICES_DATA|CONVENTIONAL_MEMORY|ACPI_RECLAIM_MEMORY)
 			{
-				LOADER_CODE|LOADER_DATA|BOOT_SERVICES_CODE|BOOT_SERVICES_DATA|RUNTIME_SERVICES_CODE|RUNTIME_SERVICES_DATA|CONVENTIONAL_MEMORY|ACPI_RECLAIM_MEMORY=>
-				{
-					// These types of memory can be treated as general-purpose memory.
-					// Add them to ranges.
-					ranges.push(MemoryRange::from(map));
-				}
-				_=>{}	// These are not general-purpose memory. Ignore them
+				// These types of memory can be treated as general-purpose memory.
+				// Add them to ranges.
+				ranges.push(MemoryRange::from(map));
 			}
 			offset+=desc_size;
 		}
 		// Sort the ranges so that we can merge them.
 		// We don't have global-allocator here, so only sort_unstable is available.
 		ranges.sort_unstable();
-		dprintln!("Before-merge: {ranges:X?}");
 		// Merge the ranges.
 		let mut i=0;
 		while i<ranges.len()-1
@@ -452,11 +447,14 @@ impl From<&MemoryDescriptor> for MemoryRange
 				i+=1;
 			}
 		}
-		dprintln!("After-merge: {ranges:X?}");
 		// Call the callback
 		for r in ranges.iter()
 		{
 			callback(r.start,r.length,context);
 		}
+	}
+	else
+	{
+		dprintln!("BootServices->GetMemoryMap failed! Status=0x{:X}",st.as_usize());
 	}
 }

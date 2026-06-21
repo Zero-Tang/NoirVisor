@@ -50,7 +50,7 @@ impl PartialOrd for CiPage
 {
 	fn partial_cmp(&self, other: &Self) -> Option<Ordering>
 	{
-		self.pfn().partial_cmp(&other.pfn())
+		Some(self.cmp(other))
 	}
 }
 

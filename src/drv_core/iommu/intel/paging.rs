@@ -12,7 +12,8 @@
 
 use bitfield_struct::bitfield;
 
-use crate::xpf_core::{allocator::{ContiguousAllocator, InternalPageAllocator}, nvbdk::MemoryDescriptor};
+use crate::xpf_core::{allocator::{ContiguousAllocator, InternalPageAllocator}, nvbdk::*};
+use super::IntelIommuPageTableOps;
 
 /// ## Root Entry
 /// The Root Table Address Register points to a table of root-entries,
@@ -29,8 +30,9 @@ use crate::xpf_core::{allocator::{ContiguousAllocator, InternalPageAllocator}, n
 	/// Pointer to Context-table for this bus. The Context-table is 4KB in size and sizealigned.
 	/// Hardware treats bits 63:HAW as reserved (0), where HAW is the host address width
 	/// of the platform.
-	#[bits(52)] pub ctp:u128,
-	rsvd1:u64
+	#[bits(40)] pub ctp:u64,
+	#[bits(12)] rsvd1:u64,
+	rsvd2:u64
 }
 
 #[bitfield(u128)] pub struct ContextEntry
@@ -129,6 +131,12 @@ use crate::xpf_core::{allocator::{ContiguousAllocator, InternalPageAllocator}, n
 	pub ign3:bool
 }
 
+impl IntelIommuPageTableOps for SsPml5e
+{
+	const PAGE_SIZE:usize = PAGE_256TB_SIZE;
+	type PageSizeVariant = SsPml5e;
+}
+
 #[bitfield(u64)] pub struct SsPml4e
 {
 	pub r:bool,
@@ -143,6 +151,12 @@ use crate::xpf_core::{allocator::{ContiguousAllocator, InternalPageAllocator}, n
 	#[bits(10)] pub ign2:u64,
 	rsvd2:bool,
 	pub ign3:bool
+}
+
+impl IntelIommuPageTableOps for SsPml4e
+{
+	const PAGE_SIZE:usize = PAGE_512GB_SIZE;
+	type PageSizeVariant = SsPml4e;
 }
 
 #[bitfield(u64)] pub struct SsHugePdpe
@@ -180,6 +194,12 @@ use crate::xpf_core::{allocator::{ContiguousAllocator, InternalPageAllocator}, n
 	pub ign3:bool
 }
 
+impl IntelIommuPageTableOps for SsPdpe
+{
+	const PAGE_SIZE:usize = PAGE_1GB_SIZE;
+	type PageSizeVariant = SsHugePdpe;
+}
+
 #[bitfield(u64)] pub struct SsLargePde
 {
 	pub r:bool,
@@ -215,6 +235,12 @@ use crate::xpf_core::{allocator::{ContiguousAllocator, InternalPageAllocator}, n
 	pub ign3:bool
 }
 
+impl IntelIommuPageTableOps for SsPde
+{
+	const PAGE_SIZE:usize = PAGE_2MB_SIZE;
+	type PageSizeVariant = SsLargePde;
+}
+
 #[bitfield(u64)] pub struct SsPte
 {
 	pub r:bool,
@@ -231,6 +257,12 @@ use crate::xpf_core::{allocator::{ContiguousAllocator, InternalPageAllocator}, n
 	#[bits(10)] pub ign2:u64,
 	rsvd2:bool,
 	pub ign3:bool
+}
+
+impl IntelIommuPageTableOps for SsPte
+{
+	const PAGE_SIZE:usize = PAGE_4KB_SIZE;
+	type PageSizeVariant = SsPte;
 }
 
 // TODO: Add Scalable-Mode-related structures when NoirVisor really uses them.

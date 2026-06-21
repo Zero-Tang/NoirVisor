@@ -18,7 +18,7 @@ use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::null_mut};
 use ia32::msr::*;
 use vmcs::*;
 use ept::VtEptManager;
-use crate::{xpf_core::x86::{apic::APIC_OFFSET_ICR_HI, xstate::BoxedXState}, *};
+use crate::{drv_core::iommu::{IommuOps, create_iommu}, xpf_core::x86::{apic::APIC_OFFSET_ICR_HI, xstate::BoxedXState}, *};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 use mshv_core::{MshvVcpuContext,MshvVcpuOps};
 use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{apic::*, caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_APIC_BASE,MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
@@ -630,6 +630,7 @@ pub struct VtHypervisor
 	pub io_bitmap_b:MemoryDescriptor<1,usize>,
 	pub eptm:VtEptManager,
 	pub host:HostSystem,
+	pub iommu_manager:Option<Box<dyn IommuOps>>,
 	pub pio_space:IoAddressSpace,
 	pub mmio_space:IoAddressSpace,
 	pub image_base:*mut c_void,
@@ -662,6 +663,7 @@ impl Default for VtHypervisor
 			io_bitmap_b:MemoryDescriptor::null(),
 			eptm:VtEptManager::default(),
 			host:HostSystem::build(),
+			iommu_manager:None,
 			pio_space:IoAddressSpace{regions:Vec::new()},
 			mmio_space:IoAddressSpace{regions:Vec::new()},
 			image_base:null_mut(),
@@ -888,10 +890,29 @@ impl HypervisorEssentials for VtHypervisor
 			vcpu.vcpu_id=i;
 			self.vcpus.push(vcpu);
 		}
+		if self.features.enable_iommu()
+		{
+			// Initialize IOMMU.
+			self.iommu_manager=create_iommu();
+			if let Some(iommu)=&mut self.iommu_manager
+			{
+				iommu.setup_mapping();
+				iommu.protect_ci();
+				iommu.protect_allocated_pages();
+				iommu.subvert();
+				let mut v=iommu.get_bar_pages();
+				// Add IOMMU BARs into the I/O Filter.
+				while let Some(x)=v.pop()
+				{
+					self.mmio_space.add_region(x);
+				}
+			}
+		}
 		// Initialize EPT.
 		self.eptm.build_identity_map();
 		self.eptm.protect_allocated_pages();
 		self.eptm.protect_ci();
+		self.eptm.setup_mmio_filter(&self.mmio_space);
 		extern "C" fn subvert_processor_thunk(context:*mut c_void,processor_id:u32)
 		{
 			let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};

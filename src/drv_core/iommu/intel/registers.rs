@@ -127,7 +127,7 @@ impl IommuRegister for VersionRegister
 	/// tables is one of the supported guest address widths reported in this field. \
 	/// Hardware implementations reporting second-stage translation support (SSTS) field
 	/// as Clear also report this field as 0.
-	#[bits(5)] pub sagaw:u64,
+	#[bits(5)] pub sagaw:u8,
 	#[bits(3)] rsvd1:u64,
 	/// # Maximum Guest Address Width
 	/// This field indicates the maximum guest physical address width supported by second-stage
@@ -149,7 +149,7 @@ impl IommuRegister for VersionRegister
 	/// Implementations must support MGAW at least equal to the physical addressability
 	/// (host address width) of the platform. \
 	/// All Root-Complex integrated devices and fabrics must implement at least MGAW address bits.
-	#[bits(6)] pub mgaw:u64,
+	#[bits(6)] pub mgaw:u8,
 	/// # Zero-Length Read
 	/// - `false`: Indicates the remapping hardware unit blocks (and treats as fault)
 	/// zero length DMA read requests to write-only pages.
@@ -180,7 +180,7 @@ impl IommuRegister for VersionRegister
 	/// 
 	/// Hardware implementations supporting a specific large-page size must support all smaller
 	/// large-page sizes. i.e., only valid values for this field are 0000b, 0001b, 0011b.
-	#[bits(4)] pub sslps:u64,
+	#[bits(4)] pub sslps:u8,
 	rsvd2:bool,
 	/// # Page Selective Invalidation
 	/// - `false`: Hardware supports only global and domain-selective invalidates for IOTLB.
@@ -199,7 +199,7 @@ impl IommuRegister for VersionRegister
 	/// in this field. Implementations must support at least one fault recording register
 	/// (NFR = 0) for each remapping hardware unit in the platform. The maximum number of
 	/// fault recording registers per remapping hardware unit is 256.
-	pub nfr:u8,
+	#[bits(8)] pub nfr:usize,
 	/// # Maximum Address Mask Value
 	/// The value in this field indicates the maximum supported value for the Address Mask
 	/// (AM) field in the Invalidation Address register (IVA_REG), and IOTLB Invalidation
@@ -210,7 +210,7 @@ impl IommuRegister for VersionRegister
 	/// Independent of value reported in this field, implementations supporting SMTS must
 	/// support address-selective PASID-based IOTLB invalidations (p_iotlb_inv_dsc) with
 	/// any defined address mask.
-	#[bits(6)] pub mamv:u64,
+	#[bits(6)] pub mamv:u8,
 	/// # Write-Draining
 	/// - `false`: Hardware does not support draining of write requests on IOTLB invalidation.
 	/// - `true`: Hardware supports draining of write requests on IOTLB invalidation.

@@ -148,9 +148,7 @@ impl HostGDT
 	{
 		unsafe
 		{
-			let d=self.raw.as_mut_ptr().byte_add(selector as usize) as *mut c_void;
-			let s=&raw const segment as *const c_void;
-			memcpy(d,s,size_of::<UserSegmentDescriptor>());
+			*self.raw.as_mut_ptr().byte_add(selector as usize).cast()=segment;
 		}
 	}
 
@@ -158,9 +156,7 @@ impl HostGDT
 	{
 		unsafe
 		{
-			let d=self.raw.as_mut_ptr().byte_add(selector as usize) as *mut c_void;
-			let s=&raw const segment as *const c_void;
-			memcpy(d,s,size_of::<SystemSegmentDescriptor>());
+			*self.raw.as_mut_ptr().byte_add(selector as usize).cast()=segment;
 		}
 	}
 

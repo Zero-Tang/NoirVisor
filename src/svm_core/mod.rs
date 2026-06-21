@@ -15,11 +15,10 @@ use alloc::{vec::Vec, vec};
 use bitfield_struct::bitfield;
 use static_collections::bitmap::RefBitmap;
 
-use iommu::SvmIommuManager;
 use log::*;
 use npt::SvmNptManager;
-use crate::*;
-use xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, hv_host::{x86::*, *}, ioflt::IoAddressSpace, nvbdk::*, x86::{cpuid::*, crdr::Cr4, interrupts::*, msr::*, xstate::BoxedXState}};
+use crate::{drv_core::iommu::{create_iommu, IommuOps}, *};
+use xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, hv_host::{x86::*, *}, ioflt::IoAddressSpace, nvbdk::*, x86::{crdr::Cr4, interrupts::*, msr::*, xstate::BoxedXState}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 #[cfg(not(target_os="uefi"))]
 use crate::{cvm_core::CUSTOMIZABLE_HYPERVISOR, xpf_core::allocator::kmalloc::KernelAllocator,  svm_core::custom::SvmCustomHypervisor};
@@ -389,7 +388,7 @@ pub struct SvmHypervisor
 	pub iopm:MemoryDescriptor<3,c_void>,
 	pub nptm:SvmNptManager,
 	pub host:HostSystem,
-	pub iommu_manager:Option<SvmIommuManager>,
+	pub iommu_manager:Option<Box<dyn IommuOps>>,
 	pub pio_space:IoAddressSpace,
 	pub mmio_space:IoAddressSpace,
 	pub image_base:*mut c_void,
@@ -629,19 +628,19 @@ impl HypervisorEssentials for SvmHypervisor
 		self.nptm.build_identity_map();
 		if self.features.enable_iommu()
 		{
-			match SvmIommuManager::build_manager()
+			self.iommu_manager=create_iommu();
+			if let Some(iommu)=&mut self.iommu_manager
 			{
-				Ok(mut mgr)=>
+				iommu.setup_mapping();
+				iommu.protect_ci();
+				iommu.protect_allocated_pages();
+				iommu.subvert();
+				// Add all IOMMU BARs to the I/O Filter.
+				let mut v=iommu.get_bar_pages();
+				while let Some(x)=v.pop()
 				{
-					for _bar in &mgr.iommu_bars
-					{
-						// self.mmio_space.add_region(IoRegion::new("iommu",None,svm_iommu_output_handler,bar.bar.phys,PAGE_SIZE as u64));
-					}
-					mgr.protect_ci();
-					mgr.activate();
-					self.iommu_manager=Some(mgr);
+					self.mmio_space.add_region(x);
 				}
-				Err(st)=>error!("Failed to initialize AMD-Vi! Reason: {st}")
 			}
 		}
 		self.nptm.protect_allocated_pages();

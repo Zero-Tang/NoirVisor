@@ -239,14 +239,14 @@ mod panicking
 	use log::error;
 	use static_collections::{format_static, string::StaticString};
 
-	#[unsafe(no_mangle)] static mut PANIC_MESSAGE:StaticString<512>=StaticString::new();
+	#[unsafe(no_mangle)] static mut PANIC_MESSAGE:StaticString<1024>=StaticString::new();
 
 	#[panic_handler] fn panic(panic: &PanicInfo)->!
 	{
 		unsafe
 		{
 			// Store the panic log in global variable.
-			PANIC_MESSAGE=format_static!(512,"[PANIC] NoirVisor {}",panic).unwrap();
+			PANIC_MESSAGE=format_static!(1024,"[PANIC] NoirVisor {}",panic).unwrap();
 		}
 		error!("\x1b[91m[PANIC] NoirVisor {} \x1b[39m",panic);
 		loop{}

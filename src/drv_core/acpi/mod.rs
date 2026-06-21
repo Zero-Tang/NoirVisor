@@ -19,7 +19,7 @@ use log::*;
 use nvcvm::status::Status;
 
 use tables::{AcpiSystemDescriptorSignature, ExtendedSystemDescriptorTable, RootSystemDescriptionTable, SystemDescriptionHeader};
-use crate::xpf_core::nvbdk::{noir_map_physical_memory, noir_unmap_physical_memory};
+use crate::xpf_core::nvbdk::MappedDescriptor;
 
 pub mod tables;
 
@@ -35,7 +35,7 @@ unsafe extern "C"
 
 struct AcpiManager
 {
-	table:Vec<AtomicPtr<SystemDescriptionHeader>>
+	table:Vec<MappedDescriptor<SystemDescriptionHeader>>
 }
 
 impl AcpiManager
@@ -43,21 +43,20 @@ impl AcpiManager
 	fn add_header(&mut self,phys:impl Into<u64>)
 	{
 		let phys:u64=phys.into();
-		let tmp:*mut SystemDescriptionHeader=unsafe{noir_map_physical_memory(phys,size_of::<SystemDescriptionHeader>()).cast()};
+		let tmp:MappedDescriptor<SystemDescriptionHeader>=MappedDescriptor::map(phys,size_of::<SystemDescriptionHeader>());
 		if tmp.is_null()
 		{
 			error!("Failed to map ACPI Table at 0x{phys:016X}!");
 			return;
 		}
-		let virt:*mut SystemDescriptionHeader=unsafe{noir_map_physical_memory(phys,(*tmp).get_length() as usize).cast()};
-		unsafe{noir_unmap_physical_memory(tmp.cast(),size_of::<SystemDescriptionHeader>())};
+		let virt:MappedDescriptor<SystemDescriptionHeader>=MappedDescriptor::map(phys,tmp.as_ref().get_length() as usize);
 		if virt.is_null()
 		{
 			error!("Failed to map ACPI Table at 0x{phys:016X}!");
 			return;
 		}
-		unsafe{debug!("Enumerated ACPI Table {}! Mapped to {virt:p} (Size={} bytes)...",(*virt).signature,(*virt).get_length())};
-		self.table.push(AtomicPtr::new(virt));
+		debug!("Enumerated ACPI Table {}! Mapped to {:p} (Size={} bytes)...",virt.as_ref().signature,virt.virt,virt.as_ref().get_length());
+		self.table.push(virt);
 	}
 
 	fn init_via_rsdt(&mut self,rsdt:*const RootSystemDescriptionTable)
@@ -88,12 +87,12 @@ impl AcpiManager
 		debug!("No ACPI support!");
 	}
 
-	pub fn search(&self,signature:AcpiSystemDescriptorSignature,mut f:impl FnMut(*mut SystemDescriptionHeader)->bool)
+	pub fn search(&self,signature:AcpiSystemDescriptorSignature,mut f:impl FnMut(*const SystemDescriptionHeader)->bool)
 	{
 		for virt in &self.table
 		{
-			let v=virt.load(Ordering::Relaxed);
-			if unsafe{(*v).signature.0}==signature.0 && !f(v)
+			let v=virt.as_ref();
+			if v.signature.0==signature.0 && !f(&raw const *v)
 			{
 				break;
 			}
@@ -101,7 +100,7 @@ impl AcpiManager
 	}
 }
 
-pub fn search_acpi_table(signature:AcpiSystemDescriptorSignature,f:impl FnMut(*mut SystemDescriptionHeader)->bool)
+pub fn search_acpi_table(signature:AcpiSystemDescriptorSignature,f:impl FnMut(*const SystemDescriptionHeader)->bool)
 {
 	let acpi_mgr=ACPI_MANAGER.read();
 	acpi_mgr.search(signature,f);
@@ -128,15 +127,8 @@ pub fn search_acpi_table(signature:AcpiSystemDescriptorSignature,f:impl FnMut(*m
 
 #[unsafe(no_mangle)] extern "C" fn nvc_acpi_finalize()
 {
-	let acpi_mgr=ACPI_MANAGER.read();
-	for virt in &acpi_mgr.table
-	{
-		let virt=virt.load(Ordering::Relaxed);
-		unsafe
-		{
-			noir_unmap_physical_memory(virt.cast(),(*virt).get_length() as usize);
-		}
-	}
+	let mut acpi_mgr=ACPI_MANAGER.write();
+	acpi_mgr.table.clear();
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_acpi_get_rsdt_ptr()->*mut SystemDescriptionHeader

@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_bittest64, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut, slice};
+use core::{arch::x86_64::_bittest64, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut, slice, sync::atomic::{AtomicPtr, Ordering}};
 use super::{asm::{crdr::*, msr::rdmsr, seg::*}, x86::{descriptors::{DescriptorTable, SegmentFlags}, msr::*}};
 use alloc::vec::Vec;
 use bitfield_struct::bitfield;
@@ -116,6 +116,108 @@ impl<const N:usize,T:Sized> MmioDescriptor<N,T>
 		{
 			virt:unsafe{noir_map_uncached_memory(phys,page_4kb_mult(N)).cast()},
 			phys
+		}
+	}
+}
+
+impl<const N:usize,T:Sized> Drop for MmioDescriptor<N,T>
+{
+	fn drop(&mut self)
+	{
+		if !self.virt.is_null()
+		{
+			unsafe
+			{
+				noir_unmap_physical_memory(self.virt.cast(),page_4kb_mult(N));
+			}
+		}
+	}
+}
+
+pub struct MappedDescriptor<T:Sized>
+{
+	pub virt:AtomicPtr<T>,
+	pub phys:u64,
+	pub size:usize
+}
+
+impl<T:Sized> AsRef<T> for MappedDescriptor<T>
+{
+	fn as_ref(&self)->&T
+	{
+		unsafe
+		{
+			&*self.virt.load(Ordering::Relaxed)
+		}
+	}
+}
+
+impl<T:Sized> AsMut<T> for MappedDescriptor<T>
+{
+	fn as_mut(&mut self)->&mut T
+	{
+		unsafe
+		{
+			&mut *self.virt.load(Ordering::Relaxed)
+		}
+	}
+}
+
+impl<T:Sized> MappedDescriptor<T>
+{
+	pub const fn null()->Self
+	{
+		Self
+		{
+			virt:AtomicPtr::new(null_mut()),
+			phys:0,
+			size:0
+		}
+	}
+
+	pub fn map(phys:u64,size:usize)->Self
+	{
+		Self
+		{
+			virt:AtomicPtr::new(unsafe{noir_map_physical_memory(phys,size)}.cast()),
+			phys,
+			size
+		}
+	}
+
+	pub fn is_null(&self)->bool
+	{
+		self.virt.load(Ordering::Relaxed).is_null()
+	}
+
+	/// ## Safety
+	/// You must make sure `len` will not exceed the mapped range.
+	pub unsafe fn as_slice(&self,len:usize)->&[T]
+	{
+		unsafe
+		{
+			slice::from_raw_parts(self.virt.load(Ordering::Relaxed),len)
+		}
+	}
+
+	/// ## Safety
+	/// You must make sure `len` will not exceed the mapped range.
+	pub unsafe fn as_mut_slice(&mut self,len:usize)->&mut [T]
+	{
+		unsafe
+		{
+			slice::from_raw_parts_mut(self.virt.load(Ordering::Relaxed),len)
+		}
+	}
+}
+
+impl<T:Sized> Drop for MappedDescriptor<T>
+{
+	fn drop(&mut self)
+	{
+		unsafe
+		{
+			noir_unmap_physical_memory(self.virt.load(Ordering::Relaxed).cast(),self.size);
 		}
 	}
 }

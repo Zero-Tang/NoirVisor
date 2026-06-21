@@ -117,6 +117,7 @@ impl RemappingTypeHeader
 	}
 
 	/// Returns the length of this structure in bytes.
+	#[allow(clippy::len_without_is_empty)]
 	pub fn len(&self)->usize
 	{
 		self.length as usize

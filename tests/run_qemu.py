@@ -9,10 +9,13 @@ if __name__=="__main__":
 	debug_log=None
 	can_run=True
 	cpu_arg="{},hypervisor=off"
-	machine_arg="pc,smm=on,{}"
+	machine_arg="q35,smm=on,{}"
 	smp_count=1
 	gdb=False
 	build_preset="chk"
+	iommu=None
+	iommu_arg=None
+	pcileech=False
 	# Check command-line arguments
 	i=1
 	while i<len(sys.argv):
@@ -29,9 +32,23 @@ if __name__=="__main__":
 			gdb=True
 		elif sys.argv[i]=="-release":
 			build_preset="fre"
+		elif sys.argv[i]=="-iommu":
+			i+=1
+			iommu=sys.argv[i].lower()
+		elif sys.argv[i]=="-pcileech":
+			pcileech=True
 		else:
 			print("Unknown argument: {}!".format(sys.argv[i]))
 		i+=1
+	if iommu=="intel":
+		iommu_arg="intel-iommu,aw-bits=48"
+	elif iommu=="amd":
+		iommu_arg="amd-iommu,xtsup=on,dma-remap=on"
+	elif iommu is None:
+		iommu_arg=None
+	else:
+		can_run=False
+		print("Error: Unknown IOMMU vendor: {}! Must be either intel or amd!".format(iommu))
 	if accel_name=="tcg":
 		cpu_arg=cpu_arg.format("max")
 		machine_arg=machine_arg.format("accel=tcg,kernel-irqchip=off")
@@ -80,5 +97,9 @@ if __name__=="__main__":
 			cmd_list+=["-d",debug_log,"-D","qemu.log"]
 		if gdb:
 			cmd_list.append("-s")
+		if not iommu is None:
+			cmd_list+=["-device",iommu_arg]
+		if pcileech:
+			cmd_list+=["-chardev","socket,id=pcileech,wait=off,server=on,host=0.0.0.0,port=6789","-device","pcileech,chardev=pcileech"]
 		print(cmd_list)
 		subprocess.call(cmd_list)

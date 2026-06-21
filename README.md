@@ -13,7 +13,7 @@ NoirVisor - The Grimoire Hypervisor solution for AMD64 Processors.
     </a>
 </p>
 
-Tips: if the link does not work, try to hover the shield icon and see text.
+Tips: if the link for QQ Group does not work, try to hover the icon over the shield icon and see text.
 
 # Introduction
 NoirVisor is a hardware-accelerated hypervisor (a.k.a VMM, Virtual Machine Monitor) with support to complex functions and purposes. It is designed to support processors based on x86 architecture with hardware-accelerated virtualization feature. For example, Intel processors supporting Intel VT-x or AMD processors supporting AMD-V meet the requirement. By design, NoirVisor determines the processor manufacturer and selects the function core.
@@ -48,8 +48,10 @@ Nested Intel VT-x is not supported yet.
 NoirVisor is coded in the C programming language, Assembly and Rust. \
 **NO C++ CODES ARE ACCEPTED IN THIS PROJECT!**
 
+You should consult the [contribution guidelines](./contributing.md) and [code of conduct](./code_of_conduct.md) while making contributions.
+
 ## Rust
-If your patch includes Rust codes, make sure it could pass `cargo clippy` checks! No warnings and errors are allowed. \
+If your patch includes Rust codes, make sure it could pass `cargo clippy --all` checks! No warnings and errors are allowed. \
 If you believe `clippy` is prompting dubious warnings and errors, do not put `#[allow(...)]` on your own. Instead, report in your PR and state why you think that is false positive. \
 If it is really is false positive, relevant suppression will be put.
 
@@ -155,6 +157,14 @@ If you want to enable GDB debug stub at `localhost:1234`:
 ```
 python run_qemu.py -gdb
 ```
+If you want to test IOMMU for NoirVisor:
+```
+python run_qemu.py -iommu intel|amd
+```
+If you're using [the QEMU fork which contains the virtual PCILeech device](https://github.com/qemu-pcileech/qemu), you may enable the virtual PCILeech device to listen on 6789 port:
+```
+python run_qemu.py -iommu intel|amd -pcileech
+```
 
 Note that QEMU TCG may output debug logs. Pass `-debug` argument to this script in order to give `-d` argument to QEMU. You might most likely be interested in giving `-d int` argument in order to log exceptions. In other words:
 ```
@@ -175,6 +185,7 @@ To run the optimized binary in Bochs:
 ```
 python run_bochs.py --release
 ```
+Bochs does not support emulating IOMMU (i.e.: Intel VT-d and AMD-Vi) yet. To test IOMMU functionality, only QEMU is supported.
 
 # Documents
 This repository provides [additional documents](/doc/readme.md) which help new developers to join development.

@@ -15,7 +15,7 @@ use log::*;
 use spin::{Mutex, MutexGuard};
 
 use nvcvm::status::Status;
-use static_collections::string::StaticString;
+use static_collections::{string::StaticString,format_static};
 
 use core::{cell::LazyCell, fmt, ptr::null_mut, sync::atomic::{AtomicPtr, AtomicUsize, Ordering}};
 use alloc::boxed::Box;
@@ -108,7 +108,12 @@ impl Log for InternalLogger
 	{
 		let level=InternalLogger::LEVEL_CHAR[record.level() as usize];
 		let color=InternalLogger::LEVEL_COLOR[record.level() as usize];
-		println!("\x1b[{color}m{:28} @{:4} |{level}|\x1b[39m {}",record.file().unwrap_or("unknown-file"),record.line().unwrap_or(0),record.args());
+		let mut x=format_static!(40,"{}:{}",record.file().unwrap_or("unknown-file"),record.line().unwrap_or(0)).unwrap();
+		while x.len()<x.capacity()
+		{
+			let _=x.push(' ');
+		}
+		println!("\x1b[{color}m{x} |{level}|\x1b[39m {}",record.args());
 	}
 }
 

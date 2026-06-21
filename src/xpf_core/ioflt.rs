@@ -18,13 +18,29 @@ use nvcvm::status::Status;
 
 pub trait IoRegionOps
 {
+	/// ## `name` method
+	/// Returns the name of the I/O Region.
 	fn name(&self)->&str;
+	/// ## `input` method
+	/// If `forward_input` returns `true`, the implementation can be empty. \
+	/// Otherwise, this trait method must implement input filtering.
 	fn input(&mut self,address:u64,value:&mut [u8],context:*mut c_void)->Status;
+	/// `output` method
+	/// If `forward_output` returns `true`, the implementation can be empty. \
+	/// Otherwise, this trait method must implement output filtering.
 	fn output(&mut self,address:u64,value:&[u8],context:*mut c_void)->Status;
+	/// `base_size` method
+	/// Returns the base address and the size.
 	fn base_size(&self)->(u64,usize);
+	/// `forward_input` method
+	/// Returns whether the input operation should be forwarded to the hardware.
 	fn forward_input(&self)->bool;
+	/// `forward_output` method
+	/// Returns whether the output operation should be forwarded to the hardware.
 	fn forward_output(&self)->bool;
 
+	/// `binary_search_helper` method
+	/// Helps locates the I/O Region faster.
 	fn binary_search_helper(&self,addr:u64)->Ordering
 	{
 		let (b,s)=self.base_size();

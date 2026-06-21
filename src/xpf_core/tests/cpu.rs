@@ -46,38 +46,38 @@ unsafe extern "system"
 	0
 }
 
-#[unsafe(no_mangle)] extern "C" fn noir_acquire_pushlock_exclusive(push_lock:*mut usize)
+#[unsafe(no_mangle)] extern "C" fn noir_acquire_pushlock_exclusive(_push_lock:*mut usize)
 {
 	#[cfg(windows)]
 	unsafe
 	{
-		AcquireSRWLockExclusive(push_lock)
+		AcquireSRWLockExclusive(_push_lock)
 	}
 }
 
-#[unsafe(no_mangle)] extern "C" fn noir_acquire_pushlock_shared(push_lock:*mut usize)
+#[unsafe(no_mangle)] extern "C" fn noir_acquire_pushlock_shared(_push_lock:*mut usize)
 {
 	#[cfg(windows)]
 	unsafe
 	{
-		AcquireSRWLockShared(push_lock)
+		AcquireSRWLockShared(_push_lock)
 	}
 }
 
-#[unsafe(no_mangle)] extern "C" fn noir_release_pushlock_exclusive(push_lock:*mut usize)
+#[unsafe(no_mangle)] extern "C" fn noir_release_pushlock_exclusive(_push_lock:*mut usize)
 {
 	#[cfg(windows)]
 	unsafe
 	{
-		ReleaseSRWLockExclusive(push_lock);
+		ReleaseSRWLockExclusive(_push_lock);
 	}
 }
 
-#[unsafe(no_mangle)] extern "C" fn noir_release_pushlock_shared(push_lock:*mut usize)
+#[unsafe(no_mangle)] extern "C" fn noir_release_pushlock_shared(_push_lock:*mut usize)
 {
 	#[cfg(windows)]
 	unsafe
 	{
-		ReleaseSRWLockShared(push_lock)
+		ReleaseSRWLockShared(_push_lock)
 	}
 }

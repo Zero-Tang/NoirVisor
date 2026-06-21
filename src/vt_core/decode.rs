@@ -11,9 +11,9 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::ffi::c_void;
+use core::slice;
 
-use crate::{vt_core::{VtVcpu, vmcs::*}, xpf_core::{asm::vt::{vmread32, vmread64, vmreadptr}, nvbdk::memcpy, x86::{crdr::{Cr0, Cr4}, msr::Efer, paging::{PageTranslationHelper, read_virtual_address}}}};
+use crate::{vt_core::{VtVcpu, vmcs::*}, xpf_core::{asm::vt::{vmread32, vmread64, vmreadptr}, x86::{crdr::{Cr0, Cr4}, msr::Efer, paging::{PageTranslationHelper, read_virtual_address}}}};
 
 impl PageTranslationHelper for VtVcpu
 {
@@ -45,19 +45,15 @@ impl PageTranslationHelper for VtVcpu
 
 	fn read_phys_mem(&self,pa:u64,buffer:&mut [u8])->usize
 	{
-		unsafe
-		{
-			memcpy(buffer.as_mut_ptr().cast(),pa as *const c_void,buffer.len());
-		}
+		let src=unsafe{slice::from_raw_parts(pa as *const u8,buffer.len())};
+		buffer.copy_from_slice(src);
 		buffer.len()
 	}
 
 	fn write_phys_mem(&self,pa:u64,buffer:&[u8])->usize
 	{
-		unsafe
-		{
-			memcpy(pa as *mut c_void,buffer.as_ptr().cast(),buffer.len());
-		}
+		let dest=unsafe{slice::from_raw_parts_mut(pa as *mut u8,buffer.len())};
+		dest.copy_from_slice(buffer);
 		buffer.len()
 	}
 }

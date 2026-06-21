@@ -10,11 +10,12 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{fmt::Display,ffi::c_void};
+use core::fmt::Display;
 use alloc::vec::Vec;
 
 use bitfield_struct::bitfield;
 use log::*;
+use static_collections::vec::StaticVec;
 
 use crate::*;
 use xpf_core::{ci::CI_MANAGER, ioflt::IoAddressSpace, nvbdk::*,allocator::*};
@@ -578,20 +579,17 @@ impl SvmNptManager
 		}
 	}
 
-	extern "C" fn enum_page_rt(start:u64,length:u64,context:*mut c_void)
-	{
-		let s:&mut Self=unsafe{&mut *context.cast()};
-		if length!=PAGE_2MB_SIZE as u64
-		{
-			panic!("While enumerating allocated large pages, Page 0x{:016X} does not have exactly 2MiB size! (0x{:X})",start,length);
-		}
-		debug!("Protecting page range 0x{:X} to 0x{:X}...",start,start+length);
-		s.update_pde(start,start,true,false,false,true);
-	}
-
 	pub fn protect_allocated_pages(&mut self)
 	{
-		enum_allocated_large_pages(SvmNptManager::enum_page_rt,self as *mut Self as *mut c_void);
+		let mut v:StaticVec<64,u64>=StaticVec::new();
+		for p in PAGE_ALLOC_MANAGER.lock().iter()
+		{
+			v.push(p);
+		}
+		for &p in v.iter()
+		{
+			self.update_pde(p,p,true,false,false,true);
+		}
 	}
 
 	pub fn protect_ci(&mut self)

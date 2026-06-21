@@ -10,10 +10,11 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{cmp::Ordering, ffi::c_void};
+use core::cmp::Ordering;
 use alloc::vec::Vec;
+use static_collections::vec::StaticVec;
 
-use crate::{vt_core::ia32::msr::VmxEptVpidCapMsr, xpf_core::{ci::CI_MANAGER, allocator::enum_allocated_large_pages}, *};
+use crate::{vt_core::ia32::msr::VmxEptVpidCapMsr, xpf_core::{allocator::PAGE_ALLOC_MANAGER, ci::CI_MANAGER, ioflt::IoAddressSpace}, *};
 use xpf_core::{nvbdk::*, x86::caching::*};
 
 use bitfield_struct::bitfield;
@@ -390,7 +391,7 @@ impl VtEptManager
 		}
 	}
 
-	pub fn update_pte(&mut self,gpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
+	pub fn update_pte(&mut self,gpa:u64,hpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
 	{
 		self.split_pde(gpa);
 		let pte_p=self.locate_pte(gpa).unwrap();
@@ -403,11 +404,12 @@ impl VtEptManager
 			if let Some(p)=r {(*pte_p).set_read(p);}
 			if let Some(p)=w {(*pte_p).set_write(p);}
 			if let Some(p)=x {(*pte_p).set_execute(p);}
+			(*pte_p).set_page_base(page_4kb_count(hpa));
 		}
 		
 	}
 
-	pub fn update_pde(&mut self,gpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
+	pub fn update_pde(&mut self,gpa:u64,hpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
 	{
 		self.split_pdpte(gpa);
 		let pde_p=self.locate_pde(gpa).unwrap();
@@ -422,18 +424,19 @@ impl VtEptManager
 				if let Some(p)=r {(*pde_p).set_read(p);}
 				if let Some(p)=w {(*pde_p).set_write(p);}
 				if let Some(p)=x {(*pde_p).set_execute(p);}
+				(*pde_p).set_page_base(page_2mb_count(hpa));
 			}
 			else
 			{
 				for i in 0..PAGE_TABLE_ENTRIES64 as u64
 				{
-					self.update_pte(gpa+page_4kb_mult(i),memory_type,r,w,x);
+					self.update_pte(gpa+page_4kb_mult(i),hpa+page_4kb_mult(i),memory_type,r,w,x);
 				}
 			}
 		}
 	}
 
-	pub fn update_pdpte(&mut self,gpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
+	pub fn update_pdpte(&mut self,gpa:u64,hpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
 	{
 		let pdpte_i=page_1gb_count(gpa as usize);
 		unsafe
@@ -448,12 +451,13 @@ impl VtEptManager
 				if let Some(p)=r {(*pdpte_p).set_read(p);}
 				if let Some(p)=w {(*pdpte_p).set_write(p);}
 				if let Some(p)=x {(*pdpte_p).set_execute(p);}
+				(*pdpte_p).set_page_base(page_1gb_count(hpa));
 			}
 			else
 			{
 				for i in 0..PAGE_TABLE_ENTRIES64 as u64
 				{
-					self.update_pde(gpa+page_2mb_mult(i),memory_type,r,w,x);
+					self.update_pde(gpa+page_2mb_mult(i),hpa+page_2mb_mult(i),memory_type,r,w,x);
 				}
 			}
 		}
@@ -480,26 +484,23 @@ impl VtEptManager
 					2=>Self::update_pdpte,
 					_=>panic!("Unrecognized page-size identifier: {}!",p.page_size)
 				};
-				updater_fn(self,p.base,Some((p.memory_type as u64,force_update)),None,None,None);
+				updater_fn(self,p.base,p.base,Some((p.memory_type as u64,force_update)),None,None,None);
 			}
 		}
 		self.mtrr_mgr=mtrr_mgr;
 	}
 
-	extern "C" fn enum_page_rt(start:u64,length:u64,context:*mut c_void)
-	{
-		let s:&mut Self=unsafe{&mut *context.cast()};
-		if length!=PAGE_2MB_SIZE as u64
-		{
-			panic!("While enumerating allocated large pages, Page 0x{:016X} does not have exactly 2MiB size! (0x{:X})",start,length);
-		}
-		debug!("Protecting page range 0x{:X} to 0x{:X}...",start,start+length);
-		s.update_pde(start,None,Some(true),Some(false),Some(false));
-	}
-
 	pub fn protect_allocated_pages(&mut self)
 	{
-		enum_allocated_large_pages(Self::enum_page_rt,(self as *mut Self).cast());
+		let mut v:StaticVec<64,u64>=StaticVec::new();
+		for p in PAGE_ALLOC_MANAGER.lock().iter()
+		{
+			v.push(p);
+		}
+		for &p in v.iter()
+		{
+			self.update_pde(p,p,None,Some(true),Some(false),Some(false));
+		}
 	}
 
 	pub fn protect_ci(&mut self)
@@ -508,7 +509,41 @@ impl VtEptManager
 		for p in ci.into_iter()
 		{
 			let phys=page_mult(p.pfn());
-			self.update_pte(phys,None,None,Some(p.delay()),None);
+			self.update_pte(phys,phys,None,None,Some(p.delay()),None);
+		}
+	}
+
+	pub fn setup_mmio_filter(&mut self,mmio_space:&IoAddressSpace)
+	{
+		// EPT will handle MMIO filters in the host system.
+		for r in &mmio_space.regions
+		{
+			let (mut p,s)=r.base_size();
+			let end=p+s as u64;
+			while p<end
+			{
+				let remainder=end-p;
+				let increment=if page_1gb_offset(remainder)==0 && page_1gb_offset(p)==0
+				{
+					PAGE_1GB_SIZE
+				}
+				else if page_2mb_offset(remainder)==0 && page_2mb_offset(p)==0
+				{
+					PAGE_2MB_SIZE
+				}
+				else
+				{
+					PAGE_4KB_SIZE
+				};
+				match increment
+				{
+					PAGE_1GB_SIZE=>self.update_pdpte(p,p,None,Some(r.forward_input()),Some(r.forward_output()),Some(false)),
+					PAGE_2MB_SIZE=>self.update_pde(p,p,None,Some(r.forward_input()),Some(r.forward_output()),Some(false)),
+					PAGE_4KB_SIZE=>self.update_pte(p,p,None,Some(r.forward_input()),Some(r.forward_output()),Some(false)),
+					_=>panic!("Unknown increment size: 0x{increment:X}")
+				}
+				p+=increment as u64;
+			}
 		}
 	}
 
