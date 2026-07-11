@@ -12,7 +12,7 @@
 
 use core::{ffi::c_void, hint::spin_loop, slice, sync::atomic::Ordering};
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use log::{info, trace};
+use log::{error, info, trace};
 use nvcvm::status::Status;
 
 use crate::{drv_core::{acpi::tables::DmaRemappingReportingStructure, iommu::intel::registers::*}, xpf_core::{ioflt::IoRegionOps, nvbdk::*}};
@@ -451,7 +451,7 @@ pub(super) fn create_iommu(acpi_tables:&[*const DmaRemappingReportingStructure])
 	for t in acpi_tables
 	{
 		let table=unsafe{&**t};
-		let limit=table.header.get_length() as usize-size_of::<DmaRemappingReportingStructure>();
+		let limit=table.header.length.get() as usize-size_of::<DmaRemappingReportingStructure>();
 		let mut cursor=0;
 		while cursor<limit
 		{
@@ -505,15 +505,13 @@ pub(super) fn create_iommu(acpi_tables:&[*const DmaRemappingReportingStructure])
 	}
 	if req_sup
 	{
-		x.root=MemoryDescriptor::alloc().unwrap();
-		x.ctxt=MemoryDescriptor::alloc().unwrap();
 		x.pml5.push(IntelIommuPageEntryDescriptor{gpa_start:0,descriptor:MemoryDescriptor::alloc().unwrap()});
 		trace!("IOMMU PML5E: 0x{:X}",x.pml5[0].descriptor.phys);
 		Some(x)
 	}
 	else
 	{
-		info!("The Intel VT-d implementation of this machine does not meet minimum requirement!");
+		error!("The Intel VT-d implementation of this machine does not meet minimum requirement!");
 		None
 	}
 }

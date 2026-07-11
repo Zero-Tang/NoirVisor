@@ -29,7 +29,7 @@ unsafe extern "C"
 	fn nvc_logger_initialize(level:u32)->bool;
 	fn nvc_build_hypervisor()->u32;
 	fn NoirInitializeDisassembler();
-	fn strlen(string:*const u8)->usize;
+	fn strlen(string:*const i8)->usize;
 }
 
 #[unsafe(no_mangle)] extern "C" fn nvc_store_image_info(base:*mut *mut c_void,size:*mut u32)
@@ -197,7 +197,7 @@ pub fn init_ci()->bool
 			let section_headers:&[IMAGE_SECTION_HEADER]=unsafe{slice::from_raw_parts(image_base.byte_add(dos_head.e_lfanew as usize+size_of::<IMAGE_NT_HEADERS>()).cast(),nt_head.FileHeader.NumberOfSections as usize)};
 			for section in section_headers
 			{
-				let section_name:&str=unsafe{str::from_utf8_unchecked(slice::from_raw_parts(section.Name.as_ptr(),core::cmp::min(strlen(section.Name.as_ptr()),IMAGE_SIZEOF_SHORT_NAME)))};
+				let section_name:&str=unsafe{str::from_utf8_unchecked(slice::from_raw_parts(section.Name.as_ptr(),core::cmp::min(strlen(section.Name.as_ptr().cast()),IMAGE_SIZEOF_SHORT_NAME)))};
 				let base=unsafe{image_base.byte_add(section.VirtualAddress as usize)};
 				let size=section.SizeOfRawData;
 				if matches!(section_name,".text"|".eh_fram"|".rdata"|".pdata")
@@ -244,7 +244,7 @@ pub fn test_ci()
 			println!("[CI Test] Searching for .text section (has {} sections)...",section_headers.len());
 			for section in section_headers
 			{
-				let section_name:&str=unsafe{str::from_utf8_unchecked(slice::from_raw_parts(section.Name.as_ptr(),strlen(section.Name.as_ptr())))};
+				let section_name:&str=unsafe{str::from_utf8_unchecked(slice::from_raw_parts(section.Name.as_ptr(),strlen(section.Name.as_ptr().cast())))};
 				if section_name==".text"
 				{
 					unsafe

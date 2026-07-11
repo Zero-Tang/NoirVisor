@@ -114,7 +114,7 @@ pub fn hpet_read_counter()->u64
 	}
 	else
 	{
-		HPET_BASE_ADDRESS.store(unsafe{(*hpet_acpi_ptr).block.address},Ordering::Relaxed);
+		HPET_BASE_ADDRESS.store(unsafe{(*hpet_acpi_ptr).block.address.get()},Ordering::Relaxed);
 		HPET_PERIOD.store(hpet_read_register(HPET_GENERAL_COUNTER_CLOCK_PERIOD),Ordering::Relaxed);
 		Status::SUCCESS
 	}

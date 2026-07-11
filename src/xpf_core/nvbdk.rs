@@ -10,12 +10,12 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_bittest64, convert::From, ffi::c_void, fmt::{self, Display}, ops::*, ptr::null_mut, slice, sync::atomic::{AtomicPtr, Ordering}};
+use core::{arch::x86_64::_bittest64, convert::From, ffi::{c_int, c_void}, fmt::{self, Display}, ops::*, ptr::null_mut, slice, sync::atomic::{AtomicPtr, Ordering}};
 use super::{asm::{crdr::*, msr::rdmsr, seg::*}, x86::{descriptors::{DescriptorTable, SegmentFlags}, msr::*}};
 use alloc::vec::Vec;
 use bitfield_struct::bitfield;
 use paste::paste;
-use spin::Lazy;
+use spin::LazyLock;
 
 #[cfg(windows)] use crate::mshv_core::forwarder::MshvForwardStack;
 use crate::xpf_core::allocator::{ContiguousAllocator, InternalPageAllocator};
@@ -633,7 +633,7 @@ extern "C" fn phys_mem_range_enum_rt(start:u64,length:u64,context:*mut c_void)
 	v.push(PhysicalRange{start,length});
 }
 
-pub static SYSTEM_PHYSICAL_MEMORY_RANGES:Lazy<Vec<PhysicalRange>>=Lazy::new(||
+pub static SYSTEM_PHYSICAL_MEMORY_RANGES:LazyLock<Vec<PhysicalRange>>=LazyLock::new(||
 {
 	let mut v=Vec::new();
 	unsafe{noir_enum_physical_memory_ranges(phys_mem_range_enum_rt,(&raw mut v).cast())};
@@ -656,13 +656,13 @@ unsafe extern "C"
 	pub fn noir_unmap_physical_memory(virtual_address:*mut c_void,length:usize);
 	pub fn noir_enum_physical_memory_ranges(callback_routine:PhysicalRangeCallback,context:*mut c_void);
 	pub fn memcpy(dest:*mut c_void,src:*const c_void,cch:usize)->*mut c_void;
-	pub fn memset(dest:*mut c_void,val:u8,cch:usize)->*mut c_void;
+	pub fn memset(dest:*mut c_void,val:c_int,cch:usize)->*mut c_void;
 	// Image Facility
 	pub fn nvc_store_image_info(base:*mut *mut c_void,size:*mut u32);
 	// Configuration Facility
 	pub fn noir_query_enabled_features_in_system()->i64;
 	// String Facility
-	pub fn strlen(ptr:*const u8)->usize;
+	pub fn strlen(ptr:*const i8)->usize;
 	// Synchronization Facility
 	pub fn noir_acquire_pushlock_exclusive(push_lock:*mut usize);
 	pub fn noir_acquire_pushlock_shared(push_lock:*mut usize);
@@ -682,7 +682,7 @@ pub unsafe fn nulstr_from_ptr<'a>(ptr:*const u8)->&'a str
 {
 	unsafe
 	{
-		let str_slice=slice::from_raw_parts(ptr,strlen(ptr));
+		let str_slice=slice::from_raw_parts(ptr,strlen(ptr.cast()));
 		str::from_utf8_unchecked(str_slice)
 	}
 }
@@ -752,9 +752,9 @@ build_page_def!(_1GB_,30);
 build_page_def!(_512GB_,39);
 build_page_def!(_256TB_,48);
 
-pub const PAGE_SHIFT_DIFF64:usize=9;
-pub const PAGE_SHIFT_DIFF32:usize=10;
-pub const PAGE_SHIFT_DIFF:usize=if cfg!(target_arch="x86_64") {PAGE_SHIFT_DIFF64} else {PAGE_SHIFT_DIFF32};
+pub const PAGE_SHIFT_DIFF64:u8=9;
+pub const PAGE_SHIFT_DIFF32:u8=10;
+pub const PAGE_SHIFT_DIFF:u8=if cfg!(target_arch="x86_64") {PAGE_SHIFT_DIFF64} else {PAGE_SHIFT_DIFF32};
 pub const PAGE_TABLE_ENTRIES:usize=if cfg!(target_arch="x86_64") {PAGE_TABLE_ENTRIES64} else {PAGE_TABLE_ENTRIES32};
 pub const PAGE_TABLE_ENTRIES64:usize=512;
 pub const PAGE_TABLE_ENTRIES32:usize=1024;

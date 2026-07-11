@@ -81,7 +81,7 @@ impl<'a> Iterator for DmarIterator<'a>
 
 	fn next(&mut self)->Option<Self::Item>
 	{
-		if self.offset<self.source.header.get_length() as usize
+		if self.offset<self.source.header.length.get() as usize
 		{
 			let rs:&DmarRemappingStructure=unsafe{&*(self.source as *const DmarTable).byte_add(self.offset).cast()};
 			self.offset+=unsafe{rs.head.len()};

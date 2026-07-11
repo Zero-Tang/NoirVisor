@@ -701,7 +701,9 @@ impl HypervisorCapabilities for VtHypervisor
 			basic_requirement&=pri_proc_sup.get_allowed1().hlt_exiting();
 			basic_requirement&=pri_proc_sup.get_allowed1().nmi_window_exiting();
 			basic_requirement&=pri_proc_sup.get_allowed1().unconditional_io_exiting();
-			basic_requirement&=pri_proc_sup.get_allowed1().monitor_trap_flag();
+			// Note that Microsoft Hyper-V does not expose MTF its guest.
+			// It also implies if you're testing NoirVisor with KVM in WSL2, this requirement can't be satisfied.
+			// basic_requirement&=pri_proc_sup.get_allowed1().monitor_trap_flag();
 			basic_requirement&=pri_proc_sup.get_allowed1().use_msr_bitmap();
 			basic_requirement&=exit_sup.get_allowed1().acknowledge_interrupt_on_exit();
 			basic_requirement&=exit_sup.get_allowed1().load_efer();

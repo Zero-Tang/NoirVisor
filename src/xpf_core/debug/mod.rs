@@ -12,7 +12,7 @@
 
 use bitfield_struct::bitfield;
 use log::*;
-use spin::{Mutex, MutexGuard};
+use spin::{Mutex, MutexGuard, Spin};
 
 use nvcvm::status::Status;
 use static_collections::{string::StaticString,format_static};
@@ -182,7 +182,7 @@ static DEBUGGER:Mutex<LazyCell<Box<dyn DebuggerBackend>>>=Mutex::new(
 );
 
 // Avoid copying the formatted string. Directly pass-thru to the debugger output.
-struct FormattedDebugOutput(MutexGuard<'static,LazyCell<Box<dyn DebuggerBackend>>>);
+struct FormattedDebugOutput(MutexGuard<'static,LazyCell<Box<dyn DebuggerBackend>>,Spin>);
 
 impl fmt::Write for FormattedDebugOutput
 {

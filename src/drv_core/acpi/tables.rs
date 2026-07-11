@@ -12,9 +12,11 @@
 
 use paste::paste;
 use bitfield_struct::bitfield;
+use zerocopy::{Unalign, Unaligned};
 
-use core::{fmt::{self,Display}, mem::offset_of, str};
+use core::{fmt::{self,Display}, str};
 
+#[derive(Unaligned)]
 #[repr(C)] pub struct AcpiAddressSpaceId(pub u8);
 
 impl AcpiAddressSpaceId
@@ -26,29 +28,31 @@ impl AcpiAddressSpaceId
 	pub const FUNCTIONAL_FIXED_HARDWARE:u8=0x7F;
 }
 
-#[repr(C,packed)] pub struct GenericAddress
+#[derive(Unaligned)]
+#[repr(C)] pub struct GenericAddress
 {
 	pub asid:AcpiAddressSpaceId,
 	pub register_width:u8,
 	pub register_offset:u8,
 	pub access_size:u8,
-	pub address:u64
+	pub address:Unalign<u64>
 }
 
+#[derive(Unaligned)]
 #[repr(C)] pub struct RootSystemDescriptionPointer
 {
-	pub signature:u64,
+	pub signature:Unalign<u64>,
 	pub checksum:u8,
 	pub oemid:[u8;6],
 	pub revision:u8,
-	pub rsdt_address:u32,
-	pub length:u32,
-	pub xsdt_address:u64,
+	pub rsdt_address:Unalign<u32>,
+	pub length:Unalign<u32>,
+	pub xsdt_address:Unalign<u64>,
 	pub ext_checksum:u8,
 	pub reserved:[u8;3]
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Unaligned)]
 #[repr(C)] pub struct AcpiSystemDescriptorSignature(pub [u8;4]);
 
 macro_rules! make_acpi_signature
@@ -84,52 +88,46 @@ impl Display for AcpiSystemDescriptorSignature
 	}
 }
 
-#[repr(C,packed)] pub struct SystemDescriptionHeader
+#[derive(Unaligned)]
+#[repr(C)] pub struct SystemDescriptionHeader
 {
 	pub signature:AcpiSystemDescriptorSignature,
-	length:u32,
+	pub length:Unalign<u32>,
 	pub revision:u8,
 	pub checksum:u8,
 	pub oemid:[u8;6],
 	pub oem_table_id:[u8;8],
-	pub oem_revision:u32,
-	pub creator_id:u32,
-	pub creator_revision:u32
+	pub oem_revision:Unalign<u32>,
+	pub creator_id:Unalign<u32>,
+	pub creator_revision:Unalign<u32>
 }
 
-impl SystemDescriptionHeader
-{
-	pub fn get_length(&self)->u32
-	{
-		// ACPI-table does not guarantee alignment.
-		let s=self as *const Self;
-		let p:*const u32=unsafe{s.byte_add(offset_of!(Self,length)).cast()};
-		unsafe{p.read_unaligned()}
-	}
-}
-
+#[derive(Unaligned)]
 #[repr(C)] pub struct RootSystemDescriptionTable
 {
 	pub header:SystemDescriptionHeader,
-	pub entries:[u32;0]
+	pub entries:[Unalign<u32>;0]
 }
 
-#[repr(C,packed)] pub struct ExtendedSystemDescriptorTable
+#[derive(Unaligned)]
+#[repr(C)] pub struct ExtendedSystemDescriptorTable
 {
 	pub header:SystemDescriptionHeader,
-	pub entries:[u64;0]
+	pub entries:[Unalign<u64>;0]
 }
 
-#[repr(C,packed)] pub struct HighPrecisionEventTimerTable
+#[derive(Unaligned)]
+#[repr(C)] pub struct HighPrecisionEventTimerTable
 {
 	pub header:SystemDescriptionHeader,
-	pub hardware_id:u32,
+	pub hardware_id:Unalign<u32>,
 	pub block:GenericAddress,
 	pub hpet_number:u8,
-	pub minimum_tick:u16,
+	pub minimum_tick:Unalign<u16>,
 	pub page_protection:u8
 }
 
+#[derive(Unaligned)]
 #[repr(C)] pub struct DmaRemappingReportingStructure
 {
 	pub header:SystemDescriptionHeader,
@@ -139,11 +137,12 @@ impl SystemDescriptionHeader
 	pub remap_structs:[u8;0]
 }
 
+#[derive(Unaligned)]
 #[repr(C)] pub struct IoVirtualizationReportingStructure
 {
 	pub header:SystemDescriptionHeader,
-	pub iv_info:IvInfo,
-	pub reserved:u64,
+	pub iv_info:Unalign<IvInfo>,
+	pub reserved:Unalign<u64>,
 	pub ivdb:[u8;0]
 }
 
@@ -152,9 +151,9 @@ impl SystemDescriptionHeader
 	pub efr_sup:bool,
 	pub dma_remap_sup:bool,
 	#[bits(3)] rsvd0:u32,
-	#[bits(3)] gva_size:usize,
-	#[bits(7)] pa_size:usize,
-	#[bits(7)] va_size:usize,
+	#[bits(3)] pub gva_size:usize,
+	#[bits(7)] pub pa_size:usize,
+	#[bits(7)] pub va_size:usize,
 	pub ht_ats_reserved:bool,
 	#[bits(9)] rsvd1:u32
 }

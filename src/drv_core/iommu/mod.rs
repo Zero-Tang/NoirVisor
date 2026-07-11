@@ -97,8 +97,8 @@ pub fn create_iommu()->Option<Box<dyn IommuOps>>
 	}
 	else if !ivrs_list.is_empty()
 	{
-		warn!("AMD-Vi is not supported yet.");
-		None
+		info!("AMD-Vi is supported.");
+		amd::create_iommu(&ivrs_list)
 	}
 	else
 	{

@@ -35,7 +35,6 @@ mod hvcall;
 #[allow(dead_code)] mod npt;
 #[cfg(not(target_os="uefi"))]
 #[allow(dead_code)] pub mod custom;
-#[allow(dead_code)] mod iommu;
 
 #[repr(C,align(16))] pub struct SvmStackTop
 {

@@ -31,10 +31,10 @@ opt-level = 3
 members = ["crates/loadefi","crates/nvcvm", "src/booting/uefirtdrv"]
 
 [dependencies]
-paste = "1.0.15"
+paste = "*"
 nvcvm = {path = "crates/nvcvm"}
-spin = "0.10.0"
-log = "0.4.29"
+spin = "0.12.1"
+log = "0.4.33"
 bitfield-struct = "*"
 portable-dlmalloc = "1.3.0"
 
@@ -42,8 +42,12 @@ portable-dlmalloc = "1.3.0"
 version = "0.3.1"
 features = ["use_crt"]
 
+[dependencies.zerocopy]
+version = "0.8.54"
+features = ["derive"]
+
 [dependencies.yaxpeax-x86]
-version = "2.0.0"
+version = "2.2.0"
 default-features = false
 features = ["fmt"]
 

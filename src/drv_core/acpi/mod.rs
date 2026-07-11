@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{mem::offset_of, ptr::null_mut, slice, sync::atomic::{AtomicPtr, AtomicUsize, Ordering}};
+use core::{mem::offset_of, ptr::null_mut, sync::atomic::{AtomicPtr, AtomicUsize, Ordering}};
 use alloc::vec::Vec;
 
 use spin::RwLock;
@@ -49,29 +49,31 @@ impl AcpiManager
 			error!("Failed to map ACPI Table at 0x{phys:016X}!");
 			return;
 		}
-		let virt:MappedDescriptor<SystemDescriptionHeader>=MappedDescriptor::map(phys,tmp.as_ref().get_length() as usize);
+		let virt:MappedDescriptor<SystemDescriptionHeader>=MappedDescriptor::map(phys,tmp.as_ref().length.get() as usize);
 		if virt.is_null()
 		{
 			error!("Failed to map ACPI Table at 0x{phys:016X}!");
 			return;
 		}
-		debug!("Enumerated ACPI Table {}! Mapped to {:p} (Size={} bytes)...",virt.as_ref().signature,virt.virt,virt.as_ref().get_length());
+		debug!("Enumerated ACPI Table {}! Mapped to {:p} (Size={} bytes)...",virt.as_ref().signature,virt.virt,virt.as_ref().length.get());
 		self.table.push(virt);
 	}
 
 	fn init_via_rsdt(&mut self,rsdt:*const RootSystemDescriptionTable)
 	{
-		let count=(unsafe{(*rsdt).header.get_length() as usize}-size_of::<SystemDescriptionHeader>())>>2;
-		let rsdt_entries=unsafe{slice::from_raw_parts((*rsdt).entries.as_ptr(),count)};
-		for phys in rsdt_entries
+		let count=(unsafe{(*rsdt).header.length.get() as usize}-size_of::<SystemDescriptionHeader>())>>2;
+		debug!("RSDT Base Address: {rsdt:p}");
+		let rsdt_ptr:*const u32=unsafe{rsdt.byte_add(offset_of!(RootSystemDescriptionTable,entries)).cast()};
+		for i in 0..count
 		{
-			self.add_header(*phys);
+			let phys=unsafe{rsdt_ptr.add(i).read_unaligned()};
+			self.add_header(phys);
 		}
 	}
 
 	fn init_via_xsdt(&mut self,xsdt:*const ExtendedSystemDescriptorTable)
 	{
-		let count=(unsafe{(*xsdt).header.get_length() as usize}-size_of::<SystemDescriptionHeader>())>>3;
+		let count=(unsafe{(*xsdt).header.length.get() as usize}-size_of::<SystemDescriptionHeader>())>>3;
 		debug!("XSDT Base Address: {xsdt:p}");
 		let xsdt_ptr:*const u64=unsafe{xsdt.byte_add(offset_of!(ExtendedSystemDescriptorTable,entries)).cast()};
 		for i in 0..count

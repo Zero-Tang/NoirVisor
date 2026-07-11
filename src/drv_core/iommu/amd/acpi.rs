@@ -13,25 +13,46 @@
 use crate::*;
 
 use bitfield_struct::bitfield;
+use zerocopy::{Unalign, Unaligned};
 
-#[repr(C,packed)] pub struct Ivhd
+#[derive(Unaligned, Clone, Copy)]
+#[repr(C)] pub struct IvdbHeader
 {
-	pub ivdb_type:u8,
-	pub flags:IvhdFlags,
-	pub length:u16,
-	pub device_id:u16,
-	pub capability_offset:u16,
-	pub iommu_base_pa:u64,
-	pub pci_segment_group:u16,
-	pub iommu_info:IvhdIommuInfo,
-	pub iommu_feature_reporting:IvhdIommuFeatureReporting,
-	pub ivhd_dtes:[u32;0]
+	pub r#type:u8,
+	pub flags:u8,
+	pub length:Unalign<u16>
 }
 
-impl Ivhd
+#[derive(Unaligned, Clone, Copy)]
+#[repr(C)] pub struct Ivhd10
+{
+	pub header:IvdbHeader,
+	pub device_id:Unalign<u16>,
+	pub capability_offset:Unalign<u16>,
+	pub iommu_base_pa:Unalign<u64>,
+	pub pci_segment_group:Unalign<u16>,
+	pub iommu_info:Unalign<IvhdIommuInfo>,
+	pub iommu_feature_reporting:Unalign<IvhdIommuFeatureReporting>,
+	pub ivhd_dtes:[Unalign<u32>;0]
+}
+
+impl Ivhd10
 {
 	pub const REVISION_FIXED:u8=0x1;
 	pub const REVISION_MIXED:u8=0x2;
+}
+
+#[derive(Unaligned, Clone, Copy)]
+#[repr(C)] pub struct Ivhd11
+{
+	pub header:IvdbHeader,
+	pub device_id:Unalign<u16>,
+	pub capability_offset:Unalign<u16>,
+	pub iommu_base_pa:Unalign<u64>,
+	pub pci_segment_group:Unalign<u16>,
+	pub iommu_info:Unalign<IvhdIommuInfo>,
+	pub iommu_attributes:Unalign<IvhdIommuAttributes>,
+	pub ivhd_dtes:[Unalign<u64>;0]
 }
 
 #[bitfield(u8)] pub struct IvhdFlags
@@ -54,6 +75,16 @@ impl Ivhd
 	#[bits(3)] rsvd1:u16
 }
 
+#[bitfield(u32)] pub struct IvhdIommuAttributes
+{
+	pub hat_dis:bool,
+	#[bits(12)] rsvd0:u32,
+	#[bits(4)] pub pn_counters:usize,
+	#[bits(6)] pub pn_banks:usize,
+	#[bits(5)] pub msi_num_ppr:usize,
+	#[bits(4)] rsvd1:u32
+}
+
 #[bitfield(u32)] pub struct IvhdIommuFeatureReporting
 {
 	pub xt_sup:bool,
@@ -71,20 +102,19 @@ impl Ivhd
 	#[bits(2)] pub hats:u32
 }
 
-#[repr(C,packed)] pub struct IvhdLarge
+#[derive(Unaligned, Clone, Copy)]
+#[repr(C)] pub struct Ivhd40
 {
-	pub ivdb_type:u8,
-	pub flags:IvhdFlags,
-	pub length:u16,
-	pub device_id:u16,
-	pub capability_offset:u16,
-	pub iommu_base_pa:u64,
-	pub pci_segment_group:u16,
-	pub iommu_info:IvhdIommuInfo,
-	pub iommu_attributes:IvhdIommuFeatureReporting,
-	pub efr_register_image:u64,
-	pub efr_register_image2:u64,
-	pub ivhd_dtes:[u32;0]
+	pub header:IvdbHeader,
+	pub device_id:Unalign<u16>,
+	pub capability_offset:Unalign<u16>,
+	pub iommu_base_pa:Unalign<u64>,
+	pub pci_segment_group:Unalign<u16>,
+	pub iommu_info:Unalign<IvhdIommuInfo>,
+	pub iommu_attributes:Unalign<IvhdIommuAttributes>,
+	pub efr_register_image:Unalign<u64>,
+	pub efr_register_image2:Unalign<u64>,
+	pub ivhd_dtes:[Unalign<u64>;0]
 }
 
 pub enum IvhdDeviceEntry
@@ -273,6 +303,7 @@ impl IvhdDeviceEntry
 	pub ats_disabled:bool
 }
 
+#[derive(Unaligned)]
 #[repr(C)] pub struct IvhdSpecialDeviceVariety(pub u8);
 
 impl IvhdSpecialDeviceVariety
@@ -288,16 +319,15 @@ pub enum IvhdDeviceUniqueID
 	String(&'static str)
 }
 
+#[derive(Unaligned, Clone, Copy)]
 #[repr(C)] pub struct Ivmd
 {
-	pub ivmd_type:u8,
-	pub flags:u8,
-	pub length:u16,
-	pub device_id:u16,
-	pub aux_data:u16,
-	pub pci_segment_group:u16,
-	pub start_address:u64,
-	pub block_length:u64
+	pub header:IvdbHeader,
+	pub device_id:Unalign<u16>,
+	pub aux_data:Unalign<u16>,
+	pub pci_segment_group:Unalign<u16>,
+	pub start_address:Unalign<u64>,
+	pub block_length:Unalign<u64>
 }
 
 #[bitfield(u8)] pub struct IvmdFlags
@@ -307,4 +337,14 @@ pub enum IvhdDeviceUniqueID
 	pub iw:bool,
 	pub exclusion_range:bool,
 	#[bits(4)] rsvd:u8
+}
+
+#[derive(Unaligned, Clone, Copy)]
+#[repr(C)] pub union Ivdb
+{
+	pub head:IvdbHeader,
+	pub ivhd10:Ivhd10,
+	pub ivhd11:Ivhd11,
+	pub ivhd40:Ivhd40,
+	pub ivmd:Ivmd
 }

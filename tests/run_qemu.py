@@ -16,6 +16,7 @@ if __name__=="__main__":
 	iommu=None
 	iommu_arg=None
 	pcileech=False
+	debugcon=0xE9
 	# Check command-line arguments
 	i=1
 	while i<len(sys.argv):
@@ -37,6 +38,12 @@ if __name__=="__main__":
 			iommu=sys.argv[i].lower()
 		elif sys.argv[i]=="-pcileech":
 			pcileech=True
+		elif sys.argv[i]=="-debugcon":
+			i+=1
+			debugcon=eval(sys.argv[i])
+			if not isinstance(debugcon,int):
+				can_run=False
+				print("Error: ISA-DebugCon I/O Port number must be an integer!")
 		else:
 			print("Unknown argument: {}!".format(sys.argv[i]))
 		i+=1
@@ -92,7 +99,8 @@ if __name__=="__main__":
 			"-drive","if=pflash,format=raw,unit=0,readonly=on,file=ovmf-code.fd",
 			"-drive","if=pflash,format=raw,unit=1,readonly=on,file=ovmf-vars.fd",
 			"-drive","format=raw,file="+os.path.join("..","bin","comp{}_uefix64".format(build_preset),"NoirVisor-Uefi.img"),
-			"-debugcon","stdio"]
+			"-chardev","stdio,id=debugger",
+			"-device","isa-debugcon,iobase=0x{:X},chardev=debugger".format(debugcon)]
 		if not debug_log is None:
 			cmd_list+=["-d",debug_log,"-D","qemu.log"]
 		if gdb:

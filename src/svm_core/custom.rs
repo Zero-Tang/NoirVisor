@@ -153,8 +153,8 @@ impl SvmCustomHypervisor
 		let msrpm=MemoryDescriptor::alloc()?;
 		unsafe
 		{
-			memset(msrpm.virt as *mut c_void,u8::MAX,page_4kb_mult(2));
-			memset(iopm.virt as *mut c_void,u8::MAX,page_4kb_mult(2)+1);
+			memset(msrpm.virt as *mut c_void,0xFF,page_4kb_mult(2));
+			memset(iopm.virt as *mut c_void,0xFF,page_4kb_mult(2)+1);
 		}
 		Some
 		(

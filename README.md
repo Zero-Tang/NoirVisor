@@ -240,14 +240,11 @@ Porting to Unified Extensible Firmware Interface (UEFI) is in progress. \
 If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
 
 # Development Status
-Project NoirVisor has six future development plans:
+Project NoirVisor has three future development plans:
 
 - Develop Customizable VM engine for complex purposes.
 - Develop Nested Virtualization.
-- Develop IOMMU Core on AMD-Vi.
-- Port NoirVisor to the Rust Programming Language.
 - Port NoirVisor to Linux.
-- Port NoirVisor to UEFI and corresponding layered hypervisor.
 
 # Publications
 Here lists some informal publications (blogs) regarding hypervisor development:
@@ -262,9 +259,10 @@ Here lists some informal publications (blogs) regarding hypervisor development:
 - Minimal Microsoft `Hv#1` Hypervisor Functionalities.
 - Critical Hypervisor Protection.
 - Hardware-Level Code Integrity Enforcement, both Intel EPT and AMD NPT.
+- IOMMU-based DMA Protection.
 
 # License
-This repository is under MIT license.
+This repository is dual licensed with [MIT](./LICENSE-MIT) and [Apache-2.0](./LICENSE-APACHE), just like [rust](https://github.com/rust-lang/rust/blob/main/COPYRIGHT).
 
 # Code of Conduct
 The Code of Conduct is added to NoirVisor Project since May.5th, 2019. Please follow the rules when contributing.
