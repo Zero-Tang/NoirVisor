@@ -128,11 +128,6 @@ pub trait HypervisorEssentials
 	fn restore_system(&mut self)->Status;
 }
 
-pub trait VirtualCpu
-{
-	fn init(self);
-}
-
 static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 
 #[unsafe(no_mangle)] extern "C" fn noir_get_virtualization_supportability()->u32

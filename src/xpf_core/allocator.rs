@@ -14,7 +14,7 @@ use core::{ffi::c_void, fmt::{self,Display}, sync::atomic::*};
 
 use log::info;
 use portable_dlmalloc::raw::*;
-use spin::Mutex;
+use spin::{Mutex, MutexGuard};
 use static_collections::bitmap::RefBitmap;
 
 use super::nvbdk::*;
@@ -658,6 +658,14 @@ impl<const N:usize,T:Sized> MemoryDescriptor<N,T>
 		unsafe
 		{
 			a.alloc(N).map(|(virt,phys)| Self::new(virt.cast(),phys))
+		}
+	}
+
+	pub fn alloc_with_lock(lk:&mut MutexGuard<'_,PageAllocationManager>)->Option<Self>
+	{
+		unsafe
+		{
+			lk.alloc_pages(N).map(|(virt,phys)| Self::new(virt.cast(),phys))
 		}
 	}
 }

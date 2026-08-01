@@ -8,6 +8,7 @@ if __name__=="__main__":
 	accel_name="tcg"
 	debug_log=None
 	can_run=True
+	ram="128M"
 	cpu_arg="{},hypervisor=off"
 	machine_arg="q35,smm=on,{}"
 	smp_count=1
@@ -17,6 +18,7 @@ if __name__=="__main__":
 	iommu_arg=None
 	pcileech=False
 	debugcon=0xE9
+	monitor=None
 	# Check command-line arguments
 	i=1
 	while i<len(sys.argv):
@@ -29,6 +31,9 @@ if __name__=="__main__":
 		elif sys.argv[i]=="-smp":
 			i+=1
 			smp_count=int(sys.argv[i])
+		elif sys.argv[i]=="-m":
+			i+=1
+			ram=sys.argv[i]
 		elif sys.argv[i]=="-gdb":
 			gdb=True
 		elif sys.argv[i]=="-release":
@@ -44,6 +49,9 @@ if __name__=="__main__":
 			if not isinstance(debugcon,int):
 				can_run=False
 				print("Error: ISA-DebugCon I/O Port number must be an integer!")
+		elif sys.argv[i]=="-monitor":
+			i+=1
+			monitor=int(sys.argv[i])
 		else:
 			print("Unknown argument: {}!".format(sys.argv[i]))
 		i+=1
@@ -96,6 +104,7 @@ if __name__=="__main__":
 			"-machine",machine_arg,
 			"-cpu",cpu_arg,
 			"-smp",str(smp_count),
+			"-m",ram,
 			"-drive","if=pflash,format=raw,unit=0,readonly=on,file=ovmf-code.fd",
 			"-drive","if=pflash,format=raw,unit=1,readonly=on,file=ovmf-vars.fd",
 			"-drive","format=raw,file="+os.path.join("..","bin","comp{}_uefix64".format(build_preset),"NoirVisor-Uefi.img"),
@@ -109,5 +118,7 @@ if __name__=="__main__":
 			cmd_list+=["-device",iommu_arg]
 		if pcileech:
 			cmd_list+=["-chardev","socket,id=pcileech,wait=off,server=on,host=0.0.0.0,port=6789","-device","pcileech,chardev=pcileech"]
+		if not monitor is None:
+			cmd_list+=["-monitor","telnet:0.0.0.0:{},server=on".format(monitor)]
 		print(cmd_list)
 		subprocess.call(cmd_list)

@@ -2693,6 +2693,215 @@ pub mod xstate
 	}
 }
 
+pub mod smm
+{
+	use bitfield_struct::bitfield;
+use zerocopy::Unalign;
+
+	use crate::xpf_core::nvbdk::SegmentRegister;
+
+	#[bitfield(u32)] pub struct Ia32SmramIoMisc
+	{
+		pub io_smi:bool,
+		#[bits(3)] pub io_length:u8,
+		pub r#type:bool,
+		pub string:bool,
+		pub repeat:bool,
+		pub immediate_port:bool,
+		rsvd:u8,
+		pub io_port:u16
+	}
+
+	#[bitfield(u32)] pub struct Amd64SmramIoRestart
+	{
+		pub r#type:bool,
+		pub valid:bool,
+		pub string:bool,
+		pub repeat:bool,
+		#[bits(3)] pub io_size:u8,
+		#[bits(3)] pub addr_size:u8,
+		pub intercepted_io_port:bool,
+		pub tf:bool,
+		pub b0:bool,
+		pub b1:bool,
+		pub b2:bool,
+		pub b3:bool,
+		pub port:u16
+	}
+
+	#[repr(C)] pub struct SmmDescriptorTable
+	{
+		rsvd0:u32,
+		pub limit:u16,
+		rsvd1:u16,
+		pub base:u64
+	}
+
+	#[repr(C)] pub struct Amd64SmmStateSaveArea
+	{
+		pub es:SegmentRegister,
+		pub cs:SegmentRegister,
+		pub ss:SegmentRegister,
+		pub ds:SegmentRegister,
+		pub fs:SegmentRegister,
+		pub gs:SegmentRegister,
+		pub gdtr:SmmDescriptorTable,
+		pub ldtr:SegmentRegister,
+		pub idtr:SmmDescriptorTable,
+		pub tr:SegmentRegister,
+		pub io_restart_rip:u64,
+		pub io_restart_rcx:u64,
+		pub io_restart_rsi:u64,
+		pub io_restart_rdi:u64,
+		pub io_restart_dword:u32,
+		rsvd0:u32,
+		pub io_restart:u8,
+		pub auto_halt_restart:u8,
+		rsvd1:[u16;3],
+		pub efer:u64,
+		pub svm:u64,
+		pub svm_vmcb:u64,
+		pub svm_vint:u64,
+		rsvd2:[u32;3],
+		pub smm_rev_id:u32,
+		pub smbase:u32,
+		rsvd3:[u32;5],
+		pub ssp:u64,
+		pub svm_guest_pat:u64,
+		pub svm_host_efer:u64,
+		pub svm_host_cr4:u64,
+		pub svm_host_cr3:u64,
+		pub svm_host_cr0:u64,
+		pub cr4:u64,
+		pub cr3:u64,
+		pub cr0:u64,
+		pub dr7:u64,
+		pub dr6:u64,
+		pub rflags:u64,
+		pub rip:u64,
+		pub r15:u64,
+		pub r14:u64,
+		pub r13:u64,
+		pub r12:u64,
+		pub r11:u64,
+		pub r10:u64,
+		pub r9:u64,
+		pub r8:u64,
+		pub rdi:u64,
+		pub rsi:u64,
+		pub rbp:u64,
+		pub rsp:u64,
+		pub rbx:u64,
+		pub rdx:u64,
+		pub rcx:u64,
+		pub rax:u64
+	}
+	
+	#[repr(C)] pub struct LegacySmmStateSaveArea
+	{
+		rsvd0:[u32;62],
+		pub smbase:u32,
+		pub smm_rev_id:u32,
+		pub io_restart:u16,
+		pub auto_halt_restart:u16,
+		rsvd1:[u32;33],
+		pub gdt_base:u32,
+		rsvd2:[u32;2],
+		pub idt_base:u32,
+		rsvd3:[u32;2],
+		pub io_mem_addr:u32,
+		pub io_state:Ia32SmramIoMisc,
+		pub es:u32,
+		pub cs:u32,
+		pub ss:u32,
+		pub ds:u32,
+		pub fs:u32,
+		pub gs:u32,
+		pub ldt_base:u32,
+		pub tr:u32,
+		pub dr7:u32,
+		pub dr6:u32,
+		pub eax:u32,
+		pub ecx:u32,
+		pub edx:u32,
+		pub ebx:u32,
+		pub esp:u32,
+		pub ebp:u32,
+		pub esi:u32,
+		pub edi:u32,
+		pub eip:u32,
+		pub eflags:u32,
+		pub cr3:u32,
+		pub cr0:u32
+	}
+
+	#[repr(C)] pub struct IntelSmmStateSaveArea
+	{
+		rsvd0:[u128;0x1D],
+		pub gdt_base_hi:u32,
+		pub ldt_base_hi:u32,
+		pub idt_base_hi:u32,
+		rsvd1:[u32;3],
+		pub io_rip:u64,
+		rsvd2:[u128;5],
+		pub cr4:u64,
+		rsvd3:[u32;17],
+		pub gdt_base_lo:u32,
+		rsvd4:u32,
+		pub idt_base_lo:u32,
+		rsvd5:u32,
+		pub ldt_base_lo:u32,
+		rsvd6:[u64;5],
+		pub ssp:u64,
+		rsvd7:[u64;3],
+		pub eptp:u64,
+		pub smi_info:u32,
+		rsvd8:u32,
+		pub smbase:u32,
+		pub smm_rev_id:u32,
+		pub io_restart:u16,
+		pub auto_halt_restart:u16,
+		rsvd9:[u32;6],
+		pub r15:Unalign<u64>,
+		pub r14:Unalign<u64>,
+		pub r13:Unalign<u64>,
+		pub r12:Unalign<u64>,
+		pub r11:Unalign<u64>,
+		pub r10:Unalign<u64>,
+		pub r9:Unalign<u64>,
+		pub r8:Unalign<u64>,
+		pub rax:Unalign<u64>,
+		pub rcx:Unalign<u64>,
+		pub rdx:Unalign<u64>,
+		pub rbx:Unalign<u64>,
+		pub rsp:Unalign<u64>,
+		pub rbp:Unalign<u64>,
+		pub rsi:Unalign<u64>,
+		pub rdi:Unalign<u64>,
+		pub io_mem_addr:Unalign<u64>,
+		pub io_misc:Ia32SmramIoMisc,
+		pub es:u32,
+		pub cs:u32,
+		pub ss:u32,
+		pub ds:u32,
+		pub fs:u32,
+		pub gs:u32,
+		pub ldtr:u32,
+		pub tr:u32,
+		pub dr7:u64,
+		pub dr6:u64,
+		pub rip:u64,
+		pub efer:u64,
+		pub rflags:u64,
+		pub cr3:u64,
+		pub cr0:u64
+	}
+
+	pub const LEGACY_SMM_STATE_AREA_OFFSET:usize=0xFE00;
+	pub const AMD64_SMM_STATE_AREA_OFFSET:usize=0xFE00;
+	pub const INTEL_SMM_STATE_AREA_OFFSET:usize=0xFC00;
+}
+
 mod crt
 {
     use core::{arch::x86_64::_bittest64, sync::atomic::{AtomicU32, AtomicU64, Ordering}};
@@ -2701,6 +2910,7 @@ mod crt
 
 	#[unsafe(no_mangle)] static __favor:AtomicU32=AtomicU32::new(0);
 	#[unsafe(no_mangle)] static __memset_fast_string_threshold:AtomicU64=AtomicU64::new(0x80000);
+	#[unsafe(no_mangle)] static __memset_nt_threshold:AtomicU64=AtomicU64::new(0x100000);
 
 	#[unsafe(no_mangle)] extern "win64" fn __isa_available_init()
 	{

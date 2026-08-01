@@ -17,7 +17,7 @@ use static_collections::bitmap::RefBitmap;
 
 use log::*;
 use npt::SvmNptManager;
-use crate::{drv_core::iommu::{create_iommu, IommuOps}, *};
+use crate::{drv_core::iommu::{IommuOps, create_iommu}, xpf_core::rmt::ReverseMappingTableRoot, *};
 use xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, hv_host::{x86::*, *}, ioflt::IoAddressSpace, nvbdk::*, x86::{crdr::Cr4, interrupts::*, msr::*, xstate::BoxedXState}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 #[cfg(not(target_os="uefi"))]
@@ -396,6 +396,7 @@ pub struct SvmHypervisor
 	pub asid_pool:Vec<u64>,
 	pub xsave_size:usize,
 	pub features:EnabledFeatures,
+	pub rmt_root:ReverseMappingTableRoot,
 	#[cfg(windows)] pub mshvcall_forwarder:Option<MshvCallForwarder>
 }
 
@@ -465,6 +466,7 @@ impl Default for SvmHypervisor
 			asid_pool,
 			xsave_size:xstate_cpuid.supported_size() as usize,
 			features:EnabledFeatures::get(),
+			rmt_root:ReverseMappingTableRoot::new(),
 			#[cfg(windows)] mshvcall_forwarder:MshvCallForwarder::new()
 		}
 	}
@@ -642,9 +644,9 @@ impl HypervisorEssentials for SvmHypervisor
 				}
 			}
 		}
-		self.nptm.protect_allocated_pages();
 		self.nptm.setup_mmio_filter(&self.mmio_space);
 		self.nptm.protect_ci();
+		self.nptm.protect_allocated_pages();
 		extern "C" fn subvert_processor_thunk(context:*mut c_void,processor_id:u32)
 		{
 			let hv:&mut SvmHypervisor=unsafe{&mut *context.cast()};

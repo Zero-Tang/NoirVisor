@@ -16,6 +16,7 @@ section .text
 extern __favor
 extern __ImageBase
 extern __memset_fast_string_threshold
+extern __memset_nt_threshold
 
 global memset
 
@@ -130,6 +131,10 @@ SetWithXMM:
 	add      r8, r9
 	cmp      r8, __SSE_LOOP_LEN
 	jbe      short SetUpTo128WithXMM
+
+	cmp      r8, [rel __memset_nt_threshold]
+	ja       XmmLoopNT
+
 XmmLoop:
 	movdqa   [rcx + __SSE_STEP_LEN*0], xmm0
 	movdqa   [rcx + __SSE_STEP_LEN*1], xmm0
@@ -176,6 +181,53 @@ Set0XmmBlocks:
 	movdqu   [rax], xmm0
 	ret
 
+XmmLoopNT:
+	movntdq  [rcx + __SSE_STEP_LEN*0], xmm0
+	movntdq  [rcx + __SSE_STEP_LEN*1], xmm0
+	movntdq  [rcx + __SSE_STEP_LEN*2], xmm0
+	movntdq  [rcx + __SSE_STEP_LEN*3], xmm0
+	movntdq  [rcx + __SSE_STEP_LEN*4], xmm0
+	movntdq  [rcx + __SSE_STEP_LEN*5], xmm0
+	movntdq  [rcx + __SSE_STEP_LEN*6], xmm0
+	movntdq  [rcx + __SSE_STEP_LEN*7], xmm0
+	add      rcx, __SSE_LOOP_LEN
+	sub      r8, __SSE_LOOP_LEN
+	cmp      r8, __SSE_LOOP_LEN
+	jae      short XmmLoopNT
+
+	lea      r9, [r8 + __SSE_STEP_LEN - 1]
+	and      r9, -__SSE_STEP_LEN
+	mov      r11, r9
+	shr      r11, __SSE_LEN_BIT
+%ifdef _VCRUNTIME_BUILD_QSPECTRE
+	and      r11, 0Fh
+%endif
+	mov      r11d, [r10 + r11*4 + SetSmallXmmNT wrt ..imagebase]
+	add      r11, r10
+	jmp      r11
+
+Set8XmmBlocksNT:
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*8], xmm0
+Set7XmmBlocksNT:
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*7], xmm0
+Set6XmmBlocksNT:
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*6], xmm0
+Set5XmmBlocksNT:
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*5], xmm0
+Set4XmmBlocksNT:
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*4], xmm0
+Set3XmmBlocksNT:
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*3], xmm0
+Set2XmmBlocksNT:
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*2], xmm0
+Set1XmmBlocksNT:
+	movntdq  [rcx + r8 - __SSE_STEP_LEN*1], xmm0
+Set0XmmBlocksNT:
+	movntdq  [rax], xmm0
+	; sfence is required for temporal stores.
+	sfence
+	ret
+
 section .rdata
 
 SetSmall:
@@ -209,6 +261,20 @@ SetSmallXmm:
 	dd Set6XmmBlocks wrt ..imagebase
 	dd Set7XmmBlocks wrt ..imagebase
 	dd Set8XmmBlocks wrt ..imagebase
+%ifdef _VCRUNTIME_BUILD_QSPECTRE
+	dd 0, 0, 0, 0, 0, 0, 0
+%endif
+
+SetSmallXmmNT:
+	dd Set0XmmBlocksNT wrt ..imagebase
+	dd Set1XmmBlocksNT wrt ..imagebase
+	dd Set2XmmBlocksNT wrt ..imagebase
+	dd Set3XmmBlocksNT wrt ..imagebase
+	dd Set4XmmBlocksNT wrt ..imagebase
+	dd Set5XmmBlocksNT wrt ..imagebase
+	dd Set6XmmBlocksNT wrt ..imagebase
+	dd Set7XmmBlocksNT wrt ..imagebase
+	dd Set8XmmBlocksNT wrt ..imagebase
 %ifdef _VCRUNTIME_BUILD_QSPECTRE
 	dd 0, 0, 0, 0, 0, 0, 0
 %endif

@@ -170,9 +170,13 @@ NoAVX:
 	%define __SSE_STEP_LEN (1 << __SSE_LEN_BIT)
 	%define __SSE_LOOP_LEN (__SSE_STEP_LEN * 8)
 	%define __FAST_STRING_SSE_THRESHOLD (2 * KB)
+	%define __NT_SSE_THRESHOLD (1024 * KB)
 
 	cmp      r8, __FAST_STRING_SSE_THRESHOLD
 	jbe      short MoveWithXMM
+
+	cmp      r8, __NT_SSE_THRESHOLD
+	ja       short MoveWithXMM
 
 	test     byte [rel __favor], (1 << __FAVOR_ENFSTRG)
 	jnz      memcpy_repmovs
@@ -191,6 +195,9 @@ MoveWithXMM:
 	add      r8, r9
 	cmp      r8, __SSE_LOOP_LEN
 	jbe      short MovUpTo128WithXMM
+
+	cmp      r8, __NT_SSE_THRESHOLD
+	ja       XmmLoopNT
 
 XmmLoop:
 	movdqu   xmm1, [rdx + __SSE_STEP_LEN*0]
@@ -252,6 +259,69 @@ Mov1XmmBlocks:
 	movdqu   [rcx + r8 - __SSE_STEP_LEN*1], xmm5
 Mov0XmmBlocks:
 	movdqu   [rax], xmm0
+	ret
+
+XmmLoopNT:
+	movdqu   xmm1, [rdx + __SSE_STEP_LEN*0]
+	movdqu   xmm2, [rdx + __SSE_STEP_LEN*1]
+	movdqu   xmm3, [rdx + __SSE_STEP_LEN*2]
+	movdqu   xmm4, [rdx + __SSE_STEP_LEN*3]
+	movntdq  [rcx + __SSE_STEP_LEN*0], xmm1
+	movntdq  [rcx + __SSE_STEP_LEN*1], xmm2
+	movntdq  [rcx + __SSE_STEP_LEN*2], xmm3
+	movntdq  [rcx + __SSE_STEP_LEN*3], xmm4
+	movdqu   xmm1, [rdx + __SSE_STEP_LEN*4]
+	movdqu   xmm2, [rdx + __SSE_STEP_LEN*5]
+	movdqu   xmm3, [rdx + __SSE_STEP_LEN*6]
+	movdqu   xmm4, [rdx + __SSE_STEP_LEN*7]
+	movntdq  [rcx + __SSE_STEP_LEN*4], xmm1
+	movntdq  [rcx + __SSE_STEP_LEN*5], xmm2
+	movntdq  [rcx + __SSE_STEP_LEN*6], xmm3
+	movntdq  [rcx + __SSE_STEP_LEN*7], xmm4
+	add      rcx, __SSE_LOOP_LEN
+	add      rdx, __SSE_LOOP_LEN
+	sub      r8, __SSE_LOOP_LEN
+	cmp      r8, __SSE_LOOP_LEN
+	jae      XmmLoopNT
+
+	lea      r9, [r8 + __SSE_STEP_LEN - 1]
+	and      r9, -__SSE_STEP_LEN
+	mov      r11, r9
+	shr      r11, __SSE_LEN_BIT
+%ifdef _VCRUNTIME_BUILD_QSPECTRE
+	and      r11, 0Fh
+%endif
+	mov      r11d, [r10 + r11*4 + MoveSmallXmmNT wrt ..imagebase]
+	add      r11, r10
+	jmp      r11
+
+Mov8XmmBlocksNT:
+	movdqu   xmm1, [rdx + r9 - __SSE_STEP_LEN*8]
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*8], xmm1
+Mov7XmmBlocksNT:
+	movdqu   xmm1, [rdx + r9 - __SSE_STEP_LEN*7]
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*7], xmm1
+Mov6XmmBlocksNT:
+	movdqu   xmm1, [rdx + r9 - __SSE_STEP_LEN*6]
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*6], xmm1
+Mov5XmmBlocksNT:
+	movdqu   xmm1, [rdx + r9 - __SSE_STEP_LEN*5]
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*5], xmm1
+Mov4XmmBlocksNT:
+	movdqu   xmm1, [rdx + r9 - __SSE_STEP_LEN*4]
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*4], xmm1
+Mov3XmmBlocksNT:
+	movdqu   xmm1, [rdx + r9 - __SSE_STEP_LEN*3]
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*3], xmm1
+Mov2XmmBlocksNT:
+	movdqu   xmm1, [rdx + r9 - __SSE_STEP_LEN*2]
+	movntdq  [rcx + r9 - __SSE_STEP_LEN*2], xmm1
+Mov1XmmBlocksNT:
+	movntdq  [rcx + r8 - __SSE_STEP_LEN*1], xmm5
+Mov0XmmBlocksNT:
+	movntdq  [rax], xmm0
+	; sfence is required for temporal stores.
+	sfence
 	ret
 
 ; memmove: Copy Down implementation
@@ -362,6 +432,20 @@ MoveSmallXmm:
 	dd Mov6XmmBlocks wrt ..imagebase
 	dd Mov7XmmBlocks wrt ..imagebase
 	dd Mov8XmmBlocks wrt ..imagebase
+%ifdef _VCRUNTIME_BUILD_QSPECTRE
+	dd 0, 0, 0, 0, 0, 0, 0
+%endif
+
+MoveSmallXmmNT:
+	dd Mov0XmmBlocksNT wrt ..imagebase
+	dd Mov1XmmBlocksNT wrt ..imagebase
+	dd Mov2XmmBlocksNT wrt ..imagebase
+	dd Mov3XmmBlocksNT wrt ..imagebase
+	dd Mov4XmmBlocksNT wrt ..imagebase
+	dd Mov5XmmBlocksNT wrt ..imagebase
+	dd Mov6XmmBlocksNT wrt ..imagebase
+	dd Mov7XmmBlocksNT wrt ..imagebase
+	dd Mov8XmmBlocksNT wrt ..imagebase
 %ifdef _VCRUNTIME_BUILD_QSPECTRE
 	dd 0, 0, 0, 0, 0, 0, 0
 %endif

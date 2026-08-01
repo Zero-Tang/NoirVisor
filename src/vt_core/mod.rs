@@ -18,7 +18,7 @@ use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::null_mut};
 use ia32::msr::*;
 use vmcs::*;
 use ept::VtEptManager;
-use crate::{drv_core::iommu::{IommuOps, create_iommu}, xpf_core::x86::{apic::APIC_OFFSET_ICR_HI, xstate::BoxedXState}, *};
+use crate::{drv_core::iommu::{IommuOps, create_iommu}, xpf_core::{rmt::ReverseMappingTableRoot, x86::{apic::APIC_OFFSET_ICR_HI, xstate::BoxedXState}}, *};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 use mshv_core::{MshvVcpuContext,MshvVcpuOps};
 use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{apic::*, caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_APIC_BASE,MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
@@ -637,6 +637,7 @@ pub struct VtHypervisor
 	pub image_size:u32,
 	pub xsave_size:usize,
 	pub features:EnabledFeatures,
+	pub rmt_root:ReverseMappingTableRoot,
 	#[cfg(windows)] pub mshvcall_forwarder:Option<MshvCallForwarder>
 }
 
@@ -670,6 +671,7 @@ impl Default for VtHypervisor
 			image_size:0,
 			xsave_size:xsave_cpuid.supported_size() as usize,
 			features:EnabledFeatures::get(),
+			rmt_root:ReverseMappingTableRoot::new(),
 			#[cfg(windows)] mshvcall_forwarder:MshvCallForwarder::new()
 		}
 	}
@@ -912,9 +914,9 @@ impl HypervisorEssentials for VtHypervisor
 		}
 		// Initialize EPT.
 		self.eptm.build_identity_map();
-		self.eptm.protect_allocated_pages();
-		self.eptm.protect_ci();
 		self.eptm.setup_mmio_filter(&self.mmio_space);
+		self.eptm.protect_ci();
+		self.eptm.protect_allocated_pages();
 		extern "C" fn subvert_processor_thunk(context:*mut c_void,processor_id:u32)
 		{
 			let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};

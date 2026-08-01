@@ -33,7 +33,6 @@ use acpi::*;
 
 pub struct AmdIommuManager
 {
-	/// This `Vec` must be sorted in the order of physical address.
 	pub ivrs_units:Vec<Arc<AmdIommuBar>>,
 	pub device_table:MemoryDescriptor<PAGE_TABLE_ENTRIES64,AmdIommuDeviceTableEntry>,
 	pub pml4e:MemoryDescriptor<1,AmdIommuPde>,
@@ -73,7 +72,16 @@ impl AmdIommuManager
 		match self.ivrs_units.binary_search_by(|iommu| iommu.bar.phys.cmp(&bar))
 		{
 			Ok(i)=>warn!("Base 0x{bar:X} already exist! Index={i}"),
-			Err(i)=>self.ivrs_units.insert(i,Arc::new(AmdIommuBar::new(bar,cap_offset as usize)))
+			Err(i)=>self.ivrs_units.insert(i,Arc::new(AmdIommuBar
+			{
+				bar:MappedDescriptor::map(bar,4<<PAGE_SHIFT),
+				cap_offset:cap_offset as usize,
+				size:4<<PAGE_SHIFT,
+				iotlb_sup:true,
+				cmd_base:MemoryDescriptor::alloc().unwrap(),
+				cmd_index:AtomicUsize::new(0),
+				log_base:MemoryDescriptor::alloc().unwrap()
+			}))
 		}
 	}
 
@@ -230,7 +238,10 @@ impl IommuOps for AmdIommuManager
 			let cmd_buff_base=CommandBufferBaseRegister::from_bits(ivrs.cmd_base.phys).with_com_len(0b1000);
 			let cmd_head=CommandBufferHeadPointerRegister::new();
 			let cmd_tail=CommandBufferTailPointerRegister::new();
-			let iommu_ctrl=IommuControlRegister::new().with_iommu_en(true).with_gt_en(true).with_cmd_buff_en(true);
+			let log_buff_base=EventLogBaseRegister::from_bits(ivrs.log_base.phys).with_event_len(0b1000);
+			let log_head=EventBufferHeadPointerRegister::new();
+			let log_tail=EventBufferTailPointerRegister::new();
+			let iommu_ctrl=IommuControlRegister::new().with_iommu_en(true).with_gt_en(true).with_cmd_buff_en(true).with_event_log_en(true);
 			unsafe
 			{
 				// Set Device Table Base.
@@ -239,6 +250,10 @@ impl IommuOps for AmdIommuManager
 				cmd_buff_base.write(virt);
 				cmd_head.write(virt);
 				cmd_tail.write(virt);
+				// Set Event Log Buffer.
+				log_buff_base.write(virt);
+				log_head.write(virt);
+				log_tail.write(virt);
 				// Enable IOMMU.
 				iommu_ctrl.write(virt);
 			}
@@ -253,9 +268,7 @@ impl IommuOps for AmdIommuManager
 				}
 			}
 			ivrs.wait();
-			let cmd_head=unsafe{CommandBufferHeadPointerRegister::read(virt)};
-			let cmd_tail=unsafe{CommandBufferTailPointerRegister::read(virt)};
-			info!("AMD-Vi IOMMU completed subversion! Head={:X?}, Tail={:X?}",cmd_head,cmd_tail);
+			info!("AMD-Vi IOMMU completed subversion! Log-Base: 0x{:X}",ivrs.log_base.phys);
 		}
 	}
 
@@ -307,25 +320,8 @@ pub struct AmdIommuBar
 	pub log_base:MemoryDescriptor<1,u128>
 }
 
-unsafe impl Send for AmdIommuBar {}
-unsafe impl Sync for AmdIommuBar {}
-
 impl AmdIommuBar
 {
-	fn new(phys:u64,cap_offset:usize)->Self
-	{
-		Self
-		{
-			bar:MappedDescriptor::map(phys,4),
-			cap_offset,
-			size:0x4000,
-			iotlb_sup:false,
-			cmd_index:AtomicUsize::new(0),
-			cmd_base:MemoryDescriptor::alloc().unwrap(),
-			log_base:MemoryDescriptor::alloc().unwrap()
-		}
-	}
-
 	fn wait(&self)
 	{
 		let virt=self.bar.virt.load(Ordering::Relaxed);
@@ -412,7 +408,12 @@ pub(super) fn create_iommu(acpi_tables:&[*const IoVirtualizationReportingStructu
 		let table=unsafe{&*t};
 		let limit=table.header.length.get() as usize-size_of::<IoVirtualizationReportingStructure>();
 		let mut cursor=0;
-		info!("IVRS Info: {:?}",table.iv_info.get());
+		unsafe
+		{
+			// Destroy the IVRS table so that Guest OS will not try to run AMD-Vi IOMMU.
+			let p=(&raw const (*t).header.signature) as *mut u32;
+			p.write_unaligned(u32::from_ne_bytes(*b"????"));
+		}
 		while cursor<limit
 		{
 			unsafe

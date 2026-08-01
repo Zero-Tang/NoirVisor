@@ -20,6 +20,8 @@ NoirVisor is a hardware-accelerated hypervisor (a.k.a VMM, Virtual Machine Monit
 
 Namesake: NoirVisor is named after the [***Grimoire Noir***](https://nier.fandom.com/wiki/Grimoire_Noir) in NieR:Gestalt/Replicant.
 
+**IMPORTANT NOTES:** If you're looking for a stealthy hypervisor implementation, you're at the wrong place.
+
 # Processor Requirement
 Intel Processors based on Intel 64 and IA-32 Architecture, with support to Intel VT-x /w EPT. \
 AMD Processors based on AMD64 Architecture, with support to AMD-V /w NPT. \
@@ -165,6 +167,10 @@ If you're using [the QEMU fork which contains the virtual PCILeech device](https
 ```
 python run_qemu.py -iommu intel|amd -pcileech
 ```
+If you would like to access the QEMU's monitor, you may pass the `-monitor [port]` so that it will listen on `[port]` with telnet protocol:
+```
+python run_qemu.py -monitor [port]
+```
 
 Note that QEMU TCG may output debug logs. Pass `-debug` argument to this script in order to give `-d` argument to QEMU. You might most likely be interested in giving `-d int` argument in order to log exceptions. In other words:
 ```
@@ -259,7 +265,7 @@ Here lists some informal publications (blogs) regarding hypervisor development:
 - Minimal Microsoft `Hv#1` Hypervisor Functionalities.
 - Critical Hypervisor Protection.
 - Hardware-Level Code Integrity Enforcement, both Intel EPT and AMD NPT.
-- IOMMU-based DMA Protection.
+- IOMMU-based DMA Protection with both Intel VT-d and AMD-Vi.
 
 # License
 This repository is dual licensed with [MIT](./LICENSE-MIT) and [Apache-2.0](./LICENSE-APACHE), just like [rust](https://github.com/rust-lang/rust/blob/main/COPYRIGHT).

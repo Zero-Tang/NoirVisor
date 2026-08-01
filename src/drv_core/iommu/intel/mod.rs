@@ -448,9 +448,15 @@ pub(super) fn create_iommu(acpi_tables:&[*const DmaRemappingReportingStructure])
 		x.init();
 		x
 	};
-	for t in acpi_tables
+	for &t in acpi_tables
 	{
-		let table=unsafe{&**t};
+		unsafe
+		{
+			// Destroy the DMAR table so that Guest OS will not try to run Intel VT-d IOMMU.
+			let p=(&raw const (*t).header.signature) as *mut u32;
+			p.write_unaligned(u32::from_ne_bytes(*b"????"));
+		}
+		let table=unsafe{&*t};
 		let limit=table.header.length.get() as usize-size_of::<DmaRemappingReportingStructure>();
 		let mut cursor=0;
 		while cursor<limit

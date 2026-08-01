@@ -21,16 +21,24 @@ unsafe extern "C"
 	fn noir_debug_output(buffer:*const u8,length:usize);
 }
 
-pub fn debug_print(args:fmt::Arguments)
+struct DebugOutputFormatter;
+
+impl fmt::Write for DebugOutputFormatter
 {
-	let mut w:StaticString<512>=StaticString::new();
-	if fmt::write(&mut w,args).is_ok()
+	fn write_str(&mut self,s:&str)->fmt::Result
 	{
 		unsafe
 		{
-			noir_debug_output(w.as_ptr(),w.len());
+			noir_debug_output(s.as_ptr(),s.len());
 		}
+		Ok(())
 	}
+}
+
+pub fn debug_print(args:fmt::Arguments)
+{
+	let mut o=DebugOutputFormatter;
+	let _=fmt::write(&mut o,args);
 }
 
 #[macro_export]
@@ -417,7 +425,7 @@ impl From<&MemoryDescriptor> for MemoryRange
 	if !st.is_error()
 	{
 		let mut offset:usize=0;
-		let mut ranges:StaticVec<32,MemoryRange>=StaticVec::new();
+		let mut ranges:StaticVec<192,MemoryRange>=StaticVec::new();
 		// Enumerate the memory map.
 		while offset<map_size
 		{
@@ -440,7 +448,7 @@ impl From<&MemoryDescriptor> for MemoryRange
 			if ranges[i].as_range().contains(&ranges[i+1].start) && ranges[i+1].end()>ranges[i].end()
 			{
 				ranges[i].length=ranges[i+1].end()-ranges[i].start;
-				ranges.remove(i);
+				ranges.remove(i+1);
 			}
 			else
 			{

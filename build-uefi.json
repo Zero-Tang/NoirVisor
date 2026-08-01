@@ -65,7 +65,7 @@
 	{
 		"AR_x86_64-unknown-uefi":"llvm-ar",
 		"CC_x86_64-unknown-uefi":"clang-cl",
-		"CFLAGS_x86_64-unknown-uefi":"/GS- --target=x86_64-pc-windows-msvc -gcodeview"
+		"CFLAGS_x86_64-unknown-uefi":"/GS- --target=x86_64-pc-windows-msvc -mno-sse -gcodeview"
 	},
 	"internal_var":
 	{

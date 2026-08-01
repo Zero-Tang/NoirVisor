@@ -267,6 +267,10 @@ pub fn test_init()
 {
 	unsafe
 	{
+		let bs=&*BS_TABLE.load(Ordering::Relaxed);
+		let p=&mut *(0x1000 as *mut [u8;2]);
+		p[0]=0xEB;
+		p[1]=0xFE;
 		let apic_base:*mut u32;
 		asm!
 		(
@@ -278,9 +282,17 @@ pub fn test_init()
 			out("rax") apic_base
 		);
 		println!("Sending INIT (APIC-Base={apic_base:p}...");
-		apic_base.byte_add(0x310).write_volatile(0);
-		apic_base.byte_add(0x300).write_volatile(0x4500);
+		apic_base.byte_add(0x310).write_volatile(1);
+		apic_base.byte_add(0x300).write_volatile(0xC4500);
 		println!("Sent INIT!");
+		(bs.stall)(1000000);
+		apic_base.byte_add(0x310).write_volatile(1);
+		apic_base.byte_add(0x300).write_volatile(0xC4601);
+		println!("Sent SIPI!");
+		(bs.stall)(1000000);
+		apic_base.byte_add(0x310).write_volatile(1);
+		apic_base.byte_add(0x300).write_volatile(0xC4601);
+		println!("Sent SIPI!");
 	}
 }
 

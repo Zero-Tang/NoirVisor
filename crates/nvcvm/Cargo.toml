@@ -2,6 +2,13 @@
 name = "nvcvm"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "NoirVisor Customizable Virtual Machine (CVM) Library for User Hypervisors"
+homepage = "https://github.com/Zero-Tang/NoirVisor"
+repository = "https://github.com/Zero-Tang/NoirVisor"
+readme = "readme.md"
+keywords = ["no_std","hypervisor","vmm"]
+categories = ["no-std","virtualization"]
 
 [dependencies]
 bitfield-struct = "0.13.0"

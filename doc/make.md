@@ -33,7 +33,7 @@ Due to the usage of [unstable feature "`allocator_api`"](https://doc.rust-lang.o
 NoirVisor doesn't require a specific version of rustc. You should be fine using the up-to-date nightly compiler.
 
 Currently, NoirVisor Core in Rust can subvert the system with Intel VT-x and AMD-V in UEFI and Windows. \
-However, NoirVisor currrently can't boot Windows from UEFI.
+However, NoirVisor can only boot Windows from UEFI in single-core scenario.
 
 ### Windows Driver
 To build a kernel-mode driver on Windows, you should either install Visual Studio (2022 is recommended) with Windows Driver Kits or mount Enterprise WDK. \
