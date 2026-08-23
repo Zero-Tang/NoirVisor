@@ -1,0 +1,7 @@
+NAME ntoskrnl.exe
+EXPORTS
+ memmove
+ memcpy
+ memset
+ memcmp
+ strlen

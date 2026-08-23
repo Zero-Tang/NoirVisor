@@ -3,7 +3,7 @@
 	{
 		"cargo":
 		{
-			"cmd":["cargo","build","--target","x86_64-unknown-uefi","--package","loadefi","--package","nvcore","--package","uefirtdrv"],
+			"cmd":["cargo","build","--target","x86_64-unknown-uefi","--package","loadefi","--package","nvcore"],
 			"progressive":true
 		},
 		"memcpy":
@@ -54,7 +54,7 @@
 	"common_flags":
 	{
 		"nasm":["-fwin64","-D_VCRUNTIME_BUILD_QSPECTRE","-g","-o","{objpath}/{instruction}.obj","-l","{objpath}/{instruction}.lst","-Ox"],
-		"lld-link":["/NODEFAULTLIB","/NOLOGO","/DEBUG","/OPT:REF","/Machine:X64","/ERRORREPORT:QUEUE"]
+		"lld-link":["/NODEFAULTLIB","/NOLOGO","/DEBUG","/OPT:REF","/TSAWARE:NO","/Machine:X64","/ERRORREPORT:QUEUE"]
 	},
 	"opt_flags":
 	{

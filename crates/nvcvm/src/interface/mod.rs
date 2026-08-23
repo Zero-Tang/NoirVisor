@@ -3,8 +3,8 @@
 use bitfield_struct::bitfield;
 use paste::paste;
 
-#[derive(PartialEq, Debug)]
-#[repr(C)] pub struct CvmHandle(pub u64);
+#[derive(Clone, Copy, PartialEq, Debug)]
+#[repr(C)] pub struct CvmHandle(pub u32);
 
 #[bitfield(u32)] pub struct CvmMappingFlags
 {
@@ -46,6 +46,44 @@ pub const CVM_MAPPING_ASID_FREE_START:u32=0x80000000;
 	/// 
 	/// To unmap, clear all of R/W/X bits.
 	pub flags:CvmMappingFlags
+}
+
+#[bitfield(u32)] pub struct CvmRequestedEventInformation
+{
+	/// Interrupt Vector of the Event.
+	pub vector:u8,
+	/// Type of Event. Can be one of:
+	/// - External Interrupt.
+	/// - Non-Maskable Interrupt.
+	/// - Hardware Exception.
+	/// - Software Interrupt.
+	#[bits(3)] pub r#type:u8,
+	/// Specify whether this event has error code. \
+	/// The `type` must be Hardware Exception if the event has an error code.
+	pub has_error_code:bool,
+	/// Specify the priority of the event. \
+	/// The `type` must be External Interrupt if the event has a priority.
+	#[bits(4)] pub priority:u8,
+	/// Specify the instruction length of the event. \
+	/// The `type` must be Software Interrupt if the event has an instruction length.
+	#[bits(4)] pub insn_len:u64,
+	/// Ignores the TPR when delivering the event. \
+	/// The `type` must be External Interrupt in order to ignore the TPR.
+	pub ignore_tpr:bool,
+	/// Infers the priority of the event to be delivered. \
+	/// The `type` must be External Interrupt in order to infer the priority.
+	pub infer_priority:bool,
+	#[bits(10)] rsvd:u32
+}
+
+#[repr(C)] pub struct CvmRequestedEvent
+{
+	/// The basic information of the event.
+	pub info:CvmRequestedEventInformation,
+	/// The error code of the exception.
+	pub error_code:u32,
+	/// The payload of the exception. (e.g.: new CR2 value of #PF exception)
+	pub payload:u64
 }
 
 #[repr(C)] pub struct InterceptCode(pub u32);
@@ -432,6 +470,7 @@ impl CvmX64RegisterCode
 	cr2:u64,
 	cr3:u64,
 	cr4:u64,
+	cr8:u64,
 	dr0:u64,
 	dr1:u64,
 	dr2:u64,

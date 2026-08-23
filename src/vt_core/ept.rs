@@ -495,7 +495,7 @@ impl VtEptManager
 		let mut v:StaticVec<64,u64>=StaticVec::new();
 		for p in PAGE_ALLOC_MANAGER.lock().iter()
 		{
-			v.push(p);
+			let _=v.push(p);
 		}
 		for &p in v.iter()
 		{

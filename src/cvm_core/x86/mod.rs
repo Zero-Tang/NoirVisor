@@ -13,7 +13,7 @@
 use bitfield_struct::bitfield;
 use nvcvm::interface::{CvmX86VcpuStateOnExit, ExitContext, ExitContextUnion, InterceptCode, CVM_MAPPING_ASID_DEFAULT};
 
-use crate::{xpf_core::allocator::SystemPageAllocator, *};
+use crate::{xpf_core::x86::xstate::BoxedXState, *};
 use xpf_core::nvbdk::*;
 
 /// This type indicates what fields should be synchronized between VMCS or VMCB. \
@@ -62,7 +62,7 @@ pub struct CvmX86Vcpu
 	pub rflags:u64,
 	pub rip:u64,
 	pub tsc_offset:u64,
-	pub xsaves_state:MemoryDescriptor<1,u8,SystemPageAllocator>,
+	pub xsaves_state:BoxedXState,
 	pub current_as_id:u32,
 	pub state_cache:CvmVcpuCache,
 	pub exit_context:ExitContext
@@ -72,7 +72,7 @@ impl CvmX86Vcpu
 {
 	pub fn new()->Option<Self>
 	{
-		let Some(xsave)=MemoryDescriptor::alloc_in(SystemPageAllocator) else
+		let Ok(xsave)=BoxedXState::try_new(0x340) else
 		{
 			error!("Failed to allocate XSAVE area!");
 			return None;

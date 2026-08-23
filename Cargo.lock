@@ -48,10 +48,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "cvsched"
+version = "0.1.0"
+dependencies = [
+ "bitfield-struct",
+ "htable",
+ "log",
+ "nvcvm",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
+name = "htable"
+version = "0.1.0"
+dependencies = [
+ "static-collections 0.3.2",
+]
 
 [[package]]
 name = "loadefi"
@@ -89,12 +106,13 @@ name = "nvcore"
 version = "0.1.0"
 dependencies = [
  "bitfield-struct",
+ "cvsched",
  "log",
  "nvcvm",
  "paste",
  "portable-dlmalloc",
  "spin",
- "static-collections",
+ "static-collections 0.4.0",
  "uefirtdrv",
  "yaxpeax-arch",
  "yaxpeax-x86",
@@ -164,9 +182,9 @@ dependencies = [
 
 [[package]]
 name = "r-efi"
-version = "7.0.0"
+version = "7.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1b35d612599fa2eed43b064164175ebe98c88de47c8cc6cc6c50d6502aa6abe"
+checksum = "b0ff379dd174eec5b2cab797063a2e7592dfcf0bf0323a50eeee724ee3537f13"
 
 [[package]]
 name = "scopeguard"
@@ -182,9 +200,9 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "spin"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8abadc99fd9c7bbb7d0ca2b31d72a067d0c0dcd7aad25ab8cac71ba91417694b"
+checksum = "0134f9043ed38b087ac4f7d4af44c79e2c9e5094421fe3164f435ce585953b10"
 dependencies = [
  "lock_api",
 ]
@@ -194,6 +212,12 @@ name = "static-collections"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22fd05b84760de1103c29864eb49d581bea8cc76eb41d3b07476f55f52829cfa"
+
+[[package]]
+name = "static-collections"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7f9cf9429f7ab85fba7447f9f89b39498f3521aa727271cb72ec395f9f20b74"
 
 [[package]]
 name = "syn"
@@ -217,9 +241,9 @@ dependencies = [
 
 [[package]]
 name = "uefi"
-version = "0.38.0"
+version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8f2e1b4a439d82899da4dc0ee8ac742db07a9ff493bc4f31d345c24e12e17e9"
+checksum = "a58ad7512f7c38b58aa536c3839dbb1d5a122d14a7e2245b06ded49edcb7585a"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -244,9 +268,9 @@ dependencies = [
 
 [[package]]
 name = "uefi-raw"
-version = "0.15.0"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8868c2fb03f31e55ccf9b47f72e17097bb88c45306cb82f5a2258935520c72d6"
+checksum = "1a36f49db0b04a8dfd246a26ddf8d2526a2ffd8cf946ae7fe603fd0c5fbd2786"
 dependencies = [
  "bitflags",
  "uguid",
@@ -257,7 +281,7 @@ name = "uefirtdrv"
 version = "0.1.0"
 dependencies = [
  "r-efi",
- "static-collections",
+ "static-collections 0.3.2",
  "utf16_lit",
 ]
 
@@ -278,6 +302,33 @@ name = "utf16_lit"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14706d2a800ee8ff38c1d3edb873cd616971ea59eb7c0d046bb44ef59b06a1ae"
+
+[[package]]
+name = "windows-link"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
+
+[[package]]
+name = "windows-sys"
+version = "0.61.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
+dependencies = [
+ "windows-link",
+]
+
+[[package]]
+name = "windrv"
+version = "0.1.0"
+dependencies = [
+ "cvsched",
+ "log",
+ "nvcvm",
+ "static-collections 0.3.2",
+ "utf16_lit",
+ "windows-sys",
+]
 
 [[package]]
 name = "yaxpeax-arch"
@@ -301,18 +352,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.55"
+version = "0.8.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5a105cd7b140f6eeec8acff2ea38135d3cab283ada58540f629fe51e46696eb"
+checksum = "556764e583adb45a9f8d413c2a147fa7e8d821e48e12b14fd560b607998b75eb"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.55"
+version = "0.8.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fe976fb70c78cd64cccfe3a6fc142244e8a77b70959b30faf9d0ac37ee228eb"
+checksum = "f2ab42fc20575779bd240faa45f94a74256f755c0fa9e89f0ede20d91d0cdfc1"
 dependencies = [
  "proc-macro2",
  "quote",

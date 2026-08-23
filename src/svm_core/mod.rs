@@ -20,8 +20,6 @@ use npt::SvmNptManager;
 use crate::{drv_core::iommu::{IommuOps, create_iommu}, xpf_core::rmt::ReverseMappingTableRoot, *};
 use xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, hv_host::{x86::*, *}, ioflt::IoAddressSpace, nvbdk::*, x86::{crdr::Cr4, interrupts::*, msr::*, xstate::BoxedXState}};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
-#[cfg(not(target_os="uefi"))]
-use crate::{cvm_core::CUSTOMIZABLE_HYPERVISOR, xpf_core::allocator::kmalloc::KernelAllocator,  svm_core::custom::SvmCustomHypervisor};
 use mshv_core::{MshvVcpuContext,MshvVcpuOps};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
@@ -33,7 +31,6 @@ pub mod amd64;
 #[allow(dead_code)] mod exit;
 mod hvcall;
 #[allow(dead_code)] mod npt;
-#[cfg(not(target_os="uefi"))]
 #[allow(dead_code)] pub mod custom;
 
 #[repr(C,align(16))] pub struct SvmStackTop
@@ -614,17 +611,6 @@ impl HypervisorEssentials for SvmHypervisor
 			let apic_bar=rdmsr(MSR_APIC_BASE);
 			self.mmio_space.add_region(IoRegion::new("lapic",None,svm_apic_output_handler,page_4kb_base(apic_bar),PAGE_SIZE as u64));
 		}*/
-		// Initialize CVM Module
-		#[cfg(not(target_os="uefi"))]
-		{
-			let mut lk=CUSTOMIZABLE_HYPERVISOR.write();
-			let cvm_hv=SvmCustomHypervisor::new(false);
-			match cvm_hv
-			{
-				Some(h)=>*lk=Some(Box::new_in(h,KernelAllocator)),
-				None=>error!("Failed to initialize CVM Module!")
-			}
-		}
 		// Initialize NPT.
 		self.nptm.build_identity_map();
 		if self.features.enable_iommu()
@@ -682,11 +668,6 @@ impl HypervisorEssentials for SvmHypervisor
 		unsafe
 		{
 			noir_generic_call(restore_processor_thunk,self as *mut Self as *mut c_void);
-		}
-		#[cfg(not(target_os="uefi"))]
-		{
-			let mut lk=CUSTOMIZABLE_HYPERVISOR.write();
-			*lk=None;
 		}
 		info!("System restoration completed!");
 		Status::SUCCESS

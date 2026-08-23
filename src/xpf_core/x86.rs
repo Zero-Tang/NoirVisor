@@ -2382,7 +2382,7 @@ pub mod apic
 pub mod xstate
 {
 	use core::{alloc::Layout, ptr::{NonNull, null_mut}};
-	use alloc::alloc::{Allocator, Global};
+	use alloc::alloc::{AllocError, Allocator, Global};
 
 	use bitfield_struct::bitfield;
 
@@ -2596,14 +2596,30 @@ pub mod xstate
 
 	impl BoxedXState
 	{
+		pub fn try_new(size:usize)->Result<Self,AllocError>
+		{
+			let ptr=unsafe{alloc::alloc::alloc_zeroed(Self::layout(size))};
+			if ptr.is_null()
+			{
+				Err(AllocError)
+			}
+			else
+			{
+				Ok
+				(
+					Self
+					{
+						ptr,
+						size,
+						allocator:Global
+					}
+				)
+			}
+		}
+
 		pub fn new(size:usize)->Self
 		{
-			Self
-			{
-				ptr:unsafe{alloc::alloc::alloc(Self::layout(size))},
-				size,
-				allocator:Global
-			}
+			Self::try_new(size).unwrap()
 		}
 
 		pub const fn null()->Self
@@ -2626,15 +2642,30 @@ pub mod xstate
 
 	impl<A:Allocator> BoxedXState<A>
 	{
+		pub fn try_new_in(size:usize,allocator:A)->Result<Self,AllocError>
+		{
+			let ptr=allocator.allocate_zeroed(Self::layout(size)).unwrap().addr().get() as *mut u8;
+			if ptr.is_null()
+			{
+				Err(AllocError)
+			}
+			else
+			{
+				Ok
+				(
+					Self
+					{
+						ptr,
+						size,
+						allocator
+					}
+				)
+			}
+		}
+
 		pub fn new_in(size:usize,allocator:A)->Self
 		{
-			let p=allocator.allocate_zeroed(Self::layout(size)).unwrap();
-			Self
-			{
-				ptr:p.addr().get() as *mut u8,
-				size,
-				allocator
-			}
+			Self::try_new_in(size,allocator).unwrap()
 		}
 
 		#[inline(always)] pub fn fxstate(&self)->&FxState

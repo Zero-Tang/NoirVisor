@@ -1,5 +1,5 @@
 // NoirVisor CVM Status definition module
-use core::fmt;
+use core::{alloc::AllocError, error::Error, fmt};
 
 #[derive(Debug,PartialEq,Eq,PartialOrd,Ord)]
 #[repr(u8)] pub enum Severity
@@ -60,6 +60,7 @@ impl Status
 	pub const NSV_VIOLATION:Status=Status::construct(Error,Xpf,14);
 	pub const ACPI_NO_SUCH_TABLE:Status=Status::construct(Error,Xpf,15);
 	pub const DISPATCH_FAILURE:Status=Status::construct(Error,Xpf,16);
+	pub const SYNCHRONIZATION_VIOLATION:Status=Status::construct(Error,Xpf,17);
 
 	// Error-level: VT-Core
 	pub const NOT_INTEL:Status=Status::construct(Error,Intel,0);
@@ -76,6 +77,16 @@ impl Status
 	// Error-level: Emulator
 	pub const NOT_EMULATABLE:Status=Status::construct(Error,Emulator,0);
 	pub const UNKNOWN_INSTRUCTION:Status=Status::construct(Error,Emulator,1);
+}
+
+impl Error for Status {}
+
+impl From<AllocError> for Status
+{
+	fn from(_value: AllocError) -> Self
+	{
+		Self::INSUFFICIENT_RESOURCES
+	}
 }
 
 impl fmt::Display for Status
@@ -102,6 +113,7 @@ impl fmt::Display for Status
 			Status::NSV_VIOLATION=>Some("NoirVisor Secure Virtualization policy violated"),
 			Status::ACPI_NO_SUCH_TABLE=>Some("The specified ACPI table can't be found"),
 			Status::DISPATCH_FAILURE=>Some("This I/O request is not properly dispatched"),
+			Status::SYNCHRONIZATION_VIOLATION=>Some("Synchonization rule is violated"),
 			Status::NOT_INTEL=>Some("This CPU is not manufactured by Intel"),
 			Status::VMX_NOT_SUPPORTED=>Some("This CPU does not support Intel VT-x"),
 			Status::EPT_NOT_SUPPORTED=>Some("This CPU does not support Extended Page Tables"),

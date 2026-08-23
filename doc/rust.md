@@ -8,23 +8,12 @@ Install [Visual Studio Code](https://code.visualstudio.com) and [rust-analyzer](
 A new branch called `rust-dev` has already been created to [refactor NoirVisor in Rust](https://github.com/Zero-Tang/NoirVisor/tree/rust-dev). It will be merged into the `master` branch after all existing core features (system subversion and customizable virtual machines) are implemented in Rust. Once merged, the retired C codes will be moved to the archive branch.
 
 ## Code Architecture
-Not all codes are going be remastered with the Rust Programming Language, in that it involves too many works to get started with Rust. This will also drastically slow down the performance of rust-analyzer plugin in VSCode.
+All C codes are going be remastered with the Rust Programming Language.
 
-Codes that will be remastered with Rust:
-- Hypervisor Abstract Layer
-- Intel VT-x Core
-- AMD-V Core
-- Customizable VM Core
-- Basic Development Kits
-- UEFI Runtime Driver and Loader
+System Assembly codes will be remastered with LLVM's module-level inline assembler as they support Microsoft's stack-unwinding directives. \
+Trivial assembly codes will be remastered with Rust inline assembly.
 
-Codes that will still be written in C:
-- Windows Driver
-- Cross-Platform Abstract Layer
-
-System Assembly codes will still be retained due to MASM's special syntax for stack-unwinding (i.e.: `.allocstack`, `.pushframe` and `.pushreg` directives). Trivial assembly codes will be remastered with Rust inline assembly.
-
-Rust codes will be managed with the Cargo package manager. They will be compiled into static library (`nvcore.lib` or `libnvcore.a`) and linked via linker. In other words, we will be calling the `cargo` command from the compiling script.
+Rust codes will be managed with the Cargo package manager. They will be compiled into static library and linked via linker. In other words, we will be calling the `cargo` command from the compiling script.
 
 NoirVisor uses Rust 2024 standard.
 

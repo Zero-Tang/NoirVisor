@@ -75,14 +75,14 @@ We use Python script to build NoirVisor. The minimum version required for buildi
 
 Python-based compilation is parallel. It will achieve a great performance in building NoirVisor.
 
-See [documentation](./doc/make.md) for more information using python script to build NoirVisor.
+See [documentation](./doc/make.md) for more information about preparation and using python script to build NoirVisor.
 
 **Note that the `cargo build` command only builds the NoirVisor Core instead of the whole NoirVisor project!**
 
-**TL;DR?** In short, make sure Python, Rust Nightly and MSVC (including WDK) are installed. \
+**TL;DR?** In short, make sure all required tools are installed. \
 To build Windows Driver:
 ```
-make
+make /target windows
 ```
 To build UEFI Application & Runtime Driver:
 ```
@@ -92,36 +92,26 @@ make /target uefi
 # Test
 
 ## Windows Driver
-There is a .NET Framework 4.0 based GUI loader available on GitHub now: https://github.com/Zero-Tang/NoirVisorLoader \
-If you are using operating systems older than Windows 8, you are supposed to manually install .NET Framework 4.0 or higher. \
-If you use the digital signature provided in NoirVisor's repository, then you should enable the test-signing on your machine. \
-You may enable Stealth SSDT Hook by setting up registry. Please note that since hooking is a very dangerous behavior, NoirVisor disables them on default. \
-**Caveat: The stealth hook functionalities are *deprecated* in that I'm tired of doing this. They are disabled by default. Future updates of NoirVisor will rarely address issues from them. If you encountered issues from stealth hook features, expect no fixes will be applied. This project has no interest in fixing them.** 
+If you have never installed the NoirVisor service before:
 ```bat
-reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "StealthMsrHook" /t REG_DWORD /d 1 /f
-```
-You may enable Stealth Inline Hook by setting up registry:
-```bat
-reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "StealthInlineHook" /t REG_DWORD /d 1 /f
-```
-You may set the values to 0, or remove the value key, in order to disable these features again.
-
-You may load NoirVisor by using command-line or batch script:
-```bat
-reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "SubvertOnDriverLoad" /t REG_DWORD /d 1 /f
 sc create NoirVisor type= kernel binPath= <Path to NoirVisor driver file>
+```
+Once NoirVisor service is installed, start the driver:
+```bat
 sc start NoirVisor
 ```
-You may unload NoirVisor by using command-line or batch script as well:
+
+You may unload NoirVisor by using command-line:
 ```bat
 sc stop NoirVisor
-sc delete NoirVisor
-reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "SubvertOnDriverLoad" /t REG_DWORD /d 0 /f
 ```
-The `SubvertOnDriverLoad` registry key value specifies whether the driver should subvert the system or not on the entry. This key value conflicts with NoirVisor Loader. You must delete or disable this key value in order to use NoirVisor Loader.
+If you need to uninstall NoirVisor service:
+```bat
+sc delete NoirVisor
+```
 
 ## EFI Application and Runtime Driver
-There are two methods to test NoirVisor.
+There are several methods to test NoirVisor.
 
 ### Running on a physical machine
 This method can also be used on VMware. \
@@ -199,22 +189,12 @@ This repository provides [additional documents](/doc/readme.md) which help new d
 # Detection of NoirVisor
 As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]` indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors would use leaf 0x40000000 in order to identify itself as the hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is `VMwareVMware`. In NoirVisor, hypervisor vendor string is defined as `NoirVisor ZT`.
 
-You may disable the detection for NoirVisor in Windows via setting up the registry. \
-Locate the registry key: `HKLM\Software\Zero-Tang\NoirVisor`. If this key does not exist then create it. \
-Edit the `CpuidPresence` Key Value to 0. Feel free to execute the following command if you find it less taxing to do:
-```bat
-reg add "HKLM\SOFTWARE\Zero-Tang\NoirVisor" /v "CpuidPresence" /t REG_DWORD /d 0 /f
-```
-
 You may disable the detection for NoirVisor in UEFI via building the custom binary configuration file. \
 You may copy the [DefaultUefiConfig.json](./build/DefaultUefiConfig.json), and set the `CpuidPresence` to `false`. Then use the provided python script to build it:
 ```
 python makeueficonfig.py NewUefiConfig.json NoirVisorConfig.bin
 ```
 You should see a generated file called `NoirVisorConfig.bin`. Place it to the root directory of the boot medium.
-
-## NoirVisor as a Nested Hypervisor
-If NoirVisor is subverting a system under a virtualized environment with exposed detection (e.g: VMware virtual machines with `hypervisor.cpuid.v0 = TRUE` configuration) as a Type-II hypervisor, the operating system may have already been using functionalities provided by the hypervisor. In this regard, NoirVisor should pass-through the access to hypervisor functionalities (e.g: `cpuid` instructions, accesses to Microsoft Synthetic MSRs, hypercalls, etc.)
 
 # Customizable VM
 Customizable VM is the true explanation of "complex functions and purposes". As the project creator and director, Zero's true intention to create this project is for studying Hardware-Acclerated Virtualization Technology. Therefore, any features which is related to virtualization and which Zero has ideas to implement will be added in the project. \

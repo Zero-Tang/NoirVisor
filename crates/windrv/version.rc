@@ -1,0 +1,43 @@
+// NoirVisor Windows Driver Version Resource
+// Copyright 2018-2026, Zero Tang. All rights reserved.
+// https://github.com/Zero-Tang/NoirVisor
+
+#include <verrsrc.h>
+#include <ntdef.h>
+
+//
+// Version Information resources
+//
+LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
+1 VERSIONINFO
+	FILEVERSION     0,1,0,0
+	PRODUCTVERSION  0,1,0,0
+	FILEOS          VOS_NT_WINDOWS32
+	FILETYPE        VFT_DRV
+	FILESUBTYPE     VFT2_DRV_SYSTEM
+	FILEFLAGSMASK   0
+	FILEFLAGS       0
+{
+	BLOCK "StringFileInfo"
+	{
+		BLOCK "040901B5"
+		{
+			VALUE "Comments", "NoirVisor CVM Scheduler Driver for Windows"
+			VALUE "CompanyName", "zero.tangptr@gmail.com"
+			VALUE "FileDescription", "NoirVisor CVM Scheduler Driver for Windows"
+			VALUE "FileVersion", "0.1.0"
+			VALUE "InternalName", "NoirVisor"
+			VALUE "LegalCopyright", "Powered by zero.tangptr@gmail.com. All Rights Reserved."
+			VALUE "LegalTrademarks", "Powered by zero.tangptr@gmail.com. All Rights Reserved."
+			VALUE "OriginalFilename", "NoirVisor.sys"
+			VALUE "PrivateBuild", ""
+			VALUE "ProductName", "NoirVisor Hypervisor for Windows"
+			VALUE "ProductVersion", "0.1.0"
+			VALUE "SpecialBuild", ""
+		}
+	}
+	BLOCK "VarFileInfo"
+	{
+		VALUE "Translation", 0x0409, 0x01B5
+	}
+}

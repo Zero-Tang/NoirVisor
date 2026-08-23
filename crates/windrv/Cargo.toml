@@ -1,0 +1,24 @@
+[package]
+name = "windrv"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+utf16_lit = "*"
+log = "*"
+nvcvm = { path = "../nvcvm" }
+
+[dependencies.cvsched]
+path = "../cvsched"
+features = ["scheduler"]
+
+[dependencies.static-collections]
+version = "*"
+features = ["use_crt"]
+
+[dependencies.windows-sys]
+version = "0.61.2"
+features = ["Win32_Foundation","Win32_Security","Win32_System_IO","Win32_System_Ioctl","Win32_System_Kernel","Win32_System_Diagnostics_Debug","Win32_System_Power","Wdk_Foundation","Wdk_Storage_FileSystem","Wdk_System_SystemServices"]

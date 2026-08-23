@@ -1,7 +1,7 @@
 # Make Script
 The python script is intended for parallelizing the build progress. It utilizes a simple pipelining algorithm with a dependency resolver.
 
-## Preparation
+## Preparation for Windows
 The minimal version of python required for building is 3.9 since the script is using typing syntax to help reading the codes. \
 Download [Python](https://www.python.org/downloads/windows/) from Python's official website.
 
@@ -14,13 +14,24 @@ Installer of NASM for Windows does not add itself to `PATH` environment variable
 
 There is no known minimal version requirement for LLVM. Just install the newest version you can find. \
 Download [LLVM](https://github.com/llvm/llvm-project/releases) from LLVM's GitHub repository release page. \
-LLVM is only required for building NoirVisor for UEFI. \
+LLVM is required for building NoirVisor. \
 Installer of LLVM for Windows is somewhat buggy on adding itself to `PATH` environment variable. Check the `PATH` after installation. Add it if it's missing.
 
 There is no known minimal version requirement for QEMU. Just install the newest version you can find. \
 Download [QEMU](https://qemu.weilnetz.de/w64/) from Stefan Weil's website. \
 QEMU is only required for building NoirVisor for UEFI in order to convert raw images into VHDX (Microsoft Hyper-V) and VMDK (VMware Workstation). \
 Installer of QEMU for Windows does not add itself to `PATH` environment variable. You must add it to `PATH` on your own.
+
+There is no known minimal version requirement for osslsigncode. Just install the newest version you can find. \
+Download [osslsigncode](https://github.com/mtrojnar/osslsigncode/releases) from GitHub. \
+osslsigncode is only required for signing the executable file with the test signature. \
+Extract the files to a certain directory, and add that directory to `PATH` environment variable.
+
+There is no known minimal version requirement for OpenSSL. Just install the newest version you can find. \
+You are required to install the `legacy.dll` file to a place where `osslsigncode.exe` can find. It should be at `C:\vcpkg\packages\openssl_x64-windows\bin\legacy.dll`. \
+OpenSSL is only required for signing the executable file with the test signature. \
+[FireDaemon](https://www.firedaemon.com/download-firedaemon-openssl) provides pre-built OpenSSL binaries. You may extract the `legacy.dll` file and place it properly. \
+It seems like OpenSSL can be installed with `vcpkg`, but I'm not sure how to use `vcpkg`.
 
 The GNU `mtools` are required to make raw images for NoirVisor. I have uploaded the [pre-built `mtools` binaries for Windows to GitHub](https://github.com/Zero-Tang/NoirVisor/files/12706542/mtools-4.0.43-bin.zip). \
 Extract the files to a certain directory, and add that directory to `PATH` environment variable.
@@ -36,7 +47,7 @@ Currently, NoirVisor Core in Rust can subvert the system with Intel VT-x and AMD
 However, NoirVisor can only boot Windows from UEFI in single-core scenario.
 
 ### Windows Driver
-To build a kernel-mode driver on Windows, you should either install Visual Studio (2022 is recommended) with Windows Driver Kits or mount Enterprise WDK. \
+As the result of the Rust remastering, NoirVisor as the Windows Driver no longer subverts the current operating system. \
 Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
 
 You must install `x86_64-pc-windows-msvc` target host for Rust. This should be installed by default, but if you didn't, you may install it by:
@@ -57,6 +68,19 @@ rustup target add x86_64-unknown-uefi
 
 You do not have to execute the python script inside a Visual Studio prompt environment.
 
+#### Build Windows Driver on Linux
+It is possible to build NoirVisor for Windows on Linux. \
+In addition to Rust compiler, you should install the dependencies so that `lld-link`, `llvm-rc`, `llvm-lib`, and `osslsigncode` are available.
+
+For Ubuntu 26.04 LTS:
+```
+sudo apt install lld llvm osslsigncode
+```
+For Fedora 44:
+```
+sudo dnf install lld llvm osslsigncode
+```
+
 #### Build EFI Application and Runtime Driver on Linux
 It is possible to build NoirVisor for UEFI on Linux. \
 In addition to Rust compiler, you should install the dependencies so that `clang-cl`, `lld-link`, `llvm-ar`, `mcopy`, `mmd`, `mformat`, `qemu-img`, and `nasm` are available.`
@@ -68,38 +92,6 @@ sudo apt install clang lld llvm mtools nasm qemu
 For Fedora 44:
 ```
 sudo dnf install clang lld llvm mtools nasm qemu
-```
-
-## VSCode Setup
-You may setup VSCode with VS Tools Command Prompt so that you do not have to use a separate window to run the make script. \
-You do not have to setup VS Tools Command Prompt if you are building NoirVisor for UEFI.
-
-### Visual Studio 2022
-If you have installed Visual Studio 2022, add the following entry in `"terminal.integrated.profiles.windows"` of `settings.json` file:
-```json
-"VC2022 Native x64 Prompt": {
-	"path": "${env:windir}\\System32\\cmd.exe",
-	"args": ["/k", "${env:ProgramFiles}\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"]
-}
-```
-Then you may launch `cmd` with VC2022-related environment variables.
-
-### Visual Studio 2026
-Visual Studio 2026 is similar to VS2022. The only difference is the path to `vcvars64.bat` file:
-```json
-"VC2026 Native x64 Prompt": {
-	"path": "${env:windir}\\System32\\cmd.exe",
-	"args": ["/k", "${env:ProgramFiles}\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"]
-}
-```
-
-### Enterprise WDK
-If you have mounted EWDK to, for example, `V:`, add the following entry in `"terminal.integrated.profiles.windows"` of `settings.json` file:
-```json
-"EWDK11 Native x64 Prompt": {
-	"path": "V:\\LaunchBuildEnv.cmd",
-	"args": ["amd64","amd64"]
-}
 ```
 
 ## Synopsis
@@ -118,7 +110,7 @@ python3 make.py [/target windows|uefi] [/opt:yes|no]
 
 ### Arguments
 `/target windows|uefi` specifies the target binary to be built. \
-Valid options are `windows` and `uefi`. Default is `windows`. If you are building NoirVisor on Linux, `uefi` is the only available option.
+Valid options are `windows` and `uefi`. Default is `uefi`.
 
 `/opt:yes|no` specifies whether optimizer is enabled. Default is `no`.
 

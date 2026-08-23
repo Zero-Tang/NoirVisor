@@ -1,9 +1,7 @@
 [package]
-name = "uefirtdrv"
+name = "htable"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-r-efi = "7.1.0"
 static-collections = "*"
-utf16_lit = "2.0.2"

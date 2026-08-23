@@ -33,45 +33,10 @@ def confirm_cargo()->bool:
 	print("We are using {} and {}...".format(cargo_ver,rustc_ver))
 	return True
 
-def confirm_msvc()->bool:
-	try:
-		sdk_path=os.environ["WindowsSdkDir"]
-		if "WindowsSDKVersion" in os.environ:
-			sdk_ver=os.environ["WindowsSDKVersion"]
-		else:
-			sdk_ver=os.environ["WindowsTargetPlatformVersion"]
-	except:
-		print("Windows SDK is not installed! Make sure you are calling this script from MSVC 2022 Command Prompt!")
-		return False
-	try:
-		msvc_path=os.environ["VCToolsInstallDir"]
-	except:
-		print("MSVC is not installed! Make sure you are calling this script from MSVC 2022 Command Prompt!")
-		return False
-	print("MSVC is installed at {}".format(msvc_path))
-	print("Windows SDK Version: {}".format(sdk_ver[:-1]))
-	print("Windows Kits is installed at {}".format(sdk_path))
-	inc_path=os.path.join(sdk_path,"Include",sdk_ver)
-	if os.path.exists(inc_path):
-		if not os.path.exists(os.path.join(inc_path,"km")):
-			print("Error: Missing WDK Header Files! Did you install Windows Driver Kits?")
-	else:
-		print("Missing C/C++ Include Path!")
-		return False
-	lib_path=os.path.join(sdk_path,"Lib",sdk_ver)
-	if os.path.exists(lib_path):
-		if not os.path.exists(os.path.join(lib_path,"km")):
-			print("Error: Missing WDK Import Libraries! Did you install Windows Driver Kits?")
-			return False
-	else:
-		print("Missing Library Path!")
-		return False
-	return True
-
 def main():
 	i=1
 	optimizer_enabled=False
-	target="windows"
+	target="uefi"
 	# NoirVisor usually doesn't use more than 20KB of heap.
 	# 256KiB of heap granularity should be quite enough.
 	os.environ["DEFAULT_MMAP_GRANULARITY"]="0x40000"
@@ -93,21 +58,8 @@ def main():
 		i+=1
 	config="build-{}.json".format(target)
 	if confirm_cargo():
-		if target=="windows":
-			if confirm_msvc():
-				sdk_path=os.environ["WindowsSdkDir"]
-				if "WindowsSDKVersion" in os.environ:
-					sdk_ver=os.environ["WindowsSDKVersion"]
-				else:
-					sdk_ver=os.environ["WindowsTargetPlatformVersion"]
-				msvc_path=os.environ["VCToolsInstallDir"]
-				inc_path=os.path.join(sdk_path,"Include",sdk_ver)
-				lib_path=os.path.join(sdk_path,"Lib",sdk_ver)
-				pl=Pipeline(config,optimizer_enabled,extra_vars={"ddkpath":msvc_path,"incpath":inc_path,"libpath":lib_path,"python":sys.executable})
-			else:
-				exit()
-		else:
-			pl=Pipeline(config,optimizer_enabled,extra_vars={"python":sys.executable})
+		extra_vars_dict={"python":sys.executable}
+		pl=Pipeline(config,optimizer_enabled,extra_vars=extra_vars_dict)
 		pl.run()
 
 if __name__=="__main__":

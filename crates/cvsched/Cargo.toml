@@ -1,0 +1,15 @@
+[package]
+name = "cvsched"
+version = "0.1.0"
+edition = "2024"
+description = "NoirVisor OS-agnostic CVM Scheduler"
+
+[dependencies]
+bitfield-struct = "*"
+log = "*"
+nvcvm = { path ="../nvcvm" }
+htable = { path = "../htable" }
+
+[features]
+default = ["scheduler"]
+scheduler = []

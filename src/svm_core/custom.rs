@@ -16,54 +16,35 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
 use log::{error, warn};
 use nvcvm::{interface::*, status::Status};
+use spin::RwLock;
 
-use crate::{cvm_core::{x86::CvmX86Vcpu, *}, xpf_core::{allocator::{kmalloc::KernelAllocator, InternalPageAllocator, SystemPageAllocator}, asm::svm::vmmcall, hv_host::{NOIR_HYPERCALL_CODE_CVM_ALLOC_TLB_TAG, NOIR_HYPERCALL_CODE_CVM_FREE_TLB_TAG}, nvbdk::*, pushlock::PushLock}};
+use crate::{cvm_core::x86::CvmX86Vcpu, xpf_core::{allocator::InternalPageAllocator, nvbdk::*}};
 use super::npt::*;
 
 const SVM_CUSTOM_VCPU_LIMIT:usize=256;
 
-struct SvmCustomAsid(u32);
-
 pub(super) static LA57_IN_NPT:AtomicBool=AtomicBool::new(false);
-
-impl SvmCustomAsid
-{
-	fn new()->Option<Self>
-	{
-		let mut asid:u32=0;
-		match Status(vmmcall(NOIR_HYPERCALL_CODE_CVM_ALLOC_TLB_TAG,&raw mut asid as usize))
-		{
-			Status::SUCCESS=>Some(Self(asid)),
-			_=>None
-		}
-	}
-}
-
-impl Drop for SvmCustomAsid
-{
-	fn drop(&mut self)
-	{
-		vmmcall(NOIR_HYPERCALL_CODE_CVM_FREE_TLB_TAG,&raw const self.0 as usize);
-	}
-}
 
 pub struct SvmCustomVcpu
 {
 	/// The processor state of the vCPU.
 	pub state:CvmX86Vcpu,
 	/// The VMCB of the vCPU.
-	vmcb:MemoryDescriptor<1,c_void,SystemPageAllocator>,
-	apic_backing:Option<MemoryDescriptor<1,c_void,SystemPageAllocator>>,
+	vmcb:MemoryDescriptor<1,c_void>,
+	apic_backing:Option<MemoryDescriptor<1,c_void>>,
 	current_as_id:u32,
 	proc_id:u32,
 	apic_id:u32
 }
 
+unsafe impl Send for SvmCustomVcpu {}
+unsafe impl Sync for SvmCustomVcpu {}
+
 impl SvmCustomVcpu
 {
 	fn new(vcpu_id:u32)->Result<Self,Status>
 	{
-		let Some(vmcb)=MemoryDescriptor::alloc_in(SystemPageAllocator) else
+		let Some(vmcb)=MemoryDescriptor::alloc() else
 		{
 			error!("Failed to allocate VMCB for vCPU {vcpu_id}!");
 			return Err(Status::INSUFFICIENT_RESOURCES);
@@ -88,34 +69,33 @@ impl SvmCustomVcpu
 	}
 }
 
-type SvmCustomVcpuList=Arc<PushLock<Vec<Option<Arc<PushLock<Box<SvmCustomVcpu,KernelAllocator>>,KernelAllocator>>,KernelAllocator>>,KernelAllocator>;
-
 pub struct SvmCustomVm
 {
-	vcpus:SvmCustomVcpuList,
-	iopm:Option<MemoryDescriptor<3,usize,SystemPageAllocator>>,
-	msrpm:Option<MemoryDescriptor<2,usize,SystemPageAllocator>>,
+	vcpus:Vec<Option<Arc<RwLock<SvmCustomVcpu>>>>,
 	/// Built-in NPTMs have a fixed number of them, so use a slice to contain them. \
 	/// Any vCPU must hold NPT Manager with shared access before running. \
 	/// To set mapping, the NPT Manager must be held with exclusive access.
-	builtin_nptm:[PushLock<SvmCustomNptManager>;CVM_MAPPING_ASID_RESERVED_START as usize],
+	builtin_nptm:[SvmCustomNptManager;CVM_MAPPING_ASID_RESERVED_START as usize],
 	/// Customized NPTMs have a dynamic number of them, so use a vector to contain them. \
 	/// To run a vCPU, the assigned NPTM must be held with shared access. \
 	/// To set mapping, the NPT Manager must be held with exclusive access.
-	custom_as_nptm:Vec<PushLock<SvmCustomNptManager>,KernelAllocator>,
+	custom_as_nptm:Vec<SvmCustomNptManager>,
 	process_id:u32
 }
 
+unsafe impl Send for SvmCustomVm {}
+unsafe impl Sync for SvmCustomVm {}
+
 impl SvmCustomVm
 {
-	fn new(process_id:u32)->Result<Self,Status>
+	fn new(process_id:u32,asid:u32)->Result<Self,Status>
 	{
-		let def_nptm=match SvmCustomNptManager::new()
+		let def_nptm=match SvmCustomNptManager::new(asid)
 		{
 			Some(m)=>m,
 			None=>return Err(Status::INSUFFICIENT_RESOURCES)
 		};
-		let smm_nptm=match SvmCustomNptManager::new()
+		let smm_nptm=match SvmCustomNptManager::new(asid)
 		{
 			Some(m)=>m,
 			None=>return Err(Status::INSUFFICIENT_RESOURCES)
@@ -124,22 +104,20 @@ impl SvmCustomVm
 		(
 			Self
 			{
-				vcpus:Arc::new_in(PushLock::new(Vec::new_in(KernelAllocator)),KernelAllocator),
-				iopm:None,
-				msrpm:None,
-				custom_as_nptm:Vec::new_in(KernelAllocator),
-				builtin_nptm:[PushLock::new(def_nptm),PushLock::new(smm_nptm)],
+				vcpus:Vec::new(),
+				custom_as_nptm:Vec::new(),
+				builtin_nptm:[def_nptm,smm_nptm],
 				process_id
 			}
 		)
 	}
 }
 
-type SvmCustomVmList=Vec<Option<Arc<PushLock<Box<SvmCustomVm,KernelAllocator>>,KernelAllocator>>,KernelAllocator>;
+pub type SvmLockedVmList=Arc<RwLock<Vec<Option<Arc<RwLock<Box<SvmCustomVm>>>>>>>;
 
 pub struct SvmCustomHypervisor
 {
-	vm_list:SvmCustomVmList,
+	vm_list:SvmLockedVmList,
 	iopm:MemoryDescriptor<3,usize,InternalPageAllocator>,
 	msrpm:MemoryDescriptor<2,usize,InternalPageAllocator>,
 	l5_npt:bool
@@ -160,7 +138,7 @@ impl SvmCustomHypervisor
 		(
 			Self
 			{
-				vm_list:Vec::new_in(KernelAllocator),
+				vm_list:Arc::new(RwLock::new(Vec::new())),
 				iopm,
 				msrpm,
 				l5_npt
@@ -169,7 +147,7 @@ impl SvmCustomHypervisor
 	}
 }
 
-impl CvmHvOps for SvmCustomHypervisor
+impl SvmCustomHypervisor
 {
 	fn check_cap(&self,_code:u32,_buffer:&mut [u8])->Status
 	{
@@ -180,7 +158,8 @@ impl CvmHvOps for SvmCustomHypervisor
 	{
 		let mut handle:Option<usize>=None;
 		// Search for a handle which points to a `None`.
-		for (i,vm) in self.vm_list.iter_mut().enumerate()
+		let mut vm_list_lk=self.vm_list.write();
+		for (i,vm) in vm_list_lk.iter_mut().enumerate()
 		{
 			if vm.is_none()
 			{
@@ -192,29 +171,25 @@ impl CvmHvOps for SvmCustomHypervisor
 		if handle.is_none()
 		{
 			// Rust Vec doesn't have `try_push`, so we have to `try_reserve` then `push`.
-			if let Err(e)=self.vm_list.try_reserve(1)
+			if let Err(e)=vm_list_lk.try_reserve(1)
 			{
 				error!("Failed to reserve spot for VM Handle-Table! Reason: {e}");
 				return Err(Status::INSUFFICIENT_RESOURCES);
 			}
-			handle=Some(self.vm_list.len());
+			handle=Some(vm_list_lk.len());
 		}
 		// Because we have previously reserved a spot, this push won't panic.
-		let Ok(vm)=Box::try_new_in(SvmCustomVm::new(process_id)?,KernelAllocator) else
+		let Ok(vm)=Box::try_new(SvmCustomVm::new(process_id,2)?) else
 		{
 			return Err(Status::INSUFFICIENT_RESOURCES);
 		};
-		let Ok(vm)=Arc::try_new_in(PushLock::new(vm),KernelAllocator) else
-		{
-			return Err(Status::INSUFFICIENT_RESOURCES);
-		};
-		self.vm_list.push(Some(vm));
-		Ok(CvmHandle(handle.unwrap() as u64))
+		vm_list_lk.push(Some(Arc::new(RwLock::new(vm))));
+		Ok(CvmHandle(handle.unwrap() as u32))
 	}
 
 	fn release_vm(&mut self,vm:CvmHandle)
 	{
-		match self.vm_list.get_mut(vm.0 as usize)
+		match self.vm_list.write().get_mut(vm.0 as usize)
 		{
 			Some(vm)=>
 			{
@@ -226,13 +201,13 @@ impl CvmHvOps for SvmCustomHypervisor
 
 	fn create_vcpu(&self,vm:CvmHandle,vcpu_id:usize)->Result<(),Status>
 	{
-		let Some(Some(vm))=self.vm_list.get(vm.0 as usize) else
+		let vm_list_lk=self.vm_list.read();
+		let Some(Some(vm))=vm_list_lk.get(vm.0 as usize) else
 		{
 			error!("The VM Handle is invalid!");
 			return Err(Status::INVALID_PARAMETER);
 		};
-		let vm_lk=vm.read();
-		let mut vcpu_list_lk=vm_lk.vcpus.write();
+		let vcpu_list_lk=&mut vm.write().vcpus;
 		if vcpu_id>=vcpu_list_lk.len()
 		{
 			// The vCPU ID is greater than the list. Reserve space.
@@ -248,17 +223,17 @@ impl CvmHvOps for SvmCustomHypervisor
 				vcpu_list_lk.push(None);
 			}
 		}
-		vcpu_list_lk[vcpu_id]=Some(Arc::new_in(PushLock::new(Box::new_in(SvmCustomVcpu::new(vcpu_id as u32)?,KernelAllocator)),KernelAllocator));
+		vcpu_list_lk[vcpu_id]=Some(Arc::new(RwLock::new(SvmCustomVcpu::new(vcpu_id as u32)?)));
 		Ok(())
 	}
 
 	fn release_vcpu(&self,vm:CvmHandle,vcpu_id:usize)->Result<(),Status>
 	{
-		match self.vm_list.get(vm.0 as usize)
+		match self.vm_list.read().get(vm.0 as usize)
 		{
 			Some(Some(vm))=>
 			{
-				match vm.read().vcpus.write().get_mut(vcpu_id)
+				match vm.write().vcpus.get_mut(vcpu_id)
 				{
 					Some(vcpu_opt)=>
 					{
@@ -276,7 +251,7 @@ impl CvmHvOps for SvmCustomHypervisor
 	{
 		let vcpu_list=
 		{
-			match self.vm_list.get(vm.0 as usize)
+			match self.vm_list.clone().read().get(vm.0 as usize)
 			{
 				Some(Some(vm))=>vm.read().vcpus.clone(),
 				_=>return Err(Status::INVALID_PARAMETER)
@@ -286,8 +261,7 @@ impl CvmHvOps for SvmCustomHypervisor
 		let vcpu=
 		{
 			// Hold Shared Lock on vCPU-List.
-			let vcpu_list_lk=vcpu_list.read();
-			match vcpu_list_lk.get(vcpu_id)
+			match vcpu_list.get(vcpu_id)
 			{
 				Some(Some(vcpu))=>vcpu.clone(),
 				_=>return Err(Status::INVALID_PARAMETER)
@@ -295,14 +269,14 @@ impl CvmHvOps for SvmCustomHypervisor
 			// Drop Shared Lock.
 		};
 		// Hold Exclusive Lock on vCPU.
-		let lk=vcpu.write();
-		warn!("Running vCPU {vcpu_id} on CPU {}...",lk.proc_id);
+		warn!("Running vCPU {vcpu_id} on CPU {}...",vcpu.read().proc_id);
 		Ok(())
 	}
 
 	fn set_mapping(&self,vm:CvmHandle,mapping:&CvmMapping)->Result<(),Status>
 	{
-		let Some(Some(vm))=self.vm_list.get(vm.0 as usize) else
+		let vm_list_lk=self.vm_list.read();
+		let Some(Some(vm))=vm_list_lk.get(vm.0 as usize) else
 		{
 			error!("The VM Handle is invalid!");
 			return Err(Status::INVALID_PARAMETER);
@@ -319,7 +293,7 @@ impl CvmHvOps for SvmCustomHypervisor
 			}
 			_=>return Err(Status::INVALID_PARAMETER)
 		};
-		nptm.write().set_mapping(mapping.base_gpa,mapping.base_hva,mapping.size,mapping.flags)
+		nptm.set_mapping(mapping.base_gpa,mapping.base_hva,mapping.size,mapping.flags)
 	}
 }
 
@@ -331,9 +305,8 @@ pub enum SvmCustomNptManager
 
 impl SvmCustomNptManager
 {
-	fn new()->Option<Self>
+	fn new(asid:u32)->Option<Self>
 	{
-		let asid=SvmCustomAsid::new()?;
 		if LA57_IN_NPT.load(Ordering::Relaxed)
 		{
 			let nptm=SvmCustomNptManagerL5::new(asid)?;
@@ -358,25 +331,25 @@ impl SvmCustomNptManager
 
 pub struct SvmCustomNptManagerL5
 {
-	pml5e:MemoryDescriptor<1,NptPml5e,SystemPageAllocator>,
-	pml4e:Vec<MemoryDescriptor<1,NptPml4e,SystemPageAllocator>,KernelAllocator>,
-	pdpte:Vec<MemoryDescriptor<1,NptPdpte,SystemPageAllocator>,KernelAllocator>,
-	pde:Vec<MemoryDescriptor<1,NptPde,SystemPageAllocator>,KernelAllocator>,
-	pte:Vec<MemoryDescriptor<1,NptPte,SystemPageAllocator>,KernelAllocator>,
-	asid:SvmCustomAsid
+	pml5e:MemoryDescriptor<1,NptPml5e>,
+	pml4e:Vec<MemoryDescriptor<1,NptPml4e>>,
+	pdpte:Vec<MemoryDescriptor<1,NptPdpte>>,
+	pde:Vec<MemoryDescriptor<1,NptPde>>,
+	pte:Vec<MemoryDescriptor<1,NptPte>>,
+	asid:u32
 }
 
 impl SvmCustomNptManagerL5
 {
-	fn new(asid:SvmCustomAsid)->Option<Self>
+	fn new(asid:u32)->Option<Self>
 	{
-		MemoryDescriptor::alloc_in(SystemPageAllocator).map(|md| Self
+		MemoryDescriptor::alloc().map(|md| Self
 		{
 			pml5e:md,
-			pml4e:Vec::new_in(KernelAllocator),
-			pdpte:Vec::new_in(KernelAllocator),
-			pde:Vec::new_in(KernelAllocator),
-			pte:Vec::new_in(KernelAllocator),
+			pml4e:Vec::new(),
+			pdpte:Vec::new(),
+			pde:Vec::new(),
+			pte:Vec::new(),
 			asid
 		})
 	}
@@ -390,23 +363,23 @@ impl SvmCustomNptManagerL5
 
 pub struct SvmCustomNptManagerL4
 {
-	pml4e:MemoryDescriptor<1,NptPml4e,SystemPageAllocator>,
-	pdpte:Vec<SvmNptPageTableDescriptor<NptPdpte,SystemPageAllocator>,KernelAllocator>,
-	pde:Vec<SvmNptPageTableDescriptor<NptPde,SystemPageAllocator>,KernelAllocator>,
-	pte:Vec<SvmNptPageTableDescriptor<NptPte,SystemPageAllocator>,KernelAllocator>,
-	asid:SvmCustomAsid
+	pml4e:MemoryDescriptor<1,NptPml4e>,
+	pdpte:Vec<SvmNptPageTableDescriptor<NptPdpte>>,
+	pde:Vec<SvmNptPageTableDescriptor<NptPde>>,
+	pte:Vec<SvmNptPageTableDescriptor<NptPte>>,
+	asid:u32
 }
 
 impl SvmCustomNptManagerL4
 {
-	fn new(asid:SvmCustomAsid)->Option<Self>
+	fn new(asid:u32)->Option<Self>
 	{
-		MemoryDescriptor::alloc_in(SystemPageAllocator).map(|md| Self
+		MemoryDescriptor::alloc().map(|md| Self
 		{
 			pml4e:md,
-			pdpte:Vec::new_in(KernelAllocator),
-			pde:Vec::new_in(KernelAllocator),
-			pte:Vec::new_in(KernelAllocator),
+			pdpte:Vec::new(),
+			pde:Vec::new(),
+			pte:Vec::new(),
 			asid
 		})
 	}
@@ -431,11 +404,11 @@ impl SvmCustomNptManagerL4
 			Err(i)=>
 			{
 				// Create and insert the descriptor, and keep it sorted.
-				match MemoryDescriptor::alloc_in(SystemPageAllocator)
+				match MemoryDescriptor::alloc()
 				{
 					Some(md)=>
 					{
-						let pdpte_d:SvmNptPageTableDescriptor<NptPdpte,SystemPageAllocator>=SvmNptPageTableDescriptor
+						let pdpte_d:SvmNptPageTableDescriptor<NptPdpte>=SvmNptPageTableDescriptor
 						{
 							table:md,
 							gpa_start:page_512gb_base(gpa)
@@ -468,11 +441,11 @@ impl SvmCustomNptManagerL4
 			Err(i)=>
 			{
 				// Create and insert the descriptor, and keep it sorted.
-				match MemoryDescriptor::alloc_in(SystemPageAllocator)
+				match MemoryDescriptor::alloc()
 				{
 					Some(md)=>
 					{
-						let pde_d:SvmNptPageTableDescriptor<NptPde,SystemPageAllocator>=SvmNptPageTableDescriptor
+						let pde_d:SvmNptPageTableDescriptor<NptPde>=SvmNptPageTableDescriptor
 						{
 							table:md,
 							gpa_start:page_1gb_base(gpa)
@@ -504,11 +477,11 @@ impl SvmCustomNptManagerL4
 			Err(i)=>
 			{
 				// Create and insert the descriptor, and keep it sorted.
-				match MemoryDescriptor::alloc_in(SystemPageAllocator)
+				match MemoryDescriptor::alloc()
 				{
 					Some(md)=>
 					{
-						let pte_d:SvmNptPageTableDescriptor<NptPte,SystemPageAllocator>=SvmNptPageTableDescriptor
+						let pte_d:SvmNptPageTableDescriptor<NptPte>=SvmNptPageTableDescriptor
 						{
 							table:md,
 							gpa_start:page_2mb_base(gpa)

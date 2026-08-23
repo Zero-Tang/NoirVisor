@@ -12,6 +12,7 @@
 
 use core::ffi::c_void;
 
+use cvsched::hvcall::*;
 use log::warn;
 use nvcvm::status::Status;
 
@@ -118,6 +119,54 @@ impl SvmVcpu
 		info!("ExitBootServices event is triggered! UEFI now enters Runtime Stage!");
 		Ok(Status::SUCCESS)
 	}
+
+	fn hvcall_get_cap(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	{
+		error!("Get-Capability is not supported!");
+		Ok(Status::NOT_IMPLEMENTED)
+	}
+
+	fn hvcall_create_vm(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	{
+		error!("Create-VM is not supported!");
+		Ok(Status::NOT_IMPLEMENTED)
+	}
+
+	fn hvcall_delete_vm(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	{
+		error!("Delete-VM is not supported!");
+		Ok(Status::NOT_IMPLEMENTED)
+	}
+
+	fn hvcall_create_vcpu(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	{
+		error!("Create-vCPU is not supported!");
+		Ok(Status::NOT_IMPLEMENTED)
+	}
+
+	fn hvcall_delete_vcpu(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	{
+		error!("Delete-vCPU is not supported!");
+		Ok(Status::NOT_IMPLEMENTED)
+	}
+
+	fn hvcall_set_mapping(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	{
+		error!("Set-Mapping is not supported!");
+		Ok(Status::NOT_IMPLEMENTED)
+	}
+
+	fn hvcall_run_vcpu(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	{
+		error!("Run-vCPU is not supported!");
+		Ok(Status::NOT_IMPLEMENTED)
+	}
+
+	fn hvcall_request_event(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	{
+		error!("Delete-vCPU is not supported!");
+		Ok(Status::NOT_IMPLEMENTED)
+	}
 }
 
 pub(super) type SvmHypercallHandler=fn(&mut SvmVcpu,code:u32,context:*mut c_void)->Result<Status,(u8,Option<u32>)>;
@@ -130,16 +179,23 @@ static SVM_HYPERCALL_HANDLER_BASE:[SvmHypercallHandler;4]=
 	SvmVcpu::hvcall_exit_boot_services
 ];
 
-static SVM_HYPERCALL_HANDLER_CVM:[SvmHypercallHandler;6]=
-[
-	
-	SvmVcpu::hvcall_unknown,
-	SvmVcpu::hvcall_unknown,
-	SvmVcpu::hvcall_unknown,
-	SvmVcpu::hvcall_unknown,
-	SvmVcpu::hvcall_unknown,
-	SvmVcpu::hvcall_unknown
-];
+static SVM_HYPERCALL_HANDLER_CVM:[SvmHypercallHandler;0x30]=
+{
+	let mut x:[SvmHypercallHandler;0x30]=[SvmVcpu::hvcall_unknown;0x30];
+	const fn set(array:&mut [SvmHypercallHandler],code:u32,handler:SvmHypercallHandler)
+	{
+		array[(code as usize)&0xFFFF]=handler;
+	}
+	set(&mut x,CVM_HYPERCALL_GET_CAPABILITY,SvmVcpu::hvcall_get_cap);
+	set(&mut x,CVM_HYPERCALL_CREATE_VM,SvmVcpu::hvcall_create_vm);
+	set(&mut x,CVM_HYPERCALL_DELETE_VM,SvmVcpu::hvcall_delete_vm);
+	set(&mut x,CVM_HYPERCALL_CREATE_VCPU,SvmVcpu::hvcall_create_vcpu);
+	set(&mut x,CVM_HYPERCALL_DELETE_VCPU,SvmVcpu::hvcall_delete_vcpu);
+	set(&mut x,CVM_HYPERCALL_SET_MAPPING,SvmVcpu::hvcall_set_mapping);
+	set(&mut x,CVM_HYPERCALL_RUN_VCPU,SvmVcpu::hvcall_run_vcpu);
+	set(&mut x,CVM_HYPERCALL_REQUEST_EVENT,SvmVcpu::hvcall_request_event);
+	x
+};
 
 static SVM_HYPERCALL_HANDLER_GROUPS:[&[SvmHypercallHandler];2]=[&SVM_HYPERCALL_HANDLER_BASE,&SVM_HYPERCALL_HANDLER_CVM];
 

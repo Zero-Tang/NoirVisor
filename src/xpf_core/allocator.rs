@@ -30,46 +30,6 @@ pub fn set_alloc_checker(v:bool)
 	CHECK_ALLOC.store(v,Ordering::SeqCst);
 }
 
-/// ## The `kmalloc` module
-/// This module wraps the OS kernel's memory allocator and implements `Allocator` trait.
-pub mod kmalloc
-{
-    use core::{alloc::*,ptr::NonNull,slice};
-
-	unsafe extern "C"
-	{
-		fn noir_kmalloc(length:usize,alignment:usize)->*mut u8;
-		fn noir_kfree(ptr:*mut u8,length:usize,alignment:usize);
-	}
-
-	#[derive(Clone, Copy)]
-	pub struct KernelAllocator;
-
-	unsafe impl Allocator for KernelAllocator
-	{
-		fn allocate(&self,layout:Layout)->Result<NonNull<[u8]>,AllocError>
-		{
-			let ptr=unsafe{noir_kmalloc(layout.size(),layout.align())};
-			let s=unsafe{slice::from_raw_parts_mut(ptr,layout.size())};
-			match NonNull::new(&raw mut *s)
-			{
-				Some(nn)=>Ok(nn),
-				None=>Err(AllocError)
-			}
-		}
-
-		unsafe fn deallocate(&self,ptr:NonNull<u8>,layout:Layout)
-		{
-			unsafe
-			{
-				noir_kfree(ptr.as_ptr(),layout.size(),layout.align());
-			}
-		}
-	}
-
-	pub static KERNEL_ALLOCATOR:KernelAllocator=KernelAllocator;
-}
-
 mod dlmalloc
 {
 	use core::{alloc::*, ffi::c_void, hint::spin_loop, ptr::null_mut, sync::atomic::{AtomicUsize, Ordering}};
@@ -611,41 +571,6 @@ unsafe impl ContiguousAllocator for InternalPageAllocator
 			// This is normal contiguous page.
 			lk.free_pages(virt,pages);
 			info!("Freeing Page at {virt:p}...");
-		}
-	}
-}
-
-unsafe extern "C"
-{
-	fn noir_kmmap(pages:usize)->*mut c_void;
-	fn noir_kmunmap(virt:*mut c_void,pages:usize);
-}
-
-pub struct SystemPageAllocator;
-
-unsafe impl ContiguousAllocator for SystemPageAllocator
-{
-	unsafe fn alloc(&self,pages:usize)->Option<(*mut c_void,u64)>
-	{
-		unsafe
-		{
-			let virt=noir_kmmap(pages);
-			if virt.is_null()
-			{
-				None
-			}
-			else
-			{
-				Some((virt,noir_get_physical_address(virt)))
-			}
-		}
-	}
-
-	unsafe fn free(&self,virt:*mut c_void,pages:usize)
-	{
-		unsafe
-		{
-			noir_kmunmap(virt,pages);
 		}
 	}
 }
