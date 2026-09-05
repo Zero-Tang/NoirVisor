@@ -25,18 +25,6 @@ STACKTOP_OFFSET_PROC_ID=0x100
 STACKTOP_OFFSET_GUEST_XCR0=0x108
 STACKTOP_OFFSET_HOST_XCR0=0x110
 
-.global nvc_svm_return
-nvc_svm_return:
-	// Switch the stack where state is saved.
-	mov rsp,rcx
-	popaq_fast 0
-	// In the restored GPR layout, we have:
-	// rax=rip, rcx=rflags, rdx=rsp
-	push rcx
-	popfq
-	mov rsp,rdx
-	jmp rax
-
 .global nvc_svm_guest_start
 .seh_proc nvc_svm_guest_start
 nvc_svm_guest_start:

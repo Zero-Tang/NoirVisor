@@ -4,12 +4,18 @@ version = "0.1.0"
 edition = "2024"
 description = "NoirVisor OS-agnostic CVM Scheduler"
 
+[lib]
+crate-type = ["staticlib"]
+
 [dependencies]
 bitfield-struct = "*"
 log = "*"
+paste = "*"
 nvcvm = { path ="../nvcvm" }
 htable = { path = "../htable" }
 
-[features]
-default = ["scheduler"]
-scheduler = []
+[target.'cfg(windows)'.dependencies.windrv]
+path = "../windrv"
+
+[target.'cfg(target_os="uefi")'.dependencies.uefibsdrv]
+path = "../uefibsdrv"

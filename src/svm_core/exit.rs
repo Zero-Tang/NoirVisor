@@ -14,11 +14,15 @@ use core::{hint::{cold_path, spin_loop}, mem::MaybeUninit, slice, sync::atomic::
 
 use paste::paste;
 
-use decode::dispatch_decoder;
+use decode::{dispatch_decoder, SoftwareDecodeAssistOps};
+use custom::SvmCustomVcpu;
+use cvexit::dispatch_cvexit_handler;
 use npt::NptFaultCode;
 use hvcall::dispatch_hypercall;
 use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::{crdr::*, descriptors::SegmentFlags, rflags::Rflags}, trytask::try_task};
 use disasm::emulator::{EmulatorOps, Instruction};
+
+use crate::svm_core::decode::dispatch_cvexit_decoder;
 
 use super::*;
 use mshv_core::{cpuid::*,msr::dispatch_mshv_msr_handler};
@@ -447,65 +451,28 @@ impl SvmVcpu
 
 	fn handle_vmmcall(&mut self,context:&mut SvmStackTop)
 	{
-		let gpr_state=&mut context.gpr_state;
-		let grip:u64=self.read_rip();
-		let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
-		if hv.is_rip_from_hypervisor(grip)
+		let cpl=self.read_cpl();
+		if cpl!=0
 		{
-			let vmmcall_func=gpr_state.rcx as u32;
-			let handler_fn=dispatch_hypercall(vmmcall_func);
-			match handler_fn(self,vmmcall_func,gpr_state.rdx as *mut c_void)
-			{
-				Ok(st)=>
-				{
-					// This hypercall is known. Put status in rax register.
-					gpr_state.rax=st.0 as u64;
-					self.advance_rip();
-				}
-				Err((vector,error_code))=>
-				{
-					// Exception happened while servicing the hypercall. Inject into the Guest.
-					self.inject_event(vector,EventType::HardwareException,error_code,true);
-				}
-			}
+			error!("NoirVisor forbids user-mode hypercalls!");
+			self.inject_event(INVALID_OPCODE_FAULT,EventType::HardwareException,None,true);
+			return;
 		}
-		else
+		let gpr_state=&mut context.gpr_state;
+		let vmmcall_func=gpr_state.rcx as u32;
+		let handler_fn=dispatch_hypercall(vmmcall_func);
+		match handler_fn(self,gpr_state.rdx as *mut c_void,gpr_state.r8 as usize)
 		{
-			// This hypercall might be compliant to Microsoft TLFS.
-			// Check if forwarder exists.
-			/*#[cfg(windows)]
-			if let Some(_fwder)=&hv.mshvcall_forwarder
+			Ok(st)=>
 			{
-				use xpf_core::nvbdk::{nvc_forward_fast_hypercall,nvc_forward_memory_mapped_hypercall};
-				use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
-				let stack:*mut SvmStackTop=unsafe{self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<SvmStackTop>()).cast()};
-				let hvcall_code=TlfsHypercallCode::from_bits(gpr_state.rcx);
-				// Construct the forward stack.
-				let mut fwd_stack=MshvForwardStack::from_context(gpr_state,unsafe{&raw mut (*stack).volatile_xmms});
-				if hvcall_code.fast()
-				{
-					unsafe
-					{
-						nvc_forward_fast_hypercall(&raw mut fwd_stack);
-						fwd_stack.to_context(gpr_state);
-						advance_rip(self.vmcb.virt);
-					}
-				}
-				else
-				{
-					// FIXME: This sort of hypercall (e.g.: HvPostMessage) only happens in Hyper-V. It seems Windows does not invoke such hypercalls in QEMU/KVM.
-					info!("Microsoft Memory-Mapped Hypercall is intercepted! Code: 0x{:X}, Input GPA: 0x{:X}, Output GPA: 0x{:X}",hvcall_code.into_bits(),gpr_state.rdx,gpr_state.r8);
-					unsafe
-					{
-						gpr_state.rax=nvc_forward_memory_mapped_hypercall(hvcall_code.into_bits(),gpr_state.rdx,gpr_state.r8,gpr_state.rax);
-						info!("Return-Value: 0x{:X}",gpr_state.rax);
-						advance_rip(self.vmcb.virt);
-					}
-				}
+				// This hypercall is known. Put status in rax register.
+				gpr_state.rax=st.0 as u64;
+				self.advance_rip();
 			}
-			else*/
+			Err((vector,error_code))=>
 			{
-				unimplemented!("Microsoft TLFS Hypercall handler is not implemented yet!");
+				// Exception happened while servicing the hypercall. Inject into the Guest.
+				self.inject_event(vector,EventType::HardwareException,error_code,true);
 			}
 		}
 	}
@@ -594,43 +561,86 @@ impl SvmVcpu
 /// DO NOT CALL THIS FUNCTION FROM RUST CODE!
 #[unsafe(no_mangle)] unsafe extern "win64" fn nvc_svm_exit_handler(stack:*mut SvmStackTop)
 {
-	unsafe
+	let vcpu=unsafe{&mut *(*stack).vcpu};
+	let gpr=unsafe{&mut (*stack).gpr_state};
+	if unsafe{(*stack).guest_vmcb_pa}==vcpu.vmcb.phys
 	{
-		let vcpu=&mut *(*stack).vcpu;
-		let gpr=&mut (*stack).gpr_state;
-		if (*stack).guest_vmcb_pa==vcpu.vmcb.phys
+		// Allow debugger to display the stack trace from the guest.
+		// Note: this stack trace is only meaningful from subverted host.
+		unsafe
 		{
-			// Allow debugger to display the stack trace from the guest.
-			// Note: this stack trace is only meaningful from subverted host.
 			(*stack).guest_frame.return_rip=vcpu.read_rip();
 			(*stack).guest_frame.return_rsp=vcpu.read_rsp();
-			// Intercept code is supposed to be 64-bit, but Linux KVM has a bug that treats the intercept code as 32-bit.
-			let intercept_code:i32=vcpu.vmread(EXIT_CODE);
-			let decoder=dispatch_decoder(intercept_code as i64);
-			let handler=dispatch_handler(intercept_code as i64);
-			// If VMCB-Clean-Bits is supported, we may cache the VMCB fields.
-			if vcpu.svm_feats.vmcb_clean()
-			{
-				vcpu.vmwrite(VMCB_CLEAN_BITS,u32::MAX);
-			}
-			// Handle the VM-Exit!
-			gpr.rax=vcpu.vmread(GUEST_RAX);
-			gpr.rsp=vcpu.vmread(GUEST_RSP);
-			decoder(vcpu);
-			handler(vcpu,&mut *stack);
-			vcpu.write_rax(gpr.rax);
-			vcpu.write_rsp(gpr.rsp);
-			// The rax in GPR state should be the physical address of VMCB
-			// in order to execute the vmrun instruction properly.
-			// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.
 		}
-		else
+		// Intercept code is supposed to be 64-bit, but Linux KVM has a bug that treats the intercept code as 32-bit.
+		let intercept_code:i32=vcpu.read_exit_code() as i32;
+		let decoder=dispatch_decoder(intercept_code as i64);
+		let handler=dispatch_handler(intercept_code as i64);
+		// If VMCB-Clean-Bits is supported, we may cache the VMCB fields.
+		if vcpu.svm_feats.vmcb_clean()
 		{
-			cold_path();
-			panic!("Current VMCB Physical-Address (0x{:X}) is unexpected!",(*stack).guest_vmcb_pa);
+			vcpu.write_clean_field(VmcbCleanField::ALL_CACHED);
 		}
-		gpr.rax=(*stack).guest_vmcb_pa;
+		// Handle the VM-Exit!
+		gpr.rax=vcpu.read_rax();
+		gpr.rsp=vcpu.read_rsp();
+		vcpu.decoded_instruction.clear();
+		decoder(vcpu);
+		handler(vcpu,unsafe{&mut *stack});
+		// The rax in GPR state should be the physical address of VMCB
+		// in order to execute the vmrun instruction properly.
+		// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.
 	}
+	else if unsafe{!(*stack).custom_vcpu.is_null()}
+	{
+		let cvcpu:&mut SvmCustomVcpu=unsafe{&mut *(*stack).custom_vcpu.cast()};
+		// Intercept code is supposed to be 64-bit, but Linux KVM has a bug that treats the intercept code as 32-bit.
+		let intercept_code:i32=cvcpu.read_exit_code() as i32;
+		let decoder=dispatch_cvexit_decoder(intercept_code as i64);
+		let handler=dispatch_cvexit_handler(intercept_code as i64);
+		if vcpu.svm_feats.vmcb_clean()
+		{
+			cvcpu.write_clean_field(VmcbCleanField::ALL_CACHED);
+		}
+		// Handle the VM-Exit!
+		gpr.rax=cvcpu.read_rax();
+		gpr.rsp=cvcpu.read_rsp();
+		cvcpu.decoded_instruction.clear();
+		decoder(cvcpu);
+		handler(cvcpu,vcpu);
+	}
+	else
+	{
+		cold_path();
+		panic!("Current VMCB Physical-Address (0x{:X}) is unexpected!",unsafe{(*stack).guest_vmcb_pa});
+	}
+	// Restore the rax and rsp. Note that the VMCB might be switched.
+	if unsafe{(*stack).guest_vmcb_pa}==vcpu.vmcb.phys
+	{
+		if let Some((vm_handle,vcpu_id))=vcpu.cv_host_save.from_vcpu
+		{
+			// We switched back from a vCPU.
+			let hv=unsafe{&mut *(vcpu.hypervisor as *mut SvmHypervisor)};
+			if let Some(vm)=hv.vm_list.read().get(vm_handle.0 as usize).unwrap() && let Some(Some(vcpu))=vm.read().vcpus.read().get(vcpu_id as usize)
+			{
+				unsafe
+				{
+					vcpu.force_unlock();
+				}
+			}
+			vcpu.cv_host_save.from_vcpu=None;
+		}
+		vcpu.write_rax(gpr.rax);
+		vcpu.write_rsp(gpr.rsp);
+	}
+	else if unsafe{!(*stack).custom_vcpu.is_null()}
+	{
+		let cvcpu:&mut SvmCustomVcpu=unsafe{&mut *(*stack).custom_vcpu.cast()};
+		cvcpu.write_rax(gpr.rax);
+		cvcpu.write_rsp(gpr.rsp);
+	}
+	// Specify the VMCB we will run next.
+	gpr.rax=unsafe{(*stack).guest_vmcb_pa};
 }
 
 pub const SVM_MAXIMUM_GROUPS:usize=2;
@@ -820,11 +830,7 @@ static SVM_EXIT_HANDLER_GROUPS:[&[SvmExitHandler];SVM_MAXIMUM_GROUPS]=[&SVM_EXIT
 	{
 		cold_path();
 		let index:usize=!intercept_code as usize;
-		match SVM_EXIT_HANDLER_GROUP_NEGATIVE.get(index)
-		{
-			Some(&h)=>h,
-			None=>SvmVcpu::handle_unknown
-		}
+		SVM_EXIT_HANDLER_GROUP_NEGATIVE.get(index).copied().unwrap_or(SvmVcpu::handle_unknown)
 	}
 	else
 	{
@@ -834,11 +840,7 @@ static SVM_EXIT_HANDLER_GROUPS:[&[SvmExitHandler];SVM_MAXIMUM_GROUPS]=[&SVM_EXIT
 			Some(&g)=>
 			{
 				let index:usize=(intercept_code as usize)&0x3ff;
-				match g.get(index)
-				{
-					Some(&h)=>h,
-					None=>SvmVcpu::handle_unknown
-				}
+				g.get(index).copied().unwrap_or(SvmVcpu::handle_unknown)
 			}
 			None=>SvmVcpu::handle_unknown
 		}

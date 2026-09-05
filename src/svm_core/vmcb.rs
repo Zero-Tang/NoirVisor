@@ -11,12 +11,13 @@
  */
 
 use core::ffi::c_void;
+use nvcvm::interface::SegmentRegister;
 use paste::paste;
 use bitfield_struct::bitfield;
 
 use crate::*;
 use super::SvmVcpu;
-use xpf_core::{x86::{interrupts::*, rflags::*, crdr::*, descriptors::SegmentFlags, msr::Efer}, nvbdk::SegmentRegister};
+use xpf_core::{x86::{interrupts::*, rflags::*, crdr::*, descriptors::SegmentFlags, msr::Efer}};
 
 macro_rules! define_rw_field
 {
@@ -199,34 +200,86 @@ pub(super) trait VmcbOps
 		}
 	}
 
+	define_rw_field!(intercept_cr_readv,INTERCEPT_READ_CR,u16,INTERCEPTION);
+	define_rw_field!(intercept_cr_writev,INTERCEPT_WRITE_CR,u16,INTERCEPTION);
+	define_rw_field!(intercept_dr_readv,INTERCEPT_READ_DR,u16,INTERCEPTION);
+	define_rw_field!(intercept_dr_writev,INTERCEPT_WRITE_DR,u16,INTERCEPTION);
+	define_rw_field!(intercept_exception,INTERCEPT_EXCEPTIONS,u32,INTERCEPTION);
+	define_rw_field!(intercept_vector1,INTERCEPT_VECTOR1,InterceptVector1,INTERCEPTION);
+	define_rw_field!(intercept_vector2,INTERCEPT_VECTOR2,InterceptVector2,INTERCEPTION);
+	define_rw_field!(intercept_vector3,INTERCEPT_VECTOR3,InterceptVector3,INTERCEPTION);
+	define_rw_field!(pause_filter_threshold,PAUSE_FILTER_THRESHOLD,u16,INTERCEPTION);
+	define_rw_field!(pause_filter_count,PAUSE_FILTER_COUNT,u16,INTERCEPTION);
+	define_rw_field!(iopm,IOPM_PHYSICAL_ADDRESS,u64,IOMSRPM);
+	define_rw_field!(msrpm,MSRPM_PHYSICAL_ADDRESS,u64,IOMSRPM);
+	define_rw_field!(tsc_offset,TSC_OFFSET,u64,INTERCEPTION);
+	define_rw_field!(asid,GUEST_ASID,u32,ASID);
 	define_rw_field!(tlb_control,TLB_CONTROL,u8);
+	define_rw_field!(avic_control,AVIC_CONTROL,AvicControl,TPR);
+	define_rw_field!(guest_interrupt,GUEST_INTERRUPT,InterruptControl);
 	define_rw_field!(exit_code,EXIT_CODE,i64);
 	define_rw_field!(exit_info1,EXIT_INFO1,u64);
 	define_rw_field!(exit_info2,EXIT_INFO2,u64);
+	define_rw_field!(exit_int_info,EXIT_INTERRUPT_INFO,u64);
+	define_rw_field!(npt_control,NPT_CONTROL,NptControl,NPT);
+	define_rw_field!(avic_bar,AVIC_APIC_BAR,u64,AVIC);
+	define_rw_field!(ghcb,GHCB_PHYSICAL_ADDRESS,u64);
+	define_rw_field!(event_injection,EVENT_INJECTION,EventInjection);
+	define_rw_field!(ncr3,NPT_CR3,u64,NPT);
+	define_rw_field!(lbr_virt,LBR_VIRTUALIZATION_CONTROL,LbrVirtualization,LBR);
 	define_rw_field!(clean_field,VMCB_CLEAN_BITS,VmcbCleanField);
 	define_rw_field!(next_rip,NEXT_RIP,u64);
+	define_rw_field!(fetched_bytes_count,NUMBER_OF_BYTES_FETCHED,u8);
+	define_rw_field!(fetched_bytes,GUEST_INSTRUCTION_BYTES,[u8;15]);
+	define_rw_field!(avic_backing_page,AVIC_BACKING_PAGE_POINTER,u64,AVIC);
+	define_rw_field!(avic_logical_page,AVIC_LOGICAL_TABLE_POINTER,u64,AVIC);
+	define_rw_field!(avic_physical_page,AVIC_PHYSICAL_TABLE_POINTER,u64,AVIC);
+	define_rw_field!(vmsa,VMSA_POINTER,u64);
+	define_rw_field!(vmgexit_rax,VMGEXIT_RAX,u64);
+	define_rw_field!(vmgexit_cpl,VMGEXIT_CPL,u8);
+	define_rw_field!(buslock_threshold_counter,BUSLOCK_THRESHOLD_COUNTER,u16,INTERCEPTION);
+	define_rw_field!(update_irr,UPDATE_IRR,bool);
 
 	define_rw_field!(es,GUEST_ES_SELECTOR,SvmSegmentRegister,SEG);
 	define_rw_field!(cs,GUEST_CS_SELECTOR,SvmSegmentRegister,SEG);
-	define_rw_field!(ds,GUEST_CS_SELECTOR,SvmSegmentRegister,SEG);
-	define_rw_field!(ss,GUEST_CS_SELECTOR,SvmSegmentRegister,SEG);
+	define_rw_field!(ds,GUEST_DS_SELECTOR,SvmSegmentRegister,SEG);
+	define_rw_field!(ss,GUEST_SS_SELECTOR,SvmSegmentRegister,SEG);
 	define_rw_field!(fs,GUEST_FS_SELECTOR,SvmSegmentRegister);
 	define_rw_field!(gs,GUEST_GS_SELECTOR,SvmSegmentRegister);
 	define_rw_field!(gdtr,GUEST_GDTR_SELECTOR,SvmSegmentRegister,DT);
 	define_rw_field!(ldtr,GUEST_LDTR_SELECTOR,SvmSegmentRegister);
 	define_rw_field!(idtr,GUEST_IDTR_SELECTOR,SvmSegmentRegister,DT);
 	define_rw_field!(tr,GUEST_TR_SELECTOR,SvmSegmentRegister);
-	define_rw_field!(rax,GUEST_RAX,u64);
+	define_rw_field!(cpl,GUEST_CPL,u8);
+	define_rw_field!(efer,GUEST_EFER,Efer,CR);
+	define_rw_field!(cr4,GUEST_CR4,Cr4,CR);
+	define_rw_field!(cr3,GUEST_CR3,u64,CR);
+	define_rw_field!(cr0,GUEST_CR0,Cr0,CR);
+	define_rw_field!(dr7,GUEST_DR7,Dr7,DR);
+	define_rw_field!(dr6,GUEST_DR6,Dr6,DR);
+	define_rw_field!(rflags,GUEST_RFLAGS,Rflags);
 	define_rw_field!(rip,GUEST_RIP,u64);
 	define_rw_field!(rsp,GUEST_RSP,u64);
-	define_rw_field!(rflags,GUEST_RFLAGS,Rflags);
-	define_rw_field!(dr6,GUEST_DR6,Dr6,DR);
-	define_rw_field!(dr7,GUEST_DR7,Dr7,DR);
-	define_rw_field!(efer,GUEST_EFER,Efer,CR);
-	define_rw_field!(cr0,GUEST_CR0,Cr0,CR);
-	define_rw_field!(cr3,GUEST_CR3,u64,CR);
-	define_rw_field!(cr4,GUEST_CR4,Cr4,CR);
+	define_rw_field!(s_cet,GUEST_S_CET,u64,CET);
+	define_rw_field!(ssp,GUEST_SSP,u64,CET);
+	define_rw_field!(isst,GUEST_ISST,u64,CET);
+	define_rw_field!(rax,GUEST_RAX,u64);
+	define_rw_field!(star,GUEST_STAR,u64);
+	define_rw_field!(lstar,GUEST_LSTAR,u64);
+	define_rw_field!(cstar,GUEST_CSTAR,u64);
+	define_rw_field!(sfmask,GUEST_SFMASK,u64);
+	define_rw_field!(kgsbase,GUEST_KERNEL_GS_BASE,u64);
+	define_rw_field!(sysenter_cs,GUEST_SYSENTER_CS,u64);
+	define_rw_field!(sysenter_esp,GUEST_SYSENTER_ESP,u64);
+	define_rw_field!(sysenter_eip,GUEST_SYSENTER_EIP,u64);
 	define_rw_field!(cr2,GUEST_CR2,u64,CR2);
+	define_rw_field!(pat,GUEST_PAT,u64,NPT);
+	define_rw_field!(debug_ctrl,GUEST_DEBUG_CTRL,u64,LBR);
+	define_rw_field!(last_br_from,GUEST_LAST_BRANCH_FROM,u64,LBR);
+	define_rw_field!(last_br_to,GUEST_LAST_BRANCH_TO,u64,LBR);
+	define_rw_field!(last_exception_from,GUEST_LAST_EXCEPTION_FROM,u64,LBR);
+	define_rw_field!(last_exception_to,GUEST_LAST_EXCEPTION_TO,u64,LBR);
+	define_rw_field!(spec_ctrl,GUEST_SPEC_CTRL,u64);
 }
 
 impl VmcbOps for SvmVcpu
@@ -272,6 +325,34 @@ impl SvmSegmentFlags
 	pub attrib:SvmSegmentFlags,
 	pub limit:u32,
 	pub base:u64
+}
+
+impl From<SegmentRegister> for SvmSegmentRegister
+{
+	fn from(value:SegmentRegister)->Self
+	{
+		Self
+		{
+			selector:value.selector,
+			attrib:SvmSegmentFlags::from_flags(SegmentFlags::from_bits(value.attrib)),
+			limit:value.limit,
+			base:value.base
+		}
+	}
+}
+
+impl From<SvmSegmentRegister> for SegmentRegister
+{
+	fn from(value:SvmSegmentRegister)->Self
+	{
+		Self
+		{
+			selector:value.selector,
+			attrib:value.attrib.into_flags().into_bits(),
+			limit:value.limit,
+			base:value.base
+		}
+	}
 }
 
 #[inline] pub fn svm_msrpm_bit(index:u32,operation:bool)->Option<u32>
@@ -632,6 +713,12 @@ impl EventInjection
 	pub avic:bool,
 	pub cet:bool,
 	#[bits(19)] rsvd:u32
+}
+
+impl VmcbCleanField
+{
+	pub const NONE_CACHED:Self=Self::new();
+	pub const ALL_CACHED:Self=Self::from_bits(u32::MAX);
 }
 
 // Following definitions is for State Save Area with SEV-ES Enabled

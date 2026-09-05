@@ -34,6 +34,7 @@ use alloc::boxed::Box;
 use log::*;
 
 use nvcvm::status::Status;
+use spin::Once;
 // We do not directly use the uefirtdrv crate by Rust's import method.
 // However, in order to link it, it must be imported.
 #[cfg(target_os="uefi")]
@@ -42,6 +43,8 @@ pub use uefirtdrv as platform;
 use xpf_core::{x86::cpuid::*, nvbdk::PAGE_4KB_SHIFT};
 use vt_core::VtHypervisor;
 use svm_core::SvmHypervisor;
+
+use crate::cvm_core::x86::CvmHvOps;
 
 // Limit stack size to 32KiB. Should be enough for most circumstances.
 // FIXME: Implement runtime stack overflow detector.
@@ -121,13 +124,13 @@ pub trait HypervisorCapabilities
 	fn check_enabled()->bool;
 }
 
-pub trait HypervisorEssentials
+pub trait HypervisorEssentials:Send+Sync+CvmHvOps
 {
 	fn subvert_system(&mut self)->Status;
 	fn restore_system(&mut self)->Status;
 }
 
-static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
+static HVM:Once<Box<dyn HypervisorEssentials>>=Once::new();
 
 #[unsafe(no_mangle)] extern "C" fn noir_get_virtualization_supportability()->u32
 {
@@ -152,20 +155,6 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 		Intel|VIA|ZhaoXin|Centaur=>VtHypervisor::check_enabled(),
 		AMD|Hygon=>SvmHypervisor::check_enabled(),
 		_=>false
-	}
-}
-
-#[unsafe(no_mangle)] extern "C" fn nvc_teardown_hypervisor()
-{
-	unsafe
-	{
-		let hv=&raw mut HVM;
-		if let Some(hypervisor)=&mut *hv
-		{
-			hypervisor.restore_system();
-		}
-		// Setting it to None will call the drop method.
-		HVM=None;
 	}
 }
 
@@ -203,15 +192,12 @@ static mut HVM:Option<Box<dyn HypervisorEssentials>>=None;
 		use xpf_core::allocator::*;
 		// Subvert the system.
 		let st=hypervisor.subvert_system();
-		set_alloc_checker(true);
+		// set_alloc_checker(true);
 		// Print out heap usage.
 		#[cfg(not(test))]
 		sysdprintln!("Allocated {} large pages! heap has {} used bytes, has {} free bytes",get_large_page_count(),get_used(),get_free());
 		print_allocation();
-		unsafe 
-		{
-			HVM=Some(hypervisor);
-		}
+		HVM.call_once(|| hypervisor);
 		st
 	}
 	else

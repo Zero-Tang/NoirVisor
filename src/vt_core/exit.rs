@@ -16,7 +16,7 @@ use paste::paste;
 use log::*;
 
 use static_collections::bitmap::RefBitmap;
-use crate::{disasm::emulator::Instruction, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, ci::is_ci_phys_page, x86::{cpuid::*, crdr::*, descriptors::SegmentFlags, interrupts::{EventType, GENERAL_PROTECTION_FAULT}, paging::PageTranslationHelper}}, *};
+use crate::{disasm::emulator::{EmulatorOps, Instruction}, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, ci::is_ci_phys_page, x86::{cpuid::*, crdr::*, descriptors::SegmentFlags, interrupts::{EventType, GENERAL_PROTECTION_FAULT}}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, hvcall::dispatch_hypercall, VtVcpu, VtStackTop, VtIrqInterruptibilityState};
 
 impl VtVcpu

@@ -18,6 +18,8 @@ use yaxpeax_x86::{long_mode, protected_mode, real_mode};
 use log::{error, warn};
 use paste::paste;
 
+use crate::xpf_core::x86::{crdr::{Cr0, Cr4}, msr::Efer, paging::{PageFaultErrorCode, read_virtual_address, write_virtual_address}};
+
 #[derive(Default)]
 pub enum DecodeResult
 {
@@ -95,10 +97,25 @@ impl Instruction
 		}
 	}
 
+	#[inline(always)] pub fn is_decoded(&self)->bool
+	{
+		!matches!(self.decode_result,DecodeResult::Undecoded)
+	}
+
 	#[inline(always)] pub fn copy_from_slice(&mut self,instruction_bytes:&[u8])
 	{
 		let len=if instruction_bytes.len()>15 {15} else {instruction_bytes.len()};
 		self.instruction_bytes[..len].copy_from_slice(instruction_bytes);
+	}
+
+	#[inline(always)] pub fn ins_bytes(&mut self)->&mut [u8;15]
+	{
+		&mut self.instruction_bytes
+	}
+
+	#[inline(always)] pub fn clear(&mut self)
+	{
+		self.decode_result=DecodeResult::Undecoded;
 	}
 
 	/// Decode Control Register Access.
@@ -627,8 +644,23 @@ pub trait EmulatorOps
 	fn get_seg_selector(&self,seg_index:usize)->u16;
 	fn set_seg_selector(&mut self,seg_index:usize,value:u16);
 	fn get_rip(&self)->u64;
-	fn read_gpa(&mut self,gpa:u64,value:&mut [u8]);
-	fn write_gpa(&mut self,gpa:u64,value:&[u8]);
+	fn get_cr0(&self)->Cr0;
+	fn get_cr3(&self)->u64;
+	fn get_cr4(&self)->Cr4;
+	fn get_efer(&self)->Efer;
+	fn is_user_mode(&self)->bool;
+	fn read_gpa(&mut self,gpa:u64,value:&mut [u8])->usize;
+	fn write_gpa(&mut self,gpa:u64,value:&[u8])->usize;
+
+	fn read_virt(&mut self,va:u64,value:&mut [u8])->Result<(),(PageFaultErrorCode,u64)> where Self:Sized
+	{
+		read_virtual_address(va,self,value)
+	}
+
+	fn write_virt(&mut self,va:u64,value:&[u8])->Result<(),(PageFaultErrorCode,u64)> where Self:Sized
+	{
+		write_virtual_address(va,self,value)
+	}
 
 	fn emulate_mmio_output(&mut self,instruction:&Instruction,gpa:u64)
 	{

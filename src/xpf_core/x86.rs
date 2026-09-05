@@ -398,8 +398,9 @@ pub mod paging
 
 	use bitfield_struct::bitfield;
 
-	use crate::{xpf_core::x86::msr::Efer, *};
-	use xpf_core::{nvbdk::*, x86::crdr::*};
+	use crate::*;
+	use xpf_core::nvbdk::*;
+	use disasm::emulator::EmulatorOps;
 
 	#[bitfield(u64)] struct CommonPmle
 	{
@@ -660,35 +661,10 @@ pub mod paging
 		}
 	}
 
-	/// ## `PageTranslator` trait
-	/// This trait is intended to help translating the virtual addresses to physical addresses on vCPU.
-	/// Implement this trait on vCPU objects.
-	pub trait PageTranslationHelper
-	{
-		fn read_virt(&mut self,va:u64,buffer:&mut [u8],fault_va:&mut Option<u64>)->Result<(),PageFaultErrorCode> where Self:Sized
-		{
-			read_virtual_address(va,self,buffer,fault_va)
-		}
-
-		fn write_virt(&mut self,va:u64,buffer:&[u8],fault_va:&mut Option<u64>)->Result<(),PageFaultErrorCode> where Self:Sized
-		{
-			write_virtual_address(va,self,buffer,fault_va)
-		}
-
-		fn get_cr0(&self)->Cr0;
-		fn get_cr3(&self)->u64;
-		fn get_cr4(&self)->Cr4;
-		fn get_efer(&self)->Efer;
-		fn is_user_mode(&self)->bool;
-
-		fn read_phys_mem(&self,pa:u64,buffer:&mut [u8])->usize;
-		fn write_phys_mem(&self,pa:u64,buffer:&[u8])->usize;
-	}
-
 	/// ## `translate_64_bit_va_routine`
 	/// This routine is recursive!
 	#[allow(clippy::too_many_arguments)]
-	fn translate_64bit_va_routine(va:u64,vcpu:&mut impl PageTranslationHelper,pt_base:u64,level:u64,w:bool,x:bool,ss:bool)->Result<u64,PageFaultErrorCode>
+	fn translate_64bit_va_routine(va:u64,vcpu:&mut impl EmulatorOps,pt_base:u64,level:u64,w:bool,x:bool,ss:bool)->Result<u64,PageFaultErrorCode>
 	{
 		let u=vcpu.is_user_mode();
 		// Calculate the address of entry.
@@ -697,7 +673,7 @@ pub mod paging
 		let pml_pa:u64=pt_base+(pt_index<<3);
 		// Fetch current level entry.
 		let mut pml_raw:[u8;8]=[0;8];
-		let rsize=vcpu.read_phys_mem(pml_pa,&mut pml_raw);
+		let rsize=vcpu.read_gpa(pml_pa,&mut pml_raw);
 		assert_eq!(pml_raw.len(),rsize);
 		let pml_e=CommonPmle::from_bits(u64::from_le_bytes(pml_raw));
 		let pml_p=pml_e.present();
@@ -707,7 +683,7 @@ pub mod paging
 		let pml_ps=pml_e.page_size();
 		// Set accessed & dirty bits.
 		let new_pml_d=pml_e.with_accessed(true).with_dirty(w).into_bits().to_le_bytes();
-		vcpu.write_phys_mem(pml_pa,&new_pml_d);
+		vcpu.write_gpa(pml_pa,&new_pml_d);
 		// Check access rights.
 		if !pml_p
 		{
@@ -751,7 +727,7 @@ pub mod paging
 		}
 	}
 
-	pub fn translate_virtual_address(va:u64,vcpu:&mut impl PageTranslationHelper,w:bool,x:bool,ss:bool)->Result<u64,PageFaultErrorCode>
+	pub fn translate_virtual_address(va:u64,vcpu:&mut impl EmulatorOps,w:bool,x:bool,ss:bool)->Result<u64,PageFaultErrorCode>
 	{
 		let cr0=vcpu.get_cr0();
 		if cr0.pg()
@@ -776,7 +752,7 @@ pub mod paging
 					va&=u32::MAX as u64;
 					let pdpe_index=va>>PAGE_1GB_SHIFT;
 					let mut pdpe_buff:[u8;8]=[0;8];
-					vcpu.read_phys_mem(vcpu.get_cr3()+(pdpe_index<<3),&mut pdpe_buff);
+					vcpu.read_gpa(vcpu.get_cr3()+(pdpe_index<<3),&mut pdpe_buff);
 					let pdpe_pa=CommonPmle::from_bits(u64::from_le_bytes(pdpe_buff));
 					// PDPE only has a present bit, no W/NX bits.
 					if pdpe_pa.present()
@@ -803,7 +779,7 @@ pub mod paging
 		}
 	}
 
-	unsafe fn read_virtual_address_in_page(va:u64,vcpu:&mut impl PageTranslationHelper,buffer:*mut u8,copy_size:usize)->Result<(),PageFaultErrorCode>
+	unsafe fn read_virtual_address_in_page(va:u64,vcpu:&mut impl EmulatorOps,buffer:*mut u8,copy_size:usize)->Result<(),PageFaultErrorCode>
 	{
 		let r=translate_virtual_address(va,vcpu,false,false,false);
 		match r
@@ -811,7 +787,7 @@ pub mod paging
 			Ok(pa)=>
 			{
 				let buff=unsafe{slice::from_raw_parts_mut(buffer,copy_size)};
-				vcpu.read_phys_mem(pa,buff);
+				vcpu.read_gpa(pa,buff);
 				Ok(())
 			}
 			Err(e)=>
@@ -821,7 +797,7 @@ pub mod paging
 		}
 	}
 
-	unsafe fn write_virtual_address_in_page(va:u64,vcpu:&mut impl PageTranslationHelper,buffer:*const u8,copy_size:usize)->Result<(),PageFaultErrorCode>
+	unsafe fn write_virtual_address_in_page(va:u64,vcpu:&mut impl EmulatorOps,buffer:*const u8,copy_size:usize)->Result<(),PageFaultErrorCode>
 	{
 		let r=translate_virtual_address(va,vcpu,true,false,false);
 		match r
@@ -829,7 +805,7 @@ pub mod paging
 			Ok(pa)=>
 			{
 				let buff=unsafe{slice::from_raw_parts(buffer,copy_size)};
-				vcpu.write_phys_mem(pa,buff);
+				vcpu.write_gpa(pa,buff);
 				Ok(())
 			}
 			Err(e)=>
@@ -839,7 +815,7 @@ pub mod paging
 		}
 	}
 
-	pub fn read_virtual_address(va:u64,vcpu:&mut impl PageTranslationHelper,buffer:&mut [u8],fault_va:&mut Option<u64>)->Result<(),PageFaultErrorCode>
+	pub fn read_virtual_address(va:u64,vcpu:&mut impl EmulatorOps,buffer:&mut [u8])->Result<(),(PageFaultErrorCode,u64)>
 	{
 		let mut cur_va=va;
 		let mut copied_size:u64=0;
@@ -849,23 +825,17 @@ pub mod paging
 			let end_len=PAGE_SIZE as u64-page_offset(va);
 			let rem_len=end_va-cur_va;
 			let copy_size=if end_len<rem_len {end_len} else {rem_len};
-			let r=unsafe
+			unsafe
 			{
-				read_virtual_address_in_page(va+copied_size,vcpu,buffer.as_mut_ptr().add(copied_size as usize),copy_size as usize)
-			};
-			if r.is_err()
-			{
-				*fault_va=Some(cur_va);
-				return r;
+				read_virtual_address_in_page(va+copied_size,vcpu,buffer.as_mut_ptr().add(copied_size as usize),copy_size as usize).map_err(|e| (e,cur_va))?;
 			}
 			copied_size+=copy_size;
 			cur_va+=copy_size;
 		}
-		*fault_va=None;
 		Ok(())
 	}
 
-	pub fn write_virtual_address(va:u64,vcpu:&mut impl PageTranslationHelper,buffer:&[u8],fault_va:&mut Option<u64>)->Result<(),PageFaultErrorCode>
+	pub fn write_virtual_address(va:u64,vcpu:&mut impl EmulatorOps,buffer:&[u8])->Result<(),(PageFaultErrorCode,u64)>
 	{
 		let mut cur_va=va;
 		let mut copied_size:u64=0;
@@ -875,19 +845,13 @@ pub mod paging
 			let end_len=PAGE_SIZE as u64-page_offset(va);
 			let rem_len=end_va-cur_va;
 			let copy_size=if end_len<rem_len {end_len} else {rem_len};
-			let r=unsafe
+			unsafe
 			{
-				write_virtual_address_in_page(va+copied_size,vcpu,buffer.as_ptr().add(copied_size as usize),copy_size as usize)
-			};
-			if r.is_err()
-			{
-				*fault_va=Some(cur_va);
-				return r;
+				write_virtual_address_in_page(va+copied_size,vcpu,buffer.as_ptr().add(copied_size as usize),copy_size as usize).map_err(|e| (e,cur_va))?;
 			}
 			copied_size+=copy_size;
 			cur_va+=copy_size;
 		}
-		*fault_va=None;
 		Ok(())
 	}
 }
@@ -2727,9 +2691,8 @@ pub mod xstate
 pub mod smm
 {
 	use bitfield_struct::bitfield;
-use zerocopy::Unalign;
-
-	use crate::xpf_core::nvbdk::SegmentRegister;
+	use zerocopy::Unalign;
+	use nvcvm::interface::SegmentRegister;
 
 	#[bitfield(u32)] pub struct Ia32SmramIoMisc
 	{

@@ -1,29 +1,20 @@
-// NoirVisor CVM Synchronization Primitives
+// NoirVisor CVM Synchronization Primitives Wrapper Library for Windows Kernel
 
-use core::{cell::UnsafeCell, ffi::c_void, ops::{Deref, DerefMut}, ptr::null_mut, sync::atomic::{AtomicPtr, Ordering}};
+use core::{cell::UnsafeCell, mem::MaybeUninit, ops::{Deref, DerefMut}};
 
+use windows_sys::{Wdk::{Foundation::{ERESOURCE, FAST_MUTEX}, System::SystemServices::{ExAcquireFastMutex, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExDeleteResourceLite, ExInitializeResourceLite, ExReleaseFastMutex, ExReleaseResourceLite, KeEnterCriticalRegion, KeLeaveCriticalRegion}}, Win32::Foundation::STATUS_SUCCESS};
+
+#[link(name="ntoskrnl.exe",kind="raw-dylib",modifiers="+verbatim")]
 unsafe extern "system"
 {
-	// Resource Locks routines.
-    fn noir_create_reslock()->*mut c_void;
-    fn noir_delete_reslock(reslock:*mut c_void);
-    fn noir_acquire_reslock_shared(reslock:*mut c_void);
-    fn noir_acquire_reslock_exclusive(reslock:*mut c_void);
-    fn noir_release_reslock_shared(reslock:*mut c_void);
-    fn noir_release_reslock_exclusive(reslock:*mut c_void);
-
-	// Mutex routines.
-	fn noir_create_mutex()->*mut c_void;
-	fn noir_delete_mutex(mutex:*mut c_void);
-	fn noir_acquire_mutex(mutex:*mut c_void);
-	fn noir_release_mutex(mutex:*mut c_void);
+	fn ExInitializeFastMutex(fastmutex:*mut FAST_MUTEX);
 }
 
 /// ## Resource Lock
 /// Resource Lock is a read-write lock which supports recursive acquisition.
 pub struct RwLock<T>
 {
-	lock:AtomicPtr<c_void>,
+	lock:ERESOURCE,
 	cell:UnsafeCell<T>
 }
 
@@ -36,22 +27,21 @@ impl<T> RwLock<T>
 	{
 		Self
 		{
-			lock:AtomicPtr::new(null_mut()),
+			lock:unsafe{MaybeUninit::zeroed().assume_init()},
 			cell:UnsafeCell::new(data)
 		}
 	}
 
+	/// The `init` method initializes the RwLock.
+	/// 
+	/// ## Safety
+	/// RwLock cannot be initialized twice. \
+	/// An RwLock created by `new` cannot be used before `init`.
 	pub unsafe fn init(&self)->bool
 	{
-		let p=unsafe{noir_create_reslock()};
-		if p.is_null()
+		unsafe
 		{
-			false
-		}
-		else
-		{
-			self.lock.store(p,Ordering::Relaxed);
-			true
+			ExInitializeResourceLite(self.lock_ptr())==STATUS_SUCCESS
 		}
 	}
 
@@ -63,21 +53,23 @@ impl<T> RwLock<T>
 	/// Any attempt to use a dropped resource lock may cause runtime panic.
 	pub unsafe fn deinit(&self)
 	{
-		let p=self.lock.swap(null_mut(),Ordering::Relaxed);
-		if !p.is_null()
+		unsafe
 		{
-			unsafe
-			{
-				noir_delete_reslock(p);
-			}
+			ExDeleteResourceLite(self.lock_ptr());
 		}
+	}
+
+	const fn lock_ptr(&self)->*mut ERESOURCE
+	{
+		&raw const self.lock as *mut ERESOURCE
 	}
 
 	pub fn read(&self)->RwLockSharedGuard<'_,T>
 	{
 		unsafe
 		{
-			noir_acquire_reslock_shared(self.lock.load(Ordering::Relaxed));
+			KeEnterCriticalRegion();
+			ExAcquireResourceSharedLite(self.lock_ptr(),true);
 		}
 		RwLockSharedGuard(self)
 	}
@@ -86,7 +78,8 @@ impl<T> RwLock<T>
 	{
 		unsafe
 		{
-			noir_acquire_reslock_exclusive(self.lock.load(Ordering::Relaxed));
+			KeEnterCriticalRegion();
+			ExAcquireResourceExclusiveLite(self.lock_ptr(),true);
 		}
 		RwLockExclusiveGuard(self)
 	}
@@ -111,7 +104,8 @@ impl<T> Drop for RwLockSharedGuard<'_,T>
 	{
 		unsafe
 		{
-			noir_release_reslock_shared(self.0.lock.load(Ordering::Relaxed));
+			ExReleaseResourceLite(self.0.lock_ptr());
+			KeLeaveCriticalRegion();
 		}
 	}
 }
@@ -136,7 +130,8 @@ impl<T> Drop for RwLockExclusiveGuard<'_,T>
 	{
 		unsafe
 		{
-			noir_release_reslock_exclusive(self.0.lock.load(Ordering::Relaxed));
+			ExReleaseResourceLite(self.0.lock_ptr());
+			KeLeaveCriticalRegion();
 		}
 	}
 }
@@ -166,7 +161,7 @@ impl<T> DerefMut for RwLockExclusiveGuard<'_,T>
 
 pub struct Mutex<T>
 {
-	lock:AtomicPtr<c_void>,
+	lock:FAST_MUTEX,
 	data:UnsafeCell<T>
 }
 
@@ -179,35 +174,35 @@ impl<T> Mutex<T>
 	{
 		Self
 		{
-			lock:AtomicPtr::new(null_mut()),
+			lock:unsafe{MaybeUninit::zeroed().assume_init()},
 			data:UnsafeCell::new(data)
 		}
 	}
 
-	pub unsafe fn init(&mut self)->bool
+	/// The `init` method initializes the mutex.
+	/// 
+	/// ## Safety
+	/// Mutex cannot be initialized twice. \
+	/// A mutex created by `new` cannot be used before `init`.
+	pub unsafe fn init(&self)->bool
 	{
-		let p=unsafe{noir_create_mutex()};
-		self.lock.store(p,Ordering::Relaxed);
-		!p.is_null()
+		unsafe
+		{
+			ExInitializeFastMutex(self.lock_ptr());
+		}
+		true
 	}
 
-	pub unsafe fn deinit(&mut self)
+	const fn lock_ptr(&self)->*mut FAST_MUTEX
 	{
-		let p=self.lock.swap(null_mut(),Ordering::Relaxed);
-		if !p.is_null()
-		{
-			unsafe
-			{
-				noir_delete_mutex(p);
-			}
-		}
+		&raw const self.lock as *mut FAST_MUTEX
 	}
 	
 	pub fn lock(&self)->MutexGuard<'_,T>
 	{
 		unsafe
 		{
-			noir_acquire_mutex(self.lock.load(Ordering::Relaxed));
+			ExAcquireFastMutex(self.lock_ptr());
 			MutexGuard(self)
 		}
 	}
@@ -221,7 +216,7 @@ impl<T> Drop for MutexGuard<'_,T>
 	{
 		unsafe
 		{
-			noir_release_mutex(self.0.lock.load(Ordering::Relaxed));
+			ExReleaseFastMutex(self.0.lock_ptr());
 		}
 	}
 }

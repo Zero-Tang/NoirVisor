@@ -10,16 +10,19 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::*, sync::atomic::{AtomicBool, AtomicU8}};
-use alloc::{vec::Vec, vec};
-use bitfield_struct::bitfield;
-use static_collections::bitmap::RefBitmap;
+use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::*, sync::atomic::{AtomicBool, AtomicU8, Ordering}};
+use alloc::{sync::Arc, vec, vec::Vec};
 
+use bitfield_struct::bitfield;
+use spin::RwLock;
+use static_collections::bitmap::{BitmapSlice, RefBitmap};
 use log::*;
+
 use npt::SvmNptManager;
-use crate::{drv_core::iommu::{IommuOps, create_iommu}, xpf_core::rmt::ReverseMappingTableRoot, *};
-use xpf_core::{asm::{crdr::*, msr::*, seg::*, svm::*}, hv_host::{x86::*, *}, ioflt::IoAddressSpace, nvbdk::*, x86::{crdr::Cr4, interrupts::*, msr::*, xstate::BoxedXState}};
-#[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
+use crate::{disasm::emulator::Instruction, drv_core::iommu::{IommuOps, create_iommu}, svm_core::decode::{DECODE_ASSIST_SUPPORT, NEXT_RIP_SAVING_SUPPORT}, xpf_core::rmt::ReverseMappingTableRoot, *};
+use xpf_core::{allocator::InternalPageAllocator, asm::{crdr::*, msr::*, seg::*, svm::*}, hv_host::x86::*, ioflt::IoAddressSpace, nvbdk::*, x86::{crdr::Cr4, interrupts::*, msr::*, xstate::BoxedXState}};
+use custom::{SvmCustomVm, SvmCvHostVcpuState};
+use decode::SoftwareDecodeAssistOps;
 use mshv_core::{MshvVcpuContext,MshvVcpuOps};
 use amd64::{cpuid::*,msr::*};
 use vmcb::*;
@@ -32,6 +35,7 @@ pub mod amd64;
 mod hvcall;
 #[allow(dead_code)] mod npt;
 #[allow(dead_code)] pub mod custom;
+pub mod cvexit;
 
 #[repr(C,align(16))] pub struct SvmStackTop
 {
@@ -86,10 +90,12 @@ pub struct SvmVcpu
 	pub wait_for_sipi:AtomicBool,
 	pub sipi_vector:AtomicU8,
 	pub flags:SvmVcpuFlags,
+	pub decoded_instruction:Instruction,
 	// Features supported by the processors.
 	pub svm_feats:SvmFeatureIdentifier,
 	// This context handles exceptions.
-	pub gs_context:PerCpuGsException
+	pub gs_context:PerCpuGsException,
+	pub cv_host_save:SvmCvHostVcpuState
 }
 
 static SVM_MSHV_VCPU_OPS:MshvVcpuOps=MshvVcpuOps
@@ -146,8 +152,10 @@ impl SvmVcpu
 			wait_for_sipi:AtomicBool::new(false),
 			sipi_vector:AtomicU8::new(0),
 			flags:SvmVcpuFlags::new(),
+			decoded_instruction:Instruction::new([0;15]),
 			svm_feats:SvmFeatureIdentifier::new(),
-			gs_context:PerCpuGsException::default()
+			gs_context:PerCpuGsException::default(),
+			cv_host_save:SvmCvHostVcpuState::default()
 		}
 	}
 }
@@ -359,23 +367,9 @@ impl SvmVcpu
 		}
 		info!("Processor {} completed subversion!",self.vcpu_id);
 	}
-
-	fn restore(&mut self)
-	{
-		// Leave Guest Mode by vmmcall.
-		vmmcall(NOIR_HYPERCALL_CODE_CALLEXIT,self as *mut Self as usize);
-		// Clear EFER.SVME bit.
-		let mut efer=Efer::from_bits(rdmsr(MSR_EFER));
-		efer.set_svme(false);
-		wrmsr(MSR_EFER,efer.into_bits());
-		// Unblock and Enable A20M.
-		// Intel unblocks A20M in vmxoff, so why not we do this as well?
-		// Also stop redirecting INIT signals.
-		let vmcr=VmCr::from_bits(rdmsr(MSR_VMCR)).with_disa20m(false).with_r_init(false);
-		wrmsr(MSR_VMCR,vmcr.into_bits());
-		info!("Processor {} completed restoration!",self.vcpu_id);
-	}
 }
+
+pub type SvmCustomVmLockedList=Arc<RwLock<Vec<Option<Arc<RwLock<SvmCustomVm>>>>>>;
 
 pub struct SvmHypervisor
 {
@@ -390,11 +384,14 @@ pub struct SvmHypervisor
 	pub image_base:*mut c_void,
 	pub image_size:u32,
 	pub asid_max:u32,
-	pub asid_pool:Vec<u64>,
+	pub asid_pool:Vec<u8>,
 	pub xsave_size:usize,
 	pub features:EnabledFeatures,
 	pub rmt_root:ReverseMappingTableRoot,
-	#[cfg(windows)] pub mshvcall_forwarder:Option<MshvCallForwarder>
+	pub vm_list:SvmCustomVmLockedList,
+	pub cvm_iopm:MemoryDescriptor<3,usize,InternalPageAllocator>,
+	pub cvm_msrpm:MemoryDescriptor<2,usize,InternalPageAllocator>,
+	pub l5_npt:bool
 }
 
 impl SvmHypervisor
@@ -409,7 +406,7 @@ impl SvmHypervisor
 	/// Allocation of ASID must be protected by hypervisor.
 	pub fn alloc_asid(&mut self)->Option<u32>
 	{
-		let bmp:&mut RefBitmap<65536>=unsafe{RefBitmap::from_raw_mut_ptr(self.asid_pool.as_mut_ptr().cast())};
+		let bmp:&mut BitmapSlice=unsafe{BitmapSlice::from_raw_parts_mut(self.asid_pool.as_mut_ptr().cast(),self.asid_pool.len())};
 		let i=bmp.search_cleared_forward()? as u32;
 		if i<self.asid_max
 		{
@@ -426,7 +423,7 @@ impl SvmHypervisor
 	{
 		if asid<self.asid_max
 		{
-			let bmp:&mut RefBitmap<65536>=unsafe{RefBitmap::from_raw_mut_ptr(self.asid_pool.as_mut_ptr().cast())};
+			let bmp:&mut BitmapSlice=unsafe{BitmapSlice::from_raw_parts_mut(self.asid_pool.as_mut_ptr().cast(),self.asid_pool.len())};
 			let _=bmp.reset(asid as usize);
 		}
 	}
@@ -437,14 +434,21 @@ impl Default for SvmHypervisor
 	fn default() -> Self
 	{
 		let svm_feat=SvmFeatureIdentifier::cpuid();
-		let mut asid_quotient=(svm_feat.asid() as usize)>>6;
-		let asid_remainder=(svm_feat.asid() as usize)&0x3f;
+		let mut asid_quotient=(svm_feat.asid() as usize)>>3;
+		let asid_remainder=(svm_feat.asid() as usize)&7;
 		if asid_remainder!=0
 		{
 			asid_quotient+=1;
 		}
-		let mut asid_pool:Vec<u64>=vec![0;asid_quotient];
+		let mut asid_pool:Vec<u8>=vec![0;asid_quotient];
 		let xstate_cpuid=ExtendedStateEnumeration0::cpuid();
+		let cvm_iopm=MemoryDescriptor::alloc().unwrap();
+		let cvm_msrpm=MemoryDescriptor::alloc().unwrap();
+		unsafe
+		{
+			memset(cvm_msrpm.virt as *mut c_void,0xFF,page_4kb_mult(2));
+			memset(cvm_iopm.virt as *mut c_void,0xFF,page_4kb_mult(2)+1);
+		}
 		// ASID 0 and 1 are reserved.
 		asid_pool[0]=3;
 		Self
@@ -464,7 +468,10 @@ impl Default for SvmHypervisor
 			xsave_size:xstate_cpuid.supported_size() as usize,
 			features:EnabledFeatures::get(),
 			rmt_root:ReverseMappingTableRoot::new(),
-			#[cfg(windows)] mshvcall_forwarder:MshvCallForwarder::new()
+			vm_list:Arc::new(RwLock::new(Vec::with_capacity(8))),
+			cvm_iopm,
+			cvm_msrpm,
+			l5_npt:false
 		}
 	}
 }
@@ -487,6 +494,8 @@ impl HypervisorCapabilities for SvmHypervisor
 				ret|=if svm_feat.vmsave_virt() && svm_feat.vgif() {4} else {0};
 				return ret;
 			}
+			DECODE_ASSIST_SUPPORT.store(svm_feat.decode_assists(),Ordering::Relaxed);
+			NEXT_RIP_SAVING_SUPPORT.store(svm_feat.nrips(),Ordering::Relaxed);
 		}
 		0
 	}
@@ -505,6 +514,9 @@ impl Drop for SvmHypervisor
 		
 	}
 }
+
+unsafe impl Send for SvmHypervisor {}
+unsafe impl Sync for SvmHypervisor {}
 
 impl HypervisorEssentials for SvmHypervisor
 {
@@ -655,21 +667,7 @@ impl HypervisorEssentials for SvmHypervisor
 
 	fn restore_system(&mut self)->Status
 	{
-		extern "C" fn restore_processor_thunk(context:*mut c_void,processor_id:u32)
-		{
-			let hv=unsafe{&mut *(context as *mut SvmHypervisor)};
-			info!("Processor {processor_id} entered restoration routine...");
-			match hv.vcpus.get_mut(processor_id as usize)
-			{
-				Some(vcpu)=>vcpu.restore(),
-				None=>panic!("Processor ID ({processor_id}) out of bounds! Check for broadcaster bugs!\n")
-			}
-		}
-		unsafe
-		{
-			noir_generic_call(restore_processor_thunk,self as *mut Self as *mut c_void);
-		}
-		info!("System restoration completed!");
-		Status::SUCCESS
+		info!("System restoration feature is removed! Please reboot the system instead.");
+		Status::NOT_IMPLEMENTED
 	}
 }

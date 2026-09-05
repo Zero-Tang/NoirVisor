@@ -23,6 +23,17 @@ use core::{alloc::AllocError, error::Error, fmt};
 
 use Severity::*;
 use Facility::*;
+use alloc::collections::TryReserveError;
+
+// This routine will be removed if `Result<T,E>` implements `unwrap_err_or` method in the future.
+#[inline(always)] pub fn unwrap_status<T>(result:Result<T,Status>)->Status
+{
+	match result
+	{
+		Ok(_)=>Status::SUCCESS,
+		Err(st)=>st
+	}
+}
 
 #[derive(Debug,PartialEq,Eq,PartialOrd,Ord,Clone,Copy)]
 #[repr(C)] pub struct Status(pub u32);
@@ -84,6 +95,14 @@ impl Error for Status {}
 impl From<AllocError> for Status
 {
 	fn from(_value: AllocError) -> Self
+	{
+		Self::INSUFFICIENT_RESOURCES
+	}
+}
+
+impl From<TryReserveError> for Status
+{
+	fn from(_value:TryReserveError)->Self
 	{
 		Self::INSUFFICIENT_RESOURCES
 	}

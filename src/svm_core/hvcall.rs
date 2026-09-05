@@ -10,109 +10,51 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::ffi::c_void;
+use core::{alloc::Layout, ffi::c_void, mem::MaybeUninit};
 
-use cvsched::hvcall::*;
 use log::warn;
-use nvcvm::status::Status;
+use nvcvm::{hvcall::*, interface::{CvmHandle, CvmMapping}, status::{Status, unwrap_status}};
+use paste::paste;
 
-use crate::xpf_core::x86::{descriptors::DescriptorTable, interrupts::*, paging::PageTranslationHelper};
+use crate::{cvm_core::x86::*, disasm::emulator::EmulatorOps, xpf_core::x86::interrupts::*};
 use super::*;
+
+macro_rules! check_context_size
+{
+	($name:tt,$size:expr)=>
+	{
+		paste!
+		{
+			if $size<size_of::<[<CvmHypercall $name Context>]>()
+			{
+				return Ok(Status::BUFFER_TOO_SMALL);
+			}
+		}
+	};
+}
 
 impl SvmVcpu
 {
-	fn hvcall_unknown(&mut self,code:u32,context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_unknown(&mut self,context:*mut c_void,_context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
+		let code=self.get_gpr(1) as u32;
 		warn!("Unknown Hypercall Code 0x{code:X} is called! Context={context:p}");
 		Err((INVALID_OPCODE_FAULT,None))
 	}
 
-	fn hvcall_restore(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_restore(&mut self,_context:*mut c_void,_context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
-		let gcr3:u64=self.read_cr3();
-		let nrip:u64=self.read_next_rip();
-		let gflags=self.read_rflags();
-		let gpr_state=&mut self.get_stack_top_mut().gpr_state;
-		let saved_state:GprState=GprState
-		{
-			rax:nrip,
-			rcx:gflags.into_bits(),
-			rdx:gpr_state.rsp,
-			rbx:gpr_state.rbx,
-			rsp:gpr_state.rsp,
-			rbp:gpr_state.rbp,
-			rsi:gpr_state.rsi,
-			rdi:gpr_state.rdi,
-			r8:gpr_state.r8,
-			r9:gpr_state.r9,
-			r10:gpr_state.r10,
-			r11:gpr_state.r11,
-			r12:gpr_state.r12,
-			r13:gpr_state.r13,
-			r14:gpr_state.r14,
-			r15:gpr_state.r15,
-		};
-		// Switch to Restored Control Registers.
-		write_cr3(gcr3);
-		write_cr4(self.read_cr4().into_bits());
-		// Restore the processor's hidden state.
-		vmload(self.vmcb.phys);
-		unsafe
-		{
-			// Switch to Restored IDT.
-			let gidtr:DescriptorTable=DescriptorTable
-			{
-				limit:self.vmread(GUEST_IDTR_LIMIT),
-				base:self.vmread(GUEST_IDTR_BASE)
-			};
-			write_idtr(&raw const gidtr);
-			// Switch to Restored GDT.
-			let ggdtr:DescriptorTable=DescriptorTable
-			{
-				limit:self.vmread(GUEST_GDTR_LIMIT),
-				base:self.vmread(GUEST_GDTR_BASE)
-			};
-			write_gdtr(&raw const ggdtr);
-			// Note that TSS is switched in previous vmload.
-		}
-		// Set the GIF. Otherwise the host will never be interrupted.
-		stgi();
-		// Return to the caller in Host Mode.
-		unsafe
-		{
-			nvc_svm_return(&raw const saved_state);
-		}
-		// Never reaches here!
+		// Since NoirVisor is strictly Type-I Hypervisor, this hypercall code is reserved now.
+		Err((INVALID_OPCODE_FAULT,None))
 	}
 
-	fn hvcall_alloc_tlb_tag(&mut self,_code:u32,context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_alloc_tlb_tag(&mut self,_context:*mut c_void,_context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
-		let hv:&mut SvmHypervisor=unsafe{&mut *self.hypervisor.cast()};
-		match hv.alloc_asid()
-		{
-			Some(asid)=>
-			{
-				let buf=asid.to_le_bytes();
-				let mut fault_va:Option<u64>=None;
-				match self.write_virt(context as u64,&buf,&mut fault_va)
-				{
-					Ok(_)=>Ok(Status::SUCCESS),
-					Err(e)=>
-					{
-						error!("Failed to write ASID back! Error-Code: {e}, Linear-Address: 0x{:X}",fault_va.unwrap());
-						// Free this ASID as we can't write it back.
-						hv.free_asid(asid);
-						// Inject #PF.
-						self.write_cr2(fault_va.unwrap());
-						Err((PAGE_FAULT,Some(e.into_bits())))
-					}
-				}
-			}
-			None=>Ok(Status::INSUFFICIENT_RESOURCES)
-		}
+		// This hypercall code is reserved now.
+		Err((INVALID_OPCODE_FAULT,None))
 	}
 
-	fn hvcall_exit_boot_services(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_exit_boot_services(&mut self,_context:*mut c_void,_context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
 		// If NoirVisor is loaded as a UEFI runtime-driver, this routine will be called by Guest OS.
 		// Current implementation just outputs a log and returns.
@@ -120,56 +62,209 @@ impl SvmVcpu
 		Ok(Status::SUCCESS)
 	}
 
-	fn hvcall_get_cap(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_get_cap(&mut self,_context:*mut c_void,_context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
 		error!("Get-Capability is not supported!");
 		Ok(Status::NOT_IMPLEMENTED)
 	}
 
-	fn hvcall_create_vm(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_create_vm(&mut self,context:*mut c_void,context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
-		error!("Create-VM is not supported!");
-		Ok(Status::NOT_IMPLEMENTED)
+		check_context_size!(CreateVm,context_size);
+		match create_vm()
+		{
+			Ok(vm)=>
+			{
+				let buff=vm.0.to_ne_bytes();
+				match self.write_virt(context as u64,&buff)
+				{
+					Ok(_)=>Ok(Status::SUCCESS),
+					Err((code,fault_va))=>
+					{
+						error!("Page-Fault while writing to CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+						self.write_cr2(fault_va);
+						Err((PAGE_FAULT,Some(code.into_bits())))
+					}
+				}
+			}
+			Err(st)=>Ok(st)
+		}
 	}
 
-	fn hvcall_delete_vm(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_delete_vm(&mut self,context:*mut c_void,context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
-		error!("Delete-VM is not supported!");
-		Ok(Status::NOT_IMPLEMENTED)
+		check_context_size!(DeleteVm,context_size);
+		let mut buff =[0;4];
+		let vm=match self.read_virt(context as u64,&mut buff)
+		{
+			Ok(_)=>CvmHandle(u32::from_ne_bytes(buff)),
+			Err((code,fault_va))=>
+			{
+				error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+				self.write_cr2(fault_va);
+				return Err((PAGE_FAULT,Some(code.into_bits())));
+			}
+		};
+		Ok(unwrap_status(delete_vm(vm)))
 	}
 
-	fn hvcall_create_vcpu(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_create_vcpu(&mut self,context:*mut c_void,context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
-		error!("Create-vCPU is not supported!");
-		Ok(Status::NOT_IMPLEMENTED)
+		check_context_size!(CreateVcpu,context_size);
+		let mut buff:MaybeUninit<CvmHypercallCreateVcpuContext>=MaybeUninit::uninit();
+		let ctxt=match self.read_virt(context as u64,unsafe{slice::from_raw_parts_mut(buff.as_mut_ptr().cast(),size_of_val(&buff))})
+		{
+			Ok(_)=>unsafe
+			{
+				buff.assume_init_ref()
+			}
+			Err((code,fault_va))=>
+			{
+				error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+				self.write_cr2(fault_va);
+				return Err((PAGE_FAULT,Some(code.into_bits())));
+			}
+		};
+		Ok(unwrap_status(create_vcpu(CvmHandle(ctxt.handle),ctxt.vcpu_id,ctxt.vpcb_hpa)))
 	}
 
-	fn hvcall_delete_vcpu(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_delete_vcpu(&mut self,context:*mut c_void,context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
-		error!("Delete-vCPU is not supported!");
-		Ok(Status::NOT_IMPLEMENTED)
+		check_context_size!(DeleteVcpu,context_size);
+		let mut buff:MaybeUninit<CvmHypercallDeleteVcpuContext>=MaybeUninit::uninit();
+		let ctxt=match self.read_virt(context as u64,unsafe{slice::from_raw_parts_mut(buff.as_mut_ptr().cast(),size_of_val(&buff))})
+		{
+			Ok(_)=>unsafe
+			{
+				buff.assume_init_ref()
+			}
+			Err((code,fault_va))=>
+			{
+				error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+				self.write_cr2(fault_va);
+				return Err((PAGE_FAULT,Some(code.into_bits())));
+			}
+		};
+		Ok(unwrap_status(delete_vcpu(CvmHandle(ctxt.handle),ctxt.vcpu_id)))
 	}
 
-	fn hvcall_set_mapping(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_set_mapping(&mut self,context:*mut c_void,context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
-		error!("Set-Mapping is not supported!");
-		Ok(Status::NOT_IMPLEMENTED)
+		check_context_size!(SetMapping,context_size);
+		let mut buff:MaybeUninit<CvmHypercallSetMappingContext>=MaybeUninit::uninit();
+		let ctxt=match self.read_virt(context as u64,unsafe{slice::from_raw_parts_mut(buff.as_mut_ptr().cast(),size_of_val(&buff))})
+		{
+			Ok(_)=>unsafe
+			{
+				buff.assume_init_ref()
+			}
+			Err((code,fault_va))=>
+			{
+				error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+				self.write_cr2(fault_va);
+				return Err((PAGE_FAULT,Some(code.into_bits())));
+			}
+		};
+		let pages=ctxt.pages as usize;
+		let hpa_list_size=pages<<3;
+		if hpa_list_size<(context_size-size_of_val(&buff))
+		{
+			error!("Context is too small to contain HPA List!");
+			return Ok(Status::BUFFER_TOO_SMALL);
+		}
+		unsafe
+		{
+			let layout=Layout::from_size_align_unchecked(hpa_list_size,align_of::<u64>());
+			let hpa_list_buff=alloc::alloc::alloc(layout);
+			if hpa_list_buff.is_null()
+			{
+				return Ok(Status::BUFFER_TOO_SMALL);
+			}
+			let r=match self.read_virt(context as u64+size_of_val(&buff) as u64,slice::from_raw_parts_mut(hpa_list_buff,hpa_list_size))
+			{
+				Ok(_)=>
+				{
+					let hpa_list:&[u64]=slice::from_raw_parts(hpa_list_buff.cast(),pages);
+					let mapping=CvmMapping
+					{
+						base_gpa:ctxt.gpa,
+						size:page_4kb_mult(pages as u64),
+						as_id:ctxt.as_id,
+						flags:ctxt.flags
+					};
+					match set_mapping(CvmHandle(ctxt.handle),&mapping,hpa_list)
+					{
+						Ok(_)=>Ok(Status::SUCCESS),
+						Err(st)=>Ok(st)
+					}
+				}
+				Err((code,fault_va))=>
+				{
+					error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+					self.write_cr2(fault_va);
+					Err((PAGE_FAULT,Some(code.into_bits())))
+				}
+			};
+			alloc::alloc::dealloc(hpa_list_buff,layout);
+			r
+		}
 	}
 
-	fn hvcall_run_vcpu(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_run_vcpu(&mut self,context:*mut c_void,context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
-		error!("Run-vCPU is not supported!");
-		Ok(Status::NOT_IMPLEMENTED)
+		check_context_size!(RunVcpu,context_size);
+		let mut buff:MaybeUninit<CvmHypercallRunVcpuContext>=MaybeUninit::uninit();
+		let ctxt=match self.read_virt(context as u64,unsafe{slice::from_raw_parts_mut(buff.as_mut_ptr().cast(),context_size)})
+		{
+			Ok(_)=>unsafe
+			{
+				buff.assume_init_ref()
+			}
+			Err((code,fault_va))=>
+			{
+				error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+				self.write_cr2(fault_va);
+				return Err((PAGE_FAULT,Some(code.into_bits())));
+			}
+		};
+		let hv=unsafe{&*(self.hypervisor as *const SvmHypervisor)};
+		let vm=match hv.vm_list.clone().read().get(ctxt.handle as usize)
+		{
+			Some(Some(vm))=>vm.read().vcpus.clone(),
+			_=>return Ok(Status::INVALID_PARAMETER)
+		};
+		let Some(vcpu_list_lk)=vm.try_read() else
+		{
+			error!("Failed to acquire vcpu list lock!");
+			return Ok(Status::SYNCHRONIZATION_VIOLATION);
+		};
+		let vcpu=match vcpu_list_lk.get(ctxt.vcpu_id as usize)
+		{
+			Some(Some(vcpu))=>vcpu.clone(),
+			_=>return Ok(Status::SYNCHRONIZATION_VIOLATION)
+		};
+		let Some(vcpu_lk)=vcpu.try_lock() else
+		{
+			error!("Failed to acquire vCPU mutex!");
+			return Ok(Status::SYNCHRONIZATION_VIOLATION);
+		};
+		// Save the VM-Handle and vCPU ID.
+		self.cv_host_save.from_vcpu=Some((CvmHandle(ctxt.handle),ctxt.vcpu_id));
+		// We need to circumvent the RAII in order to keep the vCPU's mutex locked.
+		self.switch_world_to_guest(spin::MutexGuard::leak(vcpu_lk));
+		// We did not save the success code in the rax yet. Do it here.
+		self.cv_host_save.gpr.rax=Status::SUCCESS.0 as u64;
+		Ok(Status::SUCCESS)
 	}
 
-	fn hvcall_request_event(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
+	fn hvcall_request_event(&mut self,_context:*mut c_void,_context_size:usize)->Result<Status,(u8,Option<u32>)>
 	{
-		error!("Delete-vCPU is not supported!");
+		error!("Request-Event is not supported!");
 		Ok(Status::NOT_IMPLEMENTED)
 	}
 }
 
-pub(super) type SvmHypercallHandler=fn(&mut SvmVcpu,code:u32,context:*mut c_void)->Result<Status,(u8,Option<u32>)>;
+pub(super) type SvmHypercallHandler=fn(&mut SvmVcpu,context:*mut c_void,context_size:usize)->Result<Status,(u8,Option<u32>)>;
 
 static SVM_HYPERCALL_HANDLER_BASE:[SvmHypercallHandler;4]=
 [

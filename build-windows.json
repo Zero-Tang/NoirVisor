@@ -3,7 +3,7 @@
 	{
 		"cargo":
 		{
-			"cmd":["cargo","build","--target","x86_64-pc-windows-msvc","--package","windrv"],
+			"cmd":["cargo","build","--target","x86_64-pc-windows-msvc","--package","cvsched"],
 			"progressive":true
 		},
 		"version":
@@ -18,7 +18,7 @@
 		},
 		"NoirVisor":
 		{
-			"cmd":["lld-link","./target/x86_64-pc-windows-msvc/{cargo_preset}/windrv.lib","{objpath}/version.res","./bin/{outdir}/ntoskrnl.lib","/OUT:./bin/{outdir}/NoirVisor-unsigned.sys","/SUBSYSTEM:NATIVE","/ENTRY:NoirDriverEntry","/PDB:./bin/{outdir}/NoirVisor.pdb"],
+			"cmd":["lld-link","./target/x86_64-pc-windows-msvc/{cargo_preset}/cvsched.lib","{objpath}/version.res","./bin/{outdir}/ntoskrnl.lib","/OUT:./bin/{outdir}/NoirVisor-unsigned.sys","/SUBSYSTEM:NATIVE","/ENTRY:NoirDriverEntry","/PDB:./bin/{outdir}/NoirVisor.pdb"],
 			"dependencies":["cargo","version","import"]
 		},
 		"pre-sign":

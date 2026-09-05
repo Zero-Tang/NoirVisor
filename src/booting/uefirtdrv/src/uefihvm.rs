@@ -321,6 +321,8 @@ const NOIR_HYPERCALL_EXIT_BOOT_SERVICES:u32=3;
 	naked_asm!
 	(
 		"mov ecx,{hvc_index}",
+		"xor edx,edx",
+		"xor r8,r8",
 		"vmcall",
 		"ret",
 		hvc_index=const NOIR_HYPERCALL_EXIT_BOOT_SERVICES
@@ -333,6 +335,8 @@ const NOIR_HYPERCALL_EXIT_BOOT_SERVICES:u32=3;
 	naked_asm!
 	(
 		"mov ecx,{hvc_index}",
+		"xor edx,edx",
+		"xor r8,r8",
 		"vmmcall",
 		"ret",
 		hvc_index=const NOIR_HYPERCALL_EXIT_BOOT_SERVICES

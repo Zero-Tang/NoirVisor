@@ -179,9 +179,9 @@ macro_rules! println
 		if c==b'\n' as u16
 		{
 			// Implicit CR in every LF because VGA console won't do that for us.
-			w.push(b'\r' as u16);
+			let _=w.push(b'\r' as u16);
 		}
-		w.push(c);
+		let _=w.push(c);
 	}
 	// In Rust, strings aren't automatically terminated with 0.
 	// Append null-terminator.
@@ -192,7 +192,7 @@ macro_rules! println
 	}
 	else
 	{
-		w.push(0);
+		let _=w.push(0);
 	}
 	let stdout_ptr=STDOUT_PROTOCOL.load(Ordering::Relaxed);
 	unsafe
@@ -200,17 +200,6 @@ macro_rules! println
 		let stdout=&*stdout_ptr;
 		(stdout.output_string)(stdout_ptr,w.as_mut_ptr());
 	}
-}
-
-#[unsafe(no_mangle)] extern "C" fn noir_kmalloc(_length:usize,_alignment:usize)->*mut c_void
-{
-	// No implementation for alternate allocation in UEFI.
-	null_mut()
-}
-
-#[unsafe(no_mangle)] extern "C" fn noir_kfree(_ptr:*mut c_void,_length:usize,_alignment:usize)
-{
-	// No implementation for alternate allocation in UEFI.
 }
 
 const PAGE_SHIFT:u8=12;
@@ -434,7 +423,10 @@ impl From<&MemoryDescriptor> for MemoryRange
 			{
 				// These types of memory can be treated as general-purpose memory.
 				// Add them to ranges.
-				ranges.push(MemoryRange::from(map));
+				if ranges.push(MemoryRange::from(map)).is_err()
+				{
+					panic!("More ranges are expected than the static buffer!");
+				}
 			}
 			offset+=desc_size;
 		}

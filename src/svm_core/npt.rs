@@ -20,6 +20,25 @@ use static_collections::vec::StaticVec;
 use crate::*;
 use xpf_core::{ci::CI_MANAGER, ioflt::IoAddressSpace, nvbdk::*,allocator::*};
 
+// The generalized version of NPT Page Table Entry.
+// Some bits are missing because they're not important for software page-walks.
+#[bitfield(u64)] pub struct NptPmlxe
+{
+	pub present:bool,
+	pub write:bool,
+	pub user:bool,
+	pub pwt:bool,
+	pub pcd:bool,
+	pub accessed:bool,
+	pub dirty:bool,
+	pub page_size:bool,
+	pub global:bool,
+	#[bits(3)] pub avl:u8,
+	#[bits(40)] pub page_base:u64,
+	#[bits(11)] pub avl2:u64,
+	pub nx:bool,
+}
+
 // Page-Map-Level-5 Entry (Bits 48-56)
 #[bitfield(u64)] pub struct NptPml5e
 {

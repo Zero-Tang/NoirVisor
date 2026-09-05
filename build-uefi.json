@@ -3,7 +3,7 @@
 	{
 		"cargo":
 		{
-			"cmd":["cargo","build","--target","x86_64-unknown-uefi","--package","loadefi","--package","nvcore"],
+			"cmd":["cargo","build","--target","x86_64-unknown-uefi","--package","loadefi","--package","nvcore","--package","cvsched"],
 			"progressive":true
 		},
 		"memcpy":
@@ -35,10 +35,25 @@
 			"cmd":["lld-link","./target/x86_64-unknown-uefi/{cargo_preset}/libnvcore.a","{objpath}/memcpy.obj","{objpath}/memset.obj","{objpath}/memcmp.obj","{objpath}/strlen.obj","/OUT:./bin/{outdir}/NoirVisor.efi","/SUBSYSTEM:EFI_RUNTIME_DRIVER","/ENTRY:NoirDriverEntry","/PDB:./bin/{outdir}/NoirVisor.pdb"],
 			"dependencies":["cargo","memcpy","memset","memcmp","strlen"]
 		},
+		"cvsched":
+		{
+			"cmd":["lld-link","./target/x86_64-unknown-uefi/{cargo_preset}/libcvsched.a","/OUT:./bin/{outdir}/cvsched.efi","/SUBSYSTEM:EFI_BOOT_SERVICE_DRIVER","/ENTRY:NoirDriverEntry","/PDB:./bin/{outdir}/cvsched.pdb"],
+			"dependencies":["cargo"]
+		},
 		"image":
 		{
-			"cmd":["{python}","mkimg.py","-md","::/EFI","-md","::/EFI/BOOT","-c","./target/x86_64-unknown-uefi/{cargo_preset}/loadefi.efi|::/EFI/BOOT/bootx64.efi","-c","bin/{outdir}/NoirVisor.efi|::/","-c","bin/{outdir}/NoirVisorConfig.bin|::/","-o","./bin/{outdir}/NoirVisor-Uefi.img"],
-			"dependencies":["NoirVisor","config"]
+			"cmd":
+			[
+				"{python}","mkimg.py",
+				"-md","::/EFI",
+				"-md","::/EFI/BOOT",
+				"-c","./target/x86_64-unknown-uefi/{cargo_preset}/loadefi.efi|::/EFI/BOOT/bootx64.efi",
+				"-c","bin/{outdir}/cvsched.efi|::/",
+				"-c","bin/{outdir}/NoirVisor.efi|::/",
+				"-c","bin/{outdir}/NoirVisorConfig.bin|::/",
+				"-o","./bin/{outdir}/NoirVisor-Uefi.img"
+			],
+			"dependencies":["NoirVisor","cvsched","config"]
 		},
 		"vhdx":
 		{

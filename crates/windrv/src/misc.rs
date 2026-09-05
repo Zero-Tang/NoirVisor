@@ -106,6 +106,7 @@ static KERNEL_LOGGER:KernelLogger=KernelLogger;
 pub fn init_logger()
 {
 	let _=set_logger(&KERNEL_LOGGER);
+	set_max_level(LevelFilter::Trace);
 }
 
 struct KernelAllocator;

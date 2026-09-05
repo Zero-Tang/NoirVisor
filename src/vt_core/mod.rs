@@ -12,6 +12,7 @@
 
 use alloc::vec::Vec;
 use bitfield_struct::bitfield;
+use nvcvm::interface::CvmHandle;
 use static_collections::bitmap::RefBitmap;
 use core::{arch::{global_asm, x86_64::_xgetbv}, ffi::c_void, ptr::null_mut};
 
@@ -779,11 +780,52 @@ impl HypervisorCapabilities for VtHypervisor
 	}
 }
 
+unsafe impl Send for VtHypervisor {}
+unsafe impl Sync for VtHypervisor {}
+
 impl Drop for VtHypervisor
 {
 	fn drop(&mut self)
 	{
 		
+	}
+}
+
+impl CvmHvOps for VtHypervisor
+{
+	fn create_vm(&self)->Result<CvmHandle,Status>
+	{
+		Err(Status::NOT_IMPLEMENTED)
+	}
+
+	fn delete_vm(&self,_vm:CvmHandle)->Result<(),Status>
+	{
+		Err(Status::NOT_IMPLEMENTED)
+	}
+
+	fn create_vcpu(&self,_vm:CvmHandle,_vcpu_id:u32,_vpcb_hpa:u64)->Result<(),Status>
+	{
+		Err(Status::NOT_IMPLEMENTED)
+	}
+
+	fn delete_vcpu(&self,_vm:CvmHandle,_vcpu_id:u32)->Result<(),Status>
+	{
+		Err(Status::NOT_IMPLEMENTED)
+	}
+
+	fn set_mapping(&self,_vm:CvmHandle,_info:&nvcvm::interface::CvmMapping,_hpa_list:&[u64])->Result<(),Status>
+	{
+		Err(Status::NOT_IMPLEMENTED)
+	}
+
+	fn iopm(&self)->u64
+	{
+		0
+	}
+
+	fn msrpm(&self)->u64
+	{
+		0
 	}
 }
 

@@ -1,0 +1,13 @@
+[package]
+name = "uefibsdrv"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+r-efi = "*"
+log = "*"
+nvcvm = { path = "../nvcvm" }
+
+[dependencies.static-collections]
+version = "*"
+features = ["use_crt"]

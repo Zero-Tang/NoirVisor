@@ -28,22 +28,19 @@ lto = "thin"
 opt-level = 3
 
 [workspace]
-members = ["crates/cvsched", "crates/htable","crates/loadefi","crates/nvcvm","crates/windrv","src/booting/uefirtdrv"]
+members = ["crates/cvsched", "crates/htable","crates/loadefi","crates/nvcvm", "crates/uefibsdrv","crates/windrv","src/booting/uefirtdrv"]
 
 [dependencies]
 paste = "*"
 nvcvm = {path = "crates/nvcvm"}
+htable = {path = "crates/htable"}
 spin = "0.12.3"
-log = "0.4.33"
+log = "0.4.34"
 bitfield-struct = "*"
 portable-dlmalloc = "1.3.0"
 
-[dependencies.cvsched]
-path = "crates/cvsched"
-default-features = false
-
 [dependencies.static-collections]
-version = "0.4.0"
+version = "0.5.0"
 features = ["use_crt"]
 
 [dependencies.zerocopy]

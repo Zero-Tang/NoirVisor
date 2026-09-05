@@ -6,7 +6,7 @@ extern crate alloc;
 use core::ptr::null_mut;
 
 use alloc::alloc::{AllocError,Layout};
-use static_collections::bitmap::RefBitmap;
+use static_collections::bitmap::BitmapSlice;
 
 /// The `HandleTable<T>` data structure.
 /// 
@@ -28,6 +28,7 @@ pub struct HandleTable<T>
 
 impl<T> HandleTable<T>
 {
+	/// Creates a handle table for type `T`.
 	pub const fn new()->Self
 	{
 		Self
@@ -49,40 +50,31 @@ impl<T> HandleTable<T>
 		base_layout.extend(bitmap_layout).map_err(|_|AllocError)
 	}
 
-	fn bitmap(&self)->*mut usize
+	fn bitmap_slice(&self)->Option<&BitmapSlice>
 	{
-		let (_,offset)=match Self::allocation_layout(self.capacity)
-		{
-			Ok(layout)=>layout,
-			Err(_)=>return null_mut()
-		};
-		unsafe
-		{
-			self.base.cast::<u8>().add(offset).cast()
-		}
-	}
-
-	fn bitmap_word(&self,word:usize)->Option<&RefBitmap<{usize::BITS as usize}>>
-	{
-		if word>=Self::bitmap_words(self.capacity)
+		if self.capacity==0
 		{
 			return None;
 		}
+		let (_,offset)=Self::allocation_layout(self.capacity).ok()?;
+		let len=Self::bitmap_words(self.capacity)*size_of::<usize>();
 		unsafe
 		{
-			Some(RefBitmap::from_raw_ptr(self.bitmap().add(word)))
+			Some(BitmapSlice::from_raw_parts(self.base.cast::<u8>().add(offset),len))
 		}
 	}
 
-	fn bitmap_word_mut(&mut self,word:usize)->Option<&mut RefBitmap<{usize::BITS as usize}>>
+	fn bitmap_slice_mut(&mut self)->Option<&mut BitmapSlice>
 	{
-		if word>=Self::bitmap_words(self.capacity)
+		if self.capacity==0
 		{
 			return None;
 		}
+		let (_,offset)=Self::allocation_layout(self.capacity).ok()?;
+		let len=Self::bitmap_words(self.capacity)*size_of::<usize>();
 		unsafe
 		{
-			Some(RefBitmap::from_raw_mut_ptr(self.bitmap().add(word)))
+			Some(BitmapSlice::from_raw_parts_mut(self.base.cast::<u8>().add(offset).cast::<u8>(),len))
 		}
 	}
 
@@ -90,15 +82,17 @@ impl<T> HandleTable<T>
 	/// It should follow the allocation strategy defined by the handle table.
 	pub fn try_reserve(&mut self)->Result<(),AllocError>
 	{
+		// Determine the new capacity and layout.
 		let new_capacity=if self.capacity==0
 		{
 			usize::BITS as usize
 		}
 		else
 		{
-			self.capacity.checked_mul(2).ok_or(AllocError)?
+			self.capacity.checked_shl(1).ok_or(AllocError)?
 		};
 		let (new_layout,new_bitmap_offset)=Self::allocation_layout(new_capacity)?;
+		// Check if we're going to reallocate.
 		let old_layout=if self.capacity!=0
 		{
 			Some(Self::allocation_layout(self.capacity)?.0)
@@ -107,50 +101,48 @@ impl<T> HandleTable<T>
 		{
 			None
 		};
-		let new_base=unsafe{alloc::alloc::alloc_zeroed(new_layout)};
+		let old_bitmap_offset=if self.capacity!=0
+		{
+			Some(Self::allocation_layout(self.capacity)?.1)
+		}
+		else
+		{
+			None
+		};
+		let old_bitmap_len=if self.capacity!=0
+		{
+			Some(Self::bitmap_words(self.capacity)*size_of::<usize>())
+		}
+		else
+		{
+			None
+		};
+		// Perform reallocation.
+		let new_bitmap_len=Self::bitmap_words(new_capacity)*size_of::<usize>();
+		let new_base=unsafe
+		{
+			match old_layout
+			{
+				Some(old_layout)=>alloc::alloc::realloc(self.base.cast(),old_layout,new_layout.size()),
+				None=>alloc::alloc::alloc_zeroed(new_layout)
+			}
+		};
 		if new_base.is_null()
 		{
 			return Err(AllocError);
 		}
-		let new_base=new_base.cast::<T>();
-		if self.capacity!=0
+		if let (Some(old_bitmap_offset),Some(old_bitmap_len))=(old_bitmap_offset,old_bitmap_len)
 		{
-			let old_bitmap_offset=Self::allocation_layout(self.capacity)?.1;
-			let old_bitmap=self.base.cast::<u8>().wrapping_add(old_bitmap_offset).cast::<usize>();
-			let new_bitmap=unsafe{new_base.cast::<u8>().add(new_bitmap_offset).cast::<usize>()};
-			for word in 0..Self::bitmap_words(self.capacity)
+			// If we performed reallocation, we need to take care of the bitmap.
+			unsafe
 			{
-				unsafe
-				{
-					new_bitmap.add(word).write(old_bitmap.add(word).read());
-				}
-			}
-			for handle in 0..self.capacity
-			{
-				let word=handle/(usize::BITS as usize);
-				let bit=handle%(usize::BITS as usize);
-				let occupied=match self.bitmap_word(word)
-				{
-					Some(bitmap)=>bitmap.test(bit).unwrap_or(false),
-					None=>false
-				};
-				if occupied
-				{
-					unsafe
-					{
-						new_base.add(handle).write(self.base.add(handle).read());
-					}
-				}
-			}
-			if let Some(old_layout)=old_layout
-			{
-				unsafe
-				{
-					alloc::alloc::dealloc(self.base.cast(),old_layout);
-				}
+				// Copy the bitmap.
+				core::ptr::copy(new_base.cast::<u8>().add(old_bitmap_offset),new_base.cast::<u8>().add(new_bitmap_offset),old_bitmap_len);
+				// Fill the new bitmap area with zeroes.
+				core::ptr::write_bytes(new_base.cast::<u8>().add(new_bitmap_offset+old_bitmap_len),0,new_bitmap_len-old_bitmap_len);
 			}
 		}
-		self.base=new_base;
+		self.base=new_base.cast();
 		self.capacity=new_capacity;
 		Ok(())
 	}
@@ -162,33 +154,23 @@ impl<T> HandleTable<T>
 		{
 			self.try_reserve()?;
 		}
-		let mut handle=0;
-		let mut found=false;
-		for word_index in 0..Self::bitmap_words(self.capacity)
+		let bitmap=match self.bitmap_slice_mut()
 		{
-			let bitmap=match self.bitmap_word_mut(word_index)
-			{
-				Some(bitmap)=>bitmap,
-				None=>return Err(AllocError)
-			};
-			if let Some(bit)=bitmap.search_cleared_forward()
-			{
-				if bitmap.set(bit).unwrap_or(true)
-				{
-					continue;
-				}
-				handle=word_index*(usize::BITS as usize)+bit;
-				found=true;
-			}
-			if found
-			{
-				break;
-			}
-		}
-		if !found
+			Some(bitmap)=>bitmap,
+			None=>return Err(AllocError)
+		};
+		let handle=match bitmap.search_cleared_forward()
 		{
-			self.try_reserve()?;
-			return self.create_handle(data);
+			Some(handle)=>handle,
+			None=>
+			{
+				self.try_reserve()?;
+				return self.create_handle(data);
+			}
+		};
+		if bitmap.set(handle).unwrap_or(true)
+		{
+			return Err(AllocError);
 		}
 		unsafe
 		{
@@ -204,14 +186,8 @@ impl<T> HandleTable<T>
 		{
 			return None;
 		}
-		let word_index=handle/(usize::BITS as usize);
-		let bit=handle%(usize::BITS as usize);
-		let bitmap=match self.bitmap_word_mut(word_index)
-		{
-			Some(bitmap)=>bitmap,
-			None=>return None
-		};
-		if !bitmap.reset(bit).unwrap_or(false)
+		let bitmap=self.bitmap_slice_mut()?;
+		if !bitmap.reset(handle).unwrap_or(false)
 		{
 			return None;
 		}
@@ -227,14 +203,8 @@ impl<T> HandleTable<T>
 		{
 			return None;
 		}
-		let word_index=handle/(usize::BITS as usize);
-		let bit=handle%(usize::BITS as usize);
-		let bitmap=match self.bitmap_word(word_index)
-		{
-			Some(bitmap)=>bitmap,
-			None=>return None
-		};
-		if !bitmap.test(bit).unwrap_or(false)
+		let bitmap=self.bitmap_slice()?;
+		if !bitmap.test(handle).unwrap_or(false)
 		{
 			return None;
 		}
@@ -250,14 +220,8 @@ impl<T> HandleTable<T>
 		{
 			return None;
 		}
-		let word_index=handle/(usize::BITS as usize);
-		let bit=handle%(usize::BITS as usize);
-		let bitmap=match self.bitmap_word_mut(word_index)
-		{
-			Some(bitmap)=>bitmap,
-			None=>return None
-		};
-		if !bitmap.test(bit).unwrap_or(false)
+		let bitmap=self.bitmap_slice_mut()?;
+		if !bitmap.test(handle).unwrap_or(false)
 		{
 			return None;
 		}
@@ -302,20 +266,14 @@ impl<T> Drop for HandleTable<T>
 		{
 			return;
 		}
-		if self.bitmap().is_null()
+		let bitmap=match self.bitmap_slice()
 		{
-			return;
-		}
+			Some(bitmap)=>bitmap,
+			None=>return
+		};
 		for handle in 0..self.capacity
 		{
-			let word_index=handle/(usize::BITS as usize);
-			let bit=handle%(usize::BITS as usize);
-			let occupied=match self.bitmap_word(word_index)
-			{
-				Some(bitmap)=>bitmap.test(bit).unwrap_or(false),
-				None=>false
-			};
-			if occupied
+			if bitmap.test(handle).unwrap_or(false)
 			{
 				unsafe
 				{
@@ -416,5 +374,24 @@ impl<'a,T> Iterator for HTableIterMut<'a,T>
 		assert_eq!(ht.create_handle(new_dc()).unwrap(),0);
 		drop(ht);
 		assert_eq!(count.load(Ordering::Relaxed),3);
+	}
+
+	#[test] fn capacity_expansion()
+	{
+		let mut ht:HandleTable<u32>=HandleTable::new();
+		for i in 0..=usize::BITS
+		{
+			assert_eq!(ht.create_handle(i),Ok(i as usize));
+		}
+		assert_eq!(ht.capacity,(usize::BITS<<1) as usize);
+		let bmp=ht.bitmap_slice().unwrap();
+		for i in 0..=usize::BITS
+		{
+			assert_eq!(bmp.test(i as usize),Ok(true));
+		}
+		for i in usize::BITS+1..usize::BITS<<1
+		{
+			assert_eq!(bmp.test(i as usize),Ok(false));
+		}
 	}
 }

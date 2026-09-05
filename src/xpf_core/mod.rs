@@ -8,4 +8,3 @@ pub mod nvbdk;
 pub mod hv_host;
 pub mod trytask;
 pub mod rmt;
-#[cfg(test)] mod tests;

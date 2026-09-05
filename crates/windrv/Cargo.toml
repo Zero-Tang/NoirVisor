@@ -3,17 +3,10 @@ name = "windrv"
 version = "0.1.0"
 edition = "2024"
 
-[lib]
-crate-type = ["staticlib"]
-
 [dependencies]
 utf16_lit = "*"
 log = "*"
 nvcvm = { path = "../nvcvm" }
-
-[dependencies.cvsched]
-path = "../cvsched"
-features = ["scheduler"]
 
 [dependencies.static-collections]
 version = "*"

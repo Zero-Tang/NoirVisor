@@ -4,37 +4,21 @@ extern crate alloc;
 
 use core::{ffi::c_void, ptr::{null, null_mut}};
 
-use cvsched::ioctl::*;
-use nvcvm::{ioctl::*, status::Status};
+use nvcvm::status::Status;
 use utf16_lit::utf16_null;
-use windows_sys::{Wdk::{Foundation::{DEVICE_OBJECT, DRIVER_OBJECT, IO_STACK_LOCATION, IRP}, Storage::FileSystem::IO_NO_INCREMENT, System::SystemServices::{FILE_DEVICE_SECURE_OPEN, HighPagePriority, IRP_MJ_CLOSE, IRP_MJ_CREATE, IRP_MJ_DEVICE_CONTROL, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IofCompleteRequest, KernelMode, MmCached, MmMapLockedPagesSpecifyCache}}, Win32::{Foundation::{NTSTATUS, STATUS_INVALID_DEVICE_REQUEST, STATUS_SUCCESS, STATUS_UNSUCCESSFUL, UNICODE_STRING}, System::Ioctl::{FILE_DEVICE_UNKNOWN, METHOD_BUFFERED, METHOD_NEITHER, METHOD_OUT_DIRECT}}};
+use windows_sys::{Wdk::{Foundation::{DEVICE_OBJECT, DRIVER_OBJECT, IO_STACK_LOCATION, IRP}, Storage::FileSystem::IO_NO_INCREMENT, System::SystemServices::{FILE_DEVICE_SECURE_OPEN, HighPagePriority, IRP_MJ_CLOSE, IRP_MJ_CREATE, IRP_MJ_DEVICE_CONTROL, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IofCompleteRequest, KernelMode, MmCached, MmMapLockedPagesSpecifyCache}}, Win32::{Foundation::{NTSTATUS, STATUS_DEVICE_CONFIGURATION_ERROR, STATUS_INVALID_DEVICE_REQUEST, STATUS_SUCCESS, STATUS_UNSUCCESSFUL, UNICODE_STRING}, System::Ioctl::{FILE_DEVICE_UNKNOWN, METHOD_BUFFERED, METHOD_NEITHER, METHOD_OUT_DIRECT}}};
 
 use crate::misc::init_logger;
 
 mod misc;
+pub mod sync;
 
-unsafe fn dispatch_io_unknown(_in_buff:*const c_void,_in_size:usize,_out_buff:*mut c_void,_out_size:usize)->Status
+unsafe extern "system"
 {
-	Status::DISPATCH_FAILURE
+	fn noir_dispatch_ioctl(ioctl_code:usize,in_buff:*const c_void,in_size:usize,out_buff:*mut c_void,out_size:usize)->Status;
+	fn noir_cvsched_init()->bool;
+	fn noir_cvsched_deinit();
 }
-
-type IoDispatchFn=unsafe fn(*const c_void,usize,*mut c_void,usize)->Status;
-
-const IOCTL_CODE_MAX:usize=0x30;
-
-static DISPATCHER_GROUP:[IoDispatchFn;IOCTL_CODE_MAX]=
-{
-	let mut x:[IoDispatchFn;IOCTL_CODE_MAX]=[dispatch_io_unknown;IOCTL_CODE_MAX];
-	x[IOCTL_CODE_HV_GET_CAPABILITY]=dispatch_get_capability;
-	x[IOCTL_CODE_HV_CREATE_VM]=dispatch_create_vm;
-	x[IOCTL_CODE_HV_DELETE_VM]=dispatch_delete_vm;
-	x[IOCTL_CODE_VM_CREATE_VCPU]=dispatch_create_vcpu;
-	x[IOCTL_CODE_VM_DELETE_VCPU]=dispatch_delete_vcpu;
-	x[IOCTL_CODE_VM_SET_MEMORY_REGION]=dispatch_set_memory_region;
-	x[IOCTL_CODE_VCPU_RUN]=dispatch_run_vcpu;
-	x[IOCTL_CODE_VCPU_REQUEST_EVENT]=dispatch_request_event;
-	x
-};
 
 static DEVICE_NAME:&[u16]=&utf16_null!("\\Device\\NoirVisor");
 static LINK_NAME:&[u16]=&utf16_null!("\\DosDevices\\NoirVisor");
@@ -140,6 +124,7 @@ unsafe extern "system" fn driver_unload(driver_object:*const DRIVER_OBJECT)
 {
 	unsafe
 	{
+		noir_cvsched_deinit();
 		let link_name=unistr_from_slice(LINK_NAME);
 		IoDeleteSymbolicLink(&raw const link_name);
 		IoDeleteDevice((*driver_object).DeviceObject);
@@ -172,16 +157,13 @@ unsafe extern "system" fn dispatch_io_control(_device_object:*const DEVICE_OBJEC
 		if is_ctl_code_custom(io_ctrl_code)
 		{
 			let code_index=function_from_ctl_code(io_ctrl_code);
-			if let Some(f)=DISPATCHER_GROUP.get(code_index)
+			let cv_st=noir_dispatch_ioctl(code_index,in_buff,in_size,out_buff,out_size);
+			// Convert NoirVisor's status code into NT's status code.
+			st=match cv_st
 			{
-				let cv_st=f(in_buff,in_size,out_buff,out_size);
-				// Convert NoirVisor's status code into NT's status code.
-				st=match cv_st
-				{
-					Status::SUCCESS=>STATUS_SUCCESS,
-					Status::DISPATCH_FAILURE=>STATUS_INVALID_DEVICE_REQUEST,
-					_=>STATUS_UNSUCCESSFUL
-				}
+				Status::SUCCESS=>STATUS_SUCCESS,
+				Status::DISPATCH_FAILURE=>STATUS_INVALID_DEVICE_REQUEST,
+				_=>STATUS_UNSUCCESSFUL
 			}
 		}
 		(*irp).IoStatus.Anonymous.Status=st;
@@ -193,10 +175,14 @@ unsafe extern "system" fn dispatch_io_control(_device_object:*const DEVICE_OBJEC
 
 #[unsafe(no_mangle)] unsafe extern "system" fn NoirDriverEntry(driver_object:*mut DRIVER_OBJECT,_registry_path:*const UNICODE_STRING)->NTSTATUS
 {
-	let mut st:NTSTATUS;
+	let mut st:NTSTATUS=STATUS_DEVICE_CONFIGURATION_ERROR;
 	init_logger();
 	unsafe
 	{
+		if !noir_cvsched_init()
+		{
+			return st;
+		}
 		(*driver_object).MajorFunction[IRP_MJ_CREATE as usize]=Some(dispatch_create_close);
 		(*driver_object).MajorFunction[IRP_MJ_CLOSE as usize]=Some(dispatch_create_close);
 		(*driver_object).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize]=Some(dispatch_io_control);
@@ -210,8 +196,13 @@ unsafe extern "system" fn dispatch_io_control(_device_object:*const DEVICE_OBJEC
 			st=IoCreateSymbolicLink(&raw const link_name,&raw const dev_name);
 			if st!=STATUS_SUCCESS
 			{
+				noir_cvsched_deinit();
 				IoDeleteDevice(dev_obj);
 			}
+		}
+		else
+		{
+			noir_cvsched_deinit();
 		}
 	}
 	st

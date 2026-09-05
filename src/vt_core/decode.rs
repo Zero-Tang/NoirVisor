@@ -13,10 +13,35 @@
 
 use core::slice;
 
-use crate::{vt_core::{VtVcpu, vmcs::*}, xpf_core::{asm::vt::{vmread32, vmread64, vmreadptr}, x86::{crdr::{Cr0, Cr4}, msr::Efer, paging::{PageTranslationHelper, read_virtual_address}}}};
+use crate::{disasm::emulator::EmulatorOps, vt_core::{VtVcpu, vmcs::*}, xpf_core::{asm::vt::{vmread16, vmread32, vmread64, vmreadptr, vmwrite16}, x86::{crdr::{Cr0, Cr4}, msr::Efer}}};
 
-impl PageTranslationHelper for VtVcpu
+impl EmulatorOps for VtVcpu
 {
+	fn get_gpr(&self,gpr_index:usize)->u64
+	{
+		self.get_stack_top().gpr_state.read(gpr_index).unwrap()
+	}
+
+	fn set_gpr(&mut self,gpr_index:usize,value:u64)
+	{
+		self.get_stack_top_mut().gpr_state.write(gpr_index,value);
+	}
+
+	fn get_rip(&self)->u64
+	{
+		self.cached_ctxt.rip
+	}
+
+	fn get_seg_selector(&self,seg_index:usize)->u16
+	{
+		vmread16(GUEST_ES_SELECTOR+(seg_index<<1)).unwrap()
+	}
+
+	fn set_seg_selector(&mut self,seg_index:usize,value:u16)
+	{
+		vmwrite16(GUEST_ES_SELECTOR+(seg_index<<1),value);
+	}
+
 	fn get_cr0(&self)->Cr0
 	{
 		Cr0::from_bits(vmreadptr(GUEST_CR0).unwrap() as u64)
@@ -42,19 +67,21 @@ impl PageTranslationHelper for VtVcpu
 		let ss_ar=SegmentAccessRights::from_bits(vmread32(GUEST_SS_ACCESS_RIGHTS).unwrap());
 		ss_ar.dpl()==3
 	}
-
-	fn read_phys_mem(&self,pa:u64,buffer:&mut [u8])->usize
+	
+	fn read_gpa(&mut self,gpa:u64,value:&mut [u8])->usize
 	{
-		let src=unsafe{slice::from_raw_parts(pa as *const u8,buffer.len())};
-		buffer.copy_from_slice(src);
-		buffer.len()
+		// TODO: dispatch MMIO inputs.
+		let src=unsafe{slice::from_raw_parts(gpa as *const u8,value.len())};
+		value.copy_from_slice(src);
+		value.len()
 	}
 
-	fn write_phys_mem(&self,pa:u64,buffer:&[u8])->usize
+	fn write_gpa(&mut self,gpa:u64,value:&[u8])->usize
 	{
-		let dest=unsafe{slice::from_raw_parts_mut(pa as *mut u8,buffer.len())};
-		dest.copy_from_slice(buffer);
-		buffer.len()
+		// TODO: dispatch MMIO outputs.
+		let dest=unsafe{slice::from_raw_parts_mut(gpa as *mut u8,value.len())};
+		dest.copy_from_slice(value);
+		value.len()
 	}
 }
 
@@ -80,8 +107,7 @@ impl VtVcpu
 	{
 		let mut instruction_bytes:[u8;15]=[0;15];
 		let rip=vmread64(GUEST_RIP).unwrap();
-		let mut fault_pa:Option<u64>=None;
-		if let Err(e)=read_virtual_address(rip,self,&mut instruction_bytes,&mut fault_pa)
+		if let Err((e,_))=self.read_virt(rip,&mut instruction_bytes)
 		{
 			panic!("Page-fault is triggered by software while fetching instruction! Code: 0x{:08X}, rip=0x{rip:016X}",e.into_bits());
 		}

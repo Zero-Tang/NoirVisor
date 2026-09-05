@@ -168,10 +168,10 @@ python run_qemu.py -debug int
 ```
 Debug log is written into `qemu.log`.
 
-**Bochs**: In the `tests` directory, execute the `run_bochs.py` script. Note that only [Bochs-3.0](https://sourceforge.net/projects/bochs/files/bochs/3.0/) is supported. \
+**Bochs**: In the `tests` directory, execute the `run_bochs.py` script. Note that only [Bochs-3.1](https://sourceforge.net/projects/bochs/files/bochs/3.1/) is confirmed working with current commit. \
 To emulate Intel VT-x in Bochs:
 ```
-python run_bochs.py --cpu-model corei7_icelake_u
+python run_bochs.py --cpu-model wildcat_lake
 ```
 To emulate AMD-V in Bochs:
 ```
@@ -181,7 +181,8 @@ To run the optimized binary in Bochs:
 ```
 python run_bochs.py --release
 ```
-Bochs does not support emulating IOMMU (i.e.: Intel VT-d and AMD-Vi) yet. To test IOMMU functionality, only QEMU is supported.
+Bochs does not support emulating IOMMU (i.e.: Intel VT-d and AMD-Vi) yet. To test IOMMU functionality, only QEMU is supported. \
+Bochs does not seem to emulate AMD-V properly in regard to `V_INTR_MASKING` bit in VMCB. (Most likely because Bochs did not save host's `rflags.if` bit.) Please use QEMU-TCG in order to emulate AMD-V.
 
 # Documents
 This repository provides [additional documents](/doc/readme.md) which help new developers to join development.

@@ -30,7 +30,7 @@ pci: enabled=1, chipset=i440fx, slot1=cirrus, slot2=none, slot3=none, slot4=none
 vga: extension=cirrus, update_freq=10, realtime=1, ddc=builtin, vbe_memsize=16
 cpu: count=1, ips=4000000, model={cpu-model}, reset_on_triple_fault=1, cpuid_limit_winnt=0, ignore_bad_msrs=1, mwait_is_nop=0
 print_timestamps: enabled=0
-debugger_log: -
+debugger: -
 magic_break: enabled=1 0x8
 port_e9_hack: enabled=true, all_rings=false
 iodebug: all_rings=0

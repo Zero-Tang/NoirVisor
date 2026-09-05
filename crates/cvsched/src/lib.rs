@@ -6,11 +6,9 @@
 extern crate alloc;
 
 pub mod hvcall;
-#[cfg(feature="scheduler")]
 pub mod ioctl;
-#[cfg(feature="scheduler")]
-#[allow(dead_code)]
-pub(crate) mod sync;
-#[cfg(feature="scheduler")]
-#[allow(dead_code)]
 pub(crate) mod vmm;
+#[cfg(target_os="windows")]
+pub(crate) use windrv as platform;
+#[cfg(target_os="uefi")]
+pub(crate) use uefibsdrv as platform;

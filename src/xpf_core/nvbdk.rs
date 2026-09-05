@@ -10,12 +10,13 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::x86_64::_bittest64, convert::From, ffi::{c_int, c_void}, fmt::{self, Display}, ops::*, ptr::null_mut, slice, sync::atomic::{AtomicPtr, Ordering}};
+use core::{arch::x86_64::_bittest64, convert::From, ffi::{c_int, c_void}, fmt::{self, Debug, Display}, ops::*, ptr::null_mut, slice, sync::atomic::{AtomicPtr, Ordering}};
 use super::{asm::{crdr::*, msr::rdmsr, seg::*}, x86::{descriptors::{DescriptorTable, SegmentFlags}, msr::*}};
 use alloc::vec::Vec;
 use bitfield_struct::bitfield;
 use paste::paste;
 use spin::LazyLock;
+use nvcvm::interface::SegmentRegister;
 
 #[cfg(windows)] use crate::mshv_core::forwarder::MshvForwardStack;
 use crate::xpf_core::allocator::{ContiguousAllocator, InternalPageAllocator};
@@ -222,132 +223,57 @@ impl<T:Sized> Drop for MappedDescriptor<T>
 	}
 }
 
-#[repr(C)] #[derive(Default,Debug,Clone,Copy)] pub struct SegmentRegister
+fn segment_from_sel_gdt(gdt:&DescriptorTable,selector:u16)->Option<SegmentRegister>
 {
-	pub selector:u16,
-	pub attrib:u16,
-	pub limit:u32,
-	pub base:u64
-}
-
-impl SegmentRegister
-{
-	pub fn from_sel_gdt(gdt:&DescriptorTable,selector:u16)->Option<Self>
+	if selector<gdt.limit
 	{
-		if selector<gdt.limit
-		{
-			let p=(gdt.base+(selector&0xfff8) as u64) as *const u8;
-			let a=unsafe{p.add(5).cast::<SegmentFlags>().read_unaligned()};
-			Some
-			(
-				Self
+		let p=(gdt.base+(selector&0xfff8) as u64) as *const u8;
+		let a=unsafe{p.add(5).cast::<SegmentFlags>().read_unaligned()};
+		Some
+		(
+			SegmentRegister
+			{
+				selector,
+				attrib:a.into_bits(),
+				limit:lsl(selector),
+				base:if a.present()
 				{
-					selector,
-					attrib:a.into_bits(),
-					limit:lsl(selector),
-					base:if a.present()
-					{
-						if a.system_segment()
-						{
-							0
-						}
-						else
-						{
-							let lo=unsafe{p.add(2).cast::<u16>().read()} as u64;
-							let mid1=unsafe{p.add(4).read()} as u64;
-							let mid2=unsafe{p.add(7).read()} as u64;
-							let hi=unsafe{p.add(8).cast::<u32>().read()} as u64;
-							lo|(mid1<<16)|(mid2<<24)|(hi<<32)
-						}
-					}
-					else
+					if a.system_segment()
 					{
 						0
 					}
+					else
+					{
+						let lo=unsafe{p.add(2).cast::<u16>().read()} as u64;
+						let mid1=unsafe{p.add(4).read()} as u64;
+						let mid2=unsafe{p.add(7).read()} as u64;
+						let hi=unsafe{p.add(8).cast::<u32>().read()} as u64;
+						lo|(mid1<<16)|(mid2<<24)|(hi<<32)
+					}
 				}
-			)
-		}
-		else
-		{
-			None
-		}
+				else
+				{
+					0
+				}
+			}
+		)
 	}
-
-	pub fn from_sel_gdt_with_base(gdt:&DescriptorTable,selector:u16,base:u64)->Option<Self>
+	else
 	{
-		Self::from_sel_gdt(gdt,selector).map(|seg| Self
-		{
-			selector:seg.selector,
-			attrib:seg.attrib,
-			limit:seg.limit,
-			base
-		})
+		None
 	}
+}
 
-	pub fn from_dt(descriptor:&DescriptorTable)->Self
+fn segment_from_sel_gdt_with_base(gdt:&DescriptorTable,selector:u16,base:u64)->Option<SegmentRegister>
+{
+	match segment_from_sel_gdt(gdt,selector)
 	{
-		Self
+		Some(mut seg)=>
 		{
-			selector:0,
-			attrib:0,
-			limit:descriptor.limit as u32,
-			base:descriptor.base
+			seg.base=base;
+			Some(seg)
 		}
-	}
-
-	pub const fn reset_code()->Self
-	{
-		Self
-		{
-			selector:0xF000,
-			attrib:0x9B,
-			limit:0xFFFF,
-			base:0xFFFF0000
-		}
-	}
-
-	pub const fn reset_data()->Self
-	{
-		Self
-		{
-			selector:0,
-			attrib:0x92,
-			limit:0xFFFF,
-			base:0
-		}
-	}
-
-	pub const fn reset_tss()->Self
-	{
-		Self
-		{
-			selector:0,
-			attrib:0x83,
-			limit:0xFFFF,
-			base:0
-		}
-	}
-
-	pub const fn reset_ldt()->Self
-	{
-		Self
-		{
-			selector:0,
-			attrib:0x82,
-			limit:0xFFFF,
-			base:0
-		}
-	}
-
-	pub const fn reset_dt()->Self
-	{
-		Self
-		{
-			selector:0,
-			attrib:0,
-			limit:0xFFFF,
-			base:0
-		}
+		None=>None
 	}
 }
 
@@ -397,16 +323,16 @@ impl ProcessorState
 		let idtr=read_idtr();
 		Self
 		{
-			cs:SegmentRegister::from_sel_gdt(&gdtr,read_cs()).unwrap(),
-			ds:SegmentRegister::from_sel_gdt(&gdtr,read_ds()).unwrap(),
-			es:SegmentRegister::from_sel_gdt(&gdtr,read_es()).unwrap(),
-			fs:SegmentRegister::from_sel_gdt_with_base(&gdtr,read_fs(),rdmsr(MSR_FS_BASE)).unwrap(),
-			gs:SegmentRegister::from_sel_gdt_with_base(&gdtr,read_gs(),rdmsr(MSR_GS_BASE)).unwrap(),
-			ss:SegmentRegister::from_sel_gdt(&gdtr,read_ss()).unwrap(),
-			tr:SegmentRegister::from_sel_gdt(&gdtr,read_tr()).unwrap(),
-			ldtr:SegmentRegister::from_sel_gdt(&gdtr,read_ldt()).unwrap(),
-			gdtr:SegmentRegister::from_dt(&gdtr),
-			idtr:SegmentRegister::from_dt(&idtr),
+			cs:segment_from_sel_gdt(&gdtr,read_cs()).unwrap(),
+			ds:segment_from_sel_gdt(&gdtr,read_ds()).unwrap(),
+			es:segment_from_sel_gdt(&gdtr,read_es()).unwrap(),
+			fs:segment_from_sel_gdt_with_base(&gdtr,read_fs(),rdmsr(MSR_FS_BASE)).unwrap(),
+			gs:segment_from_sel_gdt_with_base(&gdtr,read_gs(),rdmsr(MSR_GS_BASE)).unwrap(),
+			ss:segment_from_sel_gdt(&gdtr,read_ss()).unwrap(),
+			tr:segment_from_sel_gdt(&gdtr,read_tr()).unwrap(),
+			ldtr:segment_from_sel_gdt(&gdtr,read_ldt()).unwrap(),
+			gdtr:SegmentRegister::from_dt(gdtr.limit,gdtr.base),
+			idtr:SegmentRegister::from_dt(idtr.limit,idtr.base),
 			cr0:read_cr0() as usize,
 			cr2:read_cr2() as usize,
 			cr3:read_cr3() as usize,
@@ -435,6 +361,7 @@ impl ProcessorState
 	}
 }
 
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(C)] pub struct GprState
 {
 	pub rax:u64,
@@ -751,6 +678,47 @@ build_page_def!(_4MB_,22);
 build_page_def!(_1GB_,30);
 build_page_def!(_512GB_,39);
 build_page_def!(_256TB_,48);
+
+#[inline(always)] pub const fn page_shift_from_level(level:u8)->u8
+{
+	// Force optimization for multiplying by 9.
+	(level<<3)+level+PAGE_SHIFT
+}
+
+#[inline(always)] pub fn page_size_from_level<T:Shl<Output=T>+TryFrom<usize>>(level:u8)->T where <T as TryFrom<usize>>::Error:Debug
+{
+	T::try_from(1<<page_shift_from_level(level)).expect("Cannot calculate page size into this generic type!")
+}
+
+#[inline(always)] pub fn page_mask_from_level<T:Shl<Output=T>+TryFrom<usize>>(level:u8)->T where <T as TryFrom<usize>>::Error:Debug
+{
+	T::try_from((1<<page_shift_from_level(level))-1).expect("Cannot calculate page mask into this generic type!")
+}
+
+#[inline(always)] pub fn page_offset_from_level<T:BitAnd<Output=T>+Shl<Output=T>+TryFrom<usize>>(addr:T,level:u8)->T where <T as TryFrom<usize>>::Error:Debug
+{
+	addr&page_mask_from_level(level)
+}
+
+#[inline(always)] pub fn page_count_from_level<T:Shr<u8,Output=T>+TryFrom<usize>>(addr:T,level:u8)->T where <T as TryFrom<usize>>::Error:Debug
+{
+	addr>>page_shift_from_level(level)
+}
+
+#[inline(always)] pub fn page_base_from_level<T:BitAnd<Output=T>+Shl<Output=T>+Not<Output=T>+TryFrom<usize>>(addr:T,level:u8)->T where <T as TryFrom<usize>>::Error:Debug
+{
+	addr&!page_mask_from_level::<T>(level)
+}
+
+#[inline(always)] pub fn phys_page_base_from_level<T:BitAnd<Output=T>+Shl<Output=T>+Not<Output=T>+TryFrom<usize>>(addr:T,level:u8)->T where <T as TryFrom<usize>>::Error:Debug
+{
+	addr&!page_mask_from_level::<T>(level)&T::try_from(0xFFFFFFFFFF000).expect("Type cannot contain number 0xFFFFFFFFFF000!")
+}
+
+#[inline(always)] pub fn page_index_from_level<T:BitAnd<Output=T>+Shr<u8,Output=T>+TryFrom<usize>>(addr:T,level:u8)->T where <T as TryFrom<usize>>::Error:Debug
+{
+	page_count_from_level(addr,level)&T::try_from(PAGE_TABLE_ENTRIES64-1).expect("Type cannot contain number 511!")
+}
 
 pub const PAGE_SHIFT_DIFF64:u8=9;
 pub const PAGE_SHIFT_DIFF32:u8=10;

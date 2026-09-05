@@ -13,3 +13,15 @@ categories = ["no-std","virtualization"]
 [dependencies]
 bitfield-struct = "0.13.0"
 paste = "1.0.15"
+
+[features]
+# User-hypervisor should use this feature.
+user = []
+# Kernel scheduler should use this feature.
+kernel = []
+# Only NoirVisor may use this feature.
+hypervisor = []
+default = ["kernel"]
+
+[target.'cfg(target_os="uefi")'.dependencies]
+r-efi = "*"
