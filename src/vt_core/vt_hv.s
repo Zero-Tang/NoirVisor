@@ -23,17 +23,6 @@ STACKTOP_OFFSET_FLAGS=0xF4
 STACKTOP_OFFSET_GUEST_XCR0=0xF8
 STACKTOP_OFFSET_HOST_XCR0=0x100
 
-.global nvc_vt_resume_without_entry
-nvc_vt_resume_without_entry:
-	mov rsp,rcx
-	popaq_fast 0
-	// In the restored GPR layout, we have:
-	// rax=rip, rcx=rflags, rdx=rsp
-	mov rsp,rdx
-	push rcx
-	popfq
-	jmp rax
-
 .global nvc_vt_guest_start
 nvc_vt_guest_start:
 	popaq_fast 0

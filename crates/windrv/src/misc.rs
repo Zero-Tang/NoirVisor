@@ -1,12 +1,28 @@
 // Miscellaneous Services
 
-use core::{ffi::{c_int, c_void}, fmt, ptr::null_mut};
+use core::{arch::global_asm, ffi::{c_int, c_void}, fmt, ptr::null_mut};
 use alloc::alloc::{GlobalAlloc, Layout};
 
 use log::*;
 use static_collections::{format_static, string::StaticString};
-use windows_sys::{Wdk::{Foundation::{ERESOURCE, FAST_MUTEX, NonPagedPool}, System::SystemServices::*}, Win32::Foundation::{NTSTATUS, STATUS_SUCCESS}};
+use windows_sys::{Wdk::{Foundation::NonPagedPool, System::SystemServices::*}, Win32::{Foundation::HANDLE, System::{Diagnostics::Debug::{CONTEXT, DISPATCHER_CONTEXT, EXCEPTION_RECORD}, Kernel::{EXCEPTION_DISPOSITION, ExceptionContinueExecution}}}};
 
+// Rust does not have special syntax for SEH. So, manually implement SEH handlers via assembly.
+#[cfg(target_arch="x86_64")]
+global_asm!(include_str!("seh-x64.s"));
+
+// Handle the exceptions.
+#[unsafe(no_mangle)] unsafe extern "system" fn seh_excp_handler(exception_record:*mut EXCEPTION_RECORD,_establisher_frame:*const c_void,context_record:*mut CONTEXT,dispatcher_context:*const c_void)->EXCEPTION_DISPOSITION
+{
+	trace!("SEH-Exception Handler is hit!");
+	unsafe
+	{
+		let disp_ctxt:&DISPATCHER_CONTEXT=&*dispatcher_context.cast();
+		*context_record = *disp_ctxt.ContextRecord;
+		(*context_record).Rax=(*exception_record).ExceptionCode as u64;
+	}
+	ExceptionContinueExecution
+}
 
 #[macro_export]
 macro_rules! dprint
@@ -37,10 +53,9 @@ unsafe extern "C"
 	fn DbgPrintEx(ComponentId:u32,Level:u32,Format:*const i8,...);
 }
 
-#[link(name="ntoskrnl.exe",kind="raw-dylib",modifiers="+verbatim")]
 unsafe extern "system"
 {
-	fn ExInitializeFastMutex(fastmutex:*mut FAST_MUTEX);
+	safe fn noir_notify_process_termination(process_id:u32);
 }
 
 const DPFLTR_ERROR_LEVEL:u32=0;
@@ -224,108 +239,13 @@ unsafe impl GlobalAlloc for KernelAllocator
 
 #[global_allocator] static KERNEL_ALLOCATOR:KernelAllocator=KernelAllocator;
 
-const ERESOURCE_LAYOUT:Layout=unsafe{Layout::from_size_align_unchecked(size_of::<ERESOURCE>(),align_of::<ERESOURCE>())};
-const MUTEX_LAYOUT:Layout=unsafe{Layout::from_size_align_unchecked(size_of::<FAST_MUTEX>(),align_of::<FAST_MUTEX>())};
-
-#[unsafe(no_mangle)] unsafe extern "system" fn noir_create_reslock()->*mut c_void
+pub unsafe extern "system" fn create_process_notify_fn(_parent_id:HANDLE,process_id:HANDLE,create:bool)
 {
-	let p:*mut ERESOURCE=unsafe{alloc::alloc::alloc(ERESOURCE_LAYOUT).cast()};
-	if !p.is_null()
+	if !create
 	{
-		let st:NTSTATUS=unsafe{ExInitializeResourceLite(p)};
-		if st!=STATUS_SUCCESS
-		{
-			unsafe
-			{
-				alloc::alloc::dealloc(p.cast(),ERESOURCE_LAYOUT);
-			}
-			return null_mut();
-		}
-	}
-	p.cast()
-}
-
-#[unsafe(no_mangle)] unsafe extern "system" fn noir_delete_reslock(reslock:*mut c_void)
-{
-	unsafe
-	{
-		ExDeleteResourceLite(reslock.cast());
-		alloc::alloc::dealloc(reslock.cast(),ERESOURCE_LAYOUT);
+		noir_notify_process_termination(process_id as u32);
 	}
 }
-
-#[unsafe(no_mangle)] unsafe extern "system" fn noir_acquire_reslock_exclusive(reslock:*mut c_void)
-{
-	unsafe
-	{
-		KeEnterCriticalRegion();
-		ExAcquireResourceExclusiveLite(reslock.cast(),true);
-	}
-}
-
-#[unsafe(no_mangle)] unsafe extern "system" fn noir_acquire_reslock_shared(reslock:*mut c_void)
-{
-	unsafe
-	{
-		KeEnterCriticalRegion();
-		ExAcquireResourceSharedLite(reslock.cast(),true);
-	}
-}
-
-#[unsafe(no_mangle)] unsafe extern "system" fn noir_release_reslock_exclusive(reslock:*mut c_void)
-{
-	unsafe
-	{
-		ExReleaseResourceLite(reslock.cast());
-		KeLeaveCriticalRegion();
-	}
-}
-
-#[unsafe(no_mangle)] unsafe extern "system" fn noir_release_reslock_shared(reslock:*mut c_void)
-{
-	unsafe
-	{
-		ExReleaseResourceLite(reslock.cast());
-		KeLeaveCriticalRegion();
-	}
-}
-
-#[unsafe(no_mangle)] unsafe extern "system" fn noir_create_mutex()->*mut c_void
-{
-	let p:*mut FAST_MUTEX=unsafe{alloc::alloc::alloc(MUTEX_LAYOUT).cast()};
-	if !p.is_null()
-	{
-		unsafe
-		{
-			ExInitializeFastMutex(p);
-		}
-	}
-	p.cast()
-}
-
-#[unsafe(no_mangle)] unsafe extern "system" fn noir_delete_mutex(mutex:*mut c_void)
-{
-	unsafe
-	{
-		alloc::alloc::dealloc(mutex.cast(),MUTEX_LAYOUT);
-	}
-}
-
-#[unsafe(no_mangle)] unsafe extern "system" fn noir_acquire_mutex(mutex:*mut c_void)
-{
-	unsafe
-	{
-		ExAcquireFastMutex(mutex.cast());
-	}
-}
-
-#[unsafe(no_mangle)] unsafe extern "system" fn noir_release_mutex(mutex:*mut c_void)
-{
-	unsafe
-	{
-		ExReleaseFastMutex(mutex.cast());
-	}
-} 
 
 #[unsafe(no_mangle)] unsafe extern "system" fn __CxxFrameHandler3()
 {

@@ -8,7 +8,7 @@ use paste::paste;
 use log::*;
 
 use crate::{hvcall::hypercall, vmm::{VM_LIST, VirtualMachine}};
-use crate::platform::{sync::RwLock, kmap::Kmap};
+use crate::platform::{sync::RwLock, get_current_process_id};
 
 /// The `init` method initializes the whole crate.
 /// 
@@ -95,7 +95,7 @@ pub unsafe fn dispatch_create_vm(_in_buff:*const c_void,in_size:usize,out_buff:*
 					let vm=arc_vm.assume_init_ref();
 					if vm.init()
 					{
-						vm.write().init(handle,0);
+						vm.write().init(handle,get_current_process_id());
 						Ok(arc_vm.assume_init())
 					}
 					else
@@ -229,12 +229,7 @@ pub unsafe fn dispatch_set_memory_region(in_buff:*const c_void,in_size:usize,out
 		Some(arc_vm)=>
 		{
 			let mut vm=arc_vm.write();
-			let kmap=match Kmap::new(in_buff.hva,in_buff.info.size as usize)
-			{
-				Ok(v)=>v,
-				Err(st)=>return st
-			};
-			let st=vm.set_mapping(in_buff.info.as_id,in_buff.info.base_gpa,&mut kmap.iter(),in_buff.info.size as usize,in_buff.info.flags);
+			let st=vm.set_mapping(in_buff.info.as_id,in_buff.info.base_gpa,in_buff.hva,in_buff.info.size as usize,in_buff.info.flags);
 			let out_buff:&mut CvmSetMappingOutputBuffer=unsafe{&mut *out_buff.cast()};
 			out_buff.status=st;
 			st
@@ -272,19 +267,14 @@ pub unsafe fn dispatch_run_vcpu(in_buff:*const c_void,in_size:usize,out_buff:*mu
 pub unsafe fn dispatch_request_event(in_buff:*const c_void,in_size:usize,out_buff:*mut c_void,out_size:usize)->Status
 {
 	check_buffer_args!(in_size,out_size,RequestEvent);
-	let in_buff:&CvmSetMappingInputBuffer=unsafe{&*in_buff.cast()};
-	let km=match Kmap::new(in_buff.hva,in_buff.info.size as usize)
-	{
-		Ok(km)=>km,
-		Err(st)=>return st
-	};
+	let in_buff:&CvmRequestEventInputBuffer=unsafe{&*in_buff.cast()};
 	match VM_LIST.read().get(in_buff.vm_handle.0 as usize)
 	{
 		Some(arc_vm)=>
 		{
-			let mut vm=arc_vm.write();
-			let out_buff:&mut CvmSetMappingOutputBuffer=unsafe{&mut *out_buff.cast()};
-			let st=vm.set_mapping(in_buff.info.as_id,in_buff.info.base_gpa,&mut km.iter(),(in_buff.info.size>>12) as usize,in_buff.info.flags);
+			let vm=arc_vm.read();
+			let st=vm.request_event(in_buff.vcpu_id,in_buff.info);
+			let out_buff:&mut CvmRequestEventOutputBuffer=unsafe{&mut *out_buff.cast()};
 			out_buff.status=st;
 			st
 		}

@@ -10,9 +10,17 @@ readme = "readme.md"
 keywords = ["no_std","hypervisor","vmm"]
 categories = ["no-std","virtualization"]
 
+# All dependencies must be from crates.io with a determinate version number.
+# No asterisks (e.g.: "*", "0.4.*") are allowed.
 [dependencies]
 bitfield-struct = "0.13.0"
 paste = "1.0.15"
+r-efi = "7.1.0"
+utf16_lit = "2.0.2"
+
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.61.2"
+features = ["Wdk_Foundation","Wdk_Storage_FileSystem","Wdk_System_SystemServices","Win32_Storage_FileSystem","Win32_System_IO","Win32_Security","Win32_System_Ioctl"]
 
 [features]
 # User-hypervisor should use this feature.
@@ -22,6 +30,3 @@ kernel = []
 # Only NoirVisor may use this feature.
 hypervisor = []
 default = ["kernel"]
-
-[target.'cfg(target_os="uefi")'.dependencies]
-r-efi = "*"

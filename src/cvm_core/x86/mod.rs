@@ -16,6 +16,8 @@ use nvcvm::interface::{CVM_MAPPING_ASID_DEFAULT, CvmHandle, CvmMapping, ExitCont
 use crate::*;
 use xpf_core::{nvbdk::*, x86::xstate::BoxedXState};
 
+pub mod cpuid;
+
 pub struct CvmX86Vcpu
 {
 	// Processor State

@@ -13,6 +13,7 @@ log = "*"
 paste = "*"
 nvcvm = { path ="../nvcvm" }
 htable = { path = "../htable" }
+cvmock = { path = "../cvmock" }
 
 [target.'cfg(windows)'.dependencies.windrv]
 path = "../windrv"

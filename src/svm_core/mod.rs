@@ -36,6 +36,7 @@ mod hvcall;
 #[allow(dead_code)] mod npt;
 #[allow(dead_code)] pub mod custom;
 pub mod cvexit;
+mod cvmsr;
 
 #[repr(C,align(16))] pub struct SvmStackTop
 {
@@ -165,7 +166,6 @@ unsafe extern "win64"
 	#[allow(improper_ctypes)]
 	fn nvc_svm_subvert_processor_a(stack:*mut SvmStackTop);
 	fn nvc_svm_guest_start();
-	pub fn nvc_svm_return(stack:*const GprState)->!;
 }
 
 global_asm!(include_str!("svm_hv.s"));
@@ -665,9 +665,8 @@ impl HypervisorEssentials for SvmHypervisor
 		Status::SUCCESS
 	}
 
-	fn restore_system(&mut self)->Status
+	fn is_iommu_active(&self)->bool
 	{
-		info!("System restoration feature is removed! Please reboot the system instead.");
-		Status::NOT_IMPLEMENTED
+		self.iommu_manager.is_some()
 	}
 }

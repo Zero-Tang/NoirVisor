@@ -1,20 +1,21 @@
 // NoirVisor CVM Synchronization Primitives Wrapper Library for Windows Kernel
 
-use core::{cell::UnsafeCell, mem::MaybeUninit, ops::{Deref, DerefMut}};
+use core::{cell::UnsafeCell, mem::MaybeUninit, ops::{Deref, DerefMut}, ptr::null_mut};
 
-use windows_sys::{Wdk::{Foundation::{ERESOURCE, FAST_MUTEX}, System::SystemServices::{ExAcquireFastMutex, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExDeleteResourceLite, ExInitializeResourceLite, ExReleaseFastMutex, ExReleaseResourceLite, KeEnterCriticalRegion, KeLeaveCriticalRegion}}, Win32::Foundation::STATUS_SUCCESS};
+use windows_sys::{Wdk::{Foundation::{ERESOURCE, FAST_MUTEX}, System::SystemServices::{ExAcquireFastMutex, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExDeleteResourceLite, ExInitializeResourceLite, ExReleaseFastMutex, ExReleaseResourceLite, FM_LOCK_BIT, KeEnterCriticalRegion, KeInitializeEvent, KeLeaveCriticalRegion}}, Win32::{Foundation::STATUS_SUCCESS, System::Kernel::SynchronizationEvent}};
 
-#[link(name="ntoskrnl.exe",kind="raw-dylib",modifiers="+verbatim")]
-unsafe extern "system"
+#[repr(C)] struct EResource
 {
-	fn ExInitializeFastMutex(fastmutex:*mut FAST_MUTEX);
+	lock:ERESOURCE,
+	// This pad is due to incorrect definition of `_ERESOURCE` structure in windows_sys crate.
+	#[allow(dead_code)] pad:u64,
 }
 
 /// ## Resource Lock
 /// Resource Lock is a read-write lock which supports recursive acquisition.
-pub struct RwLock<T>
+#[repr(C)] pub struct RwLock<T>
 {
-	lock:ERESOURCE,
+	lock:EResource,
 	cell:UnsafeCell<T>
 }
 
@@ -186,9 +187,14 @@ impl<T> Mutex<T>
 	/// A mutex created by `new` cannot be used before `init`.
 	pub unsafe fn init(&self)->bool
 	{
+		// The ExInitializeFastMutex is actually a force-inlined routine in WDK.
 		unsafe
 		{
-			ExInitializeFastMutex(self.lock_ptr());
+			let lk=self.lock_ptr();
+			(*lk).Count=FM_LOCK_BIT as i32;
+			(*lk).Owner=null_mut();
+			(*lk).Contention=0;
+			KeInitializeEvent(&raw mut (*lk).Event,SynchronizationEvent,false);
 		}
 		true
 	}

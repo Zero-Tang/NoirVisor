@@ -127,7 +127,7 @@ pub trait HypervisorCapabilities
 pub trait HypervisorEssentials:Send+Sync+CvmHvOps
 {
 	fn subvert_system(&mut self)->Status;
-	fn restore_system(&mut self)->Status;
+	fn is_iommu_active(&self)->bool;
 }
 
 static HVM:Once<Box<dyn HypervisorEssentials>>=Once::new();
@@ -226,9 +226,9 @@ mod panicking
 		unsafe
 		{
 			// Store the panic log in global variable.
-			PANIC_MESSAGE=format_static!(1024,"[PANIC] NoirVisor {}",panic).unwrap();
+			PANIC_MESSAGE=format_static!(1024,"NoirVisor {}",panic).unwrap();
 		}
-		error!("\x1b[91m[PANIC] NoirVisor {} \x1b[39m",panic);
+		error!("\x1b[91mNoirVisor {} \x1b[39m",panic);
 		loop{}
 	}
 }

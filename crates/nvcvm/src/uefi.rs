@@ -1,8 +1,13 @@
 // NoirVisor CVM definitions for UEFI.
 
-use core::{ffi::c_void, mem::MaybeUninit, ptr::null_mut, sync::atomic::{AtomicPtr, Ordering}};
+use core::ffi::c_void;
 
-use r_efi::efi::{Guid, Status as EfiStatus, SystemTable};
+use r_efi::efi::Guid;
+
+#[cfg(all(target_os="uefi",feature="user"))]
+use core::{ptr::null_mut, sync::atomic::{AtomicPtr, Ordering}};
+#[cfg(all(target_os="uefi",feature="user"))] 
+use r_efi::efi::{Status as EfiStatus, SystemTable};
 
 use crate::status::Status;
 
@@ -19,13 +24,13 @@ impl NoirVisorCvmSchedulingProtocol
 	pub const GUID:Guid=Guid::from_fields(0x850d29b7,0x33df,0x4fdd,0xb3,0x0d,&[0x19,0x51,0x9f,0x4,0x24,0x40]);
 }
 
-#[cfg(feature="user")] static CVM_PROTOCOL:AtomicPtr<NoirVisorCvmSchedulingProtocol>=AtomicPtr::new(null_mut());
+#[cfg(all(target_os="uefi",feature="user"))] static CVM_PROTOCOL:AtomicPtr<NoirVisorCvmSchedulingProtocol>=AtomicPtr::new(null_mut());
 
 /// Emulates the IOCTL API exposed in regular OS.
 /// 
 /// ## Safety
 /// You must ensure that `in_buff` and `out_buff` are valid pointers.
-#[cfg(feature="user")] pub unsafe fn do_ioctl<I:Sized,O:Sized>(code:usize,in_buff:*const I,out_buff:*mut O)->Status
+#[cfg(all(target_os="uefi",feature="user"))] pub unsafe fn do_ioctl<I:Sized,O:Sized>(code:usize,in_buff:*const I,out_buff:*mut O)->Status
 {
 	unsafe
 	{
@@ -38,8 +43,9 @@ impl NoirVisorCvmSchedulingProtocol
 /// 
 /// ## Safety
 /// You must ensure `system_table` points to a valid table.
-#[cfg(feature="user")] pub unsafe fn init(system_table:*const SystemTable)->EfiStatus
+#[cfg(all(target_os="uefi",feature="user"))] pub unsafe fn init(system_table:*const SystemTable)->EfiStatus
 {
+	use core::mem::MaybeUninit;
 	let mut guid=NoirVisorCvmSchedulingProtocol::GUID;
 	let mut protocol:MaybeUninit<*mut c_void>=MaybeUninit::uninit();
 	unsafe

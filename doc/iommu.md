@@ -52,9 +52,6 @@ NoirVisor does not require large-page support, because VMware's virtualized Inte
 
 Unlike EPT/NPT, IOMMU does not have to cover MMIO ranges in order to let MMIO operations pass-thru. For this specific reason, NoirVisor will build IOMMU page table only to cover physical RAM.
 
-### Nested Virtualization
-For Type-II hypervisor, nested virtualization is required in order to make IOMMU work properly, as most modern OSes are IOMMU-aware and they will utilize IOMMU. (e.g.: route interrupts for x2APIC, since I/O APIC only supports xAPIC)
-
 #### Intercept MMIO
 IOMMU requires MMIO in order to control the operations. As a result, NoirVisor will have to intercept the IOMMU's MMIO range via Intel EPT or AMD NPT. \
-NoirVisor has an internal AVL-tree that manages I/O regions. Intercepted MMIOs will be dispatched according to the tree-walk. Therefore, IOMMU driver can register IOMMU's MMIO regions in order to filter accesses to IOMMU.
+NoirVisor has a sorted list that manages I/O regions. Intercepted MMIOs will be dispatched via binary-search. Therefore, IOMMU driver can register IOMMU's MMIO regions in order to filter accesses to IOMMU within `O(logn)` time complexity.

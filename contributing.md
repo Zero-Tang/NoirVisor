@@ -4,13 +4,6 @@ As the owner of the open-source project, I welcome and encourage the community t
 ## Programming Language Selection in Contribution
 As already announced in the "readme" file in NoirVisor's repository, NoirVisor's owner, Zero Tang, does not welcome languages other than C and Assembly to involve the NoirVisor's core.
 
-## Sign-Off
-It is significant that NoirVisor will record contributions and corresponding contributors. Contribution details will be stated as a piece of comment in relevant code area. \
-For successful contribution, please write down your name at the bottom that can directly recognize you with following format: \
-Netizen Name, [E-Mail Address] \
-By saying Netizen Name, it refers to the name you use in GitHub. Your real name can also be accepted. If you prefer the name you use in other forums, you may state down that forum website. \
-Starting from your first contribution, you, nonetheless, cannot use other names on your future contribution, unless you contribute through another account.
-
 ## Pull-Requests
 To contribute, you have to fork this repository, make your patches, then open a Pull-Request. \
 Each commit of your patch should be able to be built for all targets. If you pushed your commits without realizing, you may use `git rebase` command to amend them and then do a `git push -f`. For example, you may squash the "fix" commit into its previous commit.
@@ -31,7 +24,7 @@ In future, NoirVisor may deploy experimental `.clang-format` and `rustfmt.toml` 
 
 ## LLM-usage Guidelines
 Using LLMs while working on NoirVisor is conditionally allowed, when done with care. \
-**Rule of thumb**: LLMs are not substitutes for thinking and reasoning processes. It is not allowed to be used in the ways that risk losing technical understanding of the system architectures, including the processors, the hypervisors and the operating systems.
+**Rule of thumb**: LLMs are not substitutes for thinking and reasoning processes. It is not allowed to be used in the ways that risk losing technical understanding of the software engineering and system architectures, including the standard operating procedures, the computer architectures, the hypervisors and the operating systems.
 
 The guidelines may subject to frequent changes as the LLM technology evolves. However, the **rule of thumb** mentioned above should never be changed.
 
@@ -40,15 +33,13 @@ The guidelines may subject to frequent changes as the LLM technology evolves. Ho
 - You may ask LLMs to **privately** assist in debugging.
 - You may ask LLMs to **privately** review the codes and documentations.
 - You may create a `scratch` folder, which is explicitly ignored via `.gitignore`, and put whatever stuff that LLMs may need to use.
-- You may use LLMs to generate possible solutions of an issue, learning from them, but eventually solve it from scratch on your own.
 
 ### Banned
 - Comments that are generated with LLM. Craft your comments in your own words.
-	- This includes Issue body and PR descriptions.
+	- This includes Issue body and PR descriptions. It is not about comments in the source files.
 	- LLM's generated content is not a substitute of your own words.
 	- Machine-translated contents that are not explicitly marked. This includes both traditional machine-translators (e.g.: [Google Translate](https://translate.google.com/), [Baidu Fanyi](https://fanyi.baidu.com/), etc.) and asking LLMs to translate texts for you. \
 	Machine-translated contents must be posted alongside with your original version.
-- Codes and Documentations that are generated with LLM.
 - Treating LLM's review as a sufficient condition to merge or reject a change.
 - Generating or Automating spams with LLM.
 - **Violation of the Code of Conduct**: Harassment on any contributors for using LLMs. This includes playing detective for whether someone has used LLM.

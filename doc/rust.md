@@ -25,6 +25,19 @@ You should avoid using allocators while in VM-Exit handlers! For example, you sh
 NoirVisor uses `cargo test` suite to test NoirVisor. However, system subversion and restoration are not currently included in tests yet. \
 To develop test cases, you should toggle `rust-analyzer.cfg.setTest` to true in `rust-analyzer` plugin and then reload VSCode.
 
+## Modifying Dependencies
+There are five rules that must be enforced when modifying the dependencies in the workspace:
+
+- All dependency crates must either be from `crates.io` or in this workspace.
+- If two or more crates in this workspace depends on the same crate from `crates.io`, the version must be the same. \
+  If a dependency crate is already used in other crates in the workspace, use asterisk `"*"` to infer the version.
+- In `nvcvm` crate, all dependencies must be from `crates.io` and must specify the version number in order to be published.
+- Make sure `Cargo.lock` file contains exact metadata as specified in `Cargo.toml` file. This implies:
+	* Never execute `cargo update` command.
+	* Partial asterisk version number is not allowed (e.g.: `1.4.*`) in any circumstances.
+	* You might need to manually fix the `Cargo.toml` or even the `Cargo.lock` file if a dependency package appeared multiple times in the `Cargo.lock` file with different version numbers. If it was that two dependent crates depended on the same crate with different versions, it is acceptable to leave such crate appear twice in the `Cargo.lock` file.
+- All dependent packages must be compatible with `#![no_std]` constraint unless for testing. Usage of memory allocator is conditionally allowed.
+
 ## Logging
 While we do provide macros like `print!` and `println!`, please use `error!`, `warn!`, `info!`, `debug!` and `trace!` macro provided by [the `log` crate](https://docs.rs/log/latest/log/). These logging macros are only usable in host mode. \
 However, if you wish to print logs in codes that would run in guest mode, please use `sysdprint` and `sysdprintln` macro instead. Otherwise, it may cause mutex recursion.

@@ -24,6 +24,12 @@ unsafe extern "system"
 	fn noir_dispatch_ioctl(ioctl_code:usize,in_buff:*const c_void,in_size:usize,out_buff:*mut c_void,out_size:usize)->NvStatus;
 }
 
+pub fn get_current_process_id()->u32
+{
+	// There is no such term as process in UEFI. Just return 0.
+	0
+}
+
 unsafe extern "efiapi" fn cvm_scheduler_ioctl(ioctl_code:usize,in_buff:*const c_void,in_size:usize,out_buff:*mut c_void,out_size:usize)->NvStatus
 {
 	unsafe

@@ -260,12 +260,18 @@ pub(super) trait SoftwareDecodeAssistOps:VmcbOps+EmulatorOps
 		let cs_base=self.ref_cs().base;
 		let rip=self.read_rip();
 		let buff=self.instruction_bytes_mut();
-		if let Err((e,_))=self.read_virt(cs_base+rip,buff)
+		let len=match self.read_virt(cs_base+rip,buff)
 		{
-			let cr3=self.get_cr3();
-			panic!("Page-Fault is triggered by software while fetching instruction! Code: 0x{:X}, vmcb={:p} rip=0x{rip:016X}, cr3=0x{cr3:016X}",e.into_bits(),self.get_vmcb());
-		}
-		self.ins_mut().copy_from_slice(buff);
+			Ok(_)=>15,
+			Err((e,va))=>
+			{
+				let len=(va-cs_base-rip) as usize;
+				warn!("Page-Fault may have happened! Error-Code: {e}, va=0x{va:X}, rip=0x{rip:X}, VMCB: {:p}, Fetched: {:02X?}",self.get_vmcb(),&buff[..len]);
+				len
+			}
+		};
+		self.write_fetched_bytes_count(len as u8);
+		self.ins_mut().copy_from_slice(&buff[..len]);
 	}
 
 	fn decode_instruction_internal(&mut self) where Self:Sized

@@ -81,7 +81,7 @@ impl SvmVcpu
 					Ok(_)=>Ok(Status::SUCCESS),
 					Err((code,fault_va))=>
 					{
-						error!("Page-Fault while writing to CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+						error!("Page-Fault while writing to CVM-Hypercall Context! CR2: 0x{fault_va:X}, Code: {code}");
 						self.write_cr2(fault_va);
 						Err((PAGE_FAULT,Some(code.into_bits())))
 					}
@@ -100,7 +100,7 @@ impl SvmVcpu
 			Ok(_)=>CvmHandle(u32::from_ne_bytes(buff)),
 			Err((code,fault_va))=>
 			{
-				error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+				error!("Page-Fault while writing to CVM-Hypercall Context! CR2: 0x{fault_va:X}, Code: {code}");
 				self.write_cr2(fault_va);
 				return Err((PAGE_FAULT,Some(code.into_bits())));
 			}
@@ -120,7 +120,7 @@ impl SvmVcpu
 			}
 			Err((code,fault_va))=>
 			{
-				error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+				error!("Page-Fault while writing to CVM-Hypercall Context! CR2: 0x{fault_va:X}, Code: {code}");
 				self.write_cr2(fault_va);
 				return Err((PAGE_FAULT,Some(code.into_bits())));
 			}
@@ -140,7 +140,7 @@ impl SvmVcpu
 			}
 			Err((code,fault_va))=>
 			{
-				error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+				error!("Page-Fault while writing to CVM-Hypercall Context! CR2: 0x{fault_va:X}, Code: {code}");
 				self.write_cr2(fault_va);
 				return Err((PAGE_FAULT,Some(code.into_bits())));
 			}
@@ -160,7 +160,7 @@ impl SvmVcpu
 			}
 			Err((code,fault_va))=>
 			{
-				error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+				error!("Page-Fault while writing to CVM-Hypercall Context! CR2: 0x{fault_va:X}, Code: {code}");
 				self.write_cr2(fault_va);
 				return Err((PAGE_FAULT,Some(code.into_bits())));
 			}
@@ -200,7 +200,7 @@ impl SvmVcpu
 				}
 				Err((code,fault_va))=>
 				{
-					error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+					error!("Page-Fault while writing to CVM-Hypercall Context! CR2: 0x{fault_va:X}, Code: {code}");
 					self.write_cr2(fault_va);
 					Err((PAGE_FAULT,Some(code.into_bits())))
 				}
@@ -222,7 +222,7 @@ impl SvmVcpu
 			}
 			Err((code,fault_va))=>
 			{
-				error!("Page-Fault while reading from CVM-Hypercall Context! CR2: {fault_va}, Code: {code}");
+				error!("Page-Fault while writing to CVM-Hypercall Context! CR2: 0x{fault_va:X}, Code: {code}");
 				self.write_cr2(fault_va);
 				return Err((PAGE_FAULT,Some(code.into_bits())));
 			}

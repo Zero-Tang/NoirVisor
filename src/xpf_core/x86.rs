@@ -681,9 +681,6 @@ pub mod paging
 		let pml_u=pml_e.user();
 		let pml_nx=pml_e.nx();
 		let pml_ps=pml_e.page_size();
-		// Set accessed & dirty bits.
-		let new_pml_d=pml_e.with_accessed(true).with_dirty(w).into_bits().to_le_bytes();
-		vcpu.write_gpa(pml_pa,&new_pml_d);
 		// Check access rights.
 		if !pml_p
 		{
@@ -697,7 +694,7 @@ pub mod paging
 		{
 			return Err(PageFaultErrorCode::construct(pml_p,w,u,false,x,false,false));
 		}
-		if pml_nx && !x
+		if pml_nx && x
 		{
 			return Err(PageFaultErrorCode::construct(pml_p,w,u,false,x,false,false));
 		}
@@ -716,6 +713,9 @@ pub mod paging
 				let offset_mask:u64=(1<<shift_amount)-1;
 				let base:u64=(pml_e.into_bits()>>shift_amount)<<shift_amount;
 				let pa=(va&offset_mask)|phys_addr_mask(base);
+				// Set accessed & dirty bits.
+				let new_pml_d=pml_e.with_accessed(true).with_dirty(w).into_bits().to_le_bytes();
+				vcpu.write_gpa(pml_pa,&new_pml_d);
 				Ok(pa)
 			}
 		}
@@ -723,6 +723,9 @@ pub mod paging
 		{
 			// This is the intermediate level!
 			let next_pt_base=phys_page_4kb_base(pml_e.into_bits());
+			// Set accessed & dirty bits.
+			let new_pml_d=pml_e.with_accessed(true).into_bits().to_le_bytes();
+			vcpu.write_gpa(pml_pa,&new_pml_d);
 			translate_64bit_va_routine(va,vcpu,next_pt_base,level-1,w,x,ss)
 		}
 	}

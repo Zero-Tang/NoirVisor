@@ -13,6 +13,7 @@
 use core::{ffi::c_void, ptr::null_mut, slice, sync::atomic::{AtomicBool, Ordering}};
 use alloc::{sync::{Arc, Weak}, vec::Vec};
 
+use bitfield_struct::bitfield;
 use log::*;
 use nvcvm::{interface::*, status::Status};
 use spin::{Mutex, RwLock};
@@ -105,12 +106,20 @@ impl SvmVcpu
 	}
 }
 
+#[bitfield(u64)] pub(super) struct SvmCustomVcpuShadowedState
+{
+	pub mce:bool,
+	pub svme:bool,
+	#[bits(62)] rsvd:u64 
+}
+
 pub struct SvmCustomVcpu
 {
 	/// The processor state of the vCPU.
 	pub state:CvmX86Vcpu,
 	pub shared:Weak<RwLock<SvmCustomVmSharedState>>,
 	pub(super) decoded_instruction:Instruction,
+	pub(super) shadow_bits:SvmCustomVcpuShadowedState,
 	/// The VMCB of the vCPU.
 	vmcb:MemoryDescriptor<1,c_void>,
 	/// The VPCB of the vCPU.
@@ -146,6 +155,7 @@ impl SvmCustomVcpu
 			state,
 			shared:Arc::downgrade(shared),
 			decoded_instruction:Instruction::new([0;15]),
+			shadow_bits:SvmCustomVcpuShadowedState::new(),
 			apic_backing:None,
 			current_as_id:CVM_MAPPING_ASID_DEFAULT,
 			proc_id:u32::MAX,
@@ -162,6 +172,7 @@ impl SvmCustomVcpu
 		.with_smi(true)
 		.with_cpuid(true)
 		.with_rsm(true)
+		.with_invd(true)
 		.with_hlt(true)
 		.with_invlpga(true)
 		.with_io(true)
@@ -429,7 +440,7 @@ impl CvmHvOps for SvmHypervisor
 		let vm_list_lk=self.vm_list.read();
 		let Some(Some(vm))=vm_list_lk.get(vm.0 as usize) else
 		{
-			error!("The VM Handle is invalid!");
+			error!("The VM Handle ({}) is invalid!",vm.0);
 			return Err(Status::INVALID_PARAMETER);
 		};
 		let vm_lk=vm.read();

@@ -28,7 +28,7 @@ lto = "thin"
 opt-level = 3
 
 [workspace]
-members = ["crates/cvsched", "crates/htable","crates/loadefi","crates/nvcvm", "crates/uefibsdrv","crates/windrv","src/booting/uefirtdrv"]
+members = ["crates/cvmock","crates/cvsched","crates/htable","crates/loadefi","crates/nvcvm","crates/uefibsdrv","crates/windrv","src/booting/uefirtdrv"]
 
 [dependencies]
 paste = "*"
@@ -44,7 +44,7 @@ version = "0.5.0"
 features = ["use_crt"]
 
 [dependencies.zerocopy]
-version = "0.8.56"
+version = "0.8.57"
 features = ["derive"]
 
 [dependencies.yaxpeax-x86]

@@ -22,7 +22,7 @@ use ept::VtEptManager;
 use crate::{drv_core::iommu::{IommuOps, create_iommu}, xpf_core::{rmt::ReverseMappingTableRoot, x86::{apic::APIC_OFFSET_ICR_HI, xstate::BoxedXState}}, *};
 #[cfg(windows)] use mshv_core::forwarder::MshvCallForwarder;
 use mshv_core::{MshvVcpuContext,MshvVcpuOps};
-use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::{x86::{HostProcessor, HostSystem, PerCpuGsException}, NOIR_HYPERCALL_CODE_CALLEXIT}, ioflt::IoAddressSpace, nvbdk::*, x86::{apic::*, caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_APIC_BASE,MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
+use xpf_core::{asm::{crdr::*, msr::*, seg::*, vt::*}, hv_host::x86::{HostProcessor, HostSystem, PerCpuGsException}, ioflt::IoAddressSpace, nvbdk::*, x86::{apic::*, caching::MEMORY_TYPE_WB, crdr::*, descriptors::SELECTOR_RPLTI_MASK, interrupts::InterruptStackFrameWithErrorCode, msr::{MSR_APIC_BASE,MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR}}};
 
 #[allow(dead_code)] mod ia32;
 #[macro_use]
@@ -143,7 +143,6 @@ unsafe extern "C"
 	fn nvc_vt_subvert_processor_a(stack:*mut VtVcpu);
 	fn nvc_vt_exit_handler_a();
 	fn nvc_vt_guest_start();
-	fn nvc_vt_resume_without_entry(gpr_state:*const GprState)->!;
 }
 
 global_asm!(include_str!("vt_hv.s"));
@@ -606,21 +605,6 @@ impl VtVcpu
 			r=>panic!("Failed to execute VMXON! Reason: {r}")
 		}
 	}
-
-	fn restore(&mut self)
-	{
-		unsafe
-		{
-			// Leave VMX Non-Root Operation by vmcall.
-			vmcall(NOIR_HYPERCALL_CODE_CALLEXIT,self as *mut Self as usize);
-			// Turn off VMX.
-			vmxoff();
-			// Clear CR4.VMXE bit.
-			let cr4=Cr4::from_bits(read_cr4()).with_vmxe(false);
-			write_cr4(cr4.into_bits());
-			sysdprintln!("Processor {} completed restoration!",self.vcpu_id);
-		}
-	}
 }
 
 pub struct VtHypervisor
@@ -782,14 +766,6 @@ impl HypervisorCapabilities for VtHypervisor
 
 unsafe impl Send for VtHypervisor {}
 unsafe impl Sync for VtHypervisor {}
-
-impl Drop for VtHypervisor
-{
-	fn drop(&mut self)
-	{
-		
-	}
-}
 
 impl CvmHvOps for VtHypervisor
 {
@@ -979,23 +955,8 @@ impl HypervisorEssentials for VtHypervisor
 		Status::SUCCESS
 	}
 
-	fn restore_system(&mut self)->Status
+	fn is_iommu_active(&self)->bool
 	{
-		extern "C" fn restore_processor_thunk(context:*mut c_void,processor_id:u32)
-		{
-			let hv:&mut VtHypervisor=unsafe{&mut *context.cast()};
-			info!("Processor {processor_id} entered restoration routine...");
-			match hv.vcpus.get_mut(processor_id as usize)
-			{
-				Some(vcpu)=>vcpu.restore(),
-				None=>panic!("Processor ID ({processor_id}) out of bounds! Check for broadcaster bugs!\n")
-			}
-		}
-		unsafe
-		{
-			noir_generic_call(restore_processor_thunk,self as *mut Self as *mut c_void);
-		}
-		info!("System Restoration Completed!");
-		Status::SUCCESS
+		self.iommu_manager.is_some()
 	}
 }

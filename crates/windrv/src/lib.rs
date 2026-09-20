@@ -1,17 +1,19 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
+#![feature(allocator_api)]
 
 extern crate alloc;
 
 use core::{ffi::c_void, ptr::{null, null_mut}};
 
 use nvcvm::status::Status;
-use utf16_lit::utf16_null;
-use windows_sys::{Wdk::{Foundation::{DEVICE_OBJECT, DRIVER_OBJECT, IO_STACK_LOCATION, IRP}, Storage::FileSystem::IO_NO_INCREMENT, System::SystemServices::{FILE_DEVICE_SECURE_OPEN, HighPagePriority, IRP_MJ_CLOSE, IRP_MJ_CREATE, IRP_MJ_DEVICE_CONTROL, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IofCompleteRequest, KernelMode, MmCached, MmMapLockedPagesSpecifyCache}}, Win32::{Foundation::{NTSTATUS, STATUS_DEVICE_CONFIGURATION_ERROR, STATUS_INVALID_DEVICE_REQUEST, STATUS_SUCCESS, STATUS_UNSUCCESSFUL, UNICODE_STRING}, System::Ioctl::{FILE_DEVICE_UNKNOWN, METHOD_BUFFERED, METHOD_NEITHER, METHOD_OUT_DIRECT}}};
+use utf16_lit::utf16;
+use windows_sys::{Wdk::{Foundation::{DEVICE_OBJECT, DRIVER_OBJECT, FILE_OBJECT, IRP}, Storage::FileSystem::IO_NO_INCREMENT, System::SystemServices::{FILE_DEVICE_SECURE_OPEN, HighPagePriority, IO_COMPLETION_ROUTINE, IRP_MJ_CLOSE, IRP_MJ_CREATE, IRP_MJ_DEVICE_CONTROL, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IofCompleteRequest, KernelMode, MmCached, MmMapLockedPagesSpecifyCache, PsGetCurrentProcessId, PsSetCreateProcessNotifyRoutine}}, Win32::{Foundation::{NTSTATUS, STATUS_DEVICE_CONFIGURATION_ERROR, STATUS_INVALID_DEVICE_REQUEST, STATUS_SUCCESS, STATUS_UNSUCCESSFUL, UNICODE_STRING}, System::Ioctl::{FILE_DEVICE_UNKNOWN, METHOD_BUFFERED, METHOD_NEITHER, METHOD_OUT_DIRECT}}};
 
-use crate::misc::init_logger;
+use crate::misc::{create_process_notify_fn, init_logger};
 
 mod misc;
 pub mod sync;
+pub mod kmap;
 
 unsafe extern "system"
 {
@@ -20,8 +22,45 @@ unsafe extern "system"
 	fn noir_cvsched_deinit();
 }
 
-static DEVICE_NAME:&[u16]=&utf16_null!("\\Device\\NoirVisor");
-static LINK_NAME:&[u16]=&utf16_null!("\\DosDevices\\NoirVisor");
+static DEVICE_NAME:&[u16]=&utf16!("\\Device\\NoirVisor");
+static LINK_NAME:&[u16]=&utf16!("\\DosDevices\\NoirVisor");
+
+// The definition from windows_sys crate is incorrect.
+#[derive(Clone, Copy)]
+#[repr(C)] pub struct DeviceIoControlParameter
+{
+	pub output_buffer_length:usize,
+	pub input_buffer_length:usize,
+	pub io_control_code:usize,
+	pub type3_input_buffer:*mut c_void
+}
+
+#[repr(C)] pub union IrpParameterUnion
+{
+	// TODO: add more union fields.
+	pub device_io_control:DeviceIoControlParameter
+}
+
+#[repr(C)] pub struct IoStackLocation
+{
+	pub major_function:u8,
+	pub minor_function:u8,
+	pub flags:u8,
+	pub control:u8,
+	pub parameters:IrpParameterUnion,
+	pub device_object:*mut DEVICE_OBJECT,
+	pub file_object:*mut FILE_OBJECT,
+	pub completion_routine:IO_COMPLETION_ROUTINE,
+	pub context:*mut c_void
+}
+
+pub fn get_current_process_id()->u32
+{
+	unsafe
+	{
+		PsGetCurrentProcessId() as u32
+	}
+}
 
 const unsafe fn unistr_from_slice(string:&[u16])->UNICODE_STRING
 {
@@ -34,11 +73,11 @@ const unsafe fn unistr_from_slice(string:&[u16])->UNICODE_STRING
 }
 
 // Equivalent of IoGetCurrentIrpStackLocation.
-#[inline(always)] unsafe fn get_current_irpsp(irp:*const IRP)->*mut IO_STACK_LOCATION
+#[inline(always)] unsafe fn get_current_irpsp(irp:*const IRP)->*mut IoStackLocation
 {
 	unsafe
 	{
-		(*irp).Tail.Overlay.Anonymous2.Anonymous.CurrentStackLocation
+		(*irp).Tail.Overlay.Anonymous2.Anonymous.CurrentStackLocation.cast()
 	}
 }
 
@@ -62,12 +101,12 @@ unsafe fn get_input_buffer(irp:*const IRP)->*mut c_void
 	unsafe
 	{
 		let irpsp=get_current_irpsp(irp);
-		if (*irpsp).MajorFunction==IRP_MJ_DEVICE_CONTROL as u8
+		if (*irpsp).major_function==IRP_MJ_DEVICE_CONTROL as u8
 		{
-			let method=method_from_ctl_code((*irpsp).Parameters.DeviceIoControl.IoControlCode);
+			let method=method_from_ctl_code((*irpsp).parameters.device_io_control.io_control_code as u32);
 			if method==METHOD_NEITHER
 			{
-				(*irpsp).Parameters.DeviceIoControl.Type3InputBuffer
+				(*irpsp).parameters.device_io_control.type3_input_buffer
 			}
 			else
 			{
@@ -86,9 +125,9 @@ unsafe fn get_output_buffer(irp:*const IRP)->*mut c_void
 	unsafe
 	{
 		let irpsp=get_current_irpsp(irp);
-		if (*irpsp).MajorFunction==IRP_MJ_DEVICE_CONTROL as u8
+		if (*irpsp).major_function==IRP_MJ_DEVICE_CONTROL as u8
 		{
-			let method=method_from_ctl_code((*irpsp).Parameters.DeviceIoControl.IoControlCode);
+			let method=method_from_ctl_code((*irpsp).parameters.device_io_control.io_control_code as u32);
 			if method==METHOD_BUFFERED
 			{
 				(*irp).AssociatedIrp.SystemBuffer
@@ -125,6 +164,7 @@ unsafe extern "system" fn driver_unload(driver_object:*const DRIVER_OBJECT)
 	unsafe
 	{
 		noir_cvsched_deinit();
+		PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn),true);
 		let link_name=unistr_from_slice(LINK_NAME);
 		IoDeleteSymbolicLink(&raw const link_name);
 		IoDeleteDevice((*driver_object).DeviceObject);
@@ -151,9 +191,9 @@ unsafe extern "system" fn dispatch_io_control(_device_object:*const DEVICE_OBJEC
 		let irpsp=get_current_irpsp(irp);
 		let in_buff=get_input_buffer(irp);
 		let out_buff=get_output_buffer(irp);
-		let in_size=(*irpsp).Parameters.DeviceIoControl.InputBufferLength as usize;
-		let out_size=(*irpsp).Parameters.DeviceIoControl.OutputBufferLength as usize;
-		let io_ctrl_code=(*irpsp).Parameters.DeviceIoControl.IoControlCode;
+		let in_size=(*irpsp).parameters.device_io_control.input_buffer_length&0xffffffff;
+		let out_size=(*irpsp).parameters.device_io_control.output_buffer_length&0xffffffff;
+		let io_ctrl_code=(*irpsp).parameters.device_io_control.io_control_code as u32;
 		if is_ctl_code_custom(io_ctrl_code)
 		{
 			let code_index=function_from_ctl_code(io_ctrl_code);
@@ -183,6 +223,12 @@ unsafe extern "system" fn dispatch_io_control(_device_object:*const DEVICE_OBJEC
 		{
 			return st;
 		}
+		st=PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn),false);
+		if st!=STATUS_SUCCESS
+		{
+			noir_cvsched_deinit();
+			return st;
+		}
 		(*driver_object).MajorFunction[IRP_MJ_CREATE as usize]=Some(dispatch_create_close);
 		(*driver_object).MajorFunction[IRP_MJ_CLOSE as usize]=Some(dispatch_create_close);
 		(*driver_object).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize]=Some(dispatch_io_control);
@@ -197,11 +243,13 @@ unsafe extern "system" fn dispatch_io_control(_device_object:*const DEVICE_OBJEC
 			if st!=STATUS_SUCCESS
 			{
 				noir_cvsched_deinit();
+				PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn),true);
 				IoDeleteDevice(dev_obj);
 			}
 		}
 		else
 		{
+			PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn),true);
 			noir_cvsched_deinit();
 		}
 	}

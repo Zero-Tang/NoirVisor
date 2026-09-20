@@ -15,9 +15,9 @@ use core::ffi::c_void;
 use log::{info, warn};
 use nvcvm::status::Status;
 
-use crate::xpf_core::{x86::{interrupts::INVALID_OPCODE_FAULT,descriptors::*,msr::*},asm::{vt::*,crdr::*,seg::*,msr::wrmsr},nvbdk::GprState};
+use crate::xpf_core::x86::interrupts::INVALID_OPCODE_FAULT;
 
-use super::{VtVcpu,vmcs::*,nvc_vt_resume_without_entry};
+use super::VtVcpu;
 
 impl VtVcpu
 {
@@ -29,67 +29,8 @@ impl VtVcpu
 
 	fn hvcall_restore(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>
 	{
-		let nrip=self.cached_ctxt.rip+vmread32(VMEXIT_INSTRUCTION_LENGTH).unwrap() as u64;
-		let gflags=vmreadptr(GUEST_RFLAGS).unwrap();
-		let gcr3=vmreadptr(GUEST_CR3).unwrap() as u64;
-		let gpr_state=&mut self.get_stack_top_mut().gpr_state;
-		let saved_state:GprState=GprState
-		{
-			rax:nrip,
-			rcx:gflags as u64,
-			rdx:gpr_state.rsp,
-			rbx:gpr_state.rbx,
-			rsp:gpr_state.rsp,
-			rbp:gpr_state.rbp,
-			rsi:gpr_state.rsi,
-			rdi:gpr_state.rdi,
-			r8:gpr_state.r8,
-			r9:gpr_state.r9,
-			r10:gpr_state.r10,
-			r11:gpr_state.r11,
-			r12:gpr_state.r12,
-			r13:gpr_state.r13,
-			r14:gpr_state.r14,
-			r15:gpr_state.r15,
-		};
-		// Switch to Restored Control Registers.
-		let gcr4=vmreadptr(GUEST_CR4).unwrap() as u64;
-		write_cr3(gcr3);
-		write_cr4(gcr4);
-		unsafe
-		{
-			// Switch to Restored IDT.
-			let gidtr=DescriptorTable
-			{
-				limit:vmread32(GUEST_IDTR_LIMIT).unwrap() as u16,
-				base:vmreadptr(GUEST_IDTR_BASE).unwrap() as u64
-			};
-			write_idtr(&raw const gidtr);
-			// Switch to Restored GDT.
-			let ggdtr=DescriptorTable
-			{
-				limit:vmread32(GUEST_GDTR_LIMIT).unwrap() as u16,
-				base:vmreadptr(GUEST_GDTR_BASE).unwrap() as u64
-			};
-			write_gdtr(&raw const ggdtr);
-			// Switch to Restored TSS.
-			let tr_sel=vmread32(GUEST_TR_SELECTOR).unwrap() as u16;
-			// Before actually switching TSS, make it available.
-			let tss_entry=(ggdtr.base+(tr_sel as u64 & 0xFFF8)) as *mut SystemSegmentDescriptor;
-			(*tss_entry).flags=SegmentFlags::AVAILABLE_TSS;
-			((ggdtr.base+tr_sel as u64+0x5) as *mut u8).write(0x89);
-			// Switch FS/GS Bases
-			wrmsr(MSR_FS_BASE,vmreadptr(GUEST_FS_BASE).unwrap() as u64);
-			wrmsr(MSR_GS_BASE,vmreadptr(GUEST_GS_BASE).unwrap() as u64);
-			// Switch it.
-			write_tr(tr_sel);
-		}
-		// Return to the caller in Host Mode.
-		unsafe
-		{
-			nvc_vt_resume_without_entry(&raw const saved_state);
-		}
-		// Never reaches here!
+		// Since NoirVisor is strictly Type-I Hypervisor, this hypercall code is reserved now.
+		Err((INVALID_OPCODE_FAULT,None))
 	}
 
 	fn hvcall_alloc_tlb_tag(&mut self,_code:u32,_context:*mut c_void)->Result<Status,(u8,Option<u32>)>

@@ -14,7 +14,7 @@ use core::{arch::x86_64::CpuidResult, slice};
 
 use bitfield_struct::bitfield;
 
-use crate::xpf_core::x86::cpuid::CpuidLeaf;
+use crate::{HVM, xpf_core::x86::cpuid::CpuidLeaf};
 
 static HYPERVISOR_VENDOR_STRING:&str="NoirVisor ZT";
 
@@ -74,6 +74,11 @@ fn nvc_mshv_cpuid_implementation_hardware_handler(_ia:u32,_ic:u32)->(u32,u32,u32
 	let mut r=HypervisorImplementationHardwareFeatures::new();
 	r.set_slat(true);
 	r.set_msr_bitmaps(true);
+	if HVM.get().unwrap().is_iommu_active()
+	{
+		r.set_dma_protection(true);
+		r.set_dma_remap(true);
+	}
 	let a:&[u32;4]=unsafe{&*(&raw const r.0).cast()};
 	(a[0],a[1],a[2],a[3])
 }

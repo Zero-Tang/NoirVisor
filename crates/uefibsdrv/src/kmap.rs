@@ -1,6 +1,6 @@
 // NoirVisor CVM Scheduler as UEFI Boot-Service Driver
 
-use core::sync::atomic::Ordering;
+use core::{ffi::c_void, sync::atomic::Ordering};
 
 use alloc::alloc::AllocError;
 use nvcvm::{interface::Vpcb, status::Status};
@@ -14,6 +14,9 @@ pub struct Kmap
 	size:usize
 }
 
+unsafe impl Send for Kmap {}
+unsafe impl Sync for Kmap {}
+
 impl Kmap
 {
 	pub fn new(uva:u64,size:usize)->Result<Self,Status>
@@ -26,6 +29,16 @@ impl Kmap
 				size
 			}
 		)
+	}
+
+	pub fn uva(&self)->*mut c_void
+	{
+		self.phys as *mut c_void
+	}
+
+	pub fn size(&self)->usize
+	{
+		self.size
 	}
 
 	pub fn iter(&self)->KmapIter<'_>

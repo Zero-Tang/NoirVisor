@@ -647,6 +647,27 @@ pub const TLB_CONTROL_FLUSH_GUEST_NON_GLOBAL_TLB:u8=7;
 	#[bits(62)] rsvd:u64
 }
 
+#[bitfield(u64)] pub struct CrInterceptInformation
+{
+	#[bits(4)] pub gpr_index:usize,
+	#[bits(59)] rsvd:u64,
+	pub is_mov_cr:bool
+}
+
+#[bitfield(u64)] pub struct IoInterceptInformation
+{
+	pub r#type:bool,
+	rsvd0:bool,
+	pub string:bool,
+	pub repeat:bool,
+	#[bits(3)] pub op_size:usize,
+	#[bits(3)] pub addr_width:usize,
+	#[bits(3)] pub seg_index:usize,
+	#[bits(3)] rsvd1:u8,
+	pub port:u16,
+	rsvd2:u32
+}
+
 // Offset 0x090: Nested Paing
 #[bitfield(u64)] pub struct NptControl
 {
