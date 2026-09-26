@@ -30,8 +30,8 @@ Extract the files to a certain directory, and add that directory to `PATH` envir
 There is no known minimal version requirement for OpenSSL. Just install the newest version you can find. \
 You are required to install the `legacy.dll` file to a place where `osslsigncode.exe` can find. It should be at `C:\vcpkg\packages\openssl_x64-windows\bin\legacy.dll`. \
 OpenSSL is only required for signing the executable file with the test signature. \
-[FireDaemon](https://www.firedaemon.com/download-firedaemon-openssl) provides pre-built OpenSSL binaries. You may extract the `legacy.dll` file and place it properly. \
-It seems like OpenSSL can be installed with `vcpkg`, but I'm not sure how to use `vcpkg`.
+[FireDaemon](https://www.firedaemon.com/download-firedaemon-openssl) provides pre-built OpenSSL binaries. After installing FireDaemon OpenSSL, you may copy the `legacy.dll` file and place it properly. \
+It seems like OpenSSL can be installed with `vcpkg` - supposedly the cleanest way - but I'm not sure how to use `vcpkg`.
 
 The GNU `mtools` are required to make raw images for NoirVisor. I have uploaded the [pre-built `mtools` binaries for Windows to GitHub](https://github.com/Zero-Tang/NoirVisor/files/12706542/mtools-4.0.43-bin.zip). \
 Extract the files to a certain directory, and add that directory to `PATH` environment variable.
@@ -40,7 +40,7 @@ Extract the files to a certain directory, and add that directory to `PATH` envir
 NoirVisor Core is written in Rust. See [documentation for NoirVisor in Rust](./rust.md).
 
 Install [Rust](https://www.rust-lang.org/tools/install). \
-Due to the usage of [unstable feature "`allocator_api`"](https://doc.rust-lang.org/beta/unstable-book/library-features/allocator-api.html), you must use nightly toolchain in order to build NoirVisor. \
+Due to the usage of [unstable feature "`allocator_ext`"](https://github.com/rust-lang/rust/issues/163177), you must use nightly toolchain in order to build NoirVisor. \
 NoirVisor doesn't require a specific version of rustc. You should be fine using the up-to-date nightly compiler.
 
 Currently, NoirVisor Core in Rust can subvert the system with Intel VT-x and AMD-V in UEFI and Windows. \
@@ -83,7 +83,7 @@ sudo dnf install lld llvm osslsigncode
 
 #### Build EFI Application and Runtime Driver on Linux
 It is possible to build NoirVisor for UEFI on Linux. \
-In addition to Rust compiler, you should install the dependencies so that `clang-cl`, `lld-link`, `llvm-ar`, `mcopy`, `mmd`, `mformat`, `qemu-img`, and `nasm` are available.`
+In addition to Rust compiler, you should install the dependencies so that `clang-cl`, `lld-link`, `llvm-ar`, `mcopy`, `mmd`, `mformat`, `qemu-img`, and `nasm` are available.
 
 For Ubuntu 26.04 LTS:
 ```

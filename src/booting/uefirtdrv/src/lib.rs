@@ -13,6 +13,7 @@
 #![no_std]
 #![no_main]
 
+use efi_helpers::println;
 use r_efi::efi::{Handle, Status, SystemTable};
 
 use host::{efi_init,block_until_keystroke};
@@ -20,8 +21,6 @@ use cfgmgr::ConfigurationList;
 use uefihvm::*;
 
 pub mod host;
-#[allow(non_camel_case_types,non_snake_case)]
-pub mod pe;
 mod cfgmgr;
 mod uefihvm;
 
@@ -60,7 +59,7 @@ unsafe extern "C"
 		}
 	}
 	println!("Press Enter Key to continue subversion!");
-	block_until_keystroke(b'\r' as u16);
+	block_until_keystroke('\r');
 	register_exit_boot_services_event();
 	init_ci();
 	unsafe

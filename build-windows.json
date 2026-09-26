@@ -9,7 +9,7 @@
 		"version":
 		{
 			"cmd":["llvm-rc","/FO{objpath}/version.res","/N","./crates/windrv/version.rc"],
-			"cancel_if_intact":["./crates/windrv/version.rc"]
+			"cancel_if_intact":["./crates/windrv/version.rc","./crates/windrv/version.h"]
 		},
 		"import":
 		{

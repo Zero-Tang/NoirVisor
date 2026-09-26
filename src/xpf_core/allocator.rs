@@ -133,7 +133,7 @@ mod dlmalloc
 		{
 			let msg=nulstr_from_ptr(message);
 			let sfn=nulstr_from_ptr(src_file);
-			panic!("DLMalloc aborted! Reason: {msg}\n{sfn}@{src_line}");
+			panic!("DLMalloc aborted at {sfn}:{src_line}! Reason: {msg}");
 		}
 	}
 }
@@ -501,6 +501,19 @@ impl PageAllocationManager
 }
 
 pub static PAGE_ALLOC_MANAGER:Mutex<PageAllocationManager>=Mutex::new(PageAllocationManager::empty());
+
+pub fn is_allocated_page(addr:u64)->bool
+{
+	let lk=PAGE_ALLOC_MANAGER.lock();
+	for x in lk.iter()
+	{
+		if (x..x+PAGE_2MB_SIZE as u64).contains(&addr)
+		{
+			return true;
+		}
+	}
+	return false;
+}
 
 pub fn print_allocation()
 {

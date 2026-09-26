@@ -78,6 +78,10 @@ pub trait IommuOps
 	}
 }
 
+// Purposefully reserve a `.dma_atk` section for DMA sample to attack.
+#[unsafe(link_section=".dma_atk")]
+static MYDATA:[u8;512]=[0;512];
+
 pub fn create_iommu()->Option<Box<dyn IommuOps>>
 {
 	// Enumerate ACPI tables to decide which IOMMU driver to invoke.
@@ -85,6 +89,7 @@ pub fn create_iommu()->Option<Box<dyn IommuOps>>
 	let mut ivrs_list:Vec<*const IoVirtualizationReportingStructure>=Vec::new();
 	search_acpi_table(AcpiSystemDescriptorSignature::DMA_REMAPPING_TABLE,|x| {dmar_list.push(x.cast()); true});
 	search_acpi_table(AcpiSystemDescriptorSignature::IO_VIRTUALIZATION_REPORTING_STRUCTURE,|x| {ivrs_list.push(x.cast()); true});
+	info!("You may try to attack address via DMA at {:p}!",MYDATA.as_ptr());
 	if !(dmar_list.is_empty() || ivrs_list.is_empty())
 	{
 		warn!("NoirVisor does not support using both Intel VT-d and AMD-Vi!");

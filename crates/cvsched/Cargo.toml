@@ -13,10 +13,12 @@ log = "*"
 paste = "*"
 nvcvm = { path ="../nvcvm" }
 htable = { path = "../htable" }
-cvmock = { path = "../cvmock" }
 
 [target.'cfg(windows)'.dependencies.windrv]
 path = "../windrv"
 
 [target.'cfg(target_os="uefi")'.dependencies.uefibsdrv]
 path = "../uefibsdrv"
+
+[dev-dependencies]
+cvmock = { path = "../cvmock" }

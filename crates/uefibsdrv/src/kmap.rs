@@ -1,12 +1,11 @@
 // NoirVisor CVM Scheduler as UEFI Boot-Service Driver
 
 use core::{ffi::c_void, sync::atomic::Ordering};
-
 use alloc::alloc::AllocError;
+
 use nvcvm::{interface::Vpcb, status::Status};
 use r_efi::efi::{ALLOCATE_ANY_PAGES, BOOT_SERVICES_DATA, Status as EfiStatus};
-
-use crate::misc::BS_TABLE;
+use efi_helpers::BS_TABLE;
 
 pub struct Kmap
 {

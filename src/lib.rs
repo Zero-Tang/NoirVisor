@@ -11,10 +11,9 @@
  */
 
 #![no_std]
-// We will use the unstable allocator_api feature for two things:
-// 1. alternate allocator (i.e. the `Allocator` trait)
-// 2. try-allocate (e.g.: `Box::try_new`, `Vec::try_reserve`)
-#![feature(allocator_api)]
+// We will use the unstable allocator_ext feature for
+// try-allocate: (e.g.: `Box::try_new`, `Vec::try_reserve`)
+#![feature(allocator_ext)]
 
 extern crate alloc;
 
@@ -197,6 +196,14 @@ static HVM:Once<Box<dyn HypervisorEssentials>>=Once::new();
 		#[cfg(not(test))]
 		sysdprintln!("Allocated {} large pages! heap has {} used bytes, has {} free bytes",get_large_page_count(),get_used(),get_free());
 		print_allocation();
+		#[allow(static_mut_refs,improper_ctypes)]
+		{
+			unsafe extern "C"
+			{
+				static mut PANIC_MESSAGE:static_collections::string::StaticString<1024>;
+			}
+			sysdprintln!("Panic Buffer: {:p}",unsafe{PANIC_MESSAGE.as_mut_ptr()});
+		}
 		HVM.call_once(|| hypervisor);
 		st
 	}

@@ -12,8 +12,9 @@
 
 use core::{ffi::c_void, fmt, mem::MaybeUninit, ops::RangeInclusive, ptr::null_mut, slice, sync::atomic::{AtomicPtr, Ordering}};
 
-use static_collections::{string::StaticString, vec::StaticVec};
-use r_efi::{efi::*, protocols::{loaded_image, mp_services, simple_text_input::{self, InputKey}, simple_text_output}, system::SystemTable};
+use efi_helpers::{BS_TABLE, STDOUT_PROTOCOL, allocate_pages, free_pages, println};
+use static_collections::vec::StaticVec;
+use r_efi::{efi::*, protocols::mp_services, system::SystemTable};
 
 unsafe extern "C"
 {
@@ -63,22 +64,7 @@ macro_rules! dprintln
 	};
 }
 
-static STDIN_PROTOCOL:AtomicPtr<simple_text_input::Protocol>=AtomicPtr::new(null_mut());
-static STDOUT_PROTOCOL:AtomicPtr<simple_text_output::Protocol>=AtomicPtr::new(null_mut());
 static MP_PROTOCOL:AtomicPtr<mp_services::Protocol>=AtomicPtr::new(null_mut());
-pub static BS_TABLE:AtomicPtr<BootServices>=AtomicPtr::new(null_mut());
-pub static RT_TABLE:AtomicPtr<RuntimeServices>=AtomicPtr::new(null_mut());
-pub static ST_TABLE:AtomicPtr<SystemTable>=AtomicPtr::new(null_mut());
-pub static IMAGE_INFO:AtomicPtr<loaded_image::Protocol>=AtomicPtr::new(null_mut());
-
-pub fn set_console_color(color:usize)
-{
-	let stdout=unsafe{&mut *STDOUT_PROTOCOL.load(Ordering::Relaxed)};
-	unsafe
-	{
-		(stdout.set_attribute)(stdout,color);
-	}
-}
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn handle_protocol<T>(handle:Handle,mut guid:Guid)->Result<*mut T,Status>
@@ -103,13 +89,7 @@ pub unsafe fn efi_init(image_handle:Handle,system_table:*mut SystemTable)
 	let bs=unsafe
 	{
 		__isa_available_init();
-		// Standard I/O
-		STDIN_PROTOCOL.store((*system_table).con_in,Ordering::Relaxed);
-		STDOUT_PROTOCOL.store((*system_table).con_out,Ordering::Relaxed);
-		// System Services
-		ST_TABLE.store(system_table,Ordering::Relaxed);
-		BS_TABLE.store((*system_table).boot_services,Ordering::Relaxed);
-		RT_TABLE.store((*system_table).runtime_services,Ordering::Relaxed);
+		efi_helpers::init(image_handle,system_table);
 		&*(*system_table).boot_services
 	};
 	// Multi-Processor Protocol. Useful to broadcast a routine to all CPUs.
@@ -118,55 +98,15 @@ pub unsafe fn efi_init(image_handle:Handle,system_table:*mut SystemTable)
 	{
 		(bs.locate_protocol)(&raw mut mp_guid,null_mut(),MP_PROTOCOL.as_ptr().cast());
 	}
-	// Loaded Image Protocol. Useful to get self-image.
-	IMAGE_INFO.store(handle_protocol(image_handle,loaded_image::PROTOCOL_GUID).unwrap(),Ordering::Relaxed);
 }
 
-pub fn block_until_keystroke(unicode:u16)
+pub fn block_until_keystroke(ch:char)
 {
-	let bs=unsafe{&*BS_TABLE.load(Ordering::Relaxed)};
-	let stdin=unsafe{&mut *STDIN_PROTOCOL.load(Ordering::Relaxed)};
-	let mut incoming=InputKey::default();
-	while incoming.unicode_char!=unicode
+	let mut x=efi_helpers::block_until_keystroke();
+	while x!=ch
 	{
-		let mut fi=0;
-		unsafe
-		{
-			(bs.wait_for_event)(1,&raw mut stdin.wait_for_key,&raw mut fi);
-			(stdin.read_key_stroke)(stdin,&raw mut incoming);
-		}
+		x=efi_helpers::block_until_keystroke();
 	}
-}
-
-pub fn console_print(args:fmt::Arguments)
-{
-	let mut w:StaticString<512>=StaticString::new();
-	if fmt::write(&mut w,args).is_ok()
-	{
-		noir_system_debugger_write(w.as_ptr(),w.len());
-	}
-}
-
-#[macro_export]
-macro_rules! print
-{
-	($($args:tt)*) =>
-	{
-		$crate::host::console_print(format_args!($($args)*))
-	};
-}
-
-#[macro_export]
-macro_rules! println
-{
-	() =>
-	{
-		$crate::print!("\n")
-	};
-	($($args:tt)*) =>
-	{
-		$crate::print!("{}\n",format_args!($($args)*))
-	};
 }
 
 #[unsafe(no_mangle)] extern "C" fn noir_system_debugger_write(string:*const u8,length:usize)
@@ -209,17 +149,9 @@ const PAGE_2MB_MASK_HI:u64=!PAGE_2MB_MASK_LO;
 
 #[unsafe(no_mangle)] extern "C" fn noir_alloc_2mb_page()->*mut c_void
 {
-	let mut p=0;
-	let bs=unsafe{&*BS_TABLE.load(Ordering::Relaxed)};
-	let st=unsafe{(bs.allocate_pages)(ALLOCATE_ANY_PAGES,RUNTIME_SERVICES_DATA,1024,&raw mut p)};
-	if st.is_error()
+	match unsafe{allocate_pages(RUNTIME_SERVICES_DATA,1024)}
 	{
-		println!("BootService->AllocatePages failed! Status=0x{:X}",st.as_usize());
-		null_mut()
-	}
-	else
-	{
-		unsafe
+		Ok(p)=>
 		{
 			// Get aligned address at 2MiB boundary.
 			let aligned_ptr=(p&PAGE_2MB_MASK_HI)+PAGE_2MB_SIZE;
@@ -227,27 +159,37 @@ const PAGE_2MB_MASK_HI:u64=!PAGE_2MB_MASK_LO;
 			let left_size=(aligned_ptr-p)>>PAGE_SHIFT;
 			if left_size!=0
 			{
-				(bs.free_pages)(p,left_size as usize);
+				unsafe
+				{
+					free_pages(p,left_size as usize);
+				}
 			}
 			// Release right-side pages.
 			let right_size=(p+PAGE_2MB_SIZE-aligned_ptr)>>PAGE_SHIFT;
 			if right_size!=0
 			{
 				let right_ptr=p+PAGE_2MB_SIZE*2-aligned_ptr;
-				(bs.free_pages)(right_ptr,right_size as usize);
+				unsafe
+				{
+					free_pages(right_ptr,right_size as usize);
+				}
 			}
 			// Return.
 			aligned_ptr as *mut c_void
+		}
+		Err(st)=>
+		{
+			println!("BootService->AllocatePages failed! Status=0x{:X}",st.as_usize());
+			null_mut()
 		}
 	}
 }
 
 #[unsafe(no_mangle)] extern "C" fn noir_free_2mb_page(virtual_address:*mut c_void)
 {
-	let bs=unsafe{&*BS_TABLE.load(Ordering::Relaxed)};
 	unsafe
 	{
-		(bs.free_pages)(virtual_address as u64,PAGE_2MB_SIZE as usize);
+		free_pages(virtual_address as u64,PAGE_2MB_SIZE as usize);
 	}
 }
 

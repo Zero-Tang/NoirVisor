@@ -5,7 +5,7 @@
 use core::{cell::UnsafeCell, ptr::null_mut};
 
 use nvcvm::interface::{CvmHandle, CvmMappingFlags, InterceptCode, Vpcb, c_api::*};
-use uefi::println;
+use efi_helpers::println;
 
 unsafe impl Send for Page {}
 unsafe impl Sync for Page {}
@@ -56,7 +56,7 @@ pub fn test_cvm()
 	while keep_running
 	{
 		let st=unsafe{ncv_run_vcpu(vm,0)};
-		println!("ncv_run_vcpu: {st}");
+		assert_eq!(st.0,0);
 		let vpcb=unsafe{&mut *vpcb};
 		match vpcb.intercept_code
 		{

@@ -22,7 +22,7 @@ use hvcall::dispatch_hypercall;
 use xpf_core::{asm::cpuid::cpuid2, ci::is_ci_phys_page, x86::{crdr::*, descriptors::SegmentFlags, rflags::Rflags}, trytask::try_task};
 use disasm::emulator::{EmulatorOps, Instruction};
 
-use crate::svm_core::decode::dispatch_cvexit_decoder;
+use crate::{svm_core::decode::dispatch_cvexit_decoder, xpf_core::allocator::is_allocated_page};
 
 use super::*;
 use mshv_core::{cpuid::*,msr::dispatch_mshv_msr_handler};
@@ -513,7 +513,7 @@ impl SvmVcpu
 		let gpa:u64=unsafe{self.vmread(EXIT_INFO2)};
 		let rip:u64=self.read_rip();
 		// Check if this #NPF is due to Code Integrity violation.
-		if is_ci_phys_page(gpa)
+		if is_ci_phys_page(gpa) || is_allocated_page(gpa)
 		{
 			// Decode the instruction length.
 			let ins_bytes=self.instruction_bytes();
@@ -554,6 +554,16 @@ impl SvmVcpu
 		let intercept_code:i64=unsafe{self.vmread(EXIT_CODE)};
 		panic!("Invalid State! Exit Code: 0x{:X}",intercept_code);
 	}
+
+	fn handle_idt_vectoring(&mut self)
+	{
+		let idt_vectoring=self.read_exit_int_info();
+		if idt_vectoring.valid()
+		{
+			// An event is pending. Re-inject into the guest.
+			self.write_event_injection(idt_vectoring);
+		}
+	}
 }
 
 /// # Safety
@@ -587,6 +597,7 @@ impl SvmVcpu
 		vcpu.decoded_instruction.clear();
 		decoder(vcpu);
 		handler(vcpu,unsafe{&mut *stack});
+		vcpu.handle_idt_vectoring();
 		// The rax in GPR state should be the physical address of VMCB
 		// in order to execute the vmrun instruction properly.
 		// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.
@@ -608,6 +619,7 @@ impl SvmVcpu
 		cvcpu.decoded_instruction.clear();
 		decoder(cvcpu);
 		handler(cvcpu,vcpu);
+		cvcpu.handle_idt_vectoring();
 	}
 	else
 	{

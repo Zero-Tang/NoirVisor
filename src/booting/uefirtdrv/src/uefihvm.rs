@@ -16,9 +16,10 @@ use core::arch::x86_64::__cpuid;
 #[cfg(target_arch="x86")]
 use core::arch::x86::__cpuid;
 
+use efi_helpers::{BS_TABLE, IMAGE_INFO, ST_TABLE, pe::*};
 use r_efi::efi::{ACPI_10_TABLE_GUID, ACPI_20_TABLE_GUID, EVENT_GROUP_EXIT_BOOT_SERVICES, EVT_NOTIFY_SIGNAL, Event, EventNotify, TPL_NOTIFY};
 
-use crate::{cfgmgr::{ConfigRecord, ConfigurationList}, host::{BS_TABLE, IMAGE_INFO, ST_TABLE}, pe::*, println};
+use crate::{cfgmgr::{ConfigRecord, ConfigurationList}, println};
 
 unsafe extern "C"
 {
@@ -200,7 +201,7 @@ pub fn init_ci()->bool
 				let section_name:&str=unsafe{str::from_utf8_unchecked(slice::from_raw_parts(section.Name.as_ptr(),core::cmp::min(strlen(section.Name.as_ptr().cast()),IMAGE_SIZEOF_SHORT_NAME)))};
 				let base=unsafe{image_base.byte_add(section.VirtualAddress as usize)};
 				let size=section.SizeOfRawData;
-				if matches!(section_name,".text"|".eh_fram"|".rdata"|".pdata")
+				if matches!(section_name,".text"|".eh_fram"|".rdata"|".pdata"|".dma_atk")
 				{
 					println!("Adding section {section_name} (Base: {base:p}, Size: 0x{size:X}) to CI...");
 					if !unsafe{noir_add_section_to_ci(base,size,false)}

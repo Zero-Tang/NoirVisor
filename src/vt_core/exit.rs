@@ -16,7 +16,7 @@ use paste::paste;
 use log::*;
 
 use static_collections::bitmap::RefBitmap;
-use crate::{disasm::emulator::{EmulatorOps, Instruction}, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, xpf_core::{asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, ci::is_ci_phys_page, x86::{cpuid::*, crdr::*, descriptors::SegmentFlags, interrupts::{EventType, GENERAL_PROTECTION_FAULT}}}, *};
+use crate::{disasm::emulator::{EmulatorOps, Instruction}, mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler}, xpf_core::{allocator::is_allocated_page, asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*}, ci::is_ci_phys_page, x86::{cpuid::*, crdr::*, descriptors::SegmentFlags, interrupts::{EventType, GENERAL_PROTECTION_FAULT}}}, *};
 use super::{ia32::{cpuid::CPUID_VMX, msr::*}, vmcs::*, hvcall::dispatch_hypercall, VtVcpu, VtStackTop, VtIrqInterruptibilityState};
 
 impl VtVcpu
@@ -271,65 +271,19 @@ impl VtVcpu
 	{
 		let gpr_state=&mut context.gpr_state;
 		let vmcall_func=gpr_state.rcx as u32;
-		let grip=vmreadptr(GUEST_RIP).unwrap();
-		let hv:&mut VtHypervisor=unsafe{&mut *self.hypervisor.cast()};
-		if hv.is_rip_from_hypervisor(grip)
+		let handler_fn=dispatch_hypercall(vmcall_func);
+		match handler_fn(self,vmcall_func,gpr_state.rdx as *mut c_void)
 		{
-			debug!("The vmcall instruction is intercepted! Hypercall Leaf: 0x{vmcall_func:X}");
-			let handler_fn=dispatch_hypercall(vmcall_func);
-			match handler_fn(self,vmcall_func,gpr_state.rdx as *mut c_void)
+			Ok(st)=>
 			{
-				Ok(st)=>
-				{
-					// This hypercall is known.
-					gpr_state.rax=st.0 as u64;
-					self.advance_rip();
-				}
-				Err((vector,error_code))=>unsafe
-				{
-					// This hypercall is unknown.
-					inject_event(vector,EventType::HardwareException,error_code,true,0);
-				}
+				// This hypercall is known.
+				gpr_state.rax=st.0 as u64;
+				self.advance_rip();
 			}
-		}
-		else
-		{
-			// This hypercall might be compliant to Microsoft TLFS.
-			// Check if forwarder exists.
-			/*
-			#[cfg(windows)] use mshv_core::{forwarder::MshvForwardStack, hvcall::TlfsHypercallCode};
-			#[cfg(windows)] use xpf_core::nvbdk::{nvc_forward_fast_hypercall, nvc_forward_memory_mapped_hypercall};
-			#[cfg(windows)]
-			if hv.mshvcall_forwarder.is_some()
+			Err((vector,error_code))=>unsafe
 			{
-				let stack:&mut VtStackTop=unsafe{&mut *self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE-size_of::<VtStackTop>()).cast()};
-				let hvcall_code=TlfsHypercallCode::from_bits(gpr_state.rcx);
-				// Construct the forward stack.
-				let mut fwd_stack=MshvForwardStack::from_context(gpr_state,&mut stack.volatile_xmms);
-				if hvcall_code.fast()
-				{
-					unsafe
-					{
-						nvc_forward_fast_hypercall(&raw mut fwd_stack);
-						fwd_stack.to_context(gpr_state);
-						self.advance_rip();
-					}
-				}
-				else
-				{
-					// FIXME: This sort of hypercall (e.g.: HvPostMessage) only happens in Hyper-V. It seems Windows does not invoke such hypercalls in QEMU/KVM.
-					info!("Microsoft Memory-Mapped Hypercall is intercepted! Code: 0x{:X}, Input GPA: 0x{:X}, Output GPA: 0x{:X}",hvcall_code.into_bits(),gpr_state.rdx,gpr_state.r8);
-					unsafe
-					{
-						gpr_state.rax=nvc_forward_memory_mapped_hypercall(hvcall_code.into_bits(),gpr_state.rdx,gpr_state.r8,gpr_state.rax);
-						info!("Return-Value: 0x{:X}",gpr_state.rax);
-						self.advance_rip();
-					}
-				}
-			}
-			else*/
-			{
-				unimplemented!("Microsoft TLFS Hypercall handler is not implemented yet!");
+				// This hypercall is unknown.
+				inject_event(vector,EventType::HardwareException,error_code,true,0);
 			}
 		}
 	}
@@ -535,7 +489,7 @@ impl VtVcpu
 			let interruptibility=self.cached_ctxt.get_interruptibility_mut();
 			interruptibility.set_blocking_by_nmi(true);
 		}
-		if is_ci_phys_page(gpa)
+		if is_ci_phys_page(gpa) || is_allocated_page(gpa)
 		{
 			let mut inslen=self.cached_ctxt.exit_instruction_length();
 			error!("CI-fault for GPA=0x{gpa:X} is intercepted! rip=0x{rip:X}, Instruction-Length: {inslen}");

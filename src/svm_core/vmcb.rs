@@ -220,7 +220,7 @@ pub(super) trait VmcbOps
 	define_rw_field!(exit_code,EXIT_CODE,i64);
 	define_rw_field!(exit_info1,EXIT_INFO1,u64);
 	define_rw_field!(exit_info2,EXIT_INFO2,u64);
-	define_rw_field!(exit_int_info,EXIT_INTERRUPT_INFO,u64);
+	define_rw_field!(exit_int_info,EXIT_INTERRUPT_INFO,EventInjection);
 	define_rw_field!(npt_control,NPT_CONTROL,NptControl,NPT);
 	define_rw_field!(avic_bar,AVIC_APIC_BAR,u64,AVIC);
 	define_rw_field!(ghcb,GHCB_PHYSICAL_ADDRESS,u64);

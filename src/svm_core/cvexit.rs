@@ -230,6 +230,15 @@ impl SvmCustomVcpu
 		// Switch the world to host to handle it.
 		host_vcpu.switch_world_to_host(self);
 	}
+
+	pub(super) fn handle_idt_vectoring(&mut self)
+	{
+		let idt_vectoring=self.read_exit_int_info();
+		if idt_vectoring.valid()
+		{
+			self.write_event_injection(idt_vectoring);
+		}
+	}
 }
 
 pub(super) type SvmCvExitHandler=fn(cvcpu:&mut SvmCustomVcpu,host_vcpu:&mut SvmVcpu);

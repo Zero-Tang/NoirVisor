@@ -46,7 +46,7 @@ nvc_svm_exit_handler_a:
 	// At this moment, VM-Exit occured.
 	// Add a trap frame so that WinDbg may display stack trace for the guest.
 	.seh_pushframe @code
-	.seh_stackalloc 0xF0
+	.seh_stackalloc STACKTOP_OFFSET_GUEST_FRAME
 	// Save all GPRs.
 	pushaq_fast STACKTOP_OFFSET_GUEST_GPR
 	.seh_endprologue

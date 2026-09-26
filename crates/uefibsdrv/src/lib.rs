@@ -2,7 +2,6 @@
 // This crate is only intended for testing CVM functionality without complex OS environment.
 
 #![no_std]
-#![feature(allocator_api)]
 
 extern crate alloc;
 
@@ -10,6 +9,7 @@ use core::{ffi::c_void, ptr::null_mut, sync::atomic::Ordering};
 
 use nvcvm::{status::Status as NvStatus, uefi::NoirVisorCvmSchedulingProtocol};
 use r_efi::efi::{Handle, NATIVE_INTERFACE, Status, SystemTable};
+use efi_helpers::{BS_TABLE, IMAGE_INFO};
 
 use misc::*;
 

@@ -55,7 +55,7 @@ nvc_vt_subvert_processor_a:
 nvc_vt_exit_handler_a:
 	// Put a trap frame so that WinDbg may display stack trace in Guest.
 	.seh_pushframe @code
-	.seh_stackalloc 0xE0
+	.seh_stackalloc STACKTOP_OFFSET_GUEST_FRAME
 	pushaq_fast STACKTOP_OFFSET_GUEST_GPR
 	.seh_endprologue
 	// Before saving volatile XMM state, save and restore xcr0.

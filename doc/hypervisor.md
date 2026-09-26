@@ -1,5 +1,5 @@
 # Overview of Project NoirVisor
-NoirVisor starts as a common global hypervision project like [HyperPlatform](https://github.com/tandasat/HyperPlatform), [hvpp](https://github.com/wbenny/hvpp), etc. that leverages hardware-accelerated virtualization technology to do security researches. \
+NoirVisor starts as a common bluepill-like hypervisor project like [HyperPlatform](https://github.com/tandasat/HyperPlatform), [hvpp](https://github.com/wbenny/hvpp), etc. that leverages hardware-accelerated virtualization technology to do security researches. \
 This document should provide you a general idea about hypervisor development. You might be able to join development of Project NoirVisor.
 
 ## General Idea of Hypervisor
@@ -12,24 +12,19 @@ Global Hypervision means to leverage the hardware-accelerated virtualization tec
 To summarize, Global Hypervision would capture the state of the physical machine, then issue VM-Entry based on the captured state. Then, the hypervisor gains monitoring on the whole system.
 
 ## Stealthy Hooks
-In first few years of development, NoirVisor achieved some stealthy hooks into the kernel. However, these are rootkit-like techniques. They look interesting at first, but soon I lost interest in further development in that Microsoft's detections of stealthy hooks make me sick about such developments. \
-Stealthy hooks are implemented by intercepting the paths of detection. For example, the stealthy hook on `syscall` is implemented by intercepting the `rdmsr` instruction on `LSTAR` MSR, so that detectors would receive the original address.
+In first few years of development, NoirVisor achieved some stealthy hooks into the kernel. However, these are rootkit-like techniques. They look interesting - or fun, so to speak - at first, but soon I lost interest in further development in that such techniques are mostly abused by game cheats, and I do not want myself get involved anymore. \
+In the Rust remastered version, stealthy hooks are completely removed from the scope. They're not even implemented in the first place.
 
 ## Customizable Virtual Machines
 In 2021, I started working on a new feature called Customizable Virtual Machines, abbreviated as NoirVisor CVM. This is a feature similar to the [Windows Hypervisor Platform](https://docs.microsoft.com/en-us/virtualization/api/hypervisor-platform/hypervisor-platform), but aims to provide more flexibility than WHP. \
 CVM feature is fairly functional in AMD-V. It is not working on Intel VT-x yet, which requires further debugging. \
 Some features are missing (e.g.: virtualization of APIC, SMM, etc.), though.
 
-## Nested Virtualization
-The term nested virtualization has ambiguity in terms of NoirVisor: to run a hypervisor under the global hypervision or under CVM Guests. \
-Nested Virtualization for Global Hypervision on AMD-V is now in debugging stage. \
-Nested Virtualization for CVM Guests is not available yet.
-
 ## Type-I Hypervisor
-If NoirVisor is loaded as a Type-I hypervisor, this means the Operating System is booted after the NoirVisor. As a Type-I hypervisor, NoirVisor can monitor the booting activity of the Operating System.
+NoirVisor is loaded as a Type-I hypervisor, this means the Operating System is booted after the NoirVisor. As a Type-I hypervisor, NoirVisor can monitor the booting activity of the Operating System.
 
 ## Type-II Hypervisor
-If NoirVisor is loaded as a Type-II hypervisor, this means the NoirVisor is a loaded as kernel-mode module in the Operating System. As a Type-II hypervisor, NoirVisor can only monitor regular runtime activities in the Operating System.
+The Rust-remastered version of NoirVisor dropped the support for booting as a Type-II hypervisor. The CVM scheduler driver is available as a Windows Driver. It is used for scheduling Customizable Virtual Machines on the Windows host.
 
 ## Host Environment Setup
 Many implementations of Type-II global hypervision share the environment with host. This is a critical flaw when a malicious guest program attempts to tamper with the host environment. \

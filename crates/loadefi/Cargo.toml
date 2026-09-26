@@ -3,9 +3,9 @@ name = "loadefi"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies.uefi]
-version = "0.40.0"
-features = ["alloc"]
+[dependencies]
+r-efi = "*"
+efi-helpers = { path = "../efi-helpers" }
 
 [dependencies.nvcvm]
 path = "../nvcvm"

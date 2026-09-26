@@ -1,7 +1,11 @@
 #![no_std]
-#![feature(allocator_api)]
 
 extern crate alloc;
+
+pub fn get_current_process_id()->u32
+{
+	0
+}
 
 pub mod sync
 {

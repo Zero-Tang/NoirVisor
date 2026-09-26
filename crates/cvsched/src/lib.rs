@@ -1,7 +1,6 @@
 // NoirVisor CVM Scheduler
 #![no_std]
-#![allow(unused_features)]
-#![feature(allocator_api)]
+#![feature(allocator_ext)]
 
 extern crate alloc;
 

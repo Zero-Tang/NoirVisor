@@ -3,33 +3,18 @@
 
 extern crate alloc;
 
-use core::{arch::x86_64::__cpuid, char, mem::MaybeUninit, slice};
-use alloc::{string::String, vec::Vec};
+use core::{arch::x86_64::__cpuid, fmt::{self, Write}, mem::MaybeUninit, ptr::null_mut, slice, sync::atomic::Ordering};
+use alloc::{boxed::Box, string::String, vec::Vec};
 
-use uefi::{runtime::VariableVendor, *};
-use allocator::Allocator;
-use boot::{image_handle, open_protocol, OpenProtocolAttributes, OpenProtocolParams, LoadImageSource};
-use proto::{console::text::*,loaded_image::LoadedImage,device_path::{self,DevicePath,build::DevicePathBuilder}, BootPolicy};
-use system::with_stdout;
-use table::system_table_raw;
+use efi_helpers::{BS_TABLE, CStr16, EfiAllocator, IMAGE_INFO, RT_TABLE, block_until_keystroke, block_until_keystroke2, clear_screen, convert_device_path_to_text, handle_protocol, print, println};
+use r_efi::{efi::{Boolean, BY_PROTOCOL, GLOBAL_VARIABLE, Handle, LOADER_DATA, Status, SystemTable}, protocols::{device_path::{self, End, Media, TYPE_END, TYPE_MEDIA}, loaded_image}};
+
+use crate::dma::test_dma;
 
 #[cfg(target_os="uefi")] mod cvm;
+mod dma;
 
-#[global_allocator] static EFI_ALLOC:Allocator=Allocator;
-
-fn wait_for_keystroke()->char
-{
-	uefi::system::with_stdin(|stdin|
-	{
-		loop
-		{
-			if let Ok(o)=stdin.read_key() && let Some(k)=o && let Key::Printable(p)=k
-			{
-				return p.into();
-			}
-		}
-	})
-}
+#[global_allocator] static EFI_ALLOC:EfiAllocator=EfiAllocator(LOADER_DATA);
 
 fn print_cpu_info()
 {
@@ -54,58 +39,59 @@ fn print_cpu_info()
 	println!("Processor Brand Name: {s}");
 }
 
-fn load_hypervisor_driver(file_path:&str)->Option<Handle>
+fn load_hypervisor_driver(source_image:Handle,file_path:&str)->Option<Handle>
 {
 	// Locate the loaded image protocol.
-	let loaded_image=unsafe
+	let loaded_image=unsafe{&*IMAGE_INFO.load(Ordering::Relaxed)};
+	// Get Device Path Root
+	let root_path:*mut device_path::Protocol=handle_protocol(loaded_image.device_handle,device_path::PROTOCOL_GUID).unwrap();
+	// Build Path.
+	let mut full_path_raw:Vec<u8>=Vec::new();
+	// Copy Root Device Path.
+	let mut cur_node=unsafe{&*root_path};
+	while cur_node.r#type!=TYPE_END
 	{
-		let proto_params=OpenProtocolParams
-		{
-			handle:image_handle(),
-			agent:image_handle(),
-			controller:None
-		};
-		match open_protocol::<LoadedImage>(proto_params,OpenProtocolAttributes::GetProtocol)
-		{
-			Ok(proto)=>proto,
-			Err(e)=>
-			{
-				println!("OpenProtocol failed! Reason: {e}");
-				return None;
-			}
-		}
-	};
-	// Make Device Path Root
-	let root_path=unsafe
+		let len=u16::from_ne_bytes(cur_node.length) as usize;
+		let p=&raw const *cur_node;
+		full_path_raw.extend_from_slice(unsafe{slice::from_raw_parts(p.cast(),len)});
+		cur_node=unsafe{&*p.byte_add(len)};
+	}
+	// Append File Path into Root Device Path.
+	let mut file_name_len:usize=4;
+	full_path_raw.push(TYPE_MEDIA);
+	full_path_raw.push(Media::SUBTYPE_FILE_PATH);
+	full_path_raw.extend_from_slice(&0u16.to_ne_bytes());
+	for c in file_path.encode_utf16()
 	{
-		let proto_params=OpenProtocolParams
-		{
-			handle:loaded_image.device().unwrap(),
-			agent:image_handle(),
-			controller:None
-		};
-		match open_protocol::<DevicePath>(proto_params,OpenProtocolAttributes::GetProtocol)
-		{
-			Ok(proto)=>proto,
-			Err(e)=>
-			{
-				println!("OpenProtocol failed! Reason: {e}");
-				return None;
-			}
-		}
-	};
-	let mut buf = [0u16; 256];
-	let file_path=device_path::build::media::FilePath{path_name:CStr16::from_str_with_buf(file_path,&mut buf).unwrap()};
-	let mut buf = [MaybeUninit::uninit(); 256];
-	let x=DevicePathBuilder::with_buf(&mut buf).push(&file_path).unwrap().finalize().unwrap();
-	let p=root_path.append_path(x).unwrap();
-	match boot::load_image(image_handle(),LoadImageSource::FromDevicePath{device_path:&p,boot_policy:BootPolicy::default()})
+		full_path_raw.extend_from_slice(&c.to_ne_bytes());
+		file_name_len+=2;
+	}
+	// Must be null-terminated.
+	full_path_raw.extend_from_slice(&0u16.to_ne_bytes());
+	file_name_len+=2;
+	// Set the size.
+	unsafe
 	{
-		Ok(h)=>Some(h),
-		Err(e)=>
+		let fn_len:*mut u16=full_path_raw.as_mut_ptr().byte_add(full_path_raw.len()-file_name_len).cast();
+		*fn_len.add(1)=file_name_len as u16;
+	}
+	// Terminate the file path.
+	full_path_raw.push(TYPE_END);
+	full_path_raw.push(End::SUBTYPE_ENTIRE);
+	full_path_raw.extend_from_slice(&4u16.to_ne_bytes());
+	unsafe
+	{
+		let mut handle:MaybeUninit<Handle>=MaybeUninit::uninit();
+		let bs=&*BS_TABLE.load(Ordering::Relaxed);
+		let st=(bs.load_image)(Boolean::FALSE,source_image,full_path_raw.as_mut_ptr().cast(),null_mut(),0,handle.as_mut_ptr());
+		if st.is_error()
 		{
-			println!("Failed to load NoirVisor! Reason: {e}");
+			println!("Failed to load image! Reason: {st}");
 			None
+		}
+		else
+		{
+			Some(handle.assume_init())
 		}
 	}
 }
@@ -155,6 +141,111 @@ impl BootOption
 	}
 }
 
+fn device_path_size(path:&[u8])->Option<usize>
+{
+	let mut offset=0;
+	while offset+4<=path.len()
+	{
+		let node_len=u16::from_ne_bytes([path[offset+2],path[offset+3]]) as usize;
+		if node_len<4 || offset+node_len>path.len()
+		{
+			return None;
+		}
+		if path[offset]==TYPE_END
+		{
+			return Some(offset+node_len);
+		}
+		offset+=node_len;
+	}
+	None
+}
+
+fn expand_short_device_path(path:Vec<u8>)->Vec<u8>
+{
+	let Some(path_len)=device_path_size(&path) else{return path};
+	let path=&path[..path_len];
+	// Boot options may contain a short-form path such as HD(...)/File(...).
+	// Find the media suffix on a handle path so its PCI/SATA ancestry can be restored.
+	let mut short_len=0;
+	while short_len+4<=path.len()
+	{
+		if path[short_len]==TYPE_MEDIA && path[short_len+1]==Media::SUBTYPE_FILE_PATH
+		{
+			break;
+		}
+		let node_len=u16::from_ne_bytes([path[short_len+2],path[short_len+3]]) as usize;
+		if node_len<4 || short_len+node_len>path.len() || path[short_len]==TYPE_END
+		{
+			return path.to_vec();
+		}
+		short_len+=node_len;
+	}
+	if short_len==0 || short_len>=path.len()
+	{
+		return path.to_vec();
+	}
+
+	unsafe
+	{
+		let bs=&*BS_TABLE.load(Ordering::Relaxed);
+		let mut guid=device_path::PROTOCOL_GUID;
+		let mut handle_count=0;
+		let mut handles:*mut Handle=null_mut();
+		let st=(bs.locate_handle_buffer)(BY_PROTOCOL,&raw mut guid,null_mut(),&raw mut handle_count,&raw mut handles);
+		if st.is_error()
+		{
+			return path.to_vec();
+		}
+		if handle_count==0
+		{
+			return path.to_vec();
+		}
+		let handle_slice=slice::from_raw_parts(handles,handle_count);
+		for &handle in handle_slice
+		{
+			let Ok(handle_path)=handle_protocol::<device_path::Protocol>(handle,device_path::PROTOCOL_GUID) else{continue};
+			let mut size=0;
+			let mut node=handle_path;
+			while (*node).r#type!=TYPE_END
+			{
+				let len=u16::from_ne_bytes((*node).length) as usize;
+				if len<4
+				{
+					break;
+				}
+				size+=len;
+				node=(node.cast::<u8>().byte_add(len)).cast();
+			}
+			let end_len=u16::from_ne_bytes((*node).length) as usize;
+			if size==0 || end_len<4
+			{
+				continue;
+			}
+			let handle_raw=slice::from_raw_parts(handle_path.cast::<u8>(),size);
+			let mut offset=0;
+			while offset<size
+			{
+				if size-offset==short_len && handle_raw[offset..]==path[..short_len]
+				{
+					let mut expanded=Vec::with_capacity(offset+path.len());
+					expanded.extend_from_slice(&handle_raw[..offset]);
+					expanded.extend_from_slice(path);
+					(bs.free_pool)(handles.cast());
+					return expanded;
+				}
+				let len=u16::from_ne_bytes([handle_raw[offset+2],handle_raw[offset+3]]) as usize;
+				if len<4 || offset+len>size
+				{
+					break;
+				}
+				offset+=len;
+			}
+		}
+		(bs.free_pool)(handles.cast());
+	}
+	path.to_vec()
+}
+
 #[allow(dead_code)]
 struct LoadOption
 {
@@ -164,175 +255,207 @@ struct LoadOption
 	optional_data:Vec<u8>
 }
 
-fn select_boot_option()
+impl fmt::Display for LoadOption
 {
-	let mut name_buff_raw:MaybeUninit<[u16;100]>=MaybeUninit::uninit();
-	let name_buff=unsafe{name_buff_raw.assume_init_mut()}.as_mut_slice();
-	name_buff[0]=0;
-	let mut vendor=VariableVendor::GLOBAL_VARIABLE;
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+	{
+		let path_raw=self.device_path.as_ptr() as *mut device_path::Protocol;
+		let path_text=unsafe{convert_device_path_to_text(path_raw)};
+		write!(f,"[{}] {} (Path: {path_text}",self.name,self.description)?;
+		if self.optional_data.is_empty()
+		{
+			f.write_char(')')
+		}
+		else
+		{
+			write!(f,", Optional: 0x{:X} Bytes)",self.optional_data.len())
+		}
+	}
+}
+
+fn select_boot_option(source_image:Handle)
+{
+	let rt=unsafe{&*RT_TABLE.load(Ordering::Relaxed)};
+	let mut guid=GLOBAL_VARIABLE;
+	let mut name_raw:[u16;0x100]=[0;0x100];
+	// Scan what boot options we have.
 	let mut options:Vec<LoadOption>=Vec::new();
 	loop
 	{
-		match runtime::get_next_variable_key(name_buff,&mut vendor)
+		let mut size=name_raw.len()<<1;
+		let st=unsafe{(rt.get_next_variable_name)(&raw mut size,name_raw.as_mut_ptr(),&raw mut guid)};
+		if st==Status::NOT_FOUND
 		{
-			Ok(_)=>
+			break;
+		}
+		else if st!=Status::SUCCESS
+		{
+			panic!("GetNextVariableName failed! Reason: {st}, Buffer-Size: {size}, GUID: {guid:X?}");
+		}
+		let name=String::from_utf16_lossy(&name_raw[..(size>>1)-1]);
+		if name.starts_with("Boot") && name.len()==8
+		{
+			let mut data_size:usize=0;
+			let st=unsafe{(rt.get_variable)(name_raw.as_mut_ptr(),&raw mut guid,null_mut(),&raw mut data_size,null_mut())};
+			assert_eq!(st,Status::BUFFER_TOO_SMALL);
+			let mut boot_opt:Box<BootOption>=unsafe{Box::from_raw(EFI_ALLOC.call_alloc(data_size).cast())};
+			let st=unsafe{(rt.get_variable)(name_raw.as_mut_ptr(),&raw mut guid,null_mut(),&raw mut data_size,(&raw mut *boot_opt).cast())};
+			assert_eq!(st,Status::SUCCESS);
+			let option=LoadOption
 			{
-				let len=name_buff.iter().position(|v| *v==0).unwrap_or(name_buff.len());
-				let name=String::from_utf16_lossy(&name_buff[..len]);
-				if name.starts_with("Boot") && name.len()==8
-				{
-					match runtime::get_variable_boxed(unsafe{CStr16::from_u16_with_nul_unchecked(name_buff)},&vendor)
-					{
-						Ok((raw,_attrib))=>
-						{
-							let boot_opt:&BootOption=unsafe{&*raw.as_ptr().cast()};
-							let description=boot_opt.get_description(raw.len());
-							let device_path=boot_opt.get_device_path(raw.len());
-							let optional_data=boot_opt.get_optional_data(raw.len());
-							options.push(LoadOption{name,description,device_path,optional_data});
-						}
-						Err(e)=>println!("Failed to GetVariable for {name}! Reason: {e}")
-					}
-				}
-			}
-			Err(e)=>
-			{
-				if e.status()!=Status::NOT_FOUND
-				{
-					println!("GetNextVariable failed! Reason: {e}");
-				}
-				break;
-			}
+				name,
+				description:boot_opt.get_description(data_size),
+				device_path:expand_short_device_path(boot_opt.get_device_path(data_size)),
+				optional_data:boot_opt.get_optional_data(data_size)
+			};
+			options.push(option);
 		}
 	}
-	let mut position:usize=0;
-	let reprinter_fn=|pos:usize|
+	// Loop until selection.
+	let mut selection:usize=0;
+	let mut selected=false;
+	while !selected
 	{
-		let _=with_stdout(|s| s.clear());
-		println!("Select the next boot option. Press Enter key to confirm selection.");
-		println!("Press W to move cursor upward. Press S to move cursor downward.");
+		clear_screen();
+		println!("Press UP/DOWN to select boot option. Press Enter to boot the selection.");
 		for (i,opt) in options.iter().enumerate()
 		{
-			println!("{} {}: {} (Device-Path: {:02X?}",if i==pos {"----> "} else {""},opt.name,opt.description,opt.device_path);
+			if i==selection
+			{
+				print!("----> ");
+			}
+			println!("{opt}");
 		}
-	};
-	reprinter_fn(position);
-	loop
-	{
-		let key=wait_for_keystroke();
-		match key
+		// Loop until a valid key is input.
+		loop
 		{
-			'w'|'W'=>if position==0
+			let r=block_until_keystroke2();
+			if r==Ok('\r')
 			{
-				position=options.len()-1;
+				// Selected an option.
+				selected=true;
+				break;
 			}
-			else
+			else if r==Err(1)
 			{
-				position-=1;
+				// UP arrow.
+				selection=selection.saturating_sub(1);
+				break;
 			}
-			's'|'S'=>if position<options.len()-1
+			else if r==Err(2)
 			{
-				position+=1;
-			}
-			else
-			{
-				position=0;
-			}
-			'\r'=>
-			{
-				// Load the boot option.
-				let p:&DevicePath=unsafe{DevicePath::from_ffi_ptr(options[position].device_path.as_ptr().cast())};
-				match boot::load_image(image_handle(),LoadImageSource::FromDevicePath{device_path:p,boot_policy:BootPolicy::ExactMatch})
+				// DOWN arrow.
+				if selection<options.len()-1
 				{
-					Ok(h)=>
-					{
-						if let Err(e)=boot::start_image(h)
-						{
-							println!("Failed to start image! Reason: {e}");
-						}
-					}
-					Err(e)=>println!("Failed to load image! Reason: {e}")
+					selection+=1;
 				}
 				break;
 			}
-			_=>continue
 		}
-		reprinter_fn(position);
+	}
+	unsafe
+	{
+		let bs=&*BS_TABLE.load(Ordering::Relaxed);
+		let opt=&mut options[selection];
+		let mut h:Handle=null_mut();
+		let st=(bs.load_image)(Boolean::FALSE,source_image,opt.device_path.as_mut_ptr().cast(),null_mut(),0,&raw mut h);
+		if st.is_error()
+		{
+			panic!("Failed to load image! Status={st}");
+		}
+		if !opt.optional_data.is_empty()
+		{
+			let image:*mut loaded_image::Protocol=handle_protocol(h,loaded_image::PROTOCOL_GUID).unwrap();
+			(*image).load_options=EFI_ALLOC.call_alloc(opt.optional_data.len()).cast();
+			(*image).load_options_size=opt.optional_data.len() as u32;
+			core::ptr::copy::<u8>(opt.optional_data.as_ptr(),(*image).load_options.cast(),opt.optional_data.len());
+		}
+		let st=(bs.start_image)(h,null_mut(),null_mut());
+		if st.is_error()
+		{
+			panic!("Failed to start image! Status={st}");
+		}
 	}
 }
 
-#[allow(dead_code)]
-fn test_exit_bs()->!
+#[unsafe(no_mangle)] unsafe extern "efiapi" fn uefi_entry(image_handle:Handle,system_table:*mut SystemTable)->Status
 {
-	use boot::{exit_boot_services,MemoryType};
-	use runtime::{reset,ResetType};
-	println!("Calling ExitBootServices... If the system didn't shutdown, then it's unexpected behavior!");
-	let _=unsafe{exit_boot_services(Some(MemoryType::LOADER_DATA))};
-	reset(ResetType::SHUTDOWN,Status::SUCCESS,None);
-}
-
-#[entry] fn main()->Status
-{
-	let systab=unsafe{system_table_raw().unwrap().as_ref()};
+	let systab=unsafe{&*system_table};
+	unsafe
+	{
+		efi_helpers::init(image_handle,system_table);
+	}
 	// Print some boring initialization stuff.
-	let _=with_stdout(|s| s.clear());
+	clear_screen();
 	println!("{}",include_str!("banner.txt"));
 	println!("Welcome to NoirVisor Loader!");
 	println!("Firmware Vendor: {}, Revision: {}",unsafe{CStr16::from_ptr(systab.firmware_vendor.cast())},systab.firmware_revision);
-	println!("Firmware UEFI Specification: {}.{}.{}",systab.header.revision.major(),systab.header.revision.minor()/10,systab.header.revision.minor()%10);
+	println!("Firmware UEFI Specification: {}.{}.{}",systab.hdr.revision>>16,(systab.hdr.revision&0xffff)/10,(systab.hdr.revision&0xffff)%10);
 	print_cpu_info();
 	// Load the driver.
-	match load_hypervisor_driver("\\NoirVisor.efi")
+	let start_image=unsafe{(*BS_TABLE.load(Ordering::Relaxed)).start_image};
+	let hv_img_handle:Handle=match load_hypervisor_driver(image_handle,"\\NoirVisor.efi")
 	{
 		Some(h)=>
 		{
-			if let Err(e)=boot::start_image(h)
+			let st=unsafe{start_image(h,null_mut(),null_mut())};
+			if st.is_error()
 			{
-				println!("Failed to start hypervisor image! Reason: {e}");
+				println!("Failed to start hypervisor image! Reason: {st}");
 			}
-			// Uncomment the next line to test ExitBootServices Event. If successful, the machine will shutdown.
-			// test_exit_bs();
+			h
 		}
-		None=>println!("Failed to load hypervisor image!")
-	}
-	match load_hypervisor_driver("\\cvsched.efi")
+		None=>
+		{
+			println!("Failed to load hypervisor image!");
+			null_mut()
+		}
+	};
+	match load_hypervisor_driver(image_handle,"\\cvsched.efi")
 	{
 		Some(h)=>
 		{
-			match boot::start_image(h)
+			let st=unsafe{start_image(h,null_mut(),null_mut())};
+			if st.is_error()
 			{
-				Ok(_)=>
+				println!("Failed to start scheduler image! Reason: {st}");
+			}
+			else
+			{
+				println!("NoirVisor CVM Scheduler image is successfully started!");
+				#[cfg(target_os="uefi")]
+				unsafe
 				{
-					println!("NoirVisor CVM Scheduler image is successfully started!");
-					#[cfg(target_os="uefi")]
-					unsafe
+					let st=nvcvm::uefi::init(system_table);
+					if st.is_error()
 					{
-						let st=nvcvm::uefi::init(system_table_raw().unwrap().as_ptr().cast());
-						if st.as_usize()!=0
-						{
-							println!("Failed to initialize nvcvm crate! Status=0x{:X}",st.as_usize());
-						}
-						else
-						{
-							cvm::test_cvm();
-						}
+						println!("Failed to initialize nvcvm crate! Status=0x{:X}",st.as_usize());
 					}
-					if let Err(e)=boot::unload_image(h)
+					else
 					{
-						println!("Failed to unload NoirVisor CVM Scheduler image! Reason: {e}");
+						cvm::test_cvm();
 					}
 				}
-				Err(e)=>println!("Failed to start scheduler image! Reason: {e}")
+				let st=unsafe{((*BS_TABLE.load(Ordering::Relaxed)).unload_image)(h)};
+				if st.is_error()
+				{
+					println!("Failed to unload NoirVisor CVM Scheduler image! Reason: {st}");
+				}
 			}
 		}
 		None=>println!("Failed to load scheduler image!")
 	}
+	test_dma(hv_img_handle);
 	println!("Press Enter key to enter boot selection. Press Space key to leave.");
 	loop
 	{
-		match wait_for_keystroke()
+		match block_until_keystroke()
 		{
-			'\r'=>select_boot_option(),
+			'\r'=>
+			{
+				select_boot_option(image_handle);
+				break;
+			}
 			' '=>break,
 			_=>continue
 		}
@@ -347,7 +470,7 @@ fn test_exit_bs()->!
 #[cfg(not(test))]
 mod panicking
 {
-	use uefi::println;
+	use efi_helpers::println;
 	use core::panic::PanicInfo;
 
 	#[panic_handler] fn panic(panic: &PanicInfo)->!
