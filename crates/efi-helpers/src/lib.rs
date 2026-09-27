@@ -2,7 +2,7 @@
 
 #![no_std]
 
-use core::{alloc::{GlobalAlloc, Layout}, ffi::c_void, fmt::{self, Write}, mem::MaybeUninit, ptr::{NonNull, null_mut}, slice, sync::atomic::{AtomicPtr, Ordering}};
+use core::{alloc::{GlobalAlloc, Layout}, ffi::c_void, fmt::{self, Write}, mem::MaybeUninit, ptr::{NonNull, null_mut, slice_from_raw_parts_mut}, slice, sync::atomic::{AtomicPtr, Ordering}};
 
 use alloc::{alloc::{AllocError, Allocator, Global}, format, string::String, vec::Vec};
 use r_efi::{efi::{ALLOCATE_ANY_PAGES, BOOT_SERVICES_DATA, BY_PROTOCOL, Boolean, BootServices, Guid, Handle, RuntimeServices, Status, SystemTable}, protocols::{device_path, device_path_to_text, device_path_utilities, loaded_image, simple_text_input::{self, InputKey}, simple_text_output}};
@@ -138,7 +138,7 @@ unsafe impl Allocator for EfiAllocator
 		{
 			unsafe
 			{
-				Ok(NonNull::new_unchecked(slice::from_raw_parts_mut(x,layout.size())))
+				Ok(NonNull::new_unchecked(slice_from_raw_parts_mut(x,layout.size())))
 			}
 		}
 	}

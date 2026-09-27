@@ -8,7 +8,3 @@ r-efi = "*"
 log = "*"
 nvcvm = { path = "../nvcvm" }
 efi-helpers = { path = "../efi-helpers" }
-
-[dependencies.static-collections]
-version = "*"
-features = ["use_crt"]

@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use paste::paste;
+use pastey::paste;
 use bitfield_struct::bitfield;
 use zerocopy::{Unalign, Unaligned};
 

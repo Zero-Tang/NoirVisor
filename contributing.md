@@ -33,6 +33,7 @@ The guidelines may subject to frequent changes as the LLM technology evolves. Ho
 - You may ask LLMs to **privately** assist in debugging.
 - You may ask LLMs to **privately** review the codes and documentations.
 - You may create a `scratch` folder, which is explicitly ignored via `.gitignore`, and put whatever stuff that LLMs may need to use.
+- You may submit LLM-generated codes in your PR. Doing so won't get you discriminated.
 
 ### Banned
 - Comments that are generated with LLM. Craft your comments in your own words.

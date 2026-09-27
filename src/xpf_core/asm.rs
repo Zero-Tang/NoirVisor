@@ -16,7 +16,7 @@ pub mod io
 {
 	// Note that the string-based I/O will never be implemented, in that x86-S will remove them.
 	use core::arch::{asm, x86_64::_mm_mfence};
-	use paste::paste;
+	use pastey::paste;
 
 	macro_rules! build_in_func
 	{
@@ -108,7 +108,7 @@ pub mod io
 pub mod seg
 {
 	use core::arch::asm;
-	use paste::paste;
+	use pastey::paste;
 
 	use crate::xpf_core::x86::descriptors::DescriptorTable;
 
@@ -256,7 +256,7 @@ pub mod seg
 pub mod crdr
 {
 	use core::arch::asm;
-	use paste::paste;
+	use pastey::paste;
 
 	macro_rules! build_fn
 	{

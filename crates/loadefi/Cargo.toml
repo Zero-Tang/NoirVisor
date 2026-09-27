@@ -7,6 +7,6 @@ edition = "2024"
 r-efi = "*"
 efi-helpers = { path = "../efi-helpers" }
 
-[dependencies.nvcvm]
+[target.'cfg(target_os="uefi")'.dependencies.nvcvm]
 path = "../nvcvm"
 features = ["user"]

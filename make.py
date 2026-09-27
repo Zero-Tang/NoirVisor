@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -33,7 +34,7 @@ def confirm_cargo()->bool:
 	print("We are using {} and {}...".format(cargo_ver,rustc_ver))
 	return True
 
-def main():
+def do_build():
 	i=1
 	optimizer_enabled=False
 	target="uefi"
@@ -61,6 +62,28 @@ def main():
 		extra_vars_dict={"python":sys.executable}
 		pl=Pipeline(config,optimizer_enabled,extra_vars=extra_vars_dict)
 		pl.run()
+
+def do_check():
+	subprocess.run(["cargo","audit"])
+	subprocess.run(["cargo","clippy","--target","x86_64-unknown-uefi","--package","nvcore","--package","loadefi","--package","cvsched"])
+	subprocess.run(["cargo","clippy","--target","x86_64-pc-windows-msvc","--package","cvsched"])
+	subprocess.run(["cargo","clippy","--package","cvmock","--all-targets"])
+
+def do_clean():
+	subprocess.run(["cargo","clean"])
+	shutil.rmtree("bin")
+
+def do_test():
+	subprocess.run(["cargo","test","--package","cvsched","--package","htable"])
+
+def main():
+	action="build"
+	known_actions={"build","check","clean","test"}
+	if len(sys.argv)>1 and sys.argv[1] in known_actions:
+		action=sys.argv[1]
+	# Dispatch the action.
+	action_table={"build":do_build,"check":do_check,"clean":do_clean,"test":do_test}
+	action_table[action]()
 
 if __name__=="__main__":
 	known_platforms={"Windows","Linux"}

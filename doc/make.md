@@ -97,18 +97,33 @@ sudo dnf install clang lld llvm mtools nasm qemu
 ## Synopsis
 For Windows, if you configured default application for `.py` files, you may simply execute:
 ```
-make [/target windows|uefi] [/opt:yes|no]
+make [build|check|clean|test] [/target windows|uefi] [/opt:yes|no]
 ```
 Otherwise:
 ```
-python make.py [/target windows|uefi] [/opt:yes|no]
+python make.py [build|check|clean|test] [/target windows|uefi] [/opt:yes|no]
 ```
-For Linux:
+For Linux, you may need to specify `python3`:
 ```
-python3 make.py [/target windows|uefi] [/opt:yes|no]
+python3 make.py [build|check|clean|test] [/target windows|uefi] [/opt:yes|no]
 ```
 
 ### Arguments
+`[build|check|clean|test]` specifies the action performed by the script. Default is `build`. \
+If the action is not `build`, all further arguments are ignored.
+
+`build` action will build NoirVisor into executables. You don't need to specify this action as this is the default.
+
+`check` action instructs the script to invoke `cargo clippy` to check the idiomaticity, and to invoke `cargo audit` to check if there're vulnerable, unmaintained or yanked crates. \
+You must ensure `cargo audit` is installed! If not, install `cargo-audit`:
+```
+cargo install cargo-audit
+```
+
+`clean` action deletes all executables and intermediate files generated during build.
+
+`test` action tests crates that have in-code tests.
+
 `/target windows|uefi` specifies the target binary to be built. \
 Valid options are `windows` and `uefi`. Default is `uefi`.
 

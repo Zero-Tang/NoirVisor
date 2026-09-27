@@ -13,7 +13,7 @@
 use core::slice;
 
 use yaxpeax_arch::LengthedInstruction;
-use paste::paste;
+use pastey::paste;
 
 pub(crate) mod emulator;
 

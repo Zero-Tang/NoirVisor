@@ -18,7 +18,9 @@ if __name__=="__main__":
 	iommu_arg=None
 	pcileech=False
 	debugcon=0xE9
+	debugcon_chardev="stdio"
 	monitor=None
+	nographic=False
 	# Check command-line arguments
 	i=1
 	while i<len(sys.argv):
@@ -49,6 +51,11 @@ if __name__=="__main__":
 			if not isinstance(debugcon,int):
 				can_run=False
 				print("Error: ISA-DebugCon I/O Port number must be an integer!")
+		elif sys.argv[i]=="-dcon-dev":
+			i+=1
+			debugcon_chardev=sys.argv[i]
+		elif sys.argv[i]=="-nographic":
+			nographic=True
 		elif sys.argv[i]=="-monitor":
 			i+=1
 			monitor=int(sys.argv[i])
@@ -108,10 +115,12 @@ if __name__=="__main__":
 			"-drive","if=pflash,format=raw,unit=0,readonly=on,file=ovmf-code.fd",
 			"-drive","if=pflash,format=raw,unit=1,readonly=on,file=ovmf-vars.fd",
 			"-drive","format=raw,file="+os.path.join("..","bin","comp{}_uefix64".format(build_preset),"NoirVisor-Uefi.img"),
-			"-chardev","stdio,id=debugger",
+			"-chardev","{},id=debugger".format(debugcon_chardev),
 			"-device","isa-debugcon,iobase=0x{:X},chardev=debugger".format(debugcon)]
 		if not debug_log is None:
 			cmd_list+=["-d",debug_log,"-D","qemu.log"]
+		if nographic:
+			cmd_list.append("-nographic")
 		if gdb:
 			cmd_list.append("-s")
 		if not iommu is None:

@@ -13,7 +13,7 @@
 use core::{fmt, ops::{BitAndAssign, BitOrAssign}};
 
 use bitfield_struct::bitfield;
-use paste::paste;
+use pastey::paste;
 
 use crate::{vt_core::VtVcpu, xpf_core::{asm::vt::*, x86::{crdr::Dr6, interrupts::EventType, rflags::Rflags}}, *};
 

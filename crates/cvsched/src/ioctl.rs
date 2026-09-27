@@ -4,7 +4,7 @@ use core::{ffi::c_void, hint::cold_path, mem::MaybeUninit};
 
 use alloc::sync::Arc;
 use nvcvm::{hvcall::*, interface::CvmHandle, ioctl::*, status::{Status, unwrap_status}};
-use paste::paste;
+use pastey::paste;
 use log::*;
 
 use crate::{hvcall::hypercall, vmm::{VM_LIST, VirtualMachine}};

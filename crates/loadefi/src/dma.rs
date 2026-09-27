@@ -3,7 +3,7 @@
 use core::{arch::x86_64::__cpuid, ffi::c_void, ptr::null_mut, slice, sync::atomic::Ordering};
 
 use alloc::vec::Vec;
-use efi_helpers::{BS_TABLE, ProtocolBuffer, ata_passthru::{self, CommandBlock, CommandPacket, StatusBlock}, block_until_keystroke, handle_protocol, pe::{IMAGE_DOS_HEADER, IMAGE_DOS_SIGNATURE, IMAGE_NT_HEADERS, IMAGE_NT_SIGNATURE, IMAGE_SECTION_HEADER, IMAGE_SIZEOF_SHORT_NAME}, println};
+use efi_helpers::{BS_TABLE, ProtocolBuffer, ata_passthru::{self, CommandBlock, CommandPacket, StatusBlock}, handle_protocol, pe::{IMAGE_DOS_HEADER, IMAGE_DOS_SIGNATURE, IMAGE_NT_HEADERS, IMAGE_NT_SIGNATURE, IMAGE_SECTION_HEADER, IMAGE_SIZEOF_SHORT_NAME}, println};
 use r_efi::{efi::{Handle, Status}, protocols::loaded_image};
 
 fn do_test_dma(address:*mut c_void)
@@ -104,8 +104,6 @@ fn do_test_dma(address:*mut c_void)
 			println!("{:02X} {:02X}",bytes[511],bytes[510])
 		}
 	}
-	println!("Press any key to continue...");
-	block_until_keystroke();
 }
 
 pub fn test_dma(hv_img:Handle)

@@ -12,7 +12,7 @@
 
 use core::cmp::Ordering;
 
-use paste::paste;
+use pastey::paste;
 
 use crate::xpf_core::x86::msr::{Efer, MSR_EFER, MSR_KERNEL_GS_BASE, MSR_PAT, MSR_SYSENTER_CS};
 use super::{custom::SvmCustomVcpu, vmcb::VmcbOps};

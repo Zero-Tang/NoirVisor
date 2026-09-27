@@ -10,7 +10,7 @@ crate-type = ["staticlib"]
 [dependencies]
 bitfield-struct = "*"
 log = "*"
-paste = "*"
+pastey = "*"
 nvcvm = { path ="../nvcvm" }
 htable = { path = "../htable" }
 

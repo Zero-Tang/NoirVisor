@@ -12,7 +12,7 @@
 
 use core::ffi::c_void;
 use nvcvm::interface::SegmentRegister;
-use paste::paste;
+use pastey::paste;
 use bitfield_struct::bitfield;
 
 use crate::*;

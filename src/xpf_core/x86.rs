@@ -354,13 +354,13 @@ pub mod caching
 				}
 				// Setup Variable MTRRs.
 				let mtrr_cap=MtrrCapMsr::read();
-				for i in 0..mtrr_cap.var_mtrr_count() as usize
+				for (i,mtrr) in self.var_mtrrs.iter_mut().enumerate().take(mtrr_cap.var_mtrr_count() as usize)
 				{
 					let mtrr_mask=MtrrVariableRangeMaskMsr::read(MSR_MTRR_PHYS_MASK0+(i<<1) as u32);
 					if mtrr_mask.valid()
 					{
 						let mtrr_base=MtrrVariableRangeBaseMsr::read(MSR_MTRR_PHYS_BASE0+(i<<1) as u32);
-						self.var_mtrrs[i]=MtrrRange::from_var_mtrr(mtrr_base,mtrr_mask,pa_width);
+						*mtrr=MtrrRange::from_var_mtrr(mtrr_base,mtrr_mask,pa_width);
 						trace!("Detected Variable-MTRR (Base=0x{:016X}, Mask=0x{:016X})",mtrr_base.0,mtrr_mask.0);
 					}
 				}

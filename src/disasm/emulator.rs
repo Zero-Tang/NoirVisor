@@ -16,7 +16,7 @@ use static_collections::string::StaticString;
 use yaxpeax_arch::{display::DisplaySink, LengthedInstruction};
 use yaxpeax_x86::{long_mode, protected_mode, real_mode};
 use log::{error, warn};
-use paste::paste;
+use pastey::paste;
 
 use crate::xpf_core::x86::{crdr::{Cr0, Cr4}, msr::Efer, paging::{PageFaultErrorCode, read_virtual_address, write_virtual_address}};
 

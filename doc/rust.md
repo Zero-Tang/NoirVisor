@@ -26,7 +26,7 @@ NoirVisor uses `cargo test` suite to test NoirVisor. However, system subversion 
 To develop test cases, you should toggle `rust-analyzer.cfg.setTest` to true in `rust-analyzer` plugin and then reload VSCode.
 
 ## Modifying Dependencies
-There are five rules that must be enforced when modifying the dependencies in the workspace:
+There are six rules that must be enforced when modifying the dependencies in the workspace:
 
 - All dependency crates must either be from `crates.io` or in this workspace.
 - If two or more crates in this workspace depends on the same crate from `crates.io`, the version must be the same. \
@@ -37,6 +37,7 @@ There are five rules that must be enforced when modifying the dependencies in th
 	* Partial asterisk version number is not allowed (e.g.: `1.4.*`) in any circumstances.
 	* You might need to manually fix the `Cargo.toml` or even the `Cargo.lock` file if a dependency package appeared multiple times in the `Cargo.lock` file with different version numbers. If it was that two dependent crates depended on the same crate with different versions, it is acceptable to leave such crate appear twice in the `Cargo.lock` file.
 - All dependent packages must be compatible with `#![no_std]` constraint unless for testing. Usage of memory allocator is conditionally allowed.
+- Must pass `cargo audit` check.
 
 ## Logging
 While we do provide macros like `print!` and `println!`, please use `error!`, `warn!`, `info!`, `debug!` and `trace!` macro provided by [the `log` crate](https://docs.rs/log/latest/log/). These logging macros are only usable in host mode. \
@@ -121,7 +122,7 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 - Single-line comments must begin with `//`. Do not use `/**/` in most circumstances. This is drastically different from Linux kernel and QEMU.
 - Do not use `/**/` unless for the source file header.
 - For documentation comments, use `///` instead of `/***/`.
-- Functions that are callable in C must begin with `#[unsafe(no_mangle)] (pub) (unsafe) extern "C" fn`. The `pub` and `unsafe` keywords are not required.
+- Functions that are callable in C must begin with `#[unsafe(no_mangle)] (pub) (unsafe) extern "C" fn`. The `pub` and `unsafe` keywords are not required unless otherwise required by `cargo clippy`.
 - Naming convention is the same to the [Rust default](https://doc.rust-lang.org/1.0.0/style/style/naming/README.html), with following additions:
 	- Architecture/Hardware-specific names must begin with its name ID as prefix.
 	- Method names must be concise, preferably a verb with optional nouns and/or adverbs.

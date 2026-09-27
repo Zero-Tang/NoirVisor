@@ -117,7 +117,6 @@ impl CvmX86Vcpu
 			self.gpr.r15=vpcb.sync_regs.r15;
 			self.rflags=vpcb.sync_regs.rflags;
 			self.rip=vpcb.sync_regs.rip;
-			trace!("new rip: 0x{:X}",self.rip);
 		}
 		if vpcb.sync_flags.seg()
 		{

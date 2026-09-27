@@ -512,15 +512,15 @@ pub fn is_allocated_page(addr:u64)->bool
 			return true;
 		}
 	}
-	return false;
+	false
 }
 
 pub fn print_allocation()
 {
 	let lk=PAGE_ALLOC_MANAGER.lock();
-	for i in 0..lk.count
+	for (i,x) in lk.list.iter().enumerate().take(lk.count)
 	{
-		sysdprintln!("Large Page {i}: {}",lk.list[i]);
+		sysdprintln!("Large Page {i}: {x}");
 	}
 }
 

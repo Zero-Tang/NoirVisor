@@ -12,7 +12,7 @@
 
 use core::{hint::{cold_path, spin_loop}, mem::MaybeUninit, slice, sync::atomic::Ordering};
 
-use paste::paste;
+use pastey::paste;
 
 use decode::{dispatch_decoder, SoftwareDecodeAssistOps};
 use custom::SvmCustomVcpu;

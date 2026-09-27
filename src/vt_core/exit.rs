@@ -12,7 +12,7 @@
 
 use core::{ffi::c_void, hint::unreachable_unchecked};
 
-use paste::paste;
+use pastey::paste;
 use log::*;
 
 use static_collections::bitmap::RefBitmap;

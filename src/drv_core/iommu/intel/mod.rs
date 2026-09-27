@@ -21,7 +21,7 @@ use super::IommuOps;
 use paging::*;
 use acpi::*;
 
-use paste::paste;
+use pastey::paste;
 
 #[allow(dead_code)] pub mod acpi;
 #[allow(dead_code)] mod registers;

@@ -14,7 +14,7 @@ use core::{alloc::Layout, ffi::c_void, mem::MaybeUninit};
 
 use log::warn;
 use nvcvm::{hvcall::*, interface::{CvmHandle, CvmMapping}, status::{Status, unwrap_status}};
-use paste::paste;
+use pastey::paste;
 
 use crate::{cvm_core::x86::*, disasm::emulator::EmulatorOps, xpf_core::x86::interrupts::*};
 use super::*;

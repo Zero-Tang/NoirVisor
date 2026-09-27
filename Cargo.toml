@@ -31,7 +31,7 @@ opt-level = 3
 members = ["crates/cvmock","crates/cvsched","crates/efi-helpers","crates/htable","crates/loadefi","crates/nvcvm","crates/uefibsdrv","crates/windrv","src/booting/uefirtdrv"]
 
 [dependencies]
-paste = "*"
+pastey = "0.2.3"
 nvcvm = {path = "crates/nvcvm"}
 spin = "0.12.3"
 log = "0.4.34"

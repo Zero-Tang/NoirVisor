@@ -14,7 +14,7 @@ use core::{arch::x86_64::_bittest64, convert::From, ffi::{c_int, c_void}, fmt::{
 use super::{asm::{crdr::*, msr::rdmsr, seg::*}, x86::{descriptors::{DescriptorTable, SegmentFlags}, msr::*}};
 use alloc::vec::Vec;
 use bitfield_struct::bitfield;
-use paste::paste;
+use pastey::paste;
 use spin::LazyLock;
 use nvcvm::interface::SegmentRegister;
 

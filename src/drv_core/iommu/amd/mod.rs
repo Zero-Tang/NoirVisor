@@ -14,7 +14,7 @@ use core::{ffi::c_void, hint::spin_loop, sync::atomic::{AtomicU64, AtomicUsize, 
 use alloc::{sync::Arc, vec::Vec};
 
 use log::*;
-use paste::paste;
+use pastey::paste;
 
 use paging::*;
 use crate::{drv_core::acpi::tables::IoVirtualizationReportingStructure, *};

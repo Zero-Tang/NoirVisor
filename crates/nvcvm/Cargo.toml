@@ -13,9 +13,11 @@ categories = ["no-std","virtualization"]
 # No asterisks (e.g.: "*", "0.4.*") are allowed.
 [dependencies]
 bitfield-struct = "0.13.0"
-paste = "1.0.15"
 r-efi = "7.1.0"
-utf16_lit = "2.0.2"
+
+[target.'cfg(windows)'.dependencies.utf16_lit]
+version = "2.0.2"
+optional = true
 
 [target.'cfg(windows)'.dependencies.windows-sys]
 version = "0.61.2"
@@ -23,7 +25,7 @@ features = ["Wdk_Foundation","Wdk_Storage_FileSystem","Wdk_System_SystemServices
 
 [features]
 # User-hypervisor should use this feature.
-user = []
+user = ["dep:utf16_lit"]
 # Kernel scheduler should use this feature.
 kernel = []
 # Only NoirVisor may use this feature.
