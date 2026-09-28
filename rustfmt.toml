@@ -1,0 +1,13 @@
+edition = "2024"
+style_edition = "2024"
+
+hard_tabs = true
+tab_spaces = 4
+max_width = 135
+use_small_heuristics = "Max"
+newline_style = "Windows"
+
+unstable_features = true
+brace_style = "AlwaysNextLine"
+control_brace_style = "AlwaysNextLine"
+empty_item_single_line = true

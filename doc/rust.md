@@ -73,7 +73,7 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 
 - Use Tab (i.e.: `'\t'`) to indent. Each Tab is considered 4 spaces. \
 	When you share codes in NoirVisor via GitHub, make sure to append `?ts=4` suffix on the URL.
-- There is no specific limit of line length (e.g.: 9999 characters per line could be tolerable) under the following conditions:
+- The maximum length per line is 135 under the following conditions:
 	- Each line should have at most one statement. This means when you typed a semicolon to end the statement, only comments are allowed to the follow on this line. \
 		This means short statements are not allowed to merge into the same line, even if they are super short. For example, the following is not allowed:
 		```Rust
@@ -123,6 +123,18 @@ The coding style for NoirVisor in Rust is probably drastically different than mo
 - Do not use `/**/` unless for the source file header.
 - For documentation comments, use `///` instead of `/***/`.
 - Functions that are callable in C must begin with `#[unsafe(no_mangle)] (pub) (unsafe) extern "C" fn`. The `pub` and `unsafe` keywords are not required unless otherwise required by `cargo clippy`.
+- Imports, according to its source provider, must be separated in groups with a blank line. For example:
+	```Rust
+	use alloc::vec::Vec;
+	use core::ptr::null;
+
+	use pastey::paste;
+	use static_collections::vec::StaticVec;
+	
+	use crate::xpf_core::*;
+	use super::*;
+	```
+	The first group is provided by rust compiler. The second group is provided by third-party crates not in the current crate. The third group is provided by the current crate.
 - Naming convention is the same to the [Rust default](https://doc.rust-lang.org/1.0.0/style/style/naming/README.html), with following additions:
 	- Architecture/Hardware-specific names must begin with its name ID as prefix.
 	- Method names must be concise, preferably a verb with optional nouns and/or adverbs.

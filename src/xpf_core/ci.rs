@@ -1,31 +1,34 @@
 /*
  * NoirVisor Core in Rust
- * 
+ *
  * Copyright (c) Zero Tang, 2018-2026. All rights reserved.
- * 
+ *
  * This file is the CI (Code Integrity) Component of NoirVisor Core in Rust.
- * 
- * This program is distributed in the hope that it will be useful, but 
+ *
+ * This program is distributed in the hope that it will be useful, but
  * without any warranty (no matter implied warranty or merchantability
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::*, slice, cmp::Ordering};
 use alloc::vec::Vec;
+use core::{cmp::Ordering, ffi::*, slice};
 
 use bitfield_struct::bitfield;
-use spin::RwLock;
 use log::*;
+use spin::RwLock;
 
-use super::nvbdk::{bytes_to_pages, noir_get_physical_address, page_mult, page_count};
+use super::nvbdk::{bytes_to_pages, noir_get_physical_address, page_count, page_mult};
 
-#[bitfield(u64)] pub struct CiPage
+#[bitfield(u64)]
+pub struct CiPage
 {
 	/// PFN of the protected page.
-	#[bits(40)] pub pfn:u64,
-	#[bits(23)] rsvd:u64,
+	#[bits(40)]
+	pub pfn: u64,
+	#[bits(23)]
+	rsvd: u64,
 	/// Whether or not this page should be delayed.
-	pub delay:bool
+	pub delay: bool,
 }
 
 impl Eq for CiPage {}
@@ -42,7 +45,7 @@ impl PartialEq for CiPage
 {
 	fn eq(&self, other: &Self) -> bool
 	{
-		self.0==other.0
+		self.0 == other.0
 	}
 }
 
@@ -56,15 +59,15 @@ impl PartialOrd for CiPage
 
 pub struct CiManager
 {
-	pages:Vec<CiPage>
+	pages: Vec<CiPage>,
 }
 
 impl CiManager
 {
-	fn add_page(&mut self,phys:u64,delay:bool)
+	fn add_page(&mut self, phys: u64, delay: bool)
 	{
 		// Push-all-then-sort is faster than binary-search-then-insert.
-		let x=CiPage::new().with_pfn(page_count(phys)).with_delay(delay);
+		let x = CiPage::new().with_pfn(page_count(phys)).with_delay(delay);
 		self.pages.push(x);
 	}
 
@@ -74,66 +77,65 @@ impl CiManager
 		self.pages.sort_unstable();
 	}
 
-	fn in_ci(&self,phys:u64)->bool
+	fn in_ci(&self, phys: u64) -> bool
 	{
-		let page=CiPage::new().with_pfn(page_count(phys));
+		let page = CiPage::new().with_pfn(page_count(phys));
 		self.pages.binary_search(&page).is_ok()
 	}
 
-	const fn new()->Self
+	const fn new() -> Self
 	{
-		Self
-		{
-			pages:Vec::new()
-		}
+		Self { pages: Vec::new() }
 	}
 }
 
 impl<'a> IntoIterator for &'a CiManager
 {
 	type Item = &'a CiPage;
-	type IntoIter = slice::Iter<'a,CiPage>;
+	type IntoIter = slice::Iter<'a, CiPage>;
 	fn into_iter(self) -> Self::IntoIter
 	{
 		self.pages.iter()
 	}
 }
 
-pub static CI_MANAGER:RwLock<CiManager>=RwLock::new(CiManager::new());
+pub static CI_MANAGER: RwLock<CiManager> = RwLock::new(CiManager::new());
 
 // We will use this routine to check if a page is protected in Code-Integrity.
-pub fn is_ci_phys_page(phys:u64)->bool
+pub fn is_ci_phys_page(phys: u64) -> bool
 {
 	CI_MANAGER.read().in_ci(phys)
 }
 
 /// # Safety
 /// `noir_add_section_to_ci` must be called by C functions.
-#[unsafe(no_mangle)] unsafe extern "C" fn noir_add_section_to_ci(base:*mut c_void,size:usize,delay:bool)->bool
+#[unsafe(no_mangle)]
+unsafe extern "C" fn noir_add_section_to_ci(base: *mut c_void, size: usize, delay: bool) -> bool
 {
-	let page_num=bytes_to_pages(size);
-	let mut ci=CI_MANAGER.write();
+	let page_num = bytes_to_pages(size);
+	let mut ci = CI_MANAGER.write();
 	for i in 0..page_num
 	{
-		let phys=unsafe
-		{
-			let virt=base.byte_add(page_mult(i));
+		let phys = unsafe {
+			let virt = base.byte_add(page_mult(i));
 			noir_get_physical_address(virt)
 		};
-		ci.add_page(phys,delay);
+		ci.add_page(phys, delay);
 	}
 	true
 }
 
 /// # Safety
 /// `noir_activate_ci` must be called by C functions.
-#[unsafe(no_mangle)] unsafe extern "C" fn noir_activate_ci()->bool
+#[unsafe(no_mangle)]
+unsafe extern "C" fn noir_activate_ci() -> bool
 {
 	CI_MANAGER.write().activate();
 	true
 }
 
-#[unsafe(no_mangle)] extern "C" fn noir_initialize_ci(soft_ci:bool,hard_ci:bool)->bool
+#[unsafe(no_mangle)]
+extern "C" fn noir_initialize_ci(soft_ci: bool, hard_ci: bool) -> bool
 {
 	if soft_ci
 	{
@@ -151,7 +153,8 @@ pub fn is_ci_phys_page(phys:u64)->bool
 	}
 }
 
-#[unsafe(no_mangle)] extern "C" fn noir_finalize_ci()
+#[unsafe(no_mangle)]
+extern "C" fn noir_finalize_ci()
 {
 	// There is nothing to do in Rust when we finalize CI.
 }

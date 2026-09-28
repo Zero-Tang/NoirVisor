@@ -1,109 +1,145 @@
+/*
+ * NoirVisor Core in Rust
+ *
+ * Copyright (c) Zero Tang, 2018-2026. All rights reserved.
+ *
+ * This file is the entry point for the NoirVisor Windows driver support library.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * without any warranty (no matter implied warranty or merchantability
+ * or fitness for a particular purpose, etc.).
+ */
+
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
 
-use core::{ffi::c_void, ptr::{null, null_mut}};
+use core::{
+	ffi::c_void,
+	ptr::{null, null_mut},
+};
 
 use nvcvm::status::Status;
 use utf16_lit::utf16;
-use windows_sys::{Wdk::{Foundation::{DEVICE_OBJECT, DRIVER_OBJECT, FILE_OBJECT, IRP}, Storage::FileSystem::IO_NO_INCREMENT, System::SystemServices::{FILE_DEVICE_SECURE_OPEN, HighPagePriority, IO_COMPLETION_ROUTINE, IRP_MJ_CLOSE, IRP_MJ_CREATE, IRP_MJ_DEVICE_CONTROL, IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IofCompleteRequest, KernelMode, MmCached, MmMapLockedPagesSpecifyCache, PsGetCurrentProcessId, PsSetCreateProcessNotifyRoutine}}, Win32::{Foundation::{NTSTATUS, STATUS_DEVICE_CONFIGURATION_ERROR, STATUS_INVALID_DEVICE_REQUEST, STATUS_SUCCESS, STATUS_UNSUCCESSFUL, UNICODE_STRING}, System::Ioctl::{FILE_DEVICE_UNKNOWN, METHOD_BUFFERED, METHOD_NEITHER, METHOD_OUT_DIRECT}}};
+use windows_sys::{
+	Wdk::{
+		Foundation::{DEVICE_OBJECT, DRIVER_OBJECT, FILE_OBJECT, IRP},
+		Storage::FileSystem::IO_NO_INCREMENT,
+		System::SystemServices::{
+			FILE_DEVICE_SECURE_OPEN, HighPagePriority, IO_COMPLETION_ROUTINE, IRP_MJ_CLOSE, IRP_MJ_CREATE, IRP_MJ_DEVICE_CONTROL,
+			IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IofCompleteRequest, KernelMode, MmCached,
+			MmMapLockedPagesSpecifyCache, PsGetCurrentProcessId, PsSetCreateProcessNotifyRoutine,
+		},
+	},
+	Win32::{
+		Foundation::{
+			NTSTATUS, STATUS_DEVICE_CONFIGURATION_ERROR, STATUS_INVALID_DEVICE_REQUEST, STATUS_SUCCESS, STATUS_UNSUCCESSFUL,
+			UNICODE_STRING,
+		},
+		System::Ioctl::{FILE_DEVICE_UNKNOWN, METHOD_BUFFERED, METHOD_NEITHER, METHOD_OUT_DIRECT},
+	},
+};
 
 use crate::misc::{create_process_notify_fn, init_logger};
 
+pub mod kmap;
 mod misc;
 pub mod sync;
-pub mod kmap;
 
-unsafe extern "system"
-{
-	fn noir_dispatch_ioctl(ioctl_code:usize,in_buff:*const c_void,in_size:usize,out_buff:*mut c_void,out_size:usize)->Status;
-	fn noir_cvsched_init()->bool;
+unsafe extern "system" {
+	fn noir_dispatch_ioctl(
+		ioctl_code: usize,
+		in_buff: *const c_void,
+		in_size: usize,
+		out_buff: *mut c_void,
+		out_size: usize,
+	) -> Status;
+	fn noir_cvsched_init() -> bool;
 	fn noir_cvsched_deinit();
 }
 
-static DEVICE_NAME:&[u16]=&utf16!("\\Device\\NoirVisor");
-static LINK_NAME:&[u16]=&utf16!("\\DosDevices\\NoirVisor");
+static DEVICE_NAME: &[u16] = &utf16!("\\Device\\NoirVisor");
+static LINK_NAME: &[u16] = &utf16!("\\DosDevices\\NoirVisor");
 
 // The definition from windows_sys crate is incorrect.
 #[derive(Clone, Copy)]
-#[repr(C)] pub struct DeviceIoControlParameter
+#[repr(C)]
+pub struct DeviceIoControlParameter
 {
-	pub output_buffer_length:usize,
-	pub input_buffer_length:usize,
-	pub io_control_code:usize,
-	pub type3_input_buffer:*mut c_void
+	pub output_buffer_length: usize,
+	pub input_buffer_length: usize,
+	pub io_control_code: usize,
+	pub type3_input_buffer: *mut c_void,
 }
 
-#[repr(C)] pub union IrpParameterUnion
+#[repr(C)]
+pub union IrpParameterUnion
 {
 	// TODO: add more union fields.
-	pub device_io_control:DeviceIoControlParameter
+	pub device_io_control: DeviceIoControlParameter,
 }
 
-#[repr(C)] pub struct IoStackLocation
+#[repr(C)]
+pub struct IoStackLocation
 {
-	pub major_function:u8,
-	pub minor_function:u8,
-	pub flags:u8,
-	pub control:u8,
-	pub parameters:IrpParameterUnion,
-	pub device_object:*mut DEVICE_OBJECT,
-	pub file_object:*mut FILE_OBJECT,
-	pub completion_routine:IO_COMPLETION_ROUTINE,
-	pub context:*mut c_void
+	pub major_function: u8,
+	pub minor_function: u8,
+	pub flags: u8,
+	pub control: u8,
+	pub parameters: IrpParameterUnion,
+	pub device_object: *mut DEVICE_OBJECT,
+	pub file_object: *mut FILE_OBJECT,
+	pub completion_routine: IO_COMPLETION_ROUTINE,
+	pub context: *mut c_void,
 }
 
-pub fn get_current_process_id()->u32
+pub fn get_current_process_id() -> u32
 {
-	unsafe
-	{
-		PsGetCurrentProcessId() as u32
-	}
+	unsafe { PsGetCurrentProcessId() as u32 }
 }
 
-const unsafe fn unistr_from_slice(string:&[u16])->UNICODE_STRING
+const unsafe fn unistr_from_slice(string: &[u16]) -> UNICODE_STRING
 {
-	UNICODE_STRING
-	{
-		Length:(string.len()<<1) as u16,
-		MaximumLength:(string.len()<<1) as u16,
-		Buffer:string.as_ptr() as *mut u16
+	UNICODE_STRING {
+		Length: (string.len() << 1) as u16,
+		MaximumLength: (string.len() << 1) as u16,
+		Buffer: string.as_ptr() as *mut u16,
 	}
 }
 
 // Equivalent of IoGetCurrentIrpStackLocation.
-#[inline(always)] unsafe fn get_current_irpsp(irp:*const IRP)->*mut IoStackLocation
+#[inline(always)]
+unsafe fn get_current_irpsp(irp: *const IRP) -> *mut IoStackLocation
 {
-	unsafe
-	{
-		(*irp).Tail.Overlay.Anonymous2.Anonymous.CurrentStackLocation.cast()
-	}
+	unsafe { (*irp).Tail.Overlay.Anonymous2.Anonymous.CurrentStackLocation.cast() }
 }
 
-#[inline(always)] const fn method_from_ctl_code(ctl_code:u32)->u32
+#[inline(always)]
+const fn method_from_ctl_code(ctl_code: u32) -> u32
 {
-	ctl_code&3
+	ctl_code & 3
 }
 
-#[inline(always)] const fn is_ctl_code_custom(ctl_code:u32)->bool
+#[inline(always)]
+const fn is_ctl_code_custom(ctl_code: u32) -> bool
 {
-	(ctl_code&(1<<13))!=0
+	(ctl_code & (1 << 13)) != 0
 }
 
-#[inline(always)] const fn function_from_ctl_code(ctl_code:u32)->usize
+#[inline(always)]
+const fn function_from_ctl_code(ctl_code: u32) -> usize
 {
-	((ctl_code>>2)&0x7FF) as usize
+	((ctl_code >> 2) & 0x7FF) as usize
 }
 
-unsafe fn get_input_buffer(irp:*const IRP)->*mut c_void
+unsafe fn get_input_buffer(irp: *const IRP) -> *mut c_void
 {
-	unsafe
-	{
-		let irpsp=get_current_irpsp(irp);
-		if (*irpsp).major_function==IRP_MJ_DEVICE_CONTROL as u8
+	unsafe {
+		let irpsp = get_current_irpsp(irp);
+		if (*irpsp).major_function == IRP_MJ_DEVICE_CONTROL as u8
 		{
-			let method=method_from_ctl_code((*irpsp).parameters.device_io_control.io_control_code as u32);
-			if method==METHOD_NEITHER
+			let method = method_from_ctl_code((*irpsp).parameters.device_io_control.io_control_code as u32);
+			if method == METHOD_NEITHER
 			{
 				(*irpsp).parameters.device_io_control.type3_input_buffer
 			}
@@ -119,27 +155,26 @@ unsafe fn get_input_buffer(irp:*const IRP)->*mut c_void
 	}
 }
 
-unsafe fn get_output_buffer(irp:*const IRP)->*mut c_void
+unsafe fn get_output_buffer(irp: *const IRP) -> *mut c_void
 {
-	unsafe
-	{
-		let irpsp=get_current_irpsp(irp);
-		if (*irpsp).major_function==IRP_MJ_DEVICE_CONTROL as u8
+	unsafe {
+		let irpsp = get_current_irpsp(irp);
+		if (*irpsp).major_function == IRP_MJ_DEVICE_CONTROL as u8
 		{
-			let method=method_from_ctl_code((*irpsp).parameters.device_io_control.io_control_code as u32);
-			if method==METHOD_BUFFERED
+			let method = method_from_ctl_code((*irpsp).parameters.device_io_control.io_control_code as u32);
+			if method == METHOD_BUFFERED
 			{
 				(*irp).AssociatedIrp.SystemBuffer
 			}
-			else if method==METHOD_OUT_DIRECT
+			else if method == METHOD_OUT_DIRECT
 			{
 				// Manually implement MmGetSystemAddressForMdlSafe
-				let mdl=(*irp).MdlAddress;
-				const MDL_MAPPED_TO_SYSTEM_VA:i16=0x0;
-				const MDL_SOURCE_IS_NONPAGED_POOL:i16=0x4;
-				if ((*mdl).MdlFlags&(MDL_MAPPED_TO_SYSTEM_VA|MDL_SOURCE_IS_NONPAGED_POOL))==0
+				let mdl = (*irp).MdlAddress;
+				const MDL_MAPPED_TO_SYSTEM_VA: i16 = 0x0;
+				const MDL_SOURCE_IS_NONPAGED_POOL: i16 = 0x4;
+				if ((*mdl).MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL)) == 0
 				{
-					MmMapLockedPagesSpecifyCache(mdl,KernelMode as i8,MmCached,null(),0,HighPagePriority as u32)
+					MmMapLockedPagesSpecifyCache(mdl, KernelMode as i8, MmCached, null(), 0, HighPagePriority as u32)
 				}
 				else
 				{
@@ -158,97 +193,102 @@ unsafe fn get_output_buffer(irp:*const IRP)->*mut c_void
 	}
 }
 
-unsafe extern "system" fn driver_unload(driver_object:*const DRIVER_OBJECT)
+unsafe extern "system" fn driver_unload(driver_object: *const DRIVER_OBJECT)
 {
-	unsafe
-	{
+	unsafe {
 		noir_cvsched_deinit();
-		PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn),true);
-		let link_name=unistr_from_slice(LINK_NAME);
+		PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn), true);
+		let link_name = unistr_from_slice(LINK_NAME);
 		IoDeleteSymbolicLink(&raw const link_name);
 		IoDeleteDevice((*driver_object).DeviceObject);
 	}
-	dprintln!(0,"Driver is unloaded!");
+	dprintln!(0, "Driver is unloaded!");
 }
 
-unsafe extern "system" fn dispatch_create_close(_device_object:*const DEVICE_OBJECT,irp:*mut IRP)->NTSTATUS
+unsafe extern "system" fn dispatch_create_close(_device_object: *const DEVICE_OBJECT, irp: *mut IRP) -> NTSTATUS
 {
-	unsafe
-	{
-		(*irp).IoStatus.Anonymous.Status=STATUS_SUCCESS;
-		(*irp).IoStatus.Information=0;
-		IofCompleteRequest(irp,IO_NO_INCREMENT as i8);
+	unsafe {
+		(*irp).IoStatus.Anonymous.Status = STATUS_SUCCESS;
+		(*irp).IoStatus.Information = 0;
+		IofCompleteRequest(irp, IO_NO_INCREMENT as i8);
 	}
 	STATUS_SUCCESS
 }
 
-unsafe extern "system" fn dispatch_io_control(_device_object:*const DEVICE_OBJECT,irp:*mut IRP)->NTSTATUS
+unsafe extern "system" fn dispatch_io_control(_device_object: *const DEVICE_OBJECT, irp: *mut IRP) -> NTSTATUS
 {
-	let mut st:NTSTATUS=STATUS_INVALID_DEVICE_REQUEST;
-	unsafe
-	{
-		let irpsp=get_current_irpsp(irp);
-		let in_buff=get_input_buffer(irp);
-		let out_buff=get_output_buffer(irp);
-		let in_size=(*irpsp).parameters.device_io_control.input_buffer_length&0xffffffff;
-		let out_size=(*irpsp).parameters.device_io_control.output_buffer_length&0xffffffff;
-		let io_ctrl_code=(*irpsp).parameters.device_io_control.io_control_code as u32;
+	let mut st: NTSTATUS = STATUS_INVALID_DEVICE_REQUEST;
+	unsafe {
+		let irpsp = get_current_irpsp(irp);
+		let in_buff = get_input_buffer(irp);
+		let out_buff = get_output_buffer(irp);
+		let in_size = (*irpsp).parameters.device_io_control.input_buffer_length & 0xffffffff;
+		let out_size = (*irpsp).parameters.device_io_control.output_buffer_length & 0xffffffff;
+		let io_ctrl_code = (*irpsp).parameters.device_io_control.io_control_code as u32;
 		if is_ctl_code_custom(io_ctrl_code)
 		{
-			let code_index=function_from_ctl_code(io_ctrl_code);
-			let cv_st=noir_dispatch_ioctl(code_index,in_buff,in_size,out_buff,out_size);
+			let code_index = function_from_ctl_code(io_ctrl_code);
+			let cv_st = noir_dispatch_ioctl(code_index, in_buff, in_size, out_buff, out_size);
 			// Convert NoirVisor's status code into NT's status code.
-			st=match cv_st
+			st = match cv_st
 			{
-				Status::SUCCESS=>STATUS_SUCCESS,
-				Status::DISPATCH_FAILURE=>STATUS_INVALID_DEVICE_REQUEST,
-				_=>STATUS_UNSUCCESSFUL
+				Status::SUCCESS => STATUS_SUCCESS,
+				Status::DISPATCH_FAILURE => STATUS_INVALID_DEVICE_REQUEST,
+				_ => STATUS_UNSUCCESSFUL,
 			}
 		}
-		(*irp).IoStatus.Anonymous.Status=st;
-		(*irp).IoStatus.Information=out_size;
-		IofCompleteRequest(irp,IO_NO_INCREMENT as i8);
+		(*irp).IoStatus.Anonymous.Status = st;
+		(*irp).IoStatus.Information = out_size;
+		IofCompleteRequest(irp, IO_NO_INCREMENT as i8);
 	}
 	st
 }
 
-#[unsafe(no_mangle)] unsafe extern "system" fn NoirDriverEntry(driver_object:*mut DRIVER_OBJECT,_registry_path:*const UNICODE_STRING)->NTSTATUS
+#[unsafe(no_mangle)]
+unsafe extern "system" fn NoirDriverEntry(driver_object: *mut DRIVER_OBJECT, _registry_path: *const UNICODE_STRING) -> NTSTATUS
 {
-	let mut st:NTSTATUS=STATUS_DEVICE_CONFIGURATION_ERROR;
+	let mut st: NTSTATUS = STATUS_DEVICE_CONFIGURATION_ERROR;
 	init_logger();
-	unsafe
-	{
+	unsafe {
 		if !noir_cvsched_init()
 		{
 			return st;
 		}
-		st=PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn),false);
-		if st!=STATUS_SUCCESS
+		st = PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn), false);
+		if st != STATUS_SUCCESS
 		{
 			noir_cvsched_deinit();
 			return st;
 		}
-		(*driver_object).MajorFunction[IRP_MJ_CREATE as usize]=Some(dispatch_create_close);
-		(*driver_object).MajorFunction[IRP_MJ_CLOSE as usize]=Some(dispatch_create_close);
-		(*driver_object).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize]=Some(dispatch_io_control);
-		(*driver_object).DriverUnload=Some(driver_unload);
-		let dev_name=unistr_from_slice(DEVICE_NAME);
-		let mut dev_obj=null_mut();
-		st=IoCreateDevice(driver_object,0,&raw const dev_name,FILE_DEVICE_UNKNOWN,FILE_DEVICE_SECURE_OPEN,false,&raw mut dev_obj);
-		if st==STATUS_SUCCESS
+		(*driver_object).MajorFunction[IRP_MJ_CREATE as usize] = Some(dispatch_create_close);
+		(*driver_object).MajorFunction[IRP_MJ_CLOSE as usize] = Some(dispatch_create_close);
+		(*driver_object).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = Some(dispatch_io_control);
+		(*driver_object).DriverUnload = Some(driver_unload);
+		let dev_name = unistr_from_slice(DEVICE_NAME);
+		let mut dev_obj = null_mut();
+		st = IoCreateDevice(
+			driver_object,
+			0,
+			&raw const dev_name,
+			FILE_DEVICE_UNKNOWN,
+			FILE_DEVICE_SECURE_OPEN,
+			false,
+			&raw mut dev_obj,
+		);
+		if st == STATUS_SUCCESS
 		{
-			let link_name=unistr_from_slice(LINK_NAME);
-			st=IoCreateSymbolicLink(&raw const link_name,&raw const dev_name);
-			if st!=STATUS_SUCCESS
+			let link_name = unistr_from_slice(LINK_NAME);
+			st = IoCreateSymbolicLink(&raw const link_name, &raw const dev_name);
+			if st != STATUS_SUCCESS
 			{
 				noir_cvsched_deinit();
-				PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn),true);
+				PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn), true);
 				IoDeleteDevice(dev_obj);
 			}
 		}
 		else
 		{
-			PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn),true);
+			PsSetCreateProcessNotifyRoutine(Some(create_process_notify_fn), true);
 			noir_cvsched_deinit();
 		}
 	}
@@ -263,15 +303,16 @@ mod panicking
 	use log::error;
 	use windows_sys::{Wdk::System::SystemServices::KeBugCheckEx, Win32::System::Diagnostics::Debug::MANUALLY_INITIATED_CRASH};
 
-	#[panic_handler] fn panic(info:&PanicInfo)->!
+	#[panic_handler]
+	fn panic(info: &PanicInfo) -> !
 	{
 		error!("NoirVisor {info}");
-		unsafe
-		{
+		unsafe {
 			// As we're panicking, send the system to crash.
-			KeBugCheckEx(MANUALLY_INITIATED_CRASH,0,0,0,0);
+			KeBugCheckEx(MANUALLY_INITIATED_CRASH, 0, 0, 0, 0);
 		}
 		// For some strange reasons, KeBugCheckEx does not return never type.
-		loop{}
+		loop
+		{}
 	}
 }

@@ -1,11 +1,11 @@
 /*
  * NoirVisor Core in Rust
- * 
+ *
  * Copyright (c) Zero Tang, 2018-2026. All rights reserved.
- * 
+ *
  * This file is the entry point of NoirVisor Core in Rust.
- * 
- * This program is distributed in the hope that it will be useful, but 
+ *
+ * This program is distributed in the hope that it will be useful, but
  * without any warranty (no matter implied warranty or merchantability
  * or fitness for a particular purpose, etc.).
  */
@@ -17,38 +17,36 @@
 
 extern crate alloc;
 
-pub mod drv_core;
-pub mod xpf_core;
-#[cfg(any(target_arch="x86_64",target_arch="x86"))]
-pub mod vt_core;
-#[cfg(any(target_arch="x86_64",target_arch="x86"))]
-pub mod svm_core;
 pub mod cvm_core;
-pub mod mshv_core;
 pub mod disasm;
+pub mod drv_core;
+pub mod mshv_core;
+#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+pub mod svm_core;
+#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+pub mod vt_core;
+pub mod xpf_core;
 
-use core::{slice, str};
 use alloc::boxed::Box;
+use core::{slice, str};
 
 use log::*;
-
 use nvcvm::status::Status;
 use spin::Once;
 // We do not directly use the uefirtdrv crate by Rust's import method.
 // However, in order to link it, it must be imported.
-#[cfg(target_os="uefi")]
+#[cfg(target_os = "uefi")]
 pub use uefirtdrv as platform;
 
-use xpf_core::{x86::cpuid::*, nvbdk::PAGE_4KB_SHIFT};
-use vt_core::VtHypervisor;
-use svm_core::SvmHypervisor;
-
 use crate::cvm_core::x86::CvmHvOps;
+use svm_core::SvmHypervisor;
+use vt_core::VtHypervisor;
+use xpf_core::{nvbdk::PAGE_4KB_SHIFT, x86::cpuid::*};
 
 // Limit stack size to 32KiB. Should be enough for most circumstances.
 // FIXME: Implement runtime stack overflow detector.
-pub const HYPERVISOR_STACK_PAGE_COUNT:usize=8;
-pub const HYPERVISOR_STACK_SIZE:usize=HYPERVISOR_STACK_PAGE_COUNT<<PAGE_4KB_SHIFT;
+pub const HYPERVISOR_STACK_PAGE_COUNT: usize = 8;
+pub const HYPERVISOR_STACK_SIZE: usize = HYPERVISOR_STACK_PAGE_COUNT << PAGE_4KB_SHIFT;
 
 pub enum ProcessorManufacturer
 {
@@ -66,143 +64,152 @@ pub enum ProcessorManufacturer
 	Rise,
 	UMC,
 	Vortex,
-	Unknown
+	Unknown,
 }
 
-#[unsafe(no_mangle)] unsafe extern "C" fn noir_get_vendor_string(vstr:*mut u8)
+#[unsafe(no_mangle)]
+unsafe extern "C" fn noir_get_vendor_string(vstr: *mut u8)
 {
-	let vendor_id=MaxStandardLeafAndVendorString::cpuid();
-	let s=unsafe{slice::from_raw_parts_mut(vstr,12)};
+	let vendor_id = MaxStandardLeafAndVendorString::cpuid();
+	let s = unsafe { slice::from_raw_parts_mut(vstr, 12) };
 	s.copy_from_slice(vendor_id.vendor_name().as_bytes());
 }
 
-#[unsafe(no_mangle)] unsafe extern "C" fn noir_get_processor_name(pstr:*mut u8)
+#[unsafe(no_mangle)]
+unsafe extern "C" fn noir_get_processor_name(pstr: *mut u8)
 {
-	let brand_str=ProcessorBrandString::cpuid();
-	let s=unsafe{slice::from_raw_parts_mut(pstr,48)};
+	let brand_str = ProcessorBrandString::cpuid();
+	let s = unsafe { slice::from_raw_parts_mut(pstr, 48) };
 	s.copy_from_slice(&brand_str.buffer);
 }
 
 impl ProcessorManufacturer
 {
-	fn query(vendor_string:&mut [u8;12])->Self
+	fn query(vendor_string: &mut [u8; 12]) -> Self
 	{
-		let vendor_id=MaxStandardLeafAndVendorString::cpuid();
+		let vendor_id = MaxStandardLeafAndVendorString::cpuid();
 		// Let's hope Rust's string match has O(logn) or better performance...
 		// Otherwise, we will setup a pair of sorted lists and do binary search.
 		// Note: Zhaoxin CPUs might use three different CPUID vendor names.
 		// It can be one of Centaur, VIA and Zhaoxin.
 		// Note: Montage Jintide CPUs will use Intel's vendor name.
-		let s:&str=vendor_id.vendor_name();
+		let s: &str = vendor_id.vendor_name();
 		vendor_string.copy_from_slice(s.as_bytes());
 		match s
 		{
-			"GenuineIntel"=>Self::Intel,
-			"AuthenticAMD"=>Self::AMD,
-			"AMDisbetter!"=>Self::AMD,
-			"VIA VIA VIA "=>Self::VIA,
-			"  Shanghai  "=>Self::ZhaoXin,
-			"HygonGenuine"=>Self::Hygon,
-			"CentaurHauls"=>Self::Centaur,
-			"CyrixInstead"=>Self::Cyrix,
-			"GenuineTMx86"=>Self::Transmeta,
-			"NexGenDriven"=>Self::NexGen,
-			"SiS SiS SiS "=>Self::SiS,
-			"Geode by NSC"=>Self::NationalSemiconductor,
-			"RiseRiseRise"=>Self::Rise,
-			"UMC UMC UMC "=>Self::UMC,
-			"Vortex86 SoC"=>Self::Vortex,
-			_=>Self::Unknown
+			"GenuineIntel" => Self::Intel,
+			"AuthenticAMD" => Self::AMD,
+			"AMDisbetter!" => Self::AMD,
+			"VIA VIA VIA " => Self::VIA,
+			"  Shanghai  " => Self::ZhaoXin,
+			"HygonGenuine" => Self::Hygon,
+			"CentaurHauls" => Self::Centaur,
+			"CyrixInstead" => Self::Cyrix,
+			"GenuineTMx86" => Self::Transmeta,
+			"NexGenDriven" => Self::NexGen,
+			"SiS SiS SiS " => Self::SiS,
+			"Geode by NSC" => Self::NationalSemiconductor,
+			"RiseRiseRise" => Self::Rise,
+			"UMC UMC UMC " => Self::UMC,
+			"Vortex86 SoC" => Self::Vortex,
+			_ => Self::Unknown,
 		}
 	}
 }
 
 pub trait HypervisorCapabilities
 {
-	fn check_support()->u32;
-	fn check_enabled()->bool;
+	fn check_support() -> u32;
+	fn check_enabled() -> bool;
 }
 
-pub trait HypervisorEssentials:Send+Sync+CvmHvOps
+pub trait HypervisorEssentials: Send + Sync + CvmHvOps
 {
-	fn subvert_system(&mut self)->Status;
-	fn is_iommu_active(&self)->bool;
+	fn subvert_system(&mut self) -> Status;
+	fn is_iommu_active(&self) -> bool;
 }
 
-static HVM:Once<Box<dyn HypervisorEssentials>>=Once::new();
+static HVM: Once<Box<dyn HypervisorEssentials>> = Once::new();
 
-#[unsafe(no_mangle)] extern "C" fn noir_get_virtualization_supportability()->u32
+#[unsafe(no_mangle)]
+extern "C" fn noir_get_virtualization_supportability() -> u32
 {
 	use ProcessorManufacturer::*;
-	let mut vstr_raw:[u8;12]=[0;12];
-	let cpu_manuf=ProcessorManufacturer::query(&mut vstr_raw);
+	let mut vstr_raw: [u8; 12] = [0; 12];
+	let cpu_manuf = ProcessorManufacturer::query(&mut vstr_raw);
 	match cpu_manuf
 	{
-		Intel|VIA|ZhaoXin|Centaur=>VtHypervisor::check_support(),
-		AMD|Hygon=>SvmHypervisor::check_support(),
-		_=>0
+		Intel | VIA | ZhaoXin | Centaur => VtHypervisor::check_support(),
+		AMD | Hygon => SvmHypervisor::check_support(),
+		_ => 0,
 	}
 }
 
-#[unsafe(no_mangle)] extern "C" fn noir_is_virtualization_enabled()->bool
+#[unsafe(no_mangle)]
+extern "C" fn noir_is_virtualization_enabled() -> bool
 {
 	use ProcessorManufacturer::*;
-	let mut vstr_raw:[u8;12]=[0;12];
-	let cpu_manuf=ProcessorManufacturer::query(&mut vstr_raw);
+	let mut vstr_raw: [u8; 12] = [0; 12];
+	let cpu_manuf = ProcessorManufacturer::query(&mut vstr_raw);
 	match cpu_manuf
 	{
-		Intel|VIA|ZhaoXin|Centaur=>VtHypervisor::check_enabled(),
-		AMD|Hygon=>SvmHypervisor::check_enabled(),
-		_=>false
+		Intel | VIA | ZhaoXin | Centaur => VtHypervisor::check_enabled(),
+		AMD | Hygon => SvmHypervisor::check_enabled(),
+		_ => false,
 	}
 }
 
-#[unsafe(no_mangle)] extern "C" fn nvc_build_hypervisor()->Status
+#[unsafe(no_mangle)]
+extern "C" fn nvc_build_hypervisor() -> Status
 {
 	use ProcessorManufacturer::*;
 	// Subvert the system.
 	info!("Subverting the system...");
-	let mut vstr_raw:[u8;12]=[0;12];
-	let hv:Option<Box<dyn HypervisorEssentials>>=match ProcessorManufacturer::query(&mut vstr_raw)
+	let mut vstr_raw: [u8; 12] = [0; 12];
+	let hv: Option<Box<dyn HypervisorEssentials>> = match ProcessorManufacturer::query(&mut vstr_raw)
 	{
-		Intel|VIA|ZhaoXin|Centaur=>
+		Intel | VIA | ZhaoXin | Centaur =>
 		{
 			// Use Intel VT-x.
 			Some(Box::<VtHypervisor>::new(VtHypervisor::default()))
 		}
-		AMD|Hygon=>
+		AMD | Hygon =>
 		{
 			// Use AMD-V.
 			Some(Box::<SvmHypervisor>::new(SvmHypervisor::default()))
 		}
-		_=>
+		_ =>
 		{
 			// Either this processor does not support virtualization at all,
 			// or we don't know what kind of virtualization this processor supports.
-			if let Ok(s)=core::str::from_utf8(&vstr_raw)
+			if let Ok(s) = core::str::from_utf8(&vstr_raw)
 			{
-				panic!("The processor vendor (\"{}\") is unknown!",s);
+				panic!("The processor vendor (\"{}\") is unknown!", s);
 			}
 			None
 		}
 	};
-	if let Some(mut hypervisor)=hv
+	if let Some(mut hypervisor) = hv
 	{
 		use xpf_core::allocator::*;
 		// Subvert the system.
-		let st=hypervisor.subvert_system();
+		let st = hypervisor.subvert_system();
 		// set_alloc_checker(true);
 		// Print out heap usage.
 		#[cfg(not(test))]
-		sysdprintln!("Allocated {} large pages! heap has {} used bytes, has {} free bytes",get_large_page_count(),get_used(),get_free());
+		sysdprintln!(
+			"Allocated {} large pages! heap has {} used bytes, has {} free bytes",
+			get_large_page_count(),
+			get_used(),
+			get_free()
+		);
 		print_allocation();
-		#[allow(static_mut_refs,improper_ctypes)]
+		#[allow(static_mut_refs, improper_ctypes)]
 		{
-			unsafe extern "C"
-			{
-				static mut PANIC_MESSAGE:static_collections::string::StaticString<1024>;
+			unsafe extern "C" {
+				static mut PANIC_MESSAGE: static_collections::string::StaticString<1024>;
 			}
-			sysdprintln!("Panic Buffer: {:p}",unsafe{PANIC_MESSAGE.as_mut_ptr()});
+			sysdprintln!("Panic Buffer: {:p}", unsafe { PANIC_MESSAGE.as_mut_ptr() });
 		}
 		HVM.call_once(|| hypervisor);
 		st
@@ -221,21 +228,23 @@ static HVM:Once<Box<dyn HypervisorEssentials>>=Once::new();
 #[allow(dead_code)]
 mod panicking
 {
-	use core::{panic::PanicInfo};
+	use core::panic::PanicInfo;
 
 	use log::error;
 	use static_collections::{format_static, string::StaticString};
 
-	#[unsafe(no_mangle)] static mut PANIC_MESSAGE:StaticString<1024>=StaticString::new();
+	#[unsafe(no_mangle)]
+	static mut PANIC_MESSAGE: StaticString<1024> = StaticString::new();
 
-	#[panic_handler] fn panic(panic: &PanicInfo)->!
+	#[panic_handler]
+	fn panic(panic: &PanicInfo) -> !
 	{
-		unsafe
-		{
+		unsafe {
 			// Store the panic log in global variable.
-			PANIC_MESSAGE=format_static!(1024,"NoirVisor {}",panic).unwrap();
+			PANIC_MESSAGE = format_static!(1024, "NoirVisor {}", panic).unwrap();
 		}
-		error!("\x1b[91mNoirVisor {} \x1b[39m",panic);
-		loop{}
+		error!("\x1b[91mNoirVisor {} \x1b[39m", panic);
+		loop
+		{}
 	}
 }

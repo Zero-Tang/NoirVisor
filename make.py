@@ -68,6 +68,7 @@ def do_check():
 	subprocess.run(["cargo","clippy","--target","x86_64-unknown-uefi","--package","nvcore","--package","loadefi","--package","cvsched"])
 	subprocess.run(["cargo","clippy","--target","x86_64-pc-windows-msvc","--package","cvsched"])
 	subprocess.run(["cargo","clippy","--package","cvmock","--all-targets"])
+	subprocess.run(["cargo","fmt","--check"])
 
 def do_clean():
 	subprocess.run(["cargo","clean"])

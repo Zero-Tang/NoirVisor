@@ -23,6 +23,7 @@ At the repository root, the following commands are available:
 - **Build for UEFI:** `python make.py /target uefi`
 - **Build for Windows:** `python make.py /target windows`
 - **Run In-Code Tests:** `python make.py test`
+- **Reformat Codes:** `cargo fmt` (Must be done after verified the changes)
 
 All of the commands above must be invoked while evaluating changes to the Rust codes. \
 If the environment is in Linux, you might need to invoke `python3` instead of `python`.

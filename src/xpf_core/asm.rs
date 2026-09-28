@@ -1,11 +1,11 @@
 /*
  * NoirVisor Core in Rust
- * 
+ *
  * Copyright (c) Zero Tang, 2018-2026. All rights reserved.
- * 
+ *
  * This file defines assembly-based utilities of NoirVisor Core in Rust.
- * 
- * This program is distributed in the hope that it will be useful, but 
+ *
+ * This program is distributed in the hope that it will be useful, but
  * without any warranty (no matter implied warranty or merchantability
  * or fitness for a particular purpose, etc.).
  */
@@ -18,12 +18,9 @@ pub mod io
 	use core::arch::{asm, x86_64::_mm_mfence};
 	use pastey::paste;
 
-	macro_rules! build_in_func
-	{
-		($name:tt,$out_type:tt,$reg:tt) =>
-		{
-			paste!
-			{
+	macro_rules! build_in_func {
+		($name:tt,$out_type:tt,$reg:tt) => {
+			paste! {
 				/// # Safety
 				/// I/O operations are not guaranteed to be safe.
 				#[inline] pub unsafe fn [<in _ $name>](port:u16)->$out_type
@@ -44,12 +41,9 @@ pub mod io
 		};
 	}
 
-	macro_rules! build_out_func
-	{
-		($name:tt,$in_type:tt,$reg:tt) =>
-		{
-			paste!
-			{
+	macro_rules! build_out_func {
+		($name:tt,$in_type:tt,$reg:tt) => {
+			paste! {
 				/// # Safety
 				/// I/O operations are not guaranteed to be safe.
 				#[inline] pub unsafe fn [<out _ $name>](port:u16,val:$in_type)
@@ -68,23 +62,23 @@ pub mod io
 		};
 	}
 
-	build_in_func!(byte,u8,"al");
-	build_in_func!(word,u16,"ax");
-	build_in_func!(dword,u32,"eax");
-	build_out_func!(byte,u8,"al");
-	build_out_func!(word,u16,"ax");
-	build_out_func!(dword,u32,"eax");
+	build_in_func!(byte, u8, "al");
+	build_in_func!(word, u16, "ax");
+	build_in_func!(dword, u32, "eax");
+	build_out_func!(byte, u8, "al");
+	build_out_func!(word, u16, "ax");
+	build_out_func!(dword, u32, "eax");
 
 	/// ## Safety
 	/// I/O operations are not guaranteed to be safe.
 	/// ## Notes
 	/// Forbid inlining MMIO operations so that hypervisor may cache MMIO instruction decode result.
-	#[inline(never)] pub unsafe fn mmio_read<T:Sized>(virt:*const T)->T
+	#[inline(never)]
+	pub unsafe fn mmio_read<T: Sized>(virt: *const T) -> T
 	{
-		unsafe
-		{
+		unsafe {
 			_mm_mfence();
-			let v:T=virt.read();
+			let v: T = virt.read();
 			_mm_mfence();
 			v
 		}
@@ -94,10 +88,10 @@ pub mod io
 	/// I/O operations are not guaranteed to be safe.
 	/// ## Notes
 	/// Forbid inlining MMIO operations so that hypervisor may cache MMIO instruction decode result.
-	#[inline(never)] pub unsafe fn mmio_write<T:Sized>(virt:*mut T,value:T)
+	#[inline(never)]
+	pub unsafe fn mmio_write<T: Sized>(virt: *mut T, value: T)
 	{
-		unsafe
-		{
+		unsafe {
 			_mm_mfence();
 			virt.write(value);
 			_mm_mfence();
@@ -112,12 +106,9 @@ pub mod seg
 
 	use crate::xpf_core::x86::descriptors::DescriptorTable;
 
-	macro_rules! build_fn
-	{
-		($name:tt) =>
-		{
-			paste!
-			{
+	macro_rules! build_fn {
+		($name:tt) => {
+			paste! {
 				#[inline] pub fn [<read_ $name:lower>]()->u16
 				{
 					let val:u16;
@@ -147,12 +138,9 @@ pub mod seg
 		};
 	}
 
-	macro_rules! build_fn_special_16bit
-	{
-		($name:tt) =>
-		{
-			paste!
-			{
+	macro_rules! build_fn_special_16bit {
+		($name:tt) => {
+			paste! {
 				#[inline] pub fn [<read_ $name:lower>]()->u16
 				{
 					let val:u16;
@@ -182,12 +170,9 @@ pub mod seg
 		};
 	}
 
-	macro_rules! build_fn_special_80bit
-	{
-		($name:tt) =>
-		{
-			paste!
-			{
+	macro_rules! build_fn_special_80bit {
+		($name:tt) => {
+			paste! {
 				#[inline] pub fn [<read_ $name:lower r>]()->DescriptorTable
 				{
 					let mut val=DescriptorTable{limit:0,base:0};
@@ -233,12 +218,12 @@ pub mod seg
 	build_fn_special_80bit!(gdt);
 	build_fn_special_80bit!(idt);
 
-	#[inline] pub fn lsl(segment:u16)->u32
+	#[inline]
+	pub fn lsl(segment: u16) -> u32
 	{
-		let lim:u32;
-		let zf:u8;
-		unsafe
-		{
+		let lim: u32;
+		let zf: u8;
+		unsafe {
 			// Note that lsl sets zf flags to indicate whether the segment is valid.
 			asm!
 			(
@@ -249,7 +234,7 @@ pub mod seg
 				zf=out(reg_byte) zf
 			);
 		}
-		if zf==1 {lim} else {0}
+		if zf == 1 { lim } else { 0 }
 	}
 }
 
@@ -258,12 +243,9 @@ pub mod crdr
 	use core::arch::asm;
 	use pastey::paste;
 
-	macro_rules! build_fn
-	{
-		($name:tt) =>
-		{
-			paste!
-			{
+	macro_rules! build_fn {
+		($name:tt) => {
+			paste! {
 				#[inline] pub fn [<read_ $name:lower>]()->u64
 				{
 					let val:u64;
@@ -311,10 +293,11 @@ pub mod cpuid
 {
 	use core::arch::x86_64::__cpuid_count;
 
-	#[inline] pub fn cpuid2(ia:u32,ic:u32)->(u32,u32,u32,u32)
+	#[inline]
+	pub fn cpuid2(ia: u32, ic: u32) -> (u32, u32, u32, u32)
 	{
-		let r=__cpuid_count(ia,ic);
-		(r.eax,r.ebx,r.ecx,r.edx)
+		let r = __cpuid_count(ia, ic);
+		(r.eax, r.ebx, r.ecx, r.edx)
 	}
 }
 
@@ -324,12 +307,12 @@ pub mod msr
 
 	/// # Read MSR
 	/// Returns the Model-Specific Register value with specified `index`.
-	#[inline] pub fn rdmsr(index:u32)->u64
+	#[inline]
+	pub fn rdmsr(index: u32) -> u64
 	{
-		let lo:u32;
-		let hi:u32;
-		unsafe
-		{
+		let lo: u32;
+		let hi: u32;
+		unsafe {
 			asm!
 			(
 				"rdmsr",
@@ -338,17 +321,17 @@ pub mod msr
 				out("edx") hi
 			);
 		}
-		(lo as u64)|((hi as u64)<<32)
+		(lo as u64) | ((hi as u64) << 32)
 	}
 
 	/// # Write MSR
 	/// Writes the Model-Specific Register specified in `index` with `value`.
-	#[inline] pub fn wrmsr(index:u32,value:u64)
+	#[inline]
+	pub fn wrmsr(index: u32, value: u64)
 	{
-		let lo:u32=value as u32;
-		let hi:u32=(value>>32) as u32;
-		unsafe
-		{
+		let lo: u32 = value as u32;
+		let hi: u32 = (value >> 32) as u32;
+		unsafe {
 			asm!
 			(
 				"wrmsr",
@@ -364,11 +347,11 @@ pub mod svm
 {
 	use core::arch::asm;
 
-	#[inline] pub fn vmmcall(index:u32,context:usize)->u32
+	#[inline]
+	pub fn vmmcall(index: u32, context: usize) -> u32
 	{
-		unsafe
-		{
-			let st:u32;
+		unsafe {
+			let st: u32;
 			asm!
 			(
 				"vmmcall",
@@ -380,10 +363,10 @@ pub mod svm
 		}
 	}
 
-	#[inline] pub fn vmload(vmcb_phys:u64)
+	#[inline]
+	pub fn vmload(vmcb_phys: u64)
 	{
-		unsafe
-		{
+		unsafe {
 			asm!
 			(
 				"vmload",
@@ -392,10 +375,10 @@ pub mod svm
 		}
 	}
 
-	#[inline] pub fn vmsave(vmcb_phys:u64)
+	#[inline]
+	pub fn vmsave(vmcb_phys: u64)
 	{
-		unsafe
-		{
+		unsafe {
 			asm!
 			(
 				"vmsave",
@@ -404,26 +387,26 @@ pub mod svm
 		}
 	}
 
-	#[inline] pub fn stgi()
+	#[inline]
+	pub fn stgi()
 	{
-		unsafe
-		{
+		unsafe {
 			asm!("stgi");
 		}
 	}
 
-	#[inline] pub fn clgi()
+	#[inline]
+	pub fn clgi()
 	{
-		unsafe 
-		{
+		unsafe {
 			asm!("clgi");
 		}
 	}
 
-	#[inline] pub fn invlpga(ptr:u64,asid:u32)
+	#[inline]
+	pub fn invlpga(ptr: u64, asid: u32)
 	{
-		unsafe
-		{
+		unsafe {
 			asm!
 			(
 				"invlpga rax,ecx",
@@ -437,7 +420,8 @@ pub mod svm
 pub mod vt
 {
 	use core::{arch::asm, fmt, hint::cold_path};
-	const VM_INSTRUCTION_ERROR:usize=0x4400;
+
+	const VM_INSTRUCTION_ERROR: usize = 0x4400;
 
 	pub struct EmptyUnit;
 
@@ -449,23 +433,21 @@ pub mod vt
 		}
 	}
 
-	macro_rules! dispatch_vmx_result
-	{
-		($e:tt,$v:expr) =>
-		{
+	macro_rules! dispatch_vmx_result {
+		($e:tt,$v:expr) => {
 			match $e
 			{
-				0=>VmxResult::Ok($v),
-				1=>
+				0 => VmxResult::Ok($v),
+				1 =>
 				{
 					cold_path();
-					VmxResult::Err(unsafe{vmread_unchecked(VM_INSTRUCTION_ERROR) as u32})
+					VmxResult::Err(unsafe { vmread_unchecked(VM_INSTRUCTION_ERROR) as u32 })
 				}
-				2=>VmxResult::NoVmcs,
-				_=>
+				2 => VmxResult::NoVmcs,
+				_ =>
 				{
 					cold_path();
-					panic!("Unexpected VMX Fail Flag: {}!",$e);
+					panic!("Unexpected VMX Fail Flag: {}!", $e);
 				}
 			}
 		};
@@ -473,11 +455,11 @@ pub mod vt
 
 	/// ## Safety
 	/// The `context` is in fact a raw pointer. Make sure it's valid.
-	#[inline] pub unsafe fn vmcall(index:u32,context:usize)->VmxResult<EmptyUnit>
+	#[inline]
+	pub unsafe fn vmcall(index: u32, context: usize) -> VmxResult<EmptyUnit>
 	{
-		let vmx_err:u8;
-		unsafe
-		{
+		let vmx_err: u8;
+		unsafe {
 			asm!
 			(
 				"vmcall",
@@ -490,16 +472,16 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit)
+		dispatch_vmx_result!(vmx_err, EmptyUnit)
 	}
 
 	/// ## Safety
 	/// The `vmxon_region_phys` is a raw pointer to a physical address.
-	#[inline] pub unsafe fn vmxon(vmxon_region_phys:*const u64)->VmxResult<EmptyUnit>
+	#[inline]
+	pub unsafe fn vmxon(vmxon_region_phys: *const u64) -> VmxResult<EmptyUnit>
 	{
-		let vmx_err:u8;
-		unsafe
-		{
+		let vmx_err: u8;
+		unsafe {
 			asm!
 			(
 				"vmxon qword ptr [{vmxon_phys}]",
@@ -511,16 +493,16 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit)
+		dispatch_vmx_result!(vmx_err, EmptyUnit)
 	}
 
 	/// ## Safety
 	/// Just understand what `vmxoff` implies.
-	#[inline] pub unsafe fn vmxoff()->VmxResult<EmptyUnit>
+	#[inline]
+	pub unsafe fn vmxoff() -> VmxResult<EmptyUnit>
 	{
-		let vmx_err:u8;
-		unsafe
-		{
+		let vmx_err: u8;
+		unsafe {
 			asm!
 			(
 				"vmxoff",
@@ -531,16 +513,16 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit)
+		dispatch_vmx_result!(vmx_err, EmptyUnit)
 	}
 
 	/// ## Safety
 	/// The `vmcs_phys` is a raw pointer to the physical address of VMCS.
-	#[inline] pub unsafe fn vmclear(vmcs_phys:*const u64)->VmxResult<EmptyUnit>
+	#[inline]
+	pub unsafe fn vmclear(vmcs_phys: *const u64) -> VmxResult<EmptyUnit>
 	{
-		let vmx_err:u8;
-		unsafe
-		{
+		let vmx_err: u8;
+		unsafe {
 			asm!
 			(
 				"vmclear qword ptr [{vmcs_phys}]",
@@ -552,16 +534,16 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit)
+		dispatch_vmx_result!(vmx_err, EmptyUnit)
 	}
 
 	/// ## Safety
 	/// The `vmcs_phys` is a raw pointer to the physical address of VMCS.
-	#[inline] pub unsafe fn vmptrld(vmcs_phys:*const u64)->VmxResult<EmptyUnit>
+	#[inline]
+	pub unsafe fn vmptrld(vmcs_phys: *const u64) -> VmxResult<EmptyUnit>
 	{
-		let vmx_err:u8;
-		unsafe
-		{
+		let vmx_err: u8;
+		unsafe {
 			asm!
 			(
 				"vmptrld qword ptr [{vmcs_phys}]",
@@ -573,17 +555,17 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit)
+		dispatch_vmx_result!(vmx_err, EmptyUnit)
 	}
 
 	/// ## Safety
 	/// This function returns the physical address of current VMCS as a result.
-	#[inline] pub unsafe fn vmptrst()->VmxResult<u64>
+	#[inline]
+	pub unsafe fn vmptrst() -> VmxResult<u64>
 	{
-		let vmx_err:u8;
-		let mut vmcs_phys:u64=0;
-		unsafe
-		{
+		let vmx_err: u8;
+		let mut vmcs_phys: u64 = 0;
+		unsafe {
 			asm!
 			(
 				"vmptrld qword ptr [{vmcs_phys}]",
@@ -595,16 +577,16 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,vmcs_phys)
+		dispatch_vmx_result!(vmx_err, vmcs_phys)
 	}
 
 	/// ## Safety
 	/// This function drastically changes the processor state!
-	#[inline] pub unsafe fn vmlaunch()->VmxResult<EmptyUnit>
+	#[inline]
+	pub unsafe fn vmlaunch() -> VmxResult<EmptyUnit>
 	{
-		let vmx_err:u8;
-		unsafe
-		{
+		let vmx_err: u8;
+		unsafe {
 			asm!
 			(
 				"vmlaunch",
@@ -615,16 +597,16 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit)
+		dispatch_vmx_result!(vmx_err, EmptyUnit)
 	}
 
 	/// ## Safety
 	/// This routine does not check if vmread is successful.
-	#[inline(always)] pub unsafe fn vmread_unchecked(field:usize)->usize
+	#[inline(always)]
+	pub unsafe fn vmread_unchecked(field: usize) -> usize
 	{
-		unsafe
-		{
-			let r:usize;
+		unsafe {
+			let r: usize;
 			asm!
 			(
 				"vmread {r},{f}",
@@ -635,12 +617,12 @@ pub mod vt
 		}
 	}
 
-	#[inline(always)] pub fn vmread(field:usize)->VmxResult<usize>
+	#[inline(always)]
+	pub fn vmread(field: usize) -> VmxResult<usize>
 	{
-		let r:usize;
-		let vmx_err:u8;
-		unsafe
-		{
+		let r: usize;
+		let vmx_err: u8;
+		unsafe {
 			asm!
 			(
 				"vmread {r},{f}",
@@ -653,15 +635,15 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,r)
+		dispatch_vmx_result!(vmx_err, r)
 	}
 
 	/// ## Safety
 	/// This routine does not check if vmwrite is successful.
-	#[inline(always)] pub unsafe fn vmwrite_unchecked(field:usize,value:usize)
+	#[inline(always)]
+	pub unsafe fn vmwrite_unchecked(field: usize, value: usize)
 	{
-		unsafe
-		{
+		unsafe {
 			asm!
 			(
 				"vmread {f},{v}",
@@ -671,11 +653,11 @@ pub mod vt
 		}
 	}
 
-	#[inline(always)] pub fn vmwrite(field:usize,value:usize)->VmxResult<EmptyUnit>
+	#[inline(always)]
+	pub fn vmwrite(field: usize, value: usize) -> VmxResult<EmptyUnit>
 	{
-		let vmx_err:u8;
-		unsafe
-		{
+		let vmx_err: u8;
+		unsafe {
 			asm!
 			(
 				"vmwrite {f},{v}",
@@ -688,44 +670,45 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit)
+		dispatch_vmx_result!(vmx_err, EmptyUnit)
 	}
 
-	const INVEPT_SINGLE:usize=1;
-	const INVEPT_GLOBAL:usize=2;
+	const INVEPT_SINGLE: usize = 1;
+	const INVEPT_GLOBAL: usize = 2;
 
 	pub enum InveptContext
 	{
 		Single(u64),
-		Global
+		Global,
 	}
 
 	impl InveptContext
 	{
-		fn as_operands(&self)->(usize,InveptDescriptor)
+		fn as_operands(&self) -> (usize, InveptDescriptor)
 		{
 			match self
 			{
-				InveptContext::Single(v)=>(INVEPT_SINGLE,InveptDescriptor{eptp:*v,reserved:0}),
-				InveptContext::Global=>(INVEPT_GLOBAL,InveptDescriptor{eptp:0,reserved:0})
+				InveptContext::Single(v) => (INVEPT_SINGLE, InveptDescriptor { eptp: *v, reserved: 0 }),
+				InveptContext::Global => (INVEPT_GLOBAL, InveptDescriptor { eptp: 0, reserved: 0 }),
 			}
 		}
 	}
 
-	#[repr(C)] struct InveptDescriptor
+	#[repr(C)]
+	struct InveptDescriptor
 	{
-		eptp:u64,
-		reserved:u64
+		eptp: u64,
+		reserved: u64,
 	}
 
 	/// ## Safety
 	/// This function invalidates TLB of EPT. Understand what it implies if you use this instruction.
-	#[inline] pub unsafe fn invept(context:&InveptContext)->VmxResult<EmptyUnit>
+	#[inline]
+	pub unsafe fn invept(context: &InveptContext) -> VmxResult<EmptyUnit>
 	{
-		let vmx_err:u8;
-		let (inv_type,descriptor)=context.as_operands();
-		unsafe
-		{
+		let vmx_err: u8;
+		let (inv_type, descriptor) = context.as_operands();
+		unsafe {
 			asm!
 			(
 				"invept {inv_type},xmmword ptr [{descriptor}]",
@@ -738,52 +721,65 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit)
+		dispatch_vmx_result!(vmx_err, EmptyUnit)
 	}
 
-	const INVVPID_INDIVIDUAL_ADDRESS:usize=0;
-	const INVVPID_SINGLE_CONTEXT:usize=1;
-	const INVVPID_GLOBAL_CONTEXT:usize=2;
-	const INVVPID_RETAIN_GLOBAL:usize=3;
+	const INVVPID_INDIVIDUAL_ADDRESS: usize = 0;
+	const INVVPID_SINGLE_CONTEXT: usize = 1;
+	const INVVPID_GLOBAL_CONTEXT: usize = 2;
+	const INVVPID_RETAIN_GLOBAL: usize = 3;
 
 	pub enum InvvpidContext
 	{
-		LinearAddress(u16,u64),
+		LinearAddress(u16, u64),
 		Single(u16),
 		Global,
-		RetainGlobal(u16)
+		RetainGlobal(u16),
 	}
 
 	impl InvvpidContext
 	{
-		fn as_operands(&self)->(usize,InvvpidDescriptor)
+		fn as_operands(&self) -> (usize, InvvpidDescriptor)
 		{
 			match self
 			{
-				InvvpidContext::LinearAddress(vpid,la)=>(INVVPID_INDIVIDUAL_ADDRESS,InvvpidDescriptor{vpid:*vpid,reserved0:0,reserved1:0,linear_address:*la}),
-				InvvpidContext::Single(vpid)=>(INVVPID_SINGLE_CONTEXT,InvvpidDescriptor{vpid:*vpid,reserved0:0,reserved1:0,linear_address:0}),
-				InvvpidContext::Global=>(INVVPID_GLOBAL_CONTEXT,InvvpidDescriptor{vpid:0,reserved0:0,reserved1:0,linear_address:0}),
-				InvvpidContext::RetainGlobal(vpid)=>(INVVPID_RETAIN_GLOBAL,InvvpidDescriptor{vpid:*vpid,reserved0:0,reserved1:0,linear_address:0})
+				InvvpidContext::LinearAddress(vpid, la) =>
+				{
+					(INVVPID_INDIVIDUAL_ADDRESS, InvvpidDescriptor { vpid: *vpid, reserved0: 0, reserved1: 0, linear_address: *la })
+				}
+				InvvpidContext::Single(vpid) =>
+				{
+					(INVVPID_SINGLE_CONTEXT, InvvpidDescriptor { vpid: *vpid, reserved0: 0, reserved1: 0, linear_address: 0 })
+				}
+				InvvpidContext::Global =>
+				{
+					(INVVPID_GLOBAL_CONTEXT, InvvpidDescriptor { vpid: 0, reserved0: 0, reserved1: 0, linear_address: 0 })
+				}
+				InvvpidContext::RetainGlobal(vpid) =>
+				{
+					(INVVPID_RETAIN_GLOBAL, InvvpidDescriptor { vpid: *vpid, reserved0: 0, reserved1: 0, linear_address: 0 })
+				}
 			}
 		}
 	}
 
-	#[repr(C)] struct InvvpidDescriptor
+	#[repr(C)]
+	struct InvvpidDescriptor
 	{
-		vpid:u16,
-		reserved0:u16,
-		reserved1:u32,
-		linear_address:u64
+		vpid: u16,
+		reserved0: u16,
+		reserved1: u32,
+		linear_address: u64,
 	}
 
 	/// ## Safety
 	/// This function invalidates TLB of the Guest. Understand what it implies if you use this instruction.
-	#[inline] pub unsafe fn invvpid(context:&InvvpidContext)->VmxResult<EmptyUnit>
+	#[inline]
+	pub unsafe fn invvpid(context: &InvvpidContext) -> VmxResult<EmptyUnit>
 	{
-		let vmx_err:u8;
-		let (inv_type,descriptor)=context.as_operands();
-		unsafe
-		{
+		let vmx_err: u8;
+		let (inv_type, descriptor) = context.as_operands();
+		unsafe {
 			asm!
 			(
 				"invvpid {inv_type},xmmword ptr [{descriptor}]",
@@ -796,110 +792,112 @@ pub mod vt
 				cf=out(reg_byte) vmx_err
 			);
 		}
-		dispatch_vmx_result!(vmx_err,EmptyUnit)
+		dispatch_vmx_result!(vmx_err, EmptyUnit)
 	}
-	
+
 	// Unfortunately, we won't be able to abuse generics to read/write VMCS...
 	#[derive(Debug)]
 	pub enum VmxResult<T>
 	{
 		Ok(T),
 		Err(u32),
-		NoVmcs
+		NoVmcs,
 	}
-	
+
 	impl<T> VmxResult<T>
 	{
-		#[inline(always)] pub fn unwrap(self)->T
+		#[inline(always)]
+		pub fn unwrap(self) -> T
 		{
 			match self
 			{
-				VmxResult::Ok(v)=>v,
-				_=>panic!("Unwrapping Unsuccessful VMX Instruction Result!")
+				VmxResult::Ok(v) => v,
+				_ => panic!("Unwrapping Unsuccessful VMX Instruction Result!"),
 			}
 		}
 	}
-	
-	macro_rules! vmread_proc
-	{
-		($f:tt,$t:ty) =>
-		{
+
+	macro_rules! vmread_proc {
+		($f:tt,$t:ty) => {{
+			match vmread($f)
 			{
-				match vmread($f)
-				{
-					VmxResult::Ok(v)=>VmxResult::Ok(v as $t),
-					VmxResult::Err(e)=>VmxResult::Err(e),
-					VmxResult::NoVmcs=>VmxResult::NoVmcs
-				}
+				VmxResult::Ok(v) => VmxResult::Ok(v as $t),
+				VmxResult::Err(e) => VmxResult::Err(e),
+				VmxResult::NoVmcs => VmxResult::NoVmcs,
 			}
-		};
+		}};
 	}
-	
-	#[inline] pub fn vmread16(field:usize)->VmxResult<u16>
+
+	#[inline]
+	pub fn vmread16(field: usize) -> VmxResult<u16>
 	{
-		vmread_proc!(field,u16)
+		vmread_proc!(field, u16)
 	}
-	
-	#[inline] pub fn vmread32(field:usize)->VmxResult<u32>
+
+	#[inline]
+	pub fn vmread32(field: usize) -> VmxResult<u32>
 	{
-		vmread_proc!(field,u32)
+		vmread_proc!(field, u32)
 	}
-	
-	#[inline] pub fn vmreadptr(field:usize)->VmxResult<usize>
+
+	#[inline]
+	pub fn vmreadptr(field: usize) -> VmxResult<usize>
 	{
-		vmread_proc!(field,usize)
+		vmread_proc!(field, usize)
 	}
-	
-	#[inline] pub fn vmread64(field:usize)->VmxResult<u64>
+
+	#[inline]
+	pub fn vmread64(field: usize) -> VmxResult<u64>
 	{
-		#[cfg(target_arch="x86_64")]
+		#[cfg(target_arch = "x86_64")]
 		{
-			vmread_proc!(field,u64)
+			vmread_proc!(field, u64)
 		}
-		#[cfg(not(target_arch="x86_64"))]
+		#[cfg(not(target_arch = "x86_64"))]
 		match vmread32(field)
 		{
-			VmxResult::Ok(v1)=>
+			VmxResult::Ok(v1) => match vmread32(field + 1)
 			{
-				match vmread32(field+1)
-				{
-					VmxResult::Ok(v2)=>VmxResult::Ok((v1 as u64)|((v2 as u64)<<32)),
-					VmxResult::Err(e)=>VmxResult::Err(e),
-					VmxResult::NoVmcs=>VmxResult::NoVmcs
-				}
-			}
-			VmxResult::Err(e)=>VmxResult::Err(e),
-			VmxResult::NoVmcs=>VmxResult::NoVmcs
+				VmxResult::Ok(v2) => VmxResult::Ok((v1 as u64) | ((v2 as u64) << 32)),
+				VmxResult::Err(e) => VmxResult::Err(e),
+				VmxResult::NoVmcs => VmxResult::NoVmcs,
+			},
+			VmxResult::Err(e) => VmxResult::Err(e),
+			VmxResult::NoVmcs => VmxResult::NoVmcs,
 		}
 	}
-	
-	#[inline] pub fn vmwrite16(field:usize,value:u16)->VmxResult<EmptyUnit>
+
+	#[inline]
+	pub fn vmwrite16(field: usize, value: u16) -> VmxResult<EmptyUnit>
 	{
-		vmwrite(field,value as usize)
+		vmwrite(field, value as usize)
 	}
-	
-	#[inline] pub fn vmwrite32(field:usize,value:u32)->VmxResult<EmptyUnit>
+
+	#[inline]
+	pub fn vmwrite32(field: usize, value: u32) -> VmxResult<EmptyUnit>
 	{
-		vmwrite(field,value as usize)
+		vmwrite(field, value as usize)
 	}
-	
-	#[inline] pub fn vmwriteptr(field:usize,value:usize)->VmxResult<EmptyUnit>
+
+	#[inline]
+	pub fn vmwriteptr(field: usize, value: usize) -> VmxResult<EmptyUnit>
 	{
-		vmwrite(field,value)
+		vmwrite(field, value)
 	}
-	
-	#[inline] pub fn vmwrite64(field:usize,value:u64)->VmxResult<EmptyUnit>
+
+	#[inline]
+	pub fn vmwrite64(field: usize, value: u64) -> VmxResult<EmptyUnit>
 	{
-		#[cfg(target_arch="x86_64")]
+		#[cfg(target_arch = "x86_64")]
 		{
-			vmwrite(field,value as usize)
+			vmwrite(field, value as usize)
 		}
-		#[cfg(not(target_arch="x86_64"))]
-		match vmwrite32(field,value as u32)
+		#[cfg(not(target_arch = "x86_64"))]
+		match vmwrite32(field, value as u32)
 		{
-			VmxResult::Ok(EmptyUnit)=>vmwrite32(field+1,(value>>32) as u32),
-			VmxResult::Err(e)=>VmxResult::Err(e),
-			VmxResult::NoVmcs=>VmxResult::NoVmcs
+			VmxResult::Ok(EmptyUnit) => vmwrite32(field + 1, (value >> 32) as u32),
+			VmxResult::Err(e) => VmxResult::Err(e),
+			VmxResult::NoVmcs => VmxResult::NoVmcs,
 		}
 	}
 }
@@ -911,18 +909,18 @@ pub mod misc
 	/// # Safety
 	/// This function will purposefully generate an `ud2` instruction.
 	/// Use this function only to test panic handler of NoirVisor!
-	#[inline] pub unsafe fn ud2()
+	#[inline]
+	pub unsafe fn ud2()
 	{
-		unsafe
-		{
+		unsafe {
 			asm!("ud2");
 		}
 	}
 
-	#[inline] pub fn wbinvd()
+	#[inline]
+	pub fn wbinvd()
 	{
-		unsafe
-		{
+		unsafe {
 			asm!("wbinvd");
 		}
 	}

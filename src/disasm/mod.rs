@@ -1,34 +1,32 @@
 /*
-  NoirVisor - Hardware-Accelerated Hypervisor solution
-
-  Copyright 2018-2026, Zero Tang. All rights reserved.
-
-  This file is the invoker of the yaxpeax Disassembler Crate.
-
-  This program is distributed in the hope that it will be useful, but 
-  without any warranty (no matter implied warranty or merchantability
-  or fitness for a particular purpose, etc.).
-*/
+ * NoirVisor Core in Rust
+ *
+ * Copyright (c) Zero Tang, 2018-2026. All rights reserved.
+ *
+ * This file is the invoker of the yaxpeax Disassembler Crate.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * without any warranty (no matter implied warranty or merchantability
+ * or fitness for a particular purpose, etc.).
+ */
 
 use core::slice;
 
-use yaxpeax_arch::LengthedInstruction;
 use pastey::paste;
+use yaxpeax_arch::LengthedInstruction;
 
 pub(crate) mod emulator;
 
 #[allow(non_snake_case)]
-#[unsafe(no_mangle)] extern "C" fn NoirInitializeDisassembler()
+#[unsafe(no_mangle)]
+extern "C" fn NoirInitializeDisassembler()
 {
 	// For yaxpeax, there is basically nothing to do to initialize it.
 }
 
-macro_rules! build_disasm_fn
-{
-	($bitness:tt,$name:tt) =>
-	{
-		paste!
-		{
+macro_rules! build_disasm_fn {
+	($bitness:tt,$name:tt) => {
+		paste! {
 			#[allow(non_snake_case)]
 			#[unsafe(no_mangle)] unsafe extern "C" fn [<NoirGetInstructionLength $bitness>](Code:*const u8,CodeLength:usize)->u8
 			{
@@ -45,6 +43,6 @@ macro_rules! build_disasm_fn
 	};
 }
 
-build_disasm_fn!(16,real);
-build_disasm_fn!(32,protected);
-build_disasm_fn!(64,long);
+build_disasm_fn!(16, real);
+build_disasm_fn!(32, protected);
+build_disasm_fn!(64, long);

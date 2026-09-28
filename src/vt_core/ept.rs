@@ -1,44 +1,49 @@
 /*
  * NoirVisor Core in Rust
- * 
+ *
  * Copyright (c) Zero Tang, 2018-2026. All rights reserved.
- * 
+ *
  * This file manages EPT in NoirVisor Core in Rust.
- * 
- * This program is distributed in the hope that it will be useful, but 
+ *
+ * This program is distributed in the hope that it will be useful, but
  * without any warranty (no matter implied warranty or merchantability
  * or fitness for a particular purpose, etc.).
  */
 
-use core::cmp::Ordering;
 use alloc::vec::Vec;
-use static_collections::vec::StaticVec;
-
-use crate::{vt_core::ia32::msr::VmxEptVpidCapMsr, xpf_core::{allocator::PAGE_ALLOC_MANAGER, ci::CI_MANAGER, ioflt::IoAddressSpace}, *};
-use xpf_core::{nvbdk::*, x86::caching::*};
+use core::cmp::Ordering;
 
 use bitfield_struct::bitfield;
 use log::*;
+use static_collections::vec::StaticVec;
 
-#[bitfield(u64)] pub struct EptPml4e
+use super::ia32::msr::VmxEptVpidCapMsr;
+use crate::xpf_core::{allocator::PAGE_ALLOC_MANAGER, ci::CI_MANAGER, ioflt::IoAddressSpace, nvbdk::*, x86::caching::*};
+
+#[bitfield(u64)]
+pub struct EptPml4e
 {
-	pub read:bool,
-	pub write:bool,
-	pub execute:bool,
-	#[bits(5)] rsvd0:u64,
-	pub accessed:bool,
-	ignored0:bool,
-	pub user_execute:bool,
-	ignored1:bool,
-	#[bits(40)] pub pdpte_base:u64,
-	#[bits(12)] ignored2:u64
+	pub read: bool,
+	pub write: bool,
+	pub execute: bool,
+	#[bits(5)]
+	rsvd0: u64,
+	pub accessed: bool,
+	ignored0: bool,
+	pub user_execute: bool,
+	ignored1: bool,
+	#[bits(40)]
+	pub pdpte_base: u64,
+	#[bits(12)]
+	ignored2: u64,
 }
 
 impl EptPml4e
 {
-	#[inline] pub fn construct(r:bool,w:bool,x:bool,pdpte_base:u64)->Self
+	#[inline]
+	pub fn construct(r: bool, w: bool, x: bool, pdpte_base: u64) -> Self
 	{
-		let mut v=Self::new();
+		let mut v = Self::new();
 		v.set_read(r);
 		v.set_write(w);
 		v.set_execute(x);
@@ -47,31 +52,39 @@ impl EptPml4e
 	}
 }
 
-#[bitfield(u64)] pub struct EptHugePdpte
+#[bitfield(u64)]
+pub struct EptHugePdpte
 {
-	pub read:bool,
-	pub write:bool,
-	pub execute:bool,
-	#[bits(3)] pub memory_type:u64,
-	pub ignore_pat:bool,
-	pub page_size:bool,		/// Must be true to set huge page.
-	pub accessed:bool,
-	pub dirty:bool,
-	pub user_execute:bool,
-	ignored0:bool,
-	#[bits(18)] rsvd0:u64,
-	#[bits(22)] pub page_base:u64,
-	#[bits(8)] rsvd1:u64,
-	pub supervisor_shadow_stack:bool,
-	#[bits(2)] ignored1:u64,
-	pub suppress_ve:bool
+	pub read: bool,
+	pub write: bool,
+	pub execute: bool,
+	#[bits(3)]
+	pub memory_type: u64,
+	pub ignore_pat: bool,
+	pub page_size: bool,
+	/// Must be true to set huge page.
+	pub accessed: bool,
+	pub dirty: bool,
+	pub user_execute: bool,
+	ignored0: bool,
+	#[bits(18)]
+	rsvd0: u64,
+	#[bits(22)]
+	pub page_base: u64,
+	#[bits(8)]
+	rsvd1: u64,
+	pub supervisor_shadow_stack: bool,
+	#[bits(2)]
+	ignored1: u64,
+	pub suppress_ve: bool,
 }
 
 impl EptHugePdpte
 {
-	#[inline] pub fn construct(r:bool,w:bool,x:bool,memory_type:u64,page_base:u64)->Self
+	#[inline]
+	pub fn construct(r: bool, w: bool, x: bool, memory_type: u64, page_base: u64) -> Self
 	{
-		let mut v=Self::new();
+		let mut v = Self::new();
 		v.set_read(r);
 		v.set_write(w);
 		v.set_execute(x);
@@ -82,25 +95,30 @@ impl EptHugePdpte
 	}
 }
 
-#[bitfield(u64)] pub struct EptPdpte
+#[bitfield(u64)]
+pub struct EptPdpte
 {
-	pub read:bool,
-	pub write:bool,
-	pub execute:bool,
-	#[bits(5)] rsvd0:u64,
-	pub accessed:bool,
-	ignored0:bool,
-	pub user_execute:bool,
-	ignored1:bool,
-	#[bits(40)] pub pde_base:u64,
-	#[bits(12)] ignored2:u64
+	pub read: bool,
+	pub write: bool,
+	pub execute: bool,
+	#[bits(5)]
+	rsvd0: u64,
+	pub accessed: bool,
+	ignored0: bool,
+	pub user_execute: bool,
+	ignored1: bool,
+	#[bits(40)]
+	pub pde_base: u64,
+	#[bits(12)]
+	ignored2: u64,
 }
 
 impl EptPdpte
 {
-	#[inline] pub fn construct(r:bool,w:bool,x:bool,pde_base:u64)->Self
+	#[inline]
+	pub fn construct(r: bool, w: bool, x: bool, pde_base: u64) -> Self
 	{
-		let mut v=Self::new();
+		let mut v = Self::new();
 		v.set_read(r);
 		v.set_write(w);
 		v.set_execute(x);
@@ -109,31 +127,39 @@ impl EptPdpte
 	}
 }
 
-#[bitfield(u64)] pub struct EptLargePde
+#[bitfield(u64)]
+pub struct EptLargePde
 {
-	pub read:bool,
-	pub write:bool,
-	pub execute:bool,
-	#[bits(3)] pub memory_type:u64,
-	pub ignore_pat:bool,
-	pub page_size:bool,		/// Must be true to set huge page.
-	pub accessed:bool,
-	pub dirty:bool,
-	pub user_execute:bool,
-	ignored0:bool,
-	#[bits(9)] rsvd0:u64,
-	#[bits(31)] pub page_base:u64,
-	#[bits(8)] rsvd1:u64,
-	pub supervisor_shadow_stack:bool,
-	#[bits(2)] ignored1:u64,
-	pub suppress_ve:bool
+	pub read: bool,
+	pub write: bool,
+	pub execute: bool,
+	#[bits(3)]
+	pub memory_type: u64,
+	pub ignore_pat: bool,
+	pub page_size: bool,
+	/// Must be true to set huge page.
+	pub accessed: bool,
+	pub dirty: bool,
+	pub user_execute: bool,
+	ignored0: bool,
+	#[bits(9)]
+	rsvd0: u64,
+	#[bits(31)]
+	pub page_base: u64,
+	#[bits(8)]
+	rsvd1: u64,
+	pub supervisor_shadow_stack: bool,
+	#[bits(2)]
+	ignored1: u64,
+	pub suppress_ve: bool,
 }
 
 impl EptLargePde
 {
-	#[inline] pub fn construct(r:bool,w:bool,x:bool,memory_type:u64,page_base:u64)->Self
+	#[inline]
+	pub fn construct(r: bool, w: bool, x: bool, memory_type: u64, page_base: u64) -> Self
 	{
-		let mut v=Self::new();
+		let mut v = Self::new();
 		v.set_read(r);
 		v.set_write(w);
 		v.set_execute(x);
@@ -144,25 +170,30 @@ impl EptLargePde
 	}
 }
 
-#[bitfield(u64)] pub struct EptPde
+#[bitfield(u64)]
+pub struct EptPde
 {
-	pub read:bool,
-	pub write:bool,
-	pub execute:bool,
-	#[bits(5)] rsvd0:u64,
-	pub accessed:bool,
-	ignored0:bool,
-	pub user_execute:bool,
-	ignored1:bool,
-	#[bits(40)] pub pte_base:u64,
-	#[bits(12)] ignored2:u64
+	pub read: bool,
+	pub write: bool,
+	pub execute: bool,
+	#[bits(5)]
+	rsvd0: u64,
+	pub accessed: bool,
+	ignored0: bool,
+	pub user_execute: bool,
+	ignored1: bool,
+	#[bits(40)]
+	pub pte_base: u64,
+	#[bits(12)]
+	ignored2: u64,
 }
 
 impl EptPde
 {
-	#[inline] pub fn construct(r:bool,w:bool,x:bool,pte_base:u64)->Self
+	#[inline]
+	pub fn construct(r: bool, w: bool, x: bool, pte_base: u64) -> Self
 	{
-		let mut v=Self::new();
+		let mut v = Self::new();
 		v.set_read(r);
 		v.set_write(w);
 		v.set_execute(x);
@@ -171,30 +202,36 @@ impl EptPde
 	}
 }
 
-#[bitfield(u64)] pub struct EptPte
+#[bitfield(u64)]
+pub struct EptPte
 {
-	pub read:bool,
-	pub write:bool,
-	pub execute:bool,
-	#[bits(3)] pub memory_type:u64,
-	pub ignore_pat:bool,
-	pub ignored0:bool,
-	pub accessed:bool,
-	pub dirty:bool,
-	pub user_execute:bool,
-	ignored1:bool,
-	#[bits(40)] pub page_base:u64,
-	#[bits(8)] rsvd1:u64,
-	pub supervisor_shadow_stack:bool,
-	#[bits(2)] ignored2:u64,
-	pub suppress_ve:bool
+	pub read: bool,
+	pub write: bool,
+	pub execute: bool,
+	#[bits(3)]
+	pub memory_type: u64,
+	pub ignore_pat: bool,
+	pub ignored0: bool,
+	pub accessed: bool,
+	pub dirty: bool,
+	pub user_execute: bool,
+	ignored1: bool,
+	#[bits(40)]
+	pub page_base: u64,
+	#[bits(8)]
+	rsvd1: u64,
+	pub supervisor_shadow_stack: bool,
+	#[bits(2)]
+	ignored2: u64,
+	pub suppress_ve: bool,
 }
 
 impl EptPte
 {
-	#[inline] pub fn construct(r:bool,w:bool,x:bool,memory_type:u64,page_base:u64)->Self
+	#[inline]
+	pub fn construct(r: bool, w: bool, x: bool, memory_type: u64, page_base: u64) -> Self
 	{
-		let mut v=Self::new();
+		let mut v = Self::new();
 		v.set_read(r);
 		v.set_write(w);
 		v.set_execute(x);
@@ -206,19 +243,19 @@ impl EptPte
 
 pub struct VtEptPageTableDescriptor<T>
 {
-	pub table:MemoryDescriptor<1,T>,
-	pub gpa_start:u64
+	pub table: MemoryDescriptor<1, T>,
+	pub gpa_start: u64,
 }
 
 impl<T> VtEptPageTableDescriptor<T>
 {
-	pub fn cmp_by_addr(&self,gpa:u64,range:usize)->Ordering
+	pub fn cmp_by_addr(&self, gpa: u64, range: usize) -> Ordering
 	{
-		if gpa<self.gpa_start
+		if gpa < self.gpa_start
 		{
 			Ordering::Less
 		}
-		else if gpa>=self.gpa_start+range as u64
+		else if gpa >= self.gpa_start + range as u64
 		{
 			Ordering::Greater
 		}
@@ -233,231 +270,266 @@ impl<T> Default for VtEptPageTableDescriptor<T>
 {
 	fn default() -> Self
 	{
-		Self
-		{
-			table:MemoryDescriptor::null(),
-			gpa_start:0
-		}
+		Self { table: MemoryDescriptor::null(), gpa_start: 0 }
 	}
 }
 
 pub struct VtEptManager
 {
-	pub pml4e:MemoryDescriptor<1,EptPml4e>,
-	pub pdpte:MemoryDescriptor<PAGE_TABLE_ENTRIES64,EptHugePdpte>,
-	pub pde:Vec<VtEptPageTableDescriptor<EptLargePde>>,
-	pub pte:Vec<VtEptPageTableDescriptor<EptPte>>,
-	pub mtrr_mgr:MtrrManager,
-	pub ept_cap:VmxEptVpidCapMsr
+	pub pml4e: MemoryDescriptor<1, EptPml4e>,
+	pub pdpte: MemoryDescriptor<PAGE_TABLE_ENTRIES64, EptHugePdpte>,
+	pub pde: Vec<VtEptPageTableDescriptor<EptLargePde>>,
+	pub pte: Vec<VtEptPageTableDescriptor<EptPte>>,
+	pub mtrr_mgr: MtrrManager,
+	pub ept_cap: VmxEptVpidCapMsr,
 }
 
 impl Default for VtEptManager
 {
 	fn default() -> Self
 	{
-		Self
-		{
-			pml4e:MemoryDescriptor::null(),
-			pdpte:MemoryDescriptor::null(),
-			pde:Vec::new(),
-			pte:Vec::new(),
-			mtrr_mgr:MtrrManager::default(),
-			ept_cap:VmxEptVpidCapMsr::from_bits(0)
+		Self {
+			pml4e: MemoryDescriptor::null(),
+			pdpte: MemoryDescriptor::null(),
+			pde: Vec::new(),
+			pte: Vec::new(),
+			mtrr_mgr: MtrrManager::default(),
+			ept_cap: VmxEptVpidCapMsr::from_bits(0),
 		}
 	}
 }
 
 impl VtEptManager
 {
-	pub fn locate_pdpte(&mut self,gpa:u64)->*mut EptHugePdpte
+	pub fn locate_pdpte(&mut self, gpa: u64) -> *mut EptHugePdpte
 	{
-		let pfn=page_1gb_count(gpa as usize);
-		unsafe
-		{
-			let pdpte_p=self.pdpte.virt;
+		let pfn = page_1gb_count(gpa as usize);
+		unsafe {
+			let pdpte_p = self.pdpte.virt;
 			pdpte_p.add(pfn)
 		}
 	}
 
-	pub fn split_pdpte(&mut self,gpa:u64)
+	pub fn split_pdpte(&mut self, gpa: u64)
 	{
 		// Search PDE list.
-		if let Err(i)=self.pde.binary_search_by(|d| d.cmp_by_addr(gpa,PAGE_1GB_SIZE))
+		if let Err(i) = self.pde.binary_search_by(|d| d.cmp_by_addr(gpa, PAGE_1GB_SIZE))
 		{
 			// This 1GiB page has not been described yet.
 			debug!("Splitting PDPTE for GPA 0x{gpa:X}...");
 			match MemoryDescriptor::alloc()
 			{
-				Some(md)=>
+				Some(md) =>
 				{
 					// Initialize descriptor.
-					let d:VtEptPageTableDescriptor<EptLargePde>=VtEptPageTableDescriptor
-					{
-						table:md,
-						gpa_start:page_1gb_base(gpa)
-					};
+					let d: VtEptPageTableDescriptor<EptLargePde> =
+						VtEptPageTableDescriptor { table: md, gpa_start: page_1gb_base(gpa) };
 					// Initialize PDE Page.
-					let pde_p:*mut EptLargePde=d.table.virt.cast();
-					unsafe
-					{
-						let pdpte_v=self.locate_pdpte(gpa);
-						let mt=(*pdpte_v).memory_type();
+					let pde_p: *mut EptLargePde = d.table.virt.cast();
+					unsafe {
+						let pdpte_v = self.locate_pdpte(gpa);
+						let mt = (*pdpte_v).memory_type();
 						for i in 0..PAGE_TABLE_ENTRIES64
 						{
-							*pde_p.add(i)=EptLargePde::construct(true,true,true,mt,d.gpa_start+page_2mb_mult(i) as u64);
+							*pde_p.add(i) = EptLargePde::construct(true, true, true, mt, d.gpa_start + page_2mb_mult(i) as u64);
 						}
 						// Update PDPTE Entry.
 						(*pdpte_v).set_memory_type(0);
 						(*pdpte_v).set_page_size(false);
-						let pdpte_p:*mut EptPdpte=pdpte_v.cast();
+						let pdpte_p: *mut EptPdpte = pdpte_v.cast();
 						(*pdpte_p).set_pde_base(page_4kb_count(d.table.phys));
 					}
 					// Insert to EPT Manager.
-					self.pde.insert(i,d);
+					self.pde.insert(i, d);
 				}
-				None=>panic!("Failed to split PDPTE!")
+				None => panic!("Failed to split PDPTE!"),
 			}
 		}
 	}
 
-	pub fn locate_pde(&mut self,gpa:u64)->Option<*mut EptLargePde>
+	pub fn locate_pde(&mut self, gpa: u64) -> Option<*mut EptLargePde>
 	{
-		match self.pde.binary_search_by(|d| d.cmp_by_addr(gpa,PAGE_1GB_SIZE))
+		match self.pde.binary_search_by(|d| d.cmp_by_addr(gpa, PAGE_1GB_SIZE))
 		{
-			Ok(i)=>
+			Ok(i) =>
 			{
-				let pde_d=&self.pde[i];
-				let pde_pfn=page_entry_index(page_2mb_count(gpa as usize));
-				Some(unsafe{pde_d.table.virt.cast::<EptLargePde>().add(pde_pfn)})
+				let pde_d = &self.pde[i];
+				let pde_pfn = page_entry_index(page_2mb_count(gpa as usize));
+				Some(unsafe { pde_d.table.virt.cast::<EptLargePde>().add(pde_pfn) })
 			}
-			Err(_)=>None
+			Err(_) => None,
 		}
 	}
 
-	pub fn split_pde(&mut self,gpa:u64)
+	pub fn split_pde(&mut self, gpa: u64)
 	{
 		// Search PTE list.
-		if let Err(i)=self.pte.binary_search_by(|d| d.cmp_by_addr(gpa,PAGE_2MB_SIZE))
+		if let Err(i) = self.pte.binary_search_by(|d| d.cmp_by_addr(gpa, PAGE_2MB_SIZE))
 		{
 			// This 2MiB page has not been described yet.
 			debug!("Splitting PDE for GPA 0x{gpa:X}...");
 			match MemoryDescriptor::alloc()
 			{
-				Some(md)=>
+				Some(md) =>
 				{
 					// Split the PDPTE first.
 					self.split_pdpte(gpa);
 					// Initialize descriptor.
-					let d:VtEptPageTableDescriptor<EptPte>=VtEptPageTableDescriptor
-					{
-						table:md,
-						gpa_start:page_2mb_base(gpa)
-					};
+					let d: VtEptPageTableDescriptor<EptPte> = VtEptPageTableDescriptor { table: md, gpa_start: page_2mb_base(gpa) };
 					// Initialize PTE page.
-					let pte_p:*mut EptPte=d.table.virt.cast();
-					unsafe
-					{
-						let pde_v=self.locate_pde(gpa).unwrap();
-						let mt=(*pde_v).memory_type();
+					let pte_p: *mut EptPte = d.table.virt.cast();
+					unsafe {
+						let pde_v = self.locate_pde(gpa).unwrap();
+						let mt = (*pde_v).memory_type();
 						for i in 0..PAGE_TABLE_ENTRIES64
 						{
-							*pte_p.add(i)=EptPte::construct(true,true,true,mt,d.gpa_start+page_4kb_mult(i) as u64);
+							*pte_p.add(i) = EptPte::construct(true, true, true, mt, d.gpa_start + page_4kb_mult(i) as u64);
 						}
 						// Update PDE Entry.
 						(*pde_v).set_memory_type(0);
 						(*pde_v).set_page_size(false);
-						let pde_p:*mut EptPde=pde_v.cast();
+						let pde_p: *mut EptPde = pde_v.cast();
 						(*pde_p).set_pte_base(page_4kb_count(d.table.phys));
 					}
 					// Insert to EPT Manager.
-					self.pte.insert(i,d);
+					self.pte.insert(i, d);
 				}
-				None=>panic!("Failed to split PDE!")
+				None => panic!("Failed to split PDE!"),
 			}
 		}
 	}
 
-	pub fn locate_pte(&mut self,gpa:u64)->Option<*mut EptPte>
+	pub fn locate_pte(&mut self, gpa: u64) -> Option<*mut EptPte>
 	{
-		match self.pte.binary_search_by(|d| d.cmp_by_addr(gpa,PAGE_2MB_SIZE))
+		match self.pte.binary_search_by(|d| d.cmp_by_addr(gpa, PAGE_2MB_SIZE))
 		{
-			Ok(i)=>
+			Ok(i) =>
 			{
-				let pte_d=&self.pte[i];
-				let pte_pfn=page_entry_index(page_4kb_count(gpa as usize));
-				Some(unsafe{pte_d.table.virt.cast::<EptPte>().add(pte_pfn)})
+				let pte_d = &self.pte[i];
+				let pte_pfn = page_entry_index(page_4kb_count(gpa as usize));
+				Some(unsafe { pte_d.table.virt.cast::<EptPte>().add(pte_pfn) })
 			}
-			Err(_)=>None
+			Err(_) => None,
 		}
 	}
 
-	pub fn update_pte(&mut self,gpa:u64,hpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
+	pub fn update_pte(
+		&mut self,
+		gpa: u64,
+		hpa: u64,
+		memory_type: Option<(u64, bool)>,
+		r: Option<bool>,
+		w: Option<bool>,
+		x: Option<bool>,
+	)
 	{
 		self.split_pde(gpa);
-		let pte_p=self.locate_pte(gpa).unwrap();
-		unsafe
-		{
-			if let Some((new_type,force_update))=memory_type && (new_type<(*pte_p).memory_type() || force_update)
+		let pte_p = self.locate_pte(gpa).unwrap();
+		unsafe {
+			if let Some((new_type, force_update)) = memory_type
+				&& (new_type < (*pte_p).memory_type() || force_update)
 			{
 				(*pte_p).set_memory_type(new_type);
 			}
-			if let Some(p)=r {(*pte_p).set_read(p);}
-			if let Some(p)=w {(*pte_p).set_write(p);}
-			if let Some(p)=x {(*pte_p).set_execute(p);}
+			if let Some(p) = r
+			{
+				(*pte_p).set_read(p);
+			}
+			if let Some(p) = w
+			{
+				(*pte_p).set_write(p);
+			}
+			if let Some(p) = x
+			{
+				(*pte_p).set_execute(p);
+			}
 			(*pte_p).set_page_base(page_4kb_count(hpa));
 		}
-		
 	}
 
-	pub fn update_pde(&mut self,gpa:u64,hpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
+	pub fn update_pde(
+		&mut self,
+		gpa: u64,
+		hpa: u64,
+		memory_type: Option<(u64, bool)>,
+		r: Option<bool>,
+		w: Option<bool>,
+		x: Option<bool>,
+	)
 	{
 		self.split_pdpte(gpa);
-		let pde_p=self.locate_pde(gpa).unwrap();
-		unsafe
-		{
+		let pde_p = self.locate_pde(gpa).unwrap();
+		unsafe {
 			if (*pde_p).page_size()
 			{
-				if let Some((new_type,force_update))=memory_type && (new_type<(*pde_p).memory_type() || force_update)
+				if let Some((new_type, force_update)) = memory_type
+					&& (new_type < (*pde_p).memory_type() || force_update)
 				{
 					(*pde_p).set_memory_type(new_type);
 				}
-				if let Some(p)=r {(*pde_p).set_read(p);}
-				if let Some(p)=w {(*pde_p).set_write(p);}
-				if let Some(p)=x {(*pde_p).set_execute(p);}
+				if let Some(p) = r
+				{
+					(*pde_p).set_read(p);
+				}
+				if let Some(p) = w
+				{
+					(*pde_p).set_write(p);
+				}
+				if let Some(p) = x
+				{
+					(*pde_p).set_execute(p);
+				}
 				(*pde_p).set_page_base(page_2mb_count(hpa));
 			}
 			else
 			{
 				for i in 0..PAGE_TABLE_ENTRIES64 as u64
 				{
-					self.update_pte(gpa+page_4kb_mult(i),hpa+page_4kb_mult(i),memory_type,r,w,x);
+					self.update_pte(gpa + page_4kb_mult(i), hpa + page_4kb_mult(i), memory_type, r, w, x);
 				}
 			}
 		}
 	}
 
-	pub fn update_pdpte(&mut self,gpa:u64,hpa:u64,memory_type:Option<(u64,bool)>,r:Option<bool>,w:Option<bool>,x:Option<bool>)
+	pub fn update_pdpte(
+		&mut self,
+		gpa: u64,
+		hpa: u64,
+		memory_type: Option<(u64, bool)>,
+		r: Option<bool>,
+		w: Option<bool>,
+		x: Option<bool>,
+	)
 	{
-		let pdpte_i=page_1gb_count(gpa as usize);
-		unsafe
-		{
-			let pdpte_p=self.pdpte.virt.cast::<EptHugePdpte>().add(pdpte_i);
+		let pdpte_i = page_1gb_count(gpa as usize);
+		unsafe {
+			let pdpte_p = self.pdpte.virt.cast::<EptHugePdpte>().add(pdpte_i);
 			if (*pdpte_p).page_size()
 			{
-				if let Some((new_type,force_update))=memory_type && (new_type<(*pdpte_p).memory_type() || force_update)
+				if let Some((new_type, force_update)) = memory_type
+					&& (new_type < (*pdpte_p).memory_type() || force_update)
 				{
 					(*pdpte_p).set_memory_type(new_type);
 				}
-				if let Some(p)=r {(*pdpte_p).set_read(p);}
-				if let Some(p)=w {(*pdpte_p).set_write(p);}
-				if let Some(p)=x {(*pdpte_p).set_execute(p);}
+				if let Some(p) = r
+				{
+					(*pdpte_p).set_read(p);
+				}
+				if let Some(p) = w
+				{
+					(*pdpte_p).set_write(p);
+				}
+				if let Some(p) = x
+				{
+					(*pdpte_p).set_execute(p);
+				}
 				(*pdpte_p).set_page_base(page_1gb_count(hpa));
 			}
 			else
 			{
 				for i in 0..PAGE_TABLE_ENTRIES64 as u64
 				{
-					self.update_pde(gpa+page_2mb_mult(i),hpa+page_2mb_mult(i),memory_type,r,w,x);
+					self.update_pde(gpa + page_2mb_mult(i), hpa + page_2mb_mult(i), memory_type, r, w, x);
 				}
 			}
 		}
@@ -465,69 +537,69 @@ impl VtEptManager
 
 	pub fn update_by_mtrr(&mut self)
 	{
-		let mut mtrr_mgr=MtrrManager::default();
+		let mut mtrr_mgr = MtrrManager::default();
 		mtrr_mgr.init();
 		for r in mtrr_mgr.iter()
 		{
 			for p in r.iter()
 			{
-				let force_update=match p.source
+				let force_update = match p.source
 				{
-					MtrrSource::DefaultType=>true,
-					MtrrSource::VariableRange=>false,
-					MtrrSource::FixedRange=>true,
+					MtrrSource::DefaultType => true,
+					MtrrSource::VariableRange => false,
+					MtrrSource::FixedRange => true,
 				};
-				let updater_fn=match p.page_size
+				let updater_fn = match p.page_size
 				{
-					0=>Self::update_pte,
-					1=>Self::update_pde,
-					2=>Self::update_pdpte,
-					_=>panic!("Unrecognized page-size identifier: {}!",p.page_size)
+					0 => Self::update_pte,
+					1 => Self::update_pde,
+					2 => Self::update_pdpte,
+					_ => panic!("Unrecognized page-size identifier: {}!", p.page_size),
 				};
-				updater_fn(self,p.base,p.base,Some((p.memory_type as u64,force_update)),None,None,None);
+				updater_fn(self, p.base, p.base, Some((p.memory_type as u64, force_update)), None, None, None);
 			}
 		}
-		self.mtrr_mgr=mtrr_mgr;
+		self.mtrr_mgr = mtrr_mgr;
 	}
 
 	pub fn protect_allocated_pages(&mut self)
 	{
-		let mut v:StaticVec<64,u64>=StaticVec::new();
+		let mut v: StaticVec<64, u64> = StaticVec::new();
 		for p in PAGE_ALLOC_MANAGER.lock().iter()
 		{
-			let _=v.push(p);
+			let _ = v.push(p);
 		}
 		for &p in v.iter()
 		{
-			self.update_pde(p,p,None,Some(true),Some(false),Some(false));
+			self.update_pde(p, p, None, Some(true), Some(false), Some(false));
 		}
 	}
 
 	pub fn protect_ci(&mut self)
 	{
-		let ci=CI_MANAGER.read();
+		let ci = CI_MANAGER.read();
 		for p in ci.into_iter()
 		{
-			let phys=page_mult(p.pfn());
-			self.update_pte(phys,phys,None,None,Some(p.delay()),None);
+			let phys = page_mult(p.pfn());
+			self.update_pte(phys, phys, None, None, Some(p.delay()), None);
 		}
 	}
 
-	pub fn setup_mmio_filter(&mut self,mmio_space:&IoAddressSpace)
+	pub fn setup_mmio_filter(&mut self, mmio_space: &IoAddressSpace)
 	{
 		// EPT will handle MMIO filters in the host system.
 		for r in &mmio_space.regions
 		{
-			let (mut p,s)=r.base_size();
-			let end=p+s as u64;
-			while p<end
+			let (mut p, s) = r.base_size();
+			let end = p + s as u64;
+			while p < end
 			{
-				let remainder=end-p;
-				let increment=if page_1gb_offset(remainder)==0 && page_1gb_offset(p)==0
+				let remainder = end - p;
+				let increment = if page_1gb_offset(remainder) == 0 && page_1gb_offset(p) == 0
 				{
 					PAGE_1GB_SIZE
 				}
-				else if page_2mb_offset(remainder)==0 && page_2mb_offset(p)==0
+				else if page_2mb_offset(remainder) == 0 && page_2mb_offset(p) == 0
 				{
 					PAGE_2MB_SIZE
 				}
@@ -537,47 +609,45 @@ impl VtEptManager
 				};
 				match increment
 				{
-					PAGE_1GB_SIZE=>self.update_pdpte(p,p,None,Some(r.forward_input()),Some(r.forward_output()),Some(false)),
-					PAGE_2MB_SIZE=>self.update_pde(p,p,None,Some(r.forward_input()),Some(r.forward_output()),Some(false)),
-					PAGE_4KB_SIZE=>self.update_pte(p,p,None,Some(r.forward_input()),Some(r.forward_output()),Some(false)),
-					_=>panic!("Unknown increment size: 0x{increment:X}")
+					PAGE_1GB_SIZE => self.update_pdpte(p, p, None, Some(r.forward_input()), Some(r.forward_output()), Some(false)),
+					PAGE_2MB_SIZE => self.update_pde(p, p, None, Some(r.forward_input()), Some(r.forward_output()), Some(false)),
+					PAGE_4KB_SIZE => self.update_pte(p, p, None, Some(r.forward_input()), Some(r.forward_output()), Some(false)),
+					_ => panic!("Unknown increment size: 0x{increment:X}"),
 				}
-				p+=increment as u64;
+				p += increment as u64;
 			}
 		}
 	}
 
 	pub fn build_identity_map(&mut self)
 	{
-		self.ept_cap=VmxEptVpidCapMsr::read();
+		self.ept_cap = VmxEptVpidCapMsr::read();
 		match MemoryDescriptor::alloc()
 		{
-			Some(md)=>self.pml4e=md,
-			None=>panic!("Failed to allocate PML4E")
+			Some(md) => self.pml4e = md,
+			None => panic!("Failed to allocate PML4E"),
 		}
-		debug!("PML4E is allocated at {:p}",self.pml4e.virt);
+		debug!("PML4E is allocated at {:p}", self.pml4e.virt);
 		match MemoryDescriptor::alloc_2mb_page()
 		{
-			Some(md)=>self.pdpte=md,
-			None=>panic!("Failed to allocate PDPTE")
+			Some(md) => self.pdpte = md,
+			None => panic!("Failed to allocate PDPTE"),
 		}
-		debug!("PDPTE is allocated at {:p}",self.pdpte.virt);
+		debug!("PDPTE is allocated at {:p}", self.pdpte.virt);
 		for i in 0..PAGE_TABLE_ENTRIES64
 		{
 			for j in 0..PAGE_TABLE_ENTRIES64
 			{
-				let k=(i<<PAGE_SHIFT_DIFF)+j;
-				let pdpte_v=EptHugePdpte::construct(true,true,true,MEMORY_TYPE_WB as u64,page_1gb_mult(k) as u64);
-				unsafe
-				{
-					let pdpte_p=self.pdpte.virt.cast::<EptHugePdpte>().add(k);
+				let k = (i << PAGE_SHIFT_DIFF) + j;
+				let pdpte_v = EptHugePdpte::construct(true, true, true, MEMORY_TYPE_WB as u64, page_1gb_mult(k) as u64);
+				unsafe {
+					let pdpte_p = self.pdpte.virt.cast::<EptHugePdpte>().add(k);
 					pdpte_p.write(pdpte_v);
 				}
 			}
-			let pml4e_v=EptPml4e::construct(true,true,true,self.pdpte.phys+page_mult(i) as u64);
-			unsafe
-			{
-				let pml4e_p=self.pml4e.virt.cast::<EptPml4e>().add(i);
+			let pml4e_v = EptPml4e::construct(true, true, true, self.pdpte.phys + page_mult(i) as u64);
+			unsafe {
+				let pml4e_p = self.pml4e.virt.cast::<EptPml4e>().add(i);
 				pml4e_p.write(pml4e_v);
 			}
 		}
