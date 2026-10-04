@@ -79,3 +79,4 @@ scratch/
 bin/
 tests/*.bxrc
 tests/ovmf*
+tests/bx_enh_dbg.ini

@@ -74,11 +74,11 @@ In addition to Rust compiler, you should install the dependencies so that `lld-l
 
 For Ubuntu 26.04 LTS:
 ```
-sudo apt install lld llvm osslsigncode
+sudo apt install clang lld llvm osslsigncode
 ```
 For Fedora 44:
 ```
-sudo dnf install lld llvm osslsigncode
+sudo dnf install clang lld llvm osslsigncode
 ```
 
 #### Build EFI Application and Runtime Driver on Linux

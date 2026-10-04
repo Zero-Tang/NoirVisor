@@ -3113,10 +3113,10 @@ mod crt
 			}
 			favor_enfstr |= fms == 0x20660;
 			favor_enfstr |= fms == 0x20670;
-			let b = (fms - 0x30650) as i64;
 			if (0x30650..=0x30670).contains(&fms)
 			{
 				let tmp: i64 = 0x100010001;
+				let b = (fms - 0x30650) as i64;
 				favor_enfstr |= unsafe { _bittest64(&raw const tmp, b) } != 0;
 			}
 			__favor.store(if favor_enfstr { 1 } else { 0 }, Ordering::Relaxed);

@@ -28,7 +28,7 @@ use mshv_core::{MshvVcpuContext, MshvVcpuOps};
 use vmcs::*;
 use xpf_core::{
 	asm::{crdr::*, msr::*, seg::*, vt::*},
-	hv_host::x86::{HostProcessor, HostSystem, PerCpuGsException},
+	hv_host::x86::{HostProcessor, HostSystem, PerCpuGsState},
 	ioflt::IoAddressSpace,
 	nvbdk::*,
 	rmt::ReverseMappingTableRoot,
@@ -36,7 +36,7 @@ use xpf_core::{
 		apic::*,
 		caching::MEMORY_TYPE_WB,
 		crdr::*,
-		descriptors::SELECTOR_RPLTI_MASK,
+		descriptors::{SELECTOR_RPLTI_MASK, SegmentFlags},
 		interrupts::InterruptStackFrameWithErrorCode,
 		msr::{MSR_APIC_BASE, MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR},
 		xstate::BoxedXState,
@@ -97,6 +97,7 @@ pub struct VtStackTop
 	pub flags: VtStackContextFlags,
 	pub guest_xcr0: u64,
 	pub host_xcr0: u64,
+	pub xsaves_mask: u64,
 }
 
 enum VtIrqInterruptibilityState
@@ -111,14 +112,34 @@ enum VtIrqInterruptibilityState
 	MaskedByTpr(u8),
 }
 
+pub struct VtStackMemoryDescriptor
+{
+	descriptor: MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT, c_void>,
+	high_va: u64,
+}
+
+impl VtStackMemoryDescriptor
+{
+	const fn null() -> Self
+	{
+		Self { descriptor: MemoryDescriptor::null(), high_va: 0 }
+	}
+
+	fn init(&mut self, high_va: u64)
+	{
+		self.descriptor = MemoryDescriptor::alloc().expect("Failed to allocate hypervisor stack!");
+		self.high_va = high_va;
+	}
+}
+
 pub struct VtVcpu
 {
 	pub vmcs: MemoryDescriptor<1, c_void>,
 	pub vmxon: MemoryDescriptor<1, c_void>,
 	pub vapic: MemoryDescriptor<1, c_void>,
-	pub hv_stack: MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT, c_void>,
+	pub hv_stack: VtStackMemoryDescriptor,
 	pub hypervisor: *mut c_void,
-	pub ist: [MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT, c_void>; 8],
+	pub ist: [VtStackMemoryDescriptor; 8],
 	pub host_xsave: BoxedXState,
 	pub cpuid_fms: u32,
 	pub vcpu_id: u32,
@@ -132,7 +153,7 @@ pub struct VtVcpu
 	pub cached_ctxt: CachedExitContext,
 	pub irq_bmp: [u64; 4],
 	// This context handles exceptions.
-	pub gs_context: PerCpuGsException,
+	pub gs_context: PerCpuGsState,
 }
 
 impl Default for VtVcpu
@@ -144,9 +165,9 @@ impl Default for VtVcpu
 			vmcs: MemoryDescriptor::null(),
 			vmxon: MemoryDescriptor::null(),
 			vapic: MemoryDescriptor::null(),
-			hv_stack: MemoryDescriptor::null(),
+			hv_stack: VtStackMemoryDescriptor::null(),
 			hypervisor: null_mut(),
-			ist: [const { MemoryDescriptor::null() }; 8],
+			ist: [const { VtStackMemoryDescriptor::null() }; 8],
 			host_xsave: BoxedXState::null(),
 			cpuid_fms: (std_leaf.ext_model() << 16) | 0x600,
 			vcpu_id: 0,
@@ -159,7 +180,7 @@ impl Default for VtVcpu
 			msr_auto_guest: [VmxMsrAutoItem::default(); 5],
 			cached_ctxt: CachedExitContext::default(),
 			irq_bmp: [0; 4],
-			gs_context: PerCpuGsException::default(),
+			gs_context: PerCpuGsState::default(),
 		}
 	}
 }
@@ -211,13 +232,13 @@ impl VtVcpu
 	#[inline(always)]
 	pub fn get_stack_top<'a>(&self) -> &'a VtStackTop
 	{
-		unsafe { &*self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<VtStackTop>()).cast() }
+		unsafe { &*self.hv_stack.descriptor.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<VtStackTop>()).cast() }
 	}
 
 	#[inline(always)]
 	pub fn get_stack_top_mut<'a>(&mut self) -> &'a mut VtStackTop
 	{
-		unsafe { &mut *self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<VtStackTop>()).cast() }
+		unsafe { &mut *self.hv_stack.descriptor.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<VtStackTop>()).cast() }
 	}
 
 	fn is_interruptible(&mut self, irq: u8) -> VtIrqInterruptibilityState
@@ -286,11 +307,12 @@ impl VtVcpu
 	fn setup_host_state_area(&mut self, state: &ProcessorState)
 	{
 		let hv: *const VtHypervisor = self.hypervisor.cast();
-		let (gdt_base, idt_base, stack) = unsafe {
-			let stack: *mut VtStackTop = self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<VtStackTop>()).cast();
+		let (gdt_base, idt_base) = unsafe {
+			let stack: *mut VtStackTop =
+				self.hv_stack.descriptor.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<VtStackTop>()).cast();
 			// Setup Host State.
 			let mut ist: [*mut c_void; 8] = [null_mut(); 8];
-			ist[1] = self.ist[1].virt.byte_add(HYPERVISOR_STACK_SIZE);
+			ist[1] = (self.ist[1].high_va + HYPERVISOR_STACK_SIZE as u64) as *mut c_void;
 			HostProcessor::build(&mut self.host_cpu, &ist);
 			let idtr = (*hv).host.idt.get_reg();
 			let gdtr = self.host_cpu.gdt.get_reg();
@@ -307,7 +329,7 @@ impl VtVcpu
 			write_cr3((*hv).host.paging.cr3.phys);
 			// Test IDT.
 			// xpf_core::asm::misc::ud2();
-			(idtr.base, gdtr.base, stack)
+			(gdtr.base, idtr.base)
 		};
 		// Load them into VMCS.
 		vmwriteptr(HOST_GDTR_BASE, gdt_base as usize);
@@ -324,13 +346,16 @@ impl VtVcpu
 		// Host State Area - Segment Bases
 		vmwriteptr(HOST_FS_BASE, state.fs.base as usize);
 		vmwriteptr(HOST_GS_BASE, &raw mut self.gs_context as usize);
+		self.gs_context.this = &raw mut self.gs_context;
+		self.gs_context.host_vcpu = (&raw mut *self).cast();
+		self.gs_context.stack_base = self.hv_stack.high_va;
 		// Host State Area - Control Registers
 		vmwriteptr(HOST_CR0, state.cr0);
 		vmwriteptr(HOST_CR3, unsafe { (*hv).host.paging.cr3.phys } as usize);
 		vmwriteptr(HOST_CR4, state.cr4);
 		vmwrite64(HOST_MSR_IA32_EFER, state.efer);
 		// Host State Area - Stack Pointer, Instruction Pointer
-		vmwriteptr(HOST_RSP, stack as usize);
+		vmwriteptr(HOST_RSP, self.hv_stack.high_va as usize + HYPERVISOR_STACK_SIZE - size_of::<VtStackTop>());
 		vmwriteptr(HOST_RIP, nvc_vt_exit_handler_a as *const c_void as usize);
 	}
 
@@ -369,15 +394,10 @@ impl VtVcpu
 		// Guest State Area - TR Segment
 		vmwrite16(GUEST_TR_SELECTOR, state.tr.selector);
 		vmwrite32(GUEST_TR_LIMIT, state.tr.limit);
-		let tr_ar = if cfg!(target_os = "uefi")
-		{
-			0x8B
-		}
-		else
-		{
-			SegmentAccessRights::from_raw(state.tr.selector, state.tr.attrib).into_bits()
-		};
-		vmwrite32(GUEST_TR_ACCESS_RIGHTS, tr_ar);
+		vmwrite32(
+			GUEST_TR_ACCESS_RIGHTS,
+			SegmentAccessRights::new().with_present(true).with_segment_type(SegmentFlags::BUSY_TSS as u32).into_bits(),
+		);
 		vmwriteptr(GUEST_TR_BASE, state.tr.base as usize);
 		// Guest State Area - LDTR Segment
 		vmwrite16(GUEST_LDTR_SELECTOR, state.ldtr.selector);
@@ -556,6 +576,8 @@ impl VtVcpu
 			stack.host_xcr0 |= (cpu_feat_id.sse() as u64) << 1;
 			stack.host_xcr0 |= (cpu_feat_id.avx() as u64) << 2;
 			stack.guest_xcr0 = unsafe { _xgetbv(0) };
+			stack.xsave_state = self.host_xsave.as_mut_ptr().cast();
+			stack.xsaves_mask = 7;
 			trace!("Using Guest XCR0 as 0x{:X}, Host XCR0 as 0x{:X}...", stack.guest_xcr0, stack.host_xcr0);
 		}
 		let cr4 = vmreadptr(HOST_CR4).unwrap();
@@ -743,10 +765,7 @@ impl HypervisorCapabilities for VtHypervisor
 					supportability |= 4;
 				}
 			}
-			#[cfg(target_os = "uefi")]
-			{
-				basic_requirement &= vt_misc.support_wait_for_sipi_state();
-			}
+			basic_requirement &= vt_misc.support_wait_for_sipi_state();
 			if basic_requirement
 			{
 				supportability |= 1;
@@ -898,6 +917,11 @@ impl HypervisorEssentials for VtHypervisor
 			None => fail_cleanup!("Failed to allocate I/O-Bitmap B!"),
 		}
 		let vcpu_count = unsafe { noir_get_processor_count() };
+		let mut stack_hi_va = (PAGE_2MB_SIZE as u64).wrapping_neg();
+		let mut alloc_stack = || {
+			stack_hi_va -= (HYPERVISOR_STACK_SIZE + PAGE_SIZE) as u64;
+			stack_hi_va + PAGE_SIZE as u64
+		};
 		for i in 0..vcpu_count
 		{
 			let mut vcpu = VtVcpu::default();
@@ -916,16 +940,24 @@ impl HypervisorEssentials for VtHypervisor
 				Some(md) => vcpu.vapic = md,
 				None => fail_cleanup!("Failed to allocate Virtual-APIC Page for processor {i}!"),
 			}
-			match MemoryDescriptor::alloc()
-			{
-				Some(md) => vcpu.hv_stack = md,
-				None => fail_cleanup!("Failed to allocate hypervisor stack for processor {i}!"),
-			}
-			match MemoryDescriptor::alloc()
-			{
-				Some(md) => vcpu.ist[1] = md,
-				None => fail_cleanup!("Failed to allocate host IST1 stack for processor {i}!"),
-			}
+			vcpu.hv_stack.init(alloc_stack());
+			self.host.paging.map_4kb_ranges(
+				vcpu.hv_stack.high_va,
+				vcpu.hv_stack.descriptor.phys,
+				HYPERVISOR_STACK_PAGE_COUNT,
+				true,
+				true,
+				true,
+			);
+			vcpu.ist[1].init(alloc_stack());
+			self.host.paging.map_4kb_ranges(
+				vcpu.ist[1].high_va,
+				vcpu.ist[1].descriptor.phys,
+				HYPERVISOR_STACK_PAGE_COUNT,
+				true,
+				true,
+				true,
+			);
 			vcpu.hypervisor = self as *mut Self as *mut c_void;
 			vcpu.host_xsave.init(self.xsave_size);
 			vcpu.vcpu_id = i;

@@ -10,14 +10,16 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{arch::global_asm, ffi::c_void};
+use alloc::vec::Vec;
+use core::{arch::global_asm, cmp::Ordering, ffi::c_void, mem::offset_of};
 
 use log::*;
+use pastey::paste;
 
 use crate::xpf_core::{
-	asm::{crdr::*, msr::rdmsr, seg::*},
+	asm::{crdr::*, misc::read_gs_ptr, seg::*},
 	nvbdk::*,
-	x86::{descriptors::*, interrupts::*, msr::MSR_GS_BASE, paging::*},
+	x86::{descriptors::*, interrupts::*, paging::*},
 };
 
 pub struct HostSystem
@@ -47,7 +49,7 @@ pub struct HostProcessor
 
 impl HostProcessor
 {
-	pub fn build(&mut self, ist: &[*mut c_void])
+	pub fn build(&mut self, ist: &[*mut c_void; 8])
 	{
 		self.tss.ist1 = ist[1] as u64;
 		self.tss.ist2 = ist[2] as u64;
@@ -70,10 +72,67 @@ impl HostProcessor
 	}
 }
 
+macro_rules! build_host_pxe_descriptor {
+	($name:tt, $type:ty, $size:tt) => {
+		paste!
+		{
+			struct [<Host $name Descriptor>]
+			{
+				descriptor:MemoryDescriptor<1,$type>,
+				gpa_start:u64
+			}
+
+			impl [<Host $name Descriptor>]
+			{
+				const DESCRIPTOR_RANGE:u64=([<PAGE_ $size:upper _SIZE>]<<PAGE_SHIFT_DIFF64) as u64;
+				const DESCRIPTOR_MASK_LO:u64=Self::DESCRIPTOR_RANGE-1;
+				const DESCRIPTOR_MASK_HI:u64=!Self::DESCRIPTOR_MASK_LO;
+
+				fn new(gpa_start:u64,identity_map:bool)->Self
+				{
+					let r=Self
+					{
+						descriptor:MemoryDescriptor::alloc().expect(concat!("Failed to allocate ",stringify!([<$name:upper>]," for host paging!"))),
+						gpa_start
+					};
+					let s=unsafe{&mut *(r.descriptor.virt as *mut [$type;PAGE_TABLE_ENTRIES64])};
+					for (i,x) in s.iter_mut().enumerate()
+					{
+						*x=if identity_map {$type::construct(true,true,false,r.gpa_start+[<page_ $size _mult>](i) as u64,false)} else {$type::new()};
+					}
+					r
+				}
+
+				fn compare_pa(&self,va:u64)->Ordering
+				{
+					if va<self.gpa_start
+					{
+						Ordering::Greater
+					}
+					else if va>=self.gpa_start+Self::DESCRIPTOR_RANGE
+					{
+						Ordering::Less
+					}
+					else
+					{
+						Ordering::Equal
+					}
+				}
+			}
+		}
+	};
+}
+
+build_host_pxe_descriptor!(Pdpte, HugePdpte, 1gb);
+build_host_pxe_descriptor!(Pde, LargePde, 2mb);
+build_host_pxe_descriptor!(Pte, Pte, 4kb);
+
 pub struct HostPaging
 {
 	pub cr3: MemoryDescriptor<1, Pml4e>,
-	pdpt: MemoryDescriptor<1, HugePdpte>,
+	pdpt: Vec<HostPdpteDescriptor>,
+	pde: Vec<HostPdeDescriptor>,
+	pte: Vec<HostPteDescriptor>,
 }
 
 impl Default for HostPaging
@@ -83,23 +142,13 @@ impl Default for HostPaging
 	/// It is your responsibility to write CR3.
 	fn default() -> Self
 	{
-		let mut r = HostPaging { cr3: MemoryDescriptor::null(), pdpt: MemoryDescriptor::null() };
-		match MemoryDescriptor::alloc()
-		{
-			Some(md) =>
-			{
-				r.pdpt = md;
-				let pdpte_p = r.pdpt.virt;
-				for i in 0..PAGE_TABLE_ENTRIES
-				{
-					unsafe {
-						let pdpte_v = HugePdpte::construct(true, true, false, page_1gb_mult(i) as u64, false);
-						pdpte_p.add(i).write(pdpte_v);
-					}
-				}
-			}
-			None => panic!("Failed to allocate PDPTE for host paging base!"),
-		}
+		let mut r = HostPaging {
+			cr3: MemoryDescriptor::null(),
+			pdpt: Vec::with_capacity(8),
+			pde: Vec::with_capacity(8),
+			pte: Vec::with_capacity(8),
+		};
+		r.pdpt.push(HostPdpteDescriptor::new(0, true));
 		match MemoryDescriptor::alloc()
 		{
 			Some(md) => r.cr3 = md,
@@ -112,11 +161,95 @@ impl Default for HostPaging
 			let scr3_virt = noir_find_virt_by_phys(scr3_phys);
 			debug!("System CR3 Virt: {scr3_virt:p}, Phys: 0x{scr3_phys:016X}");
 			memcpy(r.cr3.virt.cast(), scr3_virt, PAGE_SIZE);
-			let pml4e_v = Pml4e::construct(true, true, false, r.pdpt.phys, false);
+			let pml4e_v = Pml4e::construct(true, true, false, r.pdpt[0].descriptor.phys, false);
 			debug!("PML4E Pointer: {:p}, PML4E value 0x{:016X}", pml4e_p, pml4e_v.into_bits());
 			pml4e_p.write(pml4e_v);
 		}
 		r
+	}
+}
+
+impl HostPaging
+{
+	fn split_pml4e(&mut self, gpa: u64) -> usize
+	{
+		match self.pdpt.binary_search_by(|d| d.compare_pa(gpa))
+		{
+			Ok(i) => i,
+			Err(i) =>
+			{
+				// No descriptor found! Create one.
+				let r = HostPdpteDescriptor::new(gpa & HostPdpteDescriptor::DESCRIPTOR_MASK_HI, false);
+				unsafe {
+					self.cr3.virt.add(pml4e_index(gpa)).write(Pml4e::construct(true, true, false, r.descriptor.phys, false));
+				}
+				self.pdpt.insert(i, r);
+				i
+			}
+		}
+	}
+
+	fn split_pdpte(&mut self, gpa: u64) -> usize
+	{
+		match self.pde.binary_search_by(|d| d.compare_pa(gpa))
+		{
+			Ok(i) => i,
+			Err(i) =>
+			{
+				// No descriptor found! Create one.
+				let j = self.split_pml4e(gpa);
+				let r = HostPdeDescriptor::new(gpa & HostPdeDescriptor::DESCRIPTOR_MASK_HI, false);
+				unsafe {
+					self.pdpt[j]
+						.descriptor
+						.virt
+						.add(pdpte_index(gpa))
+						.write(HugePdpte::from_bits(Pdpte::construct(true, true, false, r.descriptor.phys, false).into_bits()));
+				}
+				self.pde.insert(i, r);
+				i
+			}
+		}
+	}
+
+	fn split_pde(&mut self, gpa: u64) -> usize
+	{
+		match self.pte.binary_search_by(|d| d.compare_pa(gpa))
+		{
+			Ok(i) => i,
+			Err(i) =>
+			{
+				// No descriptor found! Create one.
+				let j = self.split_pdpte(gpa);
+				let r = HostPteDescriptor::new(gpa & HostPteDescriptor::DESCRIPTOR_MASK_HI, false);
+				unsafe {
+					self.pde[j]
+						.descriptor
+						.virt
+						.add(pde_index(gpa))
+						.write(LargePde::from_bits(Pdpte::construct(true, true, false, r.descriptor.phys, false).into_bits()));
+				}
+				self.pte.insert(i, r);
+				i
+			}
+		}
+	}
+
+	fn update_pte(&mut self, va: u64, pa: u64, p: bool, w: bool, nx: bool)
+	{
+		let i = self.split_pde(va);
+		unsafe {
+			*self.pte[i].descriptor.virt.add(pte_index(va)) = Pte::construct(p, w, false, pa, nx);
+		}
+	}
+
+	pub fn map_4kb_ranges(&mut self, start_va: u64, start_pa: u64, pages: usize, p: bool, w: bool, nx: bool)
+	{
+		for i in 0..pages as u64
+		{
+			let j = page_4kb_mult(i);
+			self.update_pte(start_va + j, start_pa + j, p, w, nx);
+		}
 	}
 }
 
@@ -217,9 +350,10 @@ impl HostIDT
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub enum PerCpuGsState
+pub enum PerCpuGsTryExceptionState
 {
 	#[default]
+	NotExpectingException,
 	AwaitExecution,
 	Failed
 	{
@@ -231,23 +365,26 @@ pub enum PerCpuGsState
 
 #[derive(Default, Debug)]
 #[repr(C, align(16))]
-pub struct PerCpuGsException
+pub struct PerCpuGsState
 {
 	pub handler_rsp: u64,
 	pub handler_rip: u64,
-	pub state: PerCpuGsState,
+	pub this: *mut Self,
+	pub host_vcpu: *mut c_void,
+	pub state: PerCpuGsTryExceptionState,
+	pub stack_base: u64,
 }
 
-impl PerCpuGsException
+impl PerCpuGsState
 {
 	pub fn reset(&mut self)
 	{
-		self.state = PerCpuGsState::AwaitExecution;
+		self.state = PerCpuGsTryExceptionState::AwaitExecution;
 	}
 
 	pub fn set(&mut self, vector: u8, error_code: Option<u32>)
 	{
-		self.state = PerCpuGsState::Failed { vector, error_code };
+		self.state = PerCpuGsTryExceptionState::Failed { vector, error_code };
 	}
 }
 
@@ -264,13 +401,13 @@ fn handle_exception_without_error_code(
 	exception_name: &str,
 )
 {
-	use PerCpuGsState::*;
+	use PerCpuGsTryExceptionState::*;
 	let frame = unsafe { &mut *exception_frame };
-	let gs_ctxt = unsafe { &mut *(rdmsr(MSR_GS_BASE) as *mut PerCpuGsException) };
+	let gs_ctxt: &mut PerCpuGsState = unsafe { &mut *read_gs_ptr(offset_of!(PerCpuGsState, this)) };
 	error!("{exception_name} happened!");
 	error!("Dumping Exception Frame:\n{}", frame);
 	error!("Dumping GPR State:\n{}", unsafe { &*gpr_state });
-	debug!("Current GS-Base: {:p}", gs_ctxt as *mut PerCpuGsException);
+	debug!("Current GS-Base: {:p}", gs_ctxt as *mut PerCpuGsState);
 	debug!("Current GS-State: {:?}", gs_ctxt.state);
 	match &gs_ctxt.state
 	{
@@ -279,7 +416,7 @@ fn handle_exception_without_error_code(
 			frame.return_rip = gs_ctxt.handler_rip;
 			frame.return_rsp = gs_ctxt.handler_rsp;
 			gs_ctxt.set(vector, None);
-			info!("Returning to host...");
+			info!("Returning to host with rip=0x{:X}, rsp=0x{:X}...", frame.return_rip, frame.return_rsp);
 		}
 		_ =>
 		unsafe {
@@ -296,13 +433,13 @@ fn handle_exception_with_error_code(
 	exception_name: &str,
 )
 {
-	use PerCpuGsState::*;
+	use PerCpuGsTryExceptionState::*;
 	let frame = unsafe { &mut *exception_frame };
-	let gs_ctxt = unsafe { &mut *(rdmsr(MSR_GS_BASE) as *mut PerCpuGsException) };
+	let gs_ctxt: &mut PerCpuGsState = unsafe { &mut *read_gs_ptr(offset_of!(PerCpuGsState, this)) };
 	error!("{exception_name} happened!");
 	error!("Dumping Exception Frame:\n{}", frame);
 	error!("Dumping GPR State:\n{}", unsafe { &*gpr_state });
-	debug!("Current GS-Base: {:p}", gs_ctxt as *mut PerCpuGsException);
+	debug!("Current GS-Base: {:p}", gs_ctxt as *mut PerCpuGsState);
 	debug!("Current GS-State: {:?}", gs_ctxt.state);
 	match &gs_ctxt.state
 	{
@@ -463,6 +600,15 @@ unsafe extern "C" fn noir_general_protection_fault_handler(
 unsafe extern "C" fn noir_page_fault_handler(exception_frame: *mut InterruptStackFrameWithErrorCode, gpr_state: *mut GprState)
 {
 	let cr2 = read_cr2();
+	// Check if the #PF is caught in the stack guard page.
+	let gs_ctxt: &mut PerCpuGsState = unsafe { &mut *read_gs_ptr(offset_of!(PerCpuGsState, this)) };
+	let guard_end = gs_ctxt.stack_base;
+	let guard_start = guard_end - PAGE_4KB_SIZE as u64;
+	// If the CR2 is in the guard page, then it's a stack-overflow we've caught.
+	if (guard_start..guard_end).contains(&cr2)
+	{
+		panic!("Stack-Overflow is caught! rip=0x{:X}, cr2=0x{cr2:X}", unsafe { (*exception_frame).return_rip });
+	}
 	error!("Page-Fault CR2=0x{cr2:X}");
 	handle_exception_with_error_code(exception_frame, gpr_state, PAGE_FAULT, "Page Fault");
 }

@@ -28,17 +28,7 @@ end_of_try:
 	ret
 .seh_endproc
 
-.global __chkstk
-__chkstk:
-	// In Rust, sorting a Vec will call __chkstk.
-	// The ntoskrnl's implementation of __chkstk does nothing and returns.
-	// TODO: Implement a real stack checker to prevent stack overflow.
-	ret
-
 .macro interrupt_handler_prologue_common
-	sub rsp,0x110
-	.seh_stackalloc 0x110
-	pushaq_fast 0x90
 	// Save volatile XMM state.
 	stmxcsr  dword ptr [rsp+0x80]
 	movaps xmmword ptr [rsp+0x20],xmm0
@@ -47,9 +37,6 @@ __chkstk:
 	movaps xmmword ptr [rsp+0x50],xmm3
 	movaps xmmword ptr [rsp+0x60],xmm4
 	movaps xmmword ptr [rsp+0x70],xmm5
-	// Load arguments
-	lea rcx,[rsp+0x110]
-	lea rdx,[rsp+0x90]
 	.seh_endprologue
 .endm
 
@@ -58,7 +45,13 @@ __chkstk:
 .seh_proc \name
 \name:
 	.seh_pushframe
+	sub rsp,0x108
+	.seh_stackalloc 0x108
+	pushaq_fast 0x88
 	interrupt_handler_prologue_common
+	// Load arguments
+	lea rcx,[rsp+0x108]
+	lea rdx,[rsp+0x88]
 .endm
 
 .macro interrupt_handler_prologue_with_code name
@@ -66,7 +59,13 @@ __chkstk:
 .seh_proc \name
 \name:
 	.seh_pushframe @code
+	sub rsp,0x110
+	.seh_stackalloc 0x110
+	pushaq_fast 0x90
 	interrupt_handler_prologue_common
+	// Load arguments
+	lea rcx,[rsp+0x110]
+	lea rdx,[rsp+0x90]
 .endm
 
 .macro interrupt_handler_epilogue_common
@@ -78,20 +77,22 @@ __chkstk:
 	movaps xmm4,xmmword ptr [rsp+0x60]
 	movaps xmm5,xmmword ptr [rsp+0x70]
 	ldmxcsr dword ptr [rsp+0x80]
-	// Restore GPR state.
-	popaq_fast 0x90
 .endm
 
 .macro interrupt_handler_epilogue
 	interrupt_handler_epilogue_common
-	add rsp,0x110
+	// Restore GPR state.
+	popaq_fast 0x88
+	add rsp,0x108
 	iretq
 .seh_endproc
 .endm
 
 .macro interrupt_handler_epilogue_with_code
 	interrupt_handler_epilogue_common
-	add rsp,0x118
+	// Restore GPR state.
+	popaq_fast 0x90
+	add rsp,0x110
 	iretq
 .seh_endproc
 .endm

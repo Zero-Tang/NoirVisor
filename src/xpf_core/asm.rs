@@ -924,4 +924,31 @@ pub mod misc
 			asm!("wbinvd");
 		}
 	}
+
+	/// ## Safety
+	/// You must ensure `offset` is smaller than the GS Context. \
+	/// The pointer returned is not necessarily valid.
+	pub unsafe fn read_gs_ptr<T>(offset: usize) -> *mut T
+	{
+		unsafe {
+			let p: *mut T;
+			asm!
+			(
+				"mov {d},qword ptr gs:[{s}]",
+				d=out(reg) p,
+				s=in(reg) offset
+			);
+			p
+		}
+	}
+
+	/// ## Bochs Magic Breakpoint
+	/// The `run_bochs.py` script specified `xchg bp,bp` as the magic breakpoint instruction.
+	#[inline(always)]
+	pub fn magic_break()
+	{
+		unsafe {
+			asm!("xchg bp,bp");
+		}
+	}
 }

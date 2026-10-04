@@ -13,13 +13,14 @@
 use core::{
 	ffi::c_void,
 	fmt::{self, Display},
+	hint::cold_path,
 	sync::atomic::*,
 };
 
 use log::info;
 use portable_dlmalloc::raw::*;
 use spin::{Mutex, MutexGuard};
-use static_collections::bitmap::RefBitmap;
+use static_collections::{bitmap::RefBitmap, vec::StaticVec};
 
 use super::nvbdk::*;
 use crate::sysdprintln;
@@ -163,36 +164,22 @@ pub fn get_free() -> usize
 	unsafe { dlmallinfo().fordblks }
 }
 
-enum PageAllocationType
-{
-	Invalid,
-	Valid([u64; 8]),
-}
-
 struct PageAllocationInformation
 {
 	descriptor: MemoryDescriptor<PAGE_TABLE_ENTRIES64, c_void>,
-	alloc_type: PageAllocationType,
+	bitmap: [u64; 8],
 }
 
 impl Display for PageAllocationInformation
 {
 	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result
 	{
-		write!(f, "Virt: {:p}, Phys: 0x{:016X}, ", self.descriptor.virt, self.descriptor.phys)?;
-		match self.alloc_type
+		write!(f, "Virt: {:p}, Phys: 0x{:016X}, Bitmap: ", self.descriptor.virt, self.descriptor.phys)?;
+		for x in self.bitmap
 		{
-			PageAllocationType::Invalid => write!(f, "This is an invalid entry."),
-			PageAllocationType::Valid(info) =>
-			{
-				writeln!(f, "This is a valid entry! Bitmap:")?;
-				for i in 0..8
-				{
-					write!(f, "{:016X}", info[7 - i])?;
-				}
-				Ok(())
-			}
+			write!(f, "{x:016X}")?;
 		}
+		Ok(())
 	}
 }
 
@@ -207,128 +194,108 @@ impl PageAllocationInformation
 		}
 		else
 		{
-			Some(Self {
-				descriptor: unsafe { MemoryDescriptor::new(virt, noir_get_physical_address(virt)) },
-				alloc_type: PageAllocationType::Valid([0; 8]),
-			})
+			Some(Self { descriptor: unsafe { MemoryDescriptor::new(virt, noir_get_physical_address(virt)) }, bitmap: [0; 8] })
 		}
 	}
 
 	fn alloc_pages(&mut self, pages: usize) -> Option<(*mut c_void, u64)>
 	{
-		match &mut self.alloc_type
+		let bmp: &mut RefBitmap<PAGE_TABLE_ENTRIES64> = unsafe { RefBitmap::from_raw_mut_ptr(self.bitmap.as_mut_ptr().cast()) };
+		let mut i: usize = 0;
+		while i < PAGE_TABLE_ENTRIES64
 		{
-			PageAllocationType::Valid(info) =>
+			if !bmp.test(i).unwrap()
 			{
-				let bmp: &mut RefBitmap<PAGE_TABLE_ENTRIES64> = unsafe { RefBitmap::from_raw_mut_ptr(info.as_mut_ptr().cast()) };
-				let mut i: usize = 0;
-				while i < PAGE_TABLE_ENTRIES64
+				let mut is_free = true;
+				for j in i + 1..i + pages
 				{
-					if !bmp.test(i).unwrap()
+					if j == PAGE_TABLE_ENTRIES64
 					{
-						let mut is_free = true;
-						for j in i + 1..i + pages
-						{
-							if j == PAGE_TABLE_ENTRIES64
-							{
-								is_free = false;
-								break;
-							}
-							if bmp.test(j).unwrap()
-							{
-								is_free = false;
-								break;
-							}
-						}
-						if is_free
-						{
-							unsafe {
-								let s = self.descriptor.virt.byte_add(page_mult(i));
-								// Set the bitmap.
-								for j in i..i + pages
-								{
-									let _ = bmp.set(j);
-								}
-								// println!("[alloc] Allocated Page {s:p} to {:p}! Allocation Info: {self}",s.byte_add(pages));
-								return Some((s, noir_get_physical_address(s)));
-							}
-						}
+						is_free = false;
+						break;
 					}
-					i += 1;
+					if bmp.test(j).unwrap()
+					{
+						is_free = false;
+						break;
+					}
 				}
-				None
+				if is_free
+				{
+					unsafe {
+						let s = self.descriptor.virt.byte_add(page_mult(i));
+						// Set the bitmap.
+						for j in i..i + pages
+						{
+							let _ = bmp.set(j);
+						}
+						// println!("[alloc] Allocated Page {s:p} to {:p}! Allocation Info: {self}",s.byte_add(pages));
+						return Some((s, noir_get_physical_address(s)));
+					}
+				}
 			}
-			_ => None,
+			i += 1;
 		}
+		None
 	}
 
 	fn alloc_pages_for_malloc(&mut self, pages: usize) -> Option<*mut c_void>
 	{
-		match &mut self.alloc_type
+		// 256KiB-per-chunk
+		let chunks = pages >> MALLOC_CHUNK_SHIFT;
+		sysdprintln!("Allocating {chunks} chunks for dlmalloc...");
+		for i in (0..=8 - chunks).rev()
 		{
-			PageAllocationType::Valid(info) =>
+			let info = &mut self.bitmap;
+			// Search for a free chunk.
+			if info[i] == 0
 			{
-				// 256KiB-per-chunk
-				let chunks = pages >> MALLOC_CHUNK_SHIFT;
-				sysdprintln!("Allocating {chunks} chunks for dlmalloc...");
-				for i in (0..=8 - chunks).rev()
+				let mut is_free = true;
+				let chunks = if i < chunks { i } else { chunks };
+				for j in 0..chunks
 				{
-					// Search for a free chunk.
-					if info[i] == 0
+					if info[i - j] != 0
 					{
-						let mut is_free = true;
-						let chunks = if i < chunks { i } else { chunks };
-						for j in 0..chunks
-						{
-							if info[i - j] != 0
-							{
-								is_free = false;
-								break;
-							}
-						}
-						if is_free
-						{
-							for j in 0..chunks
-							{
-								info[i - j] = u64::MAX;
-							}
-							let p: *mut c_void =
-								unsafe { self.descriptor.virt.byte_add(page_mult(i - chunks + 1) << MALLOC_CHUNK_SHIFT) };
-							sysdprintln!("malloc-chunk: {p:p}");
-							return Some(p);
-						}
+						is_free = false;
+						break;
 					}
 				}
-				None
+				if is_free
+				{
+					for j in 0..chunks
+					{
+						info[i - j] = u64::MAX;
+					}
+					let p: *mut c_void = unsafe { self.descriptor.virt.byte_add(page_mult(i - chunks + 1) << MALLOC_CHUNK_SHIFT) };
+					sysdprintln!("malloc-chunk: {p:p}");
+					return Some(p);
+				}
 			}
-			_ => None,
 		}
+		None
 	}
 
-	const fn empty() -> Self
+	fn compare_pa(&self, pa: u64) -> core::cmp::Ordering
 	{
-		Self { descriptor: MemoryDescriptor::null(), alloc_type: PageAllocationType::Invalid }
+		use core::cmp::Ordering;
+		if pa < self.descriptor.phys
+		{
+			Ordering::Greater
+		}
+		else if pa >= self.descriptor.phys + PAGE_2MB_SIZE as u64
+		{
+			Ordering::Less
+		}
+		else
+		{
+			Ordering::Equal
+		}
 	}
 }
 
 pub struct PageAllocationManager
 {
-	list: [PageAllocationInformation; 64],
-	count: usize,
-}
-
-#[unsafe(no_mangle)]
-unsafe extern "C" fn nvc_free_all_large_pages()
-{
-	let mut lk = PAGE_ALLOC_MANAGER.lock();
-	for entry in &mut lk.list
-	{
-		if let PageAllocationType::Valid(_) = entry.alloc_type
-		{
-			sysdprintln!("Freeing {:p} from page allocation manager...", entry.descriptor.virt);
-			unsafe { noir_free_2mb_page(entry.descriptor.virt) };
-		}
-	}
+	list: StaticVec<64, PageAllocationInformation>,
 }
 
 pub struct PageAllocIter<'a>
@@ -343,27 +310,9 @@ impl<'a> Iterator for PageAllocIter<'a>
 
 	fn next(&mut self) -> Option<Self::Item>
 	{
-		if self.index >= self.source.count
-		{
-			None
-		}
-		else
-		{
-			let mut ret = None;
-			while self.index < self.source.count
-			{
-				if matches!(self.source.list[self.index].alloc_type, PageAllocationType::Valid(_))
-				{
-					ret = Some(self.source.list[self.index].descriptor.phys);
-				}
-				self.index += 1;
-				if ret.is_some()
-				{
-					break;
-				}
-			}
-			ret
-		}
+		let i = self.index;
+		self.index += 1;
+		self.source.list.get(i).map(|x| x.descriptor.phys)
 	}
 }
 
@@ -374,65 +323,79 @@ impl PageAllocationManager
 		PageAllocIter { index: 0, source: self }
 	}
 
-	fn new_blank(&mut self)
+	fn new_blank(&mut self) -> usize
 	{
-		if self.count >= self.list.len()
+		if self.list.len() == self.list.capacity()
 		{
 			panic!("NoirVisor has exceeded 128MiB Internal allocation limit!");
 		}
-		match PageAllocationInformation::new()
+		let info = PageAllocationInformation::new().expect("Failed to allocate new 2MiB Page!");
+		match self.list.binary_search_by(|x| x.descriptor.phys.cmp(&info.descriptor.phys))
 		{
-			Some(info) =>
+			Ok(i) =>
 			{
-				// Insert to the end.
-				self.list[self.count] = info;
-				self.count += 1;
+				cold_path();
+				panic!(
+					"System allocator returned physical address 0x{:X}. However, it's already allocated at index {i}!",
+					info.descriptor.phys
+				);
 			}
-			None => panic!("Failed to allocate new 2MiB Page!"),
+			Err(i) =>
+			{
+				self.list.insert(i, info);
+				i
+			}
 		}
 	}
 
-	fn new_full(&mut self)
+	fn new_full(&mut self) -> usize
 	{
-		if self.count >= self.list.len()
+		if self.list.len() == self.list.capacity()
 		{
 			panic!("NoirVisor has exceeded 128MiB Internal allocation limit!");
 		}
-		match PageAllocationInformation::new()
+		let mut info = PageAllocationInformation::new().expect("Failed to allocate new 2MiB Page!");
+		info.bitmap = [u64::MAX; 8];
+		match self.list.binary_search_by(|x| x.descriptor.phys.cmp(&info.descriptor.phys))
 		{
-			Some(mut info) =>
+			Ok(i) =>
 			{
-				info.alloc_type = PageAllocationType::Valid([u64::MAX; 8]);
-				// Insert to the end.
-				self.list[self.count] = info;
-				self.count += 1;
+				cold_path();
+				panic!(
+					"System allocator returned physical address 0x{:X}. However, it's already allocated at index {i}!",
+					info.descriptor.phys
+				);
 			}
-			None => panic!("Failed to allocate new 2MiB Page!"),
+			Err(i) =>
+			{
+				self.list.insert(i, info);
+				i
+			}
 		}
 	}
 
 	fn alloc_pages(&mut self, pages: usize) -> Option<(*mut c_void, u64)>
 	{
 		// Try to allocate pages from existing large pages.
-		for i in 0..self.count
+		for x in self.list.iter_mut()
 		{
-			if let Some(md) = self.list[i].alloc_pages(pages)
+			if let Some(md) = x.alloc_pages(pages)
 			{
 				return Some(md);
 			}
 		}
 		// At this point, we need to allocate new large pages!
 		self.new_blank();
-		self.list[self.count - 1].alloc_pages(pages)
+		self.alloc_pages(pages)
 	}
 
 	fn alloc_pages_for_malloc(&mut self, pages: usize) -> Option<*mut c_void>
 	{
 		sysdprintln!("Trying to allocate {pages} pages for dlmalloc chunk...");
 		// Try to allocate pages from existing large pages.
-		for i in 0..self.count
+		for x in self.list.iter_mut()
 		{
-			if let Some(md) = self.list[i].alloc_pages_for_malloc(pages)
+			if let Some(md) = x.alloc_pages_for_malloc(pages)
 			{
 				sysdprintln!("Allocated {md:p} for dlmalloc chunk!");
 				return Some(md);
@@ -440,30 +403,23 @@ impl PageAllocationManager
 		}
 		// At this point, we need to allocate new large pages!
 		self.new_blank();
-		self.list[self.count - 1].alloc_pages_for_malloc(pages)
+		self.alloc_pages_for_malloc(pages)
 	}
 
 	fn free_pages(&mut self, virt: *mut c_void, pages: usize)
 	{
 		// Search for large pages.
-		for i in 0..self.count
+		for x in self.list.iter_mut()
 		{
 			unsafe {
-				let v = self.list[i].descriptor.virt;
+				let v = x.descriptor.virt;
 				if virt >= v && virt < v.byte_add(PAGE_2MB_SIZE)
 				{
-					match &mut self.list[i].alloc_type
+					let bmp: &mut RefBitmap<64> = RefBitmap::from_raw_mut_ptr(x.bitmap.as_mut_ptr().cast());
+					let start = page_count(virt.offset_from(v) as usize);
+					for j in start..start + pages
 					{
-						PageAllocationType::Invalid => panic!("Freeing pages from invalid entry! Address={virt:p}"),
-						PageAllocationType::Valid(info) =>
-						{
-							let bmp: &mut RefBitmap<64> = RefBitmap::from_raw_mut_ptr(info.as_mut_ptr().cast());
-							let start = page_count(virt.offset_from(v) as usize);
-							for j in start..start + pages
-							{
-								let _ = bmp.reset(j);
-							}
-						}
+						let _ = bmp.reset(j);
 					}
 					break;
 				}
@@ -474,22 +430,18 @@ impl PageAllocationManager
 	fn free_large_page(&mut self, virt: *mut c_void)
 	{
 		// Search for large pages.
-		for x in &mut self.list
+		for x in self.list.iter_mut()
 		{
-			if core::ptr::eq(virt, x.descriptor.virt as *const c_void)
+			if core::ptr::eq(virt, x.descriptor.virt.cast())
 			{
-				match x.alloc_type
-				{
-					PageAllocationType::Valid(_) => info!("Freeing large page from valid-entry at {virt:p}..."),
-					PageAllocationType::Invalid => panic!("Freeing invalid entry! Address={virt:p}"),
-				}
+				info!("Freeing large page from valid-entry at {virt:p}...");
 			}
 		}
 	}
 
 	const fn empty() -> Self
 	{
-		Self { list: [const { PageAllocationInformation::empty() }; 64], count: 0 }
+		Self { list: StaticVec::new() }
 	}
 }
 
@@ -498,20 +450,13 @@ pub static PAGE_ALLOC_MANAGER: Mutex<PageAllocationManager> = Mutex::new(PageAll
 pub fn is_allocated_page(addr: u64) -> bool
 {
 	let lk = PAGE_ALLOC_MANAGER.lock();
-	for x in lk.iter()
-	{
-		if (x..x + PAGE_2MB_SIZE as u64).contains(&addr)
-		{
-			return true;
-		}
-	}
-	false
+	lk.list.binary_search_by(|x| x.compare_pa(addr)).is_ok()
 }
 
 pub fn print_allocation()
 {
 	let lk = PAGE_ALLOC_MANAGER.lock();
-	for (i, x) in lk.list.iter().enumerate().take(lk.count)
+	for (i, x) in lk.list.iter().enumerate()
 	{
 		sysdprintln!("Large Page {i}: {x}");
 	}
@@ -520,16 +465,7 @@ pub fn print_allocation()
 pub fn get_large_page_count() -> usize
 {
 	let lk = PAGE_ALLOC_MANAGER.lock();
-	let mut count = 0;
-	for x in &lk.list
-	{
-		count += match x.alloc_type
-		{
-			PageAllocationType::Valid(_) => 1,
-			PageAllocationType::Invalid => 0,
-		};
-	}
-	count
+	lk.list.len()
 }
 
 /// # The `ContiguousAllocator` trait
@@ -608,7 +544,7 @@ impl<T: Sized> MemoryDescriptor<PAGE_TABLE_ENTRIES64, T>
 	pub fn alloc_2mb_page() -> Option<Self>
 	{
 		let mut lk = PAGE_ALLOC_MANAGER.lock();
-		lk.new_full();
-		Some(unsafe { MemoryDescriptor::new(lk.list[lk.count - 1].descriptor.virt.cast(), lk.list[lk.count - 1].descriptor.phys) })
+		let i = lk.new_full();
+		Some(unsafe { MemoryDescriptor::new(lk.list[i].descriptor.virt.cast(), lk.list[i].descriptor.phys) })
 	}
 }

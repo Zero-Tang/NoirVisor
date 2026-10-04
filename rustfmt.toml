@@ -5,7 +5,7 @@ hard_tabs = true
 tab_spaces = 4
 max_width = 135
 use_small_heuristics = "Max"
-newline_style = "Windows"
+newline_style = "Native"
 
 unstable_features = true
 brace_style = "AlwaysNextLine"

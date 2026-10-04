@@ -10,6 +10,7 @@ def call_bochs():
 	old_path=os.environ["PATH"]
 	os.environ["PATH"]+=";"+bochs_path
 	var_dict={"cpu-model":"wildcat_lake","bochs-path":bochs_path,"build-preset":"chk"}
+	debugger_en=False
 	# Parse Command-Line Arguments
 	i=1
 	while i<len(sys.argv):
@@ -23,6 +24,8 @@ def call_bochs():
 			var_dict["cpu-model"]=sys.argv[i]
 		elif sys.argv[i]=="--release":
 			var_dict["build-preset"]="fre"
+		elif sys.argv[i]=="--debugger":
+			debugger_en=True
 		else:
 			print("Unknown argument: {}!".format(sys.argv[i]))
 		i+=1
@@ -35,8 +38,12 @@ def call_bochs():
 	f=open("bochsrc.bxrc",'w')
 	f.write(bochs_config)
 	f.close()
+	# Forge Bochs run arguments
+	args=["bochs","-f","bochsrc.bxrc","-q"]
+	if debugger_en:
+		args.append("-dbg_gui")
 	# Run Bochs.
-	subprocess.call(["bochs","-f","bochsrc.bxrc","-q"])
+	subprocess.call(args)
 	os.environ["PATH"]=old_path
 
 if __name__=="__main__":

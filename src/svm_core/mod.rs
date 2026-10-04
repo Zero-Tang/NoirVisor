@@ -77,6 +77,7 @@ pub struct SvmStackTop
 	pub reserved: u32,
 	pub guest_xcr0: u64,
 	pub host_xcr0: u64,
+	pub xsaves_mask: u64,
 }
 
 pub struct SvmNestedVcpu
@@ -96,14 +97,34 @@ pub struct SvmVcpuFlags
 	rsvd: u64,
 }
 
+pub struct SvmStackMemoryDescriptor
+{
+	pub descriptor: MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT, c_void>,
+	pub high_va: u64,
+}
+
+impl SvmStackMemoryDescriptor
+{
+	fn init(&mut self, high_va: u64)
+	{
+		self.descriptor = MemoryDescriptor::alloc().expect("Failed to allocate stack memory!");
+		self.high_va = high_va;
+	}
+
+	const fn null() -> Self
+	{
+		Self { descriptor: MemoryDescriptor::null(), high_va: 0 }
+	}
+}
+
 pub struct SvmVcpu
 {
 	pub vmcb: MemoryDescriptor<1, c_void>,
 	pub hsave: MemoryDescriptor<1, c_void>,
 	pub hvmcb: MemoryDescriptor<1, c_void>,
-	pub hv_stack: MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT, c_void>,
+	pub hv_stack: SvmStackMemoryDescriptor,
 	pub hypervisor: *mut c_void,
-	pub ist: [MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT, c_void>; 8],
+	pub ist: [SvmStackMemoryDescriptor; 8],
 	// Used for preserving XSAVE state.
 	pub host_xsave: BoxedXState,
 	pub vcpu_id: u32,
@@ -121,7 +142,7 @@ pub struct SvmVcpu
 	// Features supported by the processors.
 	pub svm_feats: SvmFeatureIdentifier,
 	// This context handles exceptions.
-	pub gs_context: PerCpuGsException,
+	pub gs_context: PerCpuGsState,
 	pub cv_host_save: SvmCvHostVcpuState,
 }
 
@@ -156,9 +177,9 @@ impl SvmVcpu
 			vmcb: MemoryDescriptor::null(),
 			hsave: MemoryDescriptor::null(),
 			hvmcb: MemoryDescriptor::null(),
-			hv_stack: MemoryDescriptor::null(),
+			hv_stack: SvmStackMemoryDescriptor::null(),
 			hypervisor: null_mut(),
-			ist: [const { MemoryDescriptor::null() }; 8],
+			ist: [const { SvmStackMemoryDescriptor::null() }; 8],
 			host_xsave: BoxedXState::null(),
 			vcpu_id: 0,
 			apic_id: 0,
@@ -173,7 +194,7 @@ impl SvmVcpu
 			flags: SvmVcpuFlags::new(),
 			decoded_instruction: Instruction::new([0; 15]),
 			svm_feats: SvmFeatureIdentifier::new(),
-			gs_context: PerCpuGsException::default(),
+			gs_context: PerCpuGsState::default(),
 			cv_host_save: SvmCvHostVcpuState::default(),
 		}
 	}
@@ -181,7 +202,7 @@ impl SvmVcpu
 
 unsafe extern "win64" {
 	#[allow(improper_ctypes)]
-	fn nvc_svm_subvert_processor_a(stack: *mut SvmStackTop);
+	fn nvc_svm_subvert_processor_a(stack_lo: *mut SvmStackTop, stack_hi: *mut SvmStackTop);
 	fn nvc_svm_guest_start();
 }
 
@@ -201,13 +222,13 @@ impl SvmVcpu
 	#[inline(always)]
 	pub fn get_stack_top(&self) -> &SvmStackTop
 	{
-		unsafe { &*self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<SvmStackTop>()).cast() }
+		unsafe { &*self.hv_stack.descriptor.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<SvmStackTop>()).cast() }
 	}
 
 	#[inline(always)]
 	pub fn get_stack_top_mut(&mut self) -> &mut SvmStackTop
 	{
-		unsafe { &mut *self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<SvmStackTop>()).cast() }
+		unsafe { &mut *self.hv_stack.descriptor.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<SvmStackTop>()).cast() }
 	}
 
 	#[inline(always)]
@@ -221,7 +242,8 @@ impl SvmVcpu
 	fn subvert_i(&mut self, gsp: u64, gssp: u64) -> u64
 	{
 		unsafe {
-			let stack: &mut SvmStackTop = &mut *self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<SvmStackTop>()).cast();
+			let stack: &mut SvmStackTop =
+				&mut *self.hv_stack.descriptor.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<SvmStackTop>()).cast();
 			self.mshv_ctxt.root = (&raw mut *self).cast();
 			// Setup supported features.
 			self.svm_feats = SvmFeatureIdentifier::cpuid();
@@ -249,7 +271,7 @@ impl SvmVcpu
 			self.vmwrite(INTERCEPT_VECTOR2, iv2.into_bits());
 			// Setup Host State.
 			let mut ist: [*mut c_void; 8] = [null_mut(); 8];
-			ist[1] = self.ist[1].virt.byte_add(HYPERVISOR_STACK_SIZE);
+			ist[1] = (self.ist[1].high_va + HYPERVISOR_STACK_SIZE as u64) as *mut c_void;
 			HostProcessor::build(&mut self.host_cpu, &ist);
 			vmsave(self.hvmcb.phys);
 			let idtr = (*hv).host.idt.get_reg();
@@ -314,6 +336,9 @@ impl SvmVcpu
 			vmsave(self.hvmcb.phys);
 			let host_gsbase = &raw mut self.gs_context as u64;
 			self.host_vmwrite(GUEST_GS_BASE, host_gsbase);
+			self.gs_context.this = &raw mut self.gs_context;
+			self.gs_context.host_vcpu = (&raw mut *self).cast();
+			self.gs_context.stack_base = self.hv_stack.high_va;
 			// Save Model-Specific Registers.
 			self.vmwrite(GUEST_PAT, state.pat);
 			self.vmwrite(GUEST_EFER, state.efer);
@@ -364,8 +389,7 @@ impl SvmVcpu
 		// Initialize Hypervisor Context stack.
 		unsafe {
 			let stack: *mut SvmStackTop =
-				self.hv_stack.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<SvmStackTop>()) as *mut SvmStackTop;
-			trace!("Stack-Top of vCPU {}: {stack:p}", self.vcpu_id);
+				self.hv_stack.descriptor.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<SvmStackTop>()).cast();
 			(*stack).guest_vmcb_pa = self.vmcb.phys;
 			(*stack).host_vmcb_pa = self.hvmcb.phys;
 			(*stack).vcpu = self as *mut Self;
@@ -373,7 +397,13 @@ impl SvmVcpu
 			(*stack).custom_vcpu = null_mut();
 			(*stack).nested_vcpu = null_mut();
 			(*stack).reserved = 0;
-			nvc_svm_subvert_processor_a(stack);
+			(*stack).xsave_state = self.host_xsave.as_mut_ptr().cast();
+			// TODO: adjust the mask according to usable features.
+			(*stack).xsaves_mask = 7;
+			let stack_hi: *mut SvmStackTop =
+				(self.hv_stack.high_va as usize + HYPERVISOR_STACK_SIZE - size_of::<SvmStackTop>()) as *mut SvmStackTop;
+			trace!("Stack-Top of vCPU {}: {stack_hi:p}", self.vcpu_id);
+			nvc_svm_subvert_processor_a(stack, stack_hi);
 		}
 		info!("Processor {} completed subversion!", self.vcpu_id);
 	}
@@ -569,6 +599,7 @@ impl HypervisorEssentials for SvmHypervisor
 						None => warn!("MSR 0x{index:X} is invalid!"),
 					}
 				};
+				set_interception(MSR_APIC_BASE, false, true);
 				set_interception(MSR_EFER, true, true);
 				set_interception(MSR_TSC_RATIO, true, true);
 				set_interception(MSR_VMCR, true, true);
@@ -588,6 +619,11 @@ impl HypervisorEssentials for SvmHypervisor
 		}
 		debug!("MSRPM: 0x{:016X}, IOPM: 0x{:016X}", self.msrpm.phys, self.iopm.phys);
 		let vcpu_count = unsafe { noir_get_processor_count() };
+		let mut stack_hi_va = (PAGE_2MB_SIZE as u64).wrapping_neg();
+		let mut alloc_stack = || {
+			stack_hi_va -= (HYPERVISOR_STACK_SIZE + PAGE_SIZE) as u64;
+			stack_hi_va + PAGE_SIZE as u64
+		};
 		for i in 0..vcpu_count
 		{
 			let mut vcpu = SvmVcpu::new();
@@ -606,16 +642,24 @@ impl HypervisorEssentials for SvmHypervisor
 				Some(md) => vcpu.hvmcb = md,
 				None => fail_cleanup!("Failed to allocate Host-VMCB for processor {}!", i),
 			}
-			match MemoryDescriptor::alloc()
-			{
-				Some(md) => vcpu.hv_stack = md,
-				None => fail_cleanup!("Failed to allocate hypervisor stack for processor {}!", i),
-			}
-			match MemoryDescriptor::alloc()
-			{
-				Some(md) => vcpu.ist[1] = md,
-				None => fail_cleanup!("Failed to allocate host IST1 stack for processor {}!", i),
-			}
+			vcpu.hv_stack.init(alloc_stack());
+			self.host.paging.map_4kb_ranges(
+				vcpu.hv_stack.high_va,
+				vcpu.hv_stack.descriptor.phys,
+				HYPERVISOR_STACK_PAGE_COUNT,
+				true,
+				true,
+				true,
+			);
+			vcpu.ist[1].init(alloc_stack());
+			self.host.paging.map_4kb_ranges(
+				vcpu.ist[1].high_va,
+				vcpu.ist[1].descriptor.phys,
+				HYPERVISOR_STACK_PAGE_COUNT,
+				true,
+				true,
+				true,
+			);
 			vcpu.hypervisor = self as *mut Self as *mut c_void;
 			// Allocate XSAVE state size.
 			vcpu.host_xsave.init(self.xsave_size);

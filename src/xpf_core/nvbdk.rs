@@ -727,3 +727,21 @@ pub const fn page_entry_index(addr: usize) -> usize
 {
 	addr & (PAGE_TABLE_ENTRIES - 1)
 }
+
+macro_rules! build_indexer {
+	($name:tt, $size:tt) => {
+		paste! {
+			#[inline]
+			pub fn [<$name _index>](addr: u64)->usize
+			{
+				page_entry_index([<page_ $size _count>](addr) as usize)
+			}
+		}
+	};
+}
+
+build_indexer!(pml5e, 256tb);
+build_indexer!(pml4e, 512gb);
+build_indexer!(pdpte, 1gb);
+build_indexer!(pde, 2mb);
+build_indexer!(pte, 4kb);

@@ -24,6 +24,7 @@ STACKTOP_OFFSET_NVCPU_PTR=0xF8
 STACKTOP_OFFSET_PROC_ID=0x100
 STACKTOP_OFFSET_GUEST_XCR0=0x108
 STACKTOP_OFFSET_HOST_XCR0=0x110
+STACKTOP_OFFSET_XSAVES_MASK=0x118
 
 .global nvc_svm_guest_start
 .seh_proc nvc_svm_guest_start
@@ -69,15 +70,18 @@ nvc_svm_exit_handler_a:
 	mov edx,dword ptr [rsp+STACKTOP_OFFSET_HOST_XCR0+4]
 	xsetbv
 svm_precall_gh_xcr0_equal:
-	// Save all volatile XMM registers.
-	mov rax,qword ptr [rsp+STACKTOP_OFFSET_XSAVE_STATE]
-	save_volatile_xmm rax
+	// Save Processor's Extended States.
+	mov eax,dword ptr [rsp+STACKTOP_OFFSET_XSAVES_MASK]
+	mov edx,dword ptr [rsp+STACKTOP_OFFSET_XSAVES_MASK+4]
+	mov rbx,qword ptr [rsp+STACKTOP_OFFSET_XSAVE_STATE]
+	xsave [rbx]
 	// Pass the stack to the exit-handler.
 	mov rcx,rsp
 	call nvc_svm_exit_handler
-	// Restore all volatile XMM registers.
-	mov rax,[rsp+STACKTOP_OFFSET_XSAVE_STATE]
-	restore_volatile_xmm rax
+	// Restore Processor's Extended States.
+	mov eax,dword ptr [rsp+STACKTOP_OFFSET_XSAVES_MASK]
+	mov edx,dword ptr [rsp+STACKTOP_OFFSET_XSAVES_MASK+4]
+	xrstor [rbx]
 	// Switch back to the guest XCR0.
 	mov rax,qword ptr [rsp+STACKTOP_OFFSET_GUEST_XCR0]
 	// If guest XCR0 equals to host XCR0, there's no need to switch XCR0.
@@ -111,12 +115,13 @@ nvc_svm_subvert_processor_a:
 	.seh_endprologue
 	// Load arguments for processor subverter.
 	mov rcx,qword ptr [rcx+STACKTOP_OFFSET_VCPU_PTR]
+	mov rbx,rdx
 	lea rdx,[rsp+0x28]
 	rdsspq r8
 	call nvc_svm_subvert_processor_i
 	// Return value is physical address of VMCB.
 	// Switch the stack pointer to host stack.
-	mov rsp,qword ptr [rsp+0x30]
+	mov rsp,rbx
 	// Stack is switched. Launch the guest now.
 	vmrun rax
 	// VM-Exit occurs here. Jump to VM-Exit Handler.

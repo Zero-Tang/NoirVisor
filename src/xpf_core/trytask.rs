@@ -14,7 +14,7 @@ use core::{ffi::c_void, mem::offset_of};
 
 use crate::xpf_core::{
 	asm::msr::rdmsr,
-	hv_host::x86::{PerCpuGsException, PerCpuGsState},
+	hv_host::x86::{PerCpuGsState, PerCpuGsTryExceptionState},
 	x86::msr::MSR_GS_BASE,
 };
 
@@ -34,8 +34,8 @@ impl FailResult
 	}
 }
 
-pub const HANDLER_RSP_OFFSET: usize = offset_of!(PerCpuGsException, handler_rsp);
-pub const HANDLER_RIP_OFFSET: usize = offset_of!(PerCpuGsException, handler_rip);
+pub const HANDLER_RSP_OFFSET: usize = offset_of!(PerCpuGsState, handler_rsp);
+pub const HANDLER_RIP_OFFSET: usize = offset_of!(PerCpuGsState, handler_rip);
 
 unsafe extern "C" {
 	fn nvc_call_try_task(procedure: extern "C" fn(*mut c_void), context: *mut c_void) -> u32;
@@ -50,12 +50,13 @@ unsafe extern "C" {
 /// You should guarantee `context` is valid so that `procedure` receives correct context.
 pub unsafe fn try_task(procedure: extern "C" fn(*mut c_void), context: *mut c_void) -> Result<(), FailResult>
 {
-	let gs_ctxt = unsafe { &mut *(rdmsr(MSR_GS_BASE) as *mut PerCpuGsException) };
+	use PerCpuGsTryExceptionState::*;
+	let gs_ctxt = unsafe { &mut *(rdmsr(MSR_GS_BASE) as *mut PerCpuGsState) };
 	gs_ctxt.reset();
+	gs_ctxt.state = NotExpectingException;
 	unsafe {
 		nvc_call_try_task(procedure, context);
 	}
-	use PerCpuGsState::*;
 	match gs_ctxt.state
 	{
 		AwaitExecution =>
@@ -63,7 +64,7 @@ pub unsafe fn try_task(procedure: extern "C" fn(*mut c_void), context: *mut c_vo
 			gs_ctxt.state = Successful;
 			Ok(())
 		}
-		Successful => panic!("GS-Context was not properly reset!"),
+		NotExpectingException | Successful => panic!("GS-Context was not properly reset!"),
 		Failed { vector, error_code } => Err(FailResult::new(vector, error_code)),
 	}
 }

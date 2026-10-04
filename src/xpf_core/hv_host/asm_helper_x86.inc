@@ -86,24 +86,4 @@ HELPER_INC=1
 	mov r15,qword ptr [rsp+\rsp_offset+0x78]
 .endm
 
-.macro save_volatile_xmm xstate
-	stmxcsr dword ptr [\xstate+0x18]
-	movaps xmmword ptr [\xstate+0xA0],xmm0
-	movaps xmmword ptr [\xstate+0xB0],xmm1
-	movaps xmmword ptr [\xstate+0xC0],xmm2
-	movaps xmmword ptr [\xstate+0xD0],xmm3
-	movaps xmmword ptr [\xstate+0xE0],xmm4
-	movaps xmmword ptr [\xstate+0xF0],xmm5
-.endm
-
-.macro restore_volatile_xmm xstate
-	movaps xmm0,xmmword ptr [\xstate+0xA0]
-	movaps xmm1,xmmword ptr [\xstate+0xB0]
-	movaps xmm2,xmmword ptr [\xstate+0xC0]
-	movaps xmm3,xmmword ptr [\xstate+0xD0]
-	movaps xmm4,xmmword ptr [\xstate+0xE0]
-	movaps xmm5,xmmword ptr [\xstate+0xF0]
-	ldmxcsr dword ptr [\xstate+0x18]
-.endm
-
 .endif

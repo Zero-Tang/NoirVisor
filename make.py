@@ -61,14 +61,21 @@ def do_build():
 	if confirm_cargo():
 		extra_vars_dict={"python":sys.executable}
 		pl=Pipeline(config,optimizer_enabled,extra_vars=extra_vars_dict)
-		pl.run()
+		return pl.run()
+	else:
+		return 100
 
 def do_check():
+	old_ev=os.environ
+	os.environ["AR_x86_64-unknown-uefi"]="llvm-ar"
+	os.environ["CC_x86_64-unknown-uefi"]="clang-cl"
+	os.environ["CFLAGS_x86_64-unknown-uefi"]="/GS- --target=x86_64-pc-windows-msvc -mno-sse -gcodeview"
 	subprocess.run(["cargo","audit"])
 	subprocess.run(["cargo","clippy","--target","x86_64-unknown-uefi","--package","nvcore","--package","loadefi","--package","cvsched"])
 	subprocess.run(["cargo","clippy","--target","x86_64-pc-windows-msvc","--package","cvsched"])
 	subprocess.run(["cargo","clippy","--package","cvmock","--all-targets"])
 	subprocess.run(["cargo","fmt","--check"])
+	os.environ=old_ev
 
 def do_clean():
 	subprocess.run(["cargo","clean"])
@@ -84,7 +91,7 @@ def main():
 		action=sys.argv[1]
 	# Dispatch the action.
 	action_table={"build":do_build,"check":do_check,"clean":do_clean,"test":do_test}
-	action_table[action]()
+	return action_table[action]()
 
 if __name__=="__main__":
 	known_platforms={"Windows","Linux"}
@@ -92,6 +99,7 @@ if __name__=="__main__":
 		print("Host OS {} is unsupported by this build script!".format(platform.system()))
 		exit()
 	t1:float=time.time()
-	main()
+	code=main()
 	t2:float=time.time()
 	print("{} seconds spent in compilation!".format(t2-t1))
+	exit(code)

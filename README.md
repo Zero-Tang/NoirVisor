@@ -188,8 +188,13 @@ To run the optimized binary in Bochs:
 ```
 python run_bochs.py --release
 ```
+To run Bochs' GUI debugger:
+```
+python run_bochs.py --debugger
+```
 Bochs does not support emulating IOMMU (i.e.: Intel VT-d and AMD-Vi) yet. To test IOMMU functionality, only QEMU is supported. \
-Bochs does not seem to emulate AMD-V properly in regard to `V_INTR_MASKING` bit in VMCB. (Most likely because Bochs did not save host's `rflags.if` bit.) Please use QEMU-TCG in order to emulate AMD-V.
+Bochs does not seem to emulate AMD-V properly in regard to `V_INTR_MASKING` bit in VMCB. (Most likely because Bochs did not save host's `rflags.if` bit.) Please use QEMU-TCG in order to emulate AMD-V. \
+**Bochs Magic Breakpoint:** To trigger a magic breakpoint in Bochs, execute the `xchg bp,bp` instruction. It is also available as `magic_break` function in Rust.
 
 # Documents
 This repository provides [additional documents](/doc/readme.md) which help new developers to join development.
@@ -254,6 +259,7 @@ Here lists some informal publications (blogs) regarding hypervisor development:
 - Critical Hypervisor Protection.
 - Hardware-Level Code Integrity Enforcement, both Intel EPT and AMD NPT.
 - IOMMU-based DMA Protection with both Intel VT-d and AMD-Vi.
+- Hypervisor Stack-Overflow Detection.
 
 # License
 This repository is dual licensed with [MIT](./LICENSE-MIT) and [Apache-2.0](./LICENSE-APACHE), just like [rust](https://github.com/rust-lang/rust/blob/main/COPYRIGHT).

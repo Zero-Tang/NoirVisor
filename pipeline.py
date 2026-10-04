@@ -13,6 +13,7 @@ class PipelineInstruction:
 		self.variables:dict[str,str]=raw["var"] if "var" in raw else dict()
 		self.parent:Pipeline=parent
 		self.proc:subprocess.Popen|None=None
+		self.return_code:int=0
 		self.optimizer_enabled=opt
 		self.progressive:bool=raw["progressive"] if "progressive" in raw else False
 		self.cancel_if_opt:bool=raw["cancel_if_opt"] if "cancel_if_opt" in raw else False
@@ -93,6 +94,7 @@ class PipelineInstruction:
 				self.return_code=self.proc.returncode
 		except:
 			self.proc=None
+			self.return_code=1
 			print("[{}] failed to run!".format(self.name))
 
 	def run(self):
@@ -147,7 +149,7 @@ class Pipeline:
 			for d_name in self.instructions[i_name].dependency_names:
 				self.instructions[i_name].add_dependency(self.instructions[d_name])
 	
-	def run(self):
+	def run(self)->int:
 		# Append extra environment variables.
 		old_environ=os.environ.copy()
 		for env_key in self.extra_env:
@@ -169,3 +171,10 @@ class Pipeline:
 			instr.post_evaluate_cancel()
 		mtimes_fn=os.path.join("bin",self.global_variable["outdir"],"mtimes.json")
 		json.dump(self.mtimes,open(mtimes_fn,'w'),indent='\t')
+		# Return error-code
+		code=0
+		for i_name in self.instructions:
+			instr=self.instructions[i_name]
+			if instr.return_code>code:
+				code=instr.return_code
+		return code

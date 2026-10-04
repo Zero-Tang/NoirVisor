@@ -22,6 +22,7 @@ STACKTOP_OFFSET_VCPU_PTR=0xD8
 STACKTOP_OFFSET_FLAGS=0xF4
 STACKTOP_OFFSET_GUEST_XCR0=0xF8
 STACKTOP_OFFSET_HOST_XCR0=0x100
+STACKTOP_OFFSET_XSAVES_MASK=0x108
 
 .global nvc_vt_guest_start
 nvc_vt_guest_start:
@@ -71,17 +72,21 @@ nvc_vt_exit_handler_a:
 	mov edx,dword ptr [rsp+STACKTOP_OFFSET_HOST_XCR0+4]
 	xsetbv
 vt_precall_gh_xcr0_equal:
-	// Save volatile XMM state.
-	mov rax,qword ptr [rsp+STACKTOP_OFFSET_XSAVE_STATE]
-	save_volatile_xmm rax
+	// Save the processor's extended states.
+	mov eax,dword ptr [rsp+STACKTOP_OFFSET_XSAVES_MASK]
+	mov edx,dword ptr [rsp+STACKTOP_OFFSET_XSAVES_MASK+4]
+	mov rbx,qword ptr [rsp+STACKTOP_OFFSET_XSAVE_STATE]
+	xsave [rbx]
 	// Pass the stack to the exit handler.
 	mov rcx,rsp
+	xchg bp,bp
 	call nvc_vt_exit_handler
 resume_guest:
-	// Restore the volatile XMM state.
-	mov rax,qword ptr [rsp+STACKTOP_OFFSET_XSAVE_STATE]
-	restore_volatile_xmm rax
-	// After restoring the volatile XMM state, load guest XCR0.
+	// Restore the processor's extended states.
+	mov eax,dword ptr [rsp+STACKTOP_OFFSET_XSAVES_MASK]
+	mov edx,dword ptr [rsp+STACKTOP_OFFSET_XSAVES_MASK+4]
+	xrstor [rbx]
+	// After restoring the extended state, load guest XCR0.
 	mov rax,qword ptr [rsp+STACKTOP_OFFSET_GUEST_XCR0]
 	cmp rax,qword ptr [rsp+STACKTOP_OFFSET_HOST_XCR0]
 	je vt_post_gh_xcr0_equal
