@@ -1,12 +1,18 @@
 # Contribution Guidelines
 As the owner of the open-source project, I welcome and encourage the community to contribute to project NoirVisor. This document is intended to standardize the rules on contribution.
 
-## Programming Language Selection in Contribution
-As already announced in the "readme" file in NoirVisor's repository, NoirVisor's owner, Zero Tang, does not welcome languages other than C and Assembly to involve the NoirVisor's core.
-
 ## Pull-Requests
-To contribute, you have to fork this repository, make your patches, then open a Pull-Request. \
-Each commit of your patch should be able to be built for all targets. If you pushed your commits without realizing, you may use `git rebase` command to amend them and then do a `git push -f`. For example, you may squash the "fix" commit into its previous commit.
+To contribute to NoirVisor, you need to make a fork of this repository to your own account. Submit changes to your forked repository. When your patch completes, submit a [PR (short for Pull Request)](https://github.com/Zero-Tang/NoirVisor/pulls).
+
+If your patch is trivial, there isn't any specific commit history requirement. The PR will merge to `master` branch with the **Squash** strategy. You need to "force" a synchronization between the fork after the merge via **rebase**.
+
+If your patch is substantial, you need to maintain a strict commit history. This PR will merge to `master` branch with the **Merge-Commit** strategy. The rules for commit history are:
+
+- Changes in each commit belongs to the same purpose. No all-in-one commit.
+- No "nit" commits. You need to amend or squash your commits. Use `git rebase -i <commit-hash>` to do so.
+- To synchronize new changes from `master` branch to your fork, use the **Rebase** strategy.
+
+Your patch must pass all checks enforced by the GitHub Action runners (in other words, CI checks).
 
 ### Statistics Gaming
 We welcome meaningful contributions, but we strictly reject pull requests that exist solely to inflate GitHub contribution statistics (a.k.a. Green-Dot Farming). \

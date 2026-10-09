@@ -8,3 +8,6 @@ r-efi = "*"
 static-collections = "*"
 utf16_lit = "*"
 efi-helpers = { path = "../../../crates/efi-helpers" }
+
+[features]
+skip_block = []

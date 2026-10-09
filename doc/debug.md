@@ -1,6 +1,67 @@
 # NoirVisor Debugger
 This document describes the debugging facility integrated with NoirVisor.
 
+## Quick Start on Emulators
+**QEMU**: In the `tests` directory, execute the `run_qemu.py` script. Note that QEMU TCG accelerator only supports AMD-V!
+```
+python run_qemu.py
+```
+If KVM is available:
+```
+python run_qemu.py -accel kvm
+```
+If you want to emulate more processors:
+```
+python run_qemu.py -smp 4
+```
+If you want to run the optimized binary:
+```
+python run_qemu.py -release
+```
+If you want to enable GDB debug stub at `localhost:1234`:
+```
+python run_qemu.py -gdb
+```
+If you want to test IOMMU for NoirVisor:
+```
+python run_qemu.py -iommu intel|amd
+```
+If you're using [the QEMU fork which contains the virtual PCILeech device](https://github.com/qemu-pcileech/qemu), you may enable the virtual PCILeech device to listen on 6789 port:
+```
+python run_qemu.py -iommu intel|amd -pcileech
+```
+If you would like to access the QEMU's monitor, you may pass the `-monitor [port]` so that it will listen on `[port]` with telnet protocol:
+```
+python run_qemu.py -monitor [port]
+```
+
+Note that QEMU TCG may output debug logs. Pass `-debug` argument to this script in order to give `-d` argument to QEMU. You might most likely be interested in giving `-d int` argument in order to log exceptions. In other words:
+```
+python run_qemu.py -debug int
+```
+Debug log is written into `qemu.log`.
+
+**Bochs**: In the `tests` directory, execute the `run_bochs.py` script. Note that only [Bochs-3.1](https://sourceforge.net/projects/bochs/files/bochs/3.1/) is confirmed working with current commit. \
+To emulate Intel VT-x in Bochs:
+```
+python run_bochs.py --cpu-model wildcat_lake
+```
+To emulate AMD-V in Bochs:
+```
+python run_bochs.py --cpu-model ryzen
+```
+To run the optimized binary in Bochs:
+```
+python run_bochs.py --release
+```
+To run Bochs' GUI debugger:
+```
+python run_bochs.py --debugger
+```
+Bochs does not support emulating IOMMU (i.e.: Intel VT-d and AMD-Vi) yet. To test IOMMU functionality, only QEMU is supported. \
+Bochs does not seem to emulate AMD-V properly in regard to `V_INTR_MASKING` bit in VMCB. (Most likely because Bochs did not save host's `rflags.if` bit.) Please use QEMU-TCG in order to emulate AMD-V. \
+**Bochs Magic Breakpoint:** To trigger a magic breakpoint in Bochs, execute the `xchg bp,bp` instruction. It is also available as `magic_break` function in Rust.
+
 ## System Debugger
 Opearting Systems come with a debugging facility. However, they come with limitations:
 

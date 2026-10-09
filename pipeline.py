@@ -5,9 +5,9 @@ import subprocess
 import threading
 
 class PipelineInstruction:
-	def __init__(self,parent,name:str,raw:dict,opt:bool):
+	def __init__(self,parent,name:str,raw:dict,opt:bool,extra_args:list[str]):
 		self.name=name
-		self.cmd:list[str]=raw["cmd"]
+		self.cmd:list[str]=raw["cmd"]+extra_args
 		self.dependency_names:list[str]=raw["dependencies"] if "dependencies" in raw else []
 		self.dependencies:list[PipelineInstruction]=[]
 		self.variables:dict[str,str]=raw["var"] if "var" in raw else dict()
@@ -108,7 +108,7 @@ class PipelineInstruction:
 			return self.return_code
 
 class Pipeline:
-	def __init__(self,config:str,opt:bool=False,outdir:str|None=None,extra_vars:dict[str,str]=dict()):
+	def __init__(self,config:str,opt:bool=False,outdir:str|None=None,extra_vars:dict[str,str]=dict(),extra_args:list[str]=[]):
 		f=open(config,'r')
 		self._raw=json.load(f)
 		f.close()
@@ -123,6 +123,18 @@ class Pipeline:
 			"outdir":self.internal_variables["outdir_"+("rel" if opt else "dev")] if outdir is None else outdir,
 			"cargo_preset":"release" if opt else "debug",
 			"cd":os.getcwd()}|os.environ|extra_vars
+		# Parse extra-args into a dictionary.
+		self.extra_args:dict[str,list[str]]=dict()
+		for x in extra_args:
+			tmp=x.split(':')
+			if len(tmp)!=2:
+				raise Exception("Incorrect directive for extra-arguments to pipeline: more than one colon is detected!")
+			k=tmp[0]
+			v=tmp[1]
+			if not k in self.extra_args:
+				self.extra_args[k]=[v]
+			else:
+				self.extra_args[k].append(v)
 		os.makedirs(self.global_variable["objpath"],exist_ok=True)
 		self.instructions:dict[str,PipelineInstruction]=dict()
 		# Load re-run conditions.
@@ -143,7 +155,8 @@ class Pipeline:
 			self.mtimes[fn]=t
 		# Load all instructions into the pipeline.
 		for i_name in self._raw["instructions"]:
-			self.instructions[i_name]=PipelineInstruction(self,i_name,self._raw["instructions"][i_name],opt)
+			ea=self.extra_args.get(i_name,[])
+			self.instructions[i_name]=PipelineInstruction(self,i_name,self._raw["instructions"][i_name],opt,ea)
 		# Resolve instruction dependencies.
 		for i_name in self.instructions:
 			for d_name in self.instructions[i_name].dependency_names:

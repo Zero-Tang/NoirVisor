@@ -1,6 +1,8 @@
 import os
+import socket
 import subprocess
 import sys
+import threading
 
 if __name__=="__main__":
 	# OVMF must be present.
@@ -21,6 +23,7 @@ if __name__=="__main__":
 	debugcon_chardev="stdio"
 	monitor=None
 	nographic=False
+	auto_check=False
 	# Check command-line arguments
 	i=1
 	while i<len(sys.argv):
@@ -59,9 +62,16 @@ if __name__=="__main__":
 		elif sys.argv[i]=="-monitor":
 			i+=1
 			monitor=int(sys.argv[i])
+		elif sys.argv[i]=="-auto-check":
+			auto_check=True
 		else:
 			print("Unknown argument: {}!".format(sys.argv[i]))
 		i+=1
+	if auto_check:
+		PORT=12345
+		# If auto-check is enabled, several arguments are fixed.
+		nographic=True
+		debugcon_chardev="socket,port={},host=127.0.0.1,server=on".format(PORT)
 	if iommu=="intel":
 		iommu_arg="intel-iommu,aw-bits=48"
 	elif iommu=="amd":
@@ -130,4 +140,43 @@ if __name__=="__main__":
 		if not monitor is None:
 			cmd_list+=["-monitor","telnet:0.0.0.0:{},server=on".format(monitor)]
 		print(cmd_list)
-		subprocess.call(cmd_list)
+		if auto_check:
+			# Auto-check is configured.
+			# Redirect the serial and debugcon.
+			debugcon_output=[]
+			def receive_debugcon():
+				while qemu_process.poll() is None:
+					try:
+						with socket.create_connection(("127.0.0.1",PORT),timeout=0.1) as connection:
+							connection.settimeout(None)
+							while True:
+								data=connection.recv(4096)
+								if not data:
+									break
+								debugcon_output.append(data)
+						return
+					except (ConnectionRefusedError, TimeoutError):
+						continue
+			qemu_process=subprocess.Popen(cmd_list,stdout=subprocess.PIPE)
+			debugcon_thread=threading.Thread(target=receive_debugcon)
+			debugcon_thread.start()
+			serial,_=qemu_process.communicate()
+			debugcon_thread.join()
+			sys.stdout.flush()
+			serial=serial.decode(errors="replace")
+			debugcon=b"".join(debugcon_output).decode(errors="replace")
+			sys.stdout.write(serial)
+			sys.stdout.write(debugcon)
+			# Check the outputs.
+			# Check if the system subversion completes. Also checks the CI-fault test.
+			i=debugcon.find("System subversion completed!")
+			assert i!=-1
+			assert debugcon.find("CI-fault",i)!=-1
+			if not iommu is None:
+				# IOMMU is enabled. Check if MBR signature word is zeroed.
+				i=serial.find("MBR Signature Word: 0x0000")
+				assert i!=-1
+			print("QEMU Test Passed!")
+		else:
+			subprocess.call(cmd_list)
+	exit(0)

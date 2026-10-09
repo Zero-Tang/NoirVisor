@@ -16,90 +16,24 @@ NoirVisor - The Grimoire Hypervisor solution for AMD64 Processors.
 Tips: if the link for QQ Group does not work, try to hover the icon over the shield icon and see text.
 
 # Introduction
-NoirVisor is a hardware-accelerated hypervisor (a.k.a VMM, Virtual Machine Monitor) with support to complex functions and purposes. It is designed to support processors based on x86 architecture with hardware-accelerated virtualization feature. For example, Intel processors supporting Intel VT-x or AMD processors supporting AMD-V meet the requirement. By design, NoirVisor determines the processor manufacturer and selects the function core.
-
-Namesake: NoirVisor is named after the [***Grimoire Noir***](https://nier.fandom.com/wiki/Grimoire_Noir) in NieR:Gestalt/Replicant.
+NoirVisor is a Type-1 bluepill hypervisor that aims to provide custom virtualization and secure computing services.
 
 **IMPORTANT NOTES:** If you're looking for a stealthy hypervisor implementation, you're at the wrong place.
 
 # Processor Requirement
-Intel Processors based on Intel 64 and IA-32 Architecture, with support to Intel VT-x /w EPT. \
-AMD Processors based on AMD64 Architecture, with support to AMD-V /w NPT. \
-Other processors based on x86 architecture may be supported in future. \
-Currently, it is discovered that x86 processors produced by VIA, Zhaoxin and Hygon supports Hardware-Accelerated Virtualization Technology. In summary, certain facts are observed that:
-- Processors produced by Intel Corporation may support Intel VT-x.
-- Processors produced by Advanced Micro Devices Inc. may support AMD-V.
-- Processors produced by VIA Technologies Inc. may support Intel VT-x.
-- Processors produced by Shanghai Zhaoxin Semiconductor Co, Ltd. may support Intel VT-x.
-- Processors produced by Tianjin Haiguang Advanced Technology Investment Co, Ltd. may support AMD-V.
-- Processors produced by Montage Technologies may support Intel VT-x.
+Your CPU must support either Intel VT-x /w EPT or AMD-V /w NPT. However, this does not mean only Intel and AMD CPUs are supported.
 
-Note that early Zhaoxin and VIA use Centaur as vendor.
-
-After refactoring NoirVisor Core with Rust, Intel EPT and AMD NPT are now required to boot NoirVisor for security reasons!
-
-# Nested Virtualization
-Algorithm regarding the Nested Virtualization was written in the readme files in both VT-Core and SVM-Core directories. \
-For Nested Intel VT-x Algorithm, visit [here](src/vt_core/readme.md#vmx-nesting-algorithm-incomplete-version). \
-For Nested AMD-V Algorithm, visit [here](src/svm_core/readme.md#svm-nesting-algorithm-incomplete-version).
-
-Nested AMD-V is not supported yet. \
-Nested Intel VT-x is not supported yet.
-
-# Announcement to all contributors
-NoirVisor is coded in the C programming language, Assembly and Rust. \
-**NO C++ CODES ARE ACCEPTED IN THIS PROJECT!**
-
-You should consult the [contribution guidelines](./contributing.md) and [code of conduct](./code_of_conduct.md) while making contributions.
-
-## Rust
-If your patch includes Rust codes, make sure it could pass the clippy checks! No warnings and errors are allowed. \
-If you believe `clippy` is prompting dubious warnings and errors, do not put `#[allow(...)]` on your own. Instead, report in your PR and state why you think that is false positive. \
-If it is really is false positive, relevant suppression will be put.
-
-To perform clippy checks:
-```
-make check
-```
-If you are in Linux:
-```
-python3 make.py check
-```
-
-## Git
-To contribute to NoirVisor, you need to make a fork of this repository to your own account. Submit changes to your forked repository. When your patch completes, submit a [PR (short for Pull Request)](https://github.com/Zero-Tang/NoirVisor/pulls).
-
-If your patch is trivial, there isn't any specific commit history requirement. The PR will merge to `master` branch with the **Squash** strategy. You need to "force" a synchronization between the fork after the merge.
-
-If your patch is substantial, you need to maintain a strict commit history. This PR will merge to `master` branch with the **Merge-Commit** strategy. The rules for commit history are:
-
-- Changes in each commit belongs to the same purpose. No all-in-one commit.
-- No "nit" commits. You need to amend or squash your commits. Use `git rebase -i <commit-hash>` to do so.
-- To synchronize new changes from `master` branch to your fork, use the **Rebase** strategy.
+- Processors produced by Intel, VIA, Zhaoxin (兆芯) and Montage (澜起) may support Intel VT-x. \
+- Processors produced by AMD and Hygon (海光) may support AMD-V.
 
 # Build
-We use Python script to build NoirVisor. The minimum version required for building NoirVisor is 3.9 by virtue of the typing syntax. In other words, building NoirVisor through Python script in Windows 7 is not supported. There are no `pip` package requirements for compilation.
-
-Python-based compilation is parallel. It will achieve a great performance in building NoirVisor.
-
 See [documentation](./doc/make.md) for more information about preparation and using python script to build NoirVisor.
 
-**Note that the `cargo build` command only builds the NoirVisor Core instead of the whole NoirVisor project!**
-
-**TL;DR?** In short, make sure all required tools are installed. \
-To build Windows Driver:
-```
-make /target windows
-```
-To build UEFI Application & Runtime Driver:
-```
-make /target uefi
-```
-
-# Test
+# Run
+To run NoirVisor, you will have to boot NoirVisor's hypervisor before an OS loads
 
 ## Windows Driver
-If you have never installed the NoirVisor service before:
+If you the NoirVisor service is not installed:
 ```bat
 sc create NoirVisor type= kernel binPath= <Path to NoirVisor driver file>
 ```
@@ -118,7 +52,7 @@ sc delete NoirVisor
 ```
 
 ## EFI Application and Runtime Driver
-There are several methods to test NoirVisor.
+There are several methods to run NoirVisor.
 
 ### Running on a physical machine
 This method can also be used on VMware. \
@@ -126,124 +60,20 @@ Use a USB flash stick and setup with GUID Partition Table (GPT). Construct a par
 Those two files are EFI Application and Runtime Driver respectively. \
 Copy EFI Application to `\EFI\BOOT\bootx64.efi` \
 Copy EFI Runtime Driver to `\NoirVisor.efi` \
-As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system. Disable Secure Boot feature unless you can sign the executable. \
-NoirVisor has defined its own vendor GUID `{2B1F2A1E-DBDF-44AC-DABCC7A130E2E71E}`. Developments regarding Layered Hypervisor would require accessing NoirVisor's UEFI variables.
+As the USB flash stick is ready, enter your firmware settings and set it prior to the operating system. Disable Secure Boot feature unless you can sign the executable.
 
 ### Running on a virtual machine
-The point of this method is to build a virtual disk image. \
-You may use `mtools` in order to make a virtual disk image. The pre-built `mtools` executables are provided [here](https://github.com/Zero-Tang/NoirVisor/files/12706542/mtools-4.0.43-bin.zip). Put them into directories listed in `PATH` environment variable.
-
-Build script for NoirVisor on UEFI includes above commands. Add `NoirVisor-Uefi.img` as a floppy image in your virtual machine.
-
-### Running on Emulator
-**QEMU**: In the `tests` directory, execute the `run_qemu.py` script. Note that QEMU TCG accelerator only supports AMD-V!
-```
-python run_qemu.py
-```
-If KVM is available:
-```
-python run_qemu.py -accel kvm
-```
-If you want to emulate more processors:
-```
-python run_qemu.py -smp 4
-```
-If you want to run the optimized binary:
-```
-python run_qemu.py -release
-```
-If you want to enable GDB debug stub at `localhost:1234`:
-```
-python run_qemu.py -gdb
-```
-If you want to test IOMMU for NoirVisor:
-```
-python run_qemu.py -iommu intel|amd
-```
-If you're using [the QEMU fork which contains the virtual PCILeech device](https://github.com/qemu-pcileech/qemu), you may enable the virtual PCILeech device to listen on 6789 port:
-```
-python run_qemu.py -iommu intel|amd -pcileech
-```
-If you would like to access the QEMU's monitor, you may pass the `-monitor [port]` so that it will listen on `[port]` with telnet protocol:
-```
-python run_qemu.py -monitor [port]
-```
-
-Note that QEMU TCG may output debug logs. Pass `-debug` argument to this script in order to give `-d` argument to QEMU. You might most likely be interested in giving `-d int` argument in order to log exceptions. In other words:
-```
-python run_qemu.py -debug int
-```
-Debug log is written into `qemu.log`.
-
-**Bochs**: In the `tests` directory, execute the `run_bochs.py` script. Note that only [Bochs-3.1](https://sourceforge.net/projects/bochs/files/bochs/3.1/) is confirmed working with current commit. \
-To emulate Intel VT-x in Bochs:
-```
-python run_bochs.py --cpu-model wildcat_lake
-```
-To emulate AMD-V in Bochs:
-```
-python run_bochs.py --cpu-model ryzen
-```
-To run the optimized binary in Bochs:
-```
-python run_bochs.py --release
-```
-To run Bochs' GUI debugger:
-```
-python run_bochs.py --debugger
-```
-Bochs does not support emulating IOMMU (i.e.: Intel VT-d and AMD-Vi) yet. To test IOMMU functionality, only QEMU is supported. \
-Bochs does not seem to emulate AMD-V properly in regard to `V_INTR_MASKING` bit in VMCB. (Most likely because Bochs did not save host's `rflags.if` bit.) Please use QEMU-TCG in order to emulate AMD-V. \
-**Bochs Magic Breakpoint:** To trigger a magic breakpoint in Bochs, execute the `xchg bp,bp` instruction. It is also available as `magic_break` function in Rust.
+After you built NoirVisor, several virtual disk image options are available: `raw`, `vhdx` and `vmdk`. Add the image to your virtual machine as a hard drive. \
+Also see [Quick Start on Emulators](/doc/debug.md#quick-start-on-emulators).
 
 # Documents
 This repository provides [additional documents](/doc/readme.md) which help new developers to join development.
 
-# Detection of NoirVisor
-As specified in AMD64 Architecture Programming Manual, `CPUID.EAX=1.ECX[bit 31]` indicates hypervisor presence. So NoirVisor will set this bit. For CPUID instruction, since AMD defines that function leaves 0x40000000-0x400000FF are reserved for hypervisor use, we will use them. Most hypervisors would use leaf 0x40000000 in order to identify itself as the hypervisor vendor. The string constructed by register sequence EBX-ECX-EDX is used to identify vendor of hypervisor. For example, VMware hypervisor vendor string is `VMwareVMware`. In NoirVisor, hypervisor vendor string is defined as `NoirVisor ZT`.
-
-You may disable the detection for NoirVisor in UEFI via building the custom binary configuration file. \
-You may copy the [DefaultUefiConfig.json](./build/DefaultUefiConfig.json), and set the `CpuidPresence` to `false`. Then use the provided python script to build it:
-```
-python makeueficonfig.py NewUefiConfig.json NoirVisorConfig.bin
-```
-You should see a generated file called `NoirVisorConfig.bin`. Place it to the root directory of the boot medium.
-
 # Customizable VM
-Customizable VM is the true explanation of "complex functions and purposes". As the project creator and director, Zero's true intention to create this project is for studying Hardware-Acclerated Virtualization Technology. Therefore, any features which is related to virtualization and which Zero has ideas to implement will be added in the project. \
-Customizable VM is the feature that Zero researches about Virtualization: to run an arbitrary guest, instead of to just subvert the host system. In a word, it is aimed to be a competitor of the Windows Hypervisor Platform (WHP). \
-For CVM Algorithm on AMD-V, visit [here](src/svm_core/readme.md#customizable-vm-scheduler-algorithm). \
-For CVM Algorithm on Intel VT-x, visit [here](src/vt_core/readme.md#customizable-vm-scheduler-algorithm).
-
-APIs to invoke Customizable VMs are available in the [NoirCvmApi](https://github.com/Zero-Tang/NoirCvmApi) repository. The documentation of the APIs is available in the [wiki page](https://github.com/Zero-Tang/NoirCvmApi/wiki).
-
-# NoirVisor Secure Virtualization
-NSV (a.k.a NoirVisor Secure Virtualization) is a security extension to NoirVisor CVM. This extension is a crossover project with Columbia University's Operating Systems II course project. Read [this document](./doc/nsv.md) for further details.
-
-# NPIEP
-NPIEP (a.k.a Non-Privileged Instruction Execution Prevention) is an important security feature in Microsoft Virtualization-based Security. As a hypervisor project in conformance to Microsoft `Hv#1` interface, NoirVisor would provide this feature to the guest. This feature is similar to `UMIP` provided by later models of x86 processors. The differences are:
-
-- NPIEP does not raise an exception even if the instruction is executed in user mode.
-- NPIEP would prevent the guest from reading the real values of descriptor tables.
-- NPIEP does not intercept `smsw` instruction, probably in that Intel VT-x does not support intercepting this instruction.
-
-For further details of NPIEP, visit [here](src/mshv_core/readme.md#non-privileged-instruction-execution-prevention).
+Customizable VM is a feature that provides a set of APIs to run an arbitrary guest, instead of to just subvert the host system. In a word, it is aimed to be a competitor of the Windows Hypervisor Platform (WHP).
 
 # Security Advisories
 You should not report security vulnerabilities through the GitHub issue. You should [read this document](./security.md) to check out the steps to report security vulnerability.
-
-# Supported Platforms
-NoirVisor is designed to be cross-platform. It can be built to a kernel-mode component of an operating system, or even as a software with bootstrap running on bare-metal. \
-Currently, NoirVisor supports 64-bit Windows Operating System newer than or same as Windows 7, running as a kernel-mode driver. \
-Porting to Unified Extensible Firmware Interface (UEFI) is in progress. \
-If there is already a hypervisor running in the system, make sure it supports native virtualization nesting.
-
-# Development Status
-Project NoirVisor has three future development plans:
-
-- Develop Customizable VM engine for complex purposes.
-- Develop Nested Virtualization.
-- Port NoirVisor to Linux.
 
 # Publications
 Here lists some informal publications (blogs) regarding hypervisor development:
@@ -252,17 +82,5 @@ Here lists some informal publications (blogs) regarding hypervisor development:
 - MTRR Emulation: Beginner’s Common Mistake in EPT Setup: https://tangptr.com/?p=163
 - Introduction to NoirVisor CVM: The Open-Source Alternative of the Windows Hypervisor Platform: https://tangptr.com/?p=173
 
-# Completed Features
-
-- Bluepill-like Hypervisor for both Intel VT-x /w EPT and AMD-V /w NPT.
-- Minimal Microsoft `Hv#1` Hypervisor Functionalities.
-- Critical Hypervisor Protection.
-- Hardware-Level Code Integrity Enforcement, both Intel EPT and AMD NPT.
-- IOMMU-based DMA Protection with both Intel VT-d and AMD-Vi.
-- Hypervisor Stack-Overflow Detection.
-
 # License
 This repository is dual licensed with [MIT](./LICENSE-MIT) and [Apache-2.0](./LICENSE-APACHE), just like [rust](https://github.com/rust-lang/rust/blob/main/COPYRIGHT).
-
-# Code of Conduct
-The Code of Conduct is added to NoirVisor Project since May.5th, 2019. Please follow the rules when contributing.

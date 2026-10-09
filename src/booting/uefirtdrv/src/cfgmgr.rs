@@ -12,11 +12,11 @@
 
 use core::{mem::MaybeUninit, ptr::null_mut, slice, sync::atomic::Ordering};
 
-use efi_helpers::IMAGE_INFO;
+use efi_helpers::{IMAGE_INFO, handle_protocol};
 use r_efi::protocols::{file, simple_file_system};
 use utf16_lit::utf16_null;
 
-use crate::{host::handle_protocol, println};
+use crate::println;
 
 #[repr(C)]
 struct RelativeAddress(u32);

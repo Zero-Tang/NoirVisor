@@ -41,6 +41,7 @@ def do_build():
 	# NoirVisor usually doesn't use more than 20KB of heap.
 	# 256KiB of heap granularity should be quite enough.
 	os.environ["DEFAULT_MMAP_GRANULARITY"]="0x40000"
+	extra_args=[]
 	while i<len(sys.argv):
 		if sys.argv[i]=="/target":
 			i+=1
@@ -54,13 +55,16 @@ def do_build():
 				optimizer_enabled=False
 			else:
 				print("Ignoring unknown optimization argument {}!".format(sys.argv[i]))
+		elif sys.argv[i]=="/extra-arg":
+			i+=1
+			extra_args.append(sys.argv[i])
 		else:
 			print("Ignoring unknown argument {}!".format(sys.argv[i]))
 		i+=1
 	config="build-{}.json".format(target)
 	if confirm_cargo():
 		extra_vars_dict={"python":sys.executable}
-		pl=Pipeline(config,optimizer_enabled,extra_vars=extra_vars_dict)
+		pl=Pipeline(config,optimizer_enabled,extra_vars=extra_vars_dict,extra_args=extra_args)
 		return pl.run()
 	else:
 		return 100

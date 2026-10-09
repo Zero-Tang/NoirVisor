@@ -30,10 +30,11 @@ use core::{
 
 use r_efi::{
 	efi::{
-		ALLOCATE_ANY_PAGES, BOOT_SERVICES_DATA, BY_PROTOCOL, Boolean, BootServices, Guid, Handle, RuntimeServices, Status, SystemTable,
+		ALLOCATE_ANY_PAGES, BOOT_SERVICES_DATA, BY_PROTOCOL, Boolean, BootServices, Guid, Handle, RESET_SHUTDOWN, RuntimeServices,
+		Status, SystemTable,
 	},
 	protocols::{
-		device_path, device_path_to_text, device_path_utilities, loaded_image,
+		device_path, device_path_to_text, loaded_image,
 		simple_text_input::{self, InputKey},
 		simple_text_output,
 	},
@@ -50,7 +51,6 @@ pub static STDOUT_PROTOCOL: AtomicPtr<simple_text_output::Protocol> = AtomicPtr:
 pub static BS_TABLE: AtomicPtr<BootServices> = AtomicPtr::new(null_mut());
 pub static RT_TABLE: AtomicPtr<RuntimeServices> = AtomicPtr::new(null_mut());
 pub static ST_TABLE: AtomicPtr<SystemTable> = AtomicPtr::new(null_mut());
-pub static DEVICE_PATH_UTILITIES: AtomicPtr<device_path_utilities::Protocol> = AtomicPtr::new(null_mut());
 pub static DEVICE_PATH_TO_TEXT: AtomicPtr<device_path_to_text::Protocol> = AtomicPtr::new(null_mut());
 pub static IMAGE_INFO: AtomicPtr<loaded_image::Protocol> = AtomicPtr::new(null_mut());
 
@@ -423,6 +423,16 @@ pub unsafe fn convert_device_path_to_text(path: *mut device_path::Protocol) -> S
 	}
 }
 
+pub unsafe fn shutdown() -> !
+{
+	unsafe {
+		let rt = &*RT_TABLE.load(Ordering::Relaxed);
+		(rt.reset_system)(RESET_SHUTDOWN, Status::SUCCESS, 0, null_mut());
+	}
+	loop
+	{}
+}
+
 /// ## Safety
 /// You must call this function at the beginning of entry point!
 pub unsafe fn init(image_handle: Handle, system_table: *mut SystemTable)
@@ -437,8 +447,7 @@ pub unsafe fn init(image_handle: Handle, system_table: *mut SystemTable)
 		RT_TABLE.store((*system_table).runtime_services, Ordering::Relaxed);
 		// Loaded Image Protocol. Useful to get self-image.
 		IMAGE_INFO.store(handle_protocol(image_handle, loaded_image::PROTOCOL_GUID).unwrap(), Ordering::Relaxed);
-		// Device-Path Utilities.
-		DEVICE_PATH_UTILITIES.store(locate_protocol(device_path_utilities::PROTOCOL_GUID).unwrap(), Ordering::Relaxed);
+		// Device-Path-to-Text Utilities.
 		DEVICE_PATH_TO_TEXT.store(locate_protocol(device_path_to_text::PROTOCOL_GUID).unwrap(), Ordering::Relaxed);
 	}
 }

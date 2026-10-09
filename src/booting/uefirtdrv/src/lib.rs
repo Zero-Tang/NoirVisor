@@ -17,7 +17,7 @@ use efi_helpers::println;
 use r_efi::efi::{Handle, Status, SystemTable};
 
 use cfgmgr::ConfigurationList;
-use host::{block_until_keystroke, efi_init};
+use host::efi_init;
 use uefihvm::*;
 
 mod cfgmgr;
@@ -56,8 +56,11 @@ extern "efiapi" fn NoirDriverEntry(image_handle: Handle, system_table: *mut Syst
 			return Status::UNSUPPORTED;
 		}
 	}
-	println!("Press Enter Key to continue subversion!");
-	block_until_keystroke('\r');
+	#[cfg(not(feature = "skip_block"))]
+	{
+		println!("Press Enter Key to continue subversion!");
+		host::block_until_keystroke('\r');
+	}
 	register_exit_boot_services_event();
 	init_ci();
 	unsafe {

@@ -5,8 +5,6 @@ By virtue of the formally-verified memory-safety guaranteed by the compiler, cor
 ## Getting Started
 Install [Visual Studio Code](https://code.visualstudio.com) and [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) extension.
 
-A new branch called `rust-dev` has already been created to [refactor NoirVisor in Rust](https://github.com/Zero-Tang/NoirVisor/tree/rust-dev). It will be merged into the `master` branch after all existing core features (system subversion and customizable virtual machines) are implemented in Rust. Once merged, the retired C codes will be moved to the archive branch.
-
 ## Code Architecture
 All C codes are going be remastered with the Rust Programming Language.
 

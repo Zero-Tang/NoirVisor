@@ -72,15 +72,6 @@ macro_rules! dprintln
 
 static MP_PROTOCOL: AtomicPtr<mp_services::Protocol> = AtomicPtr::new(null_mut());
 
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn handle_protocol<T>(handle: Handle, mut guid: Guid) -> Result<*mut T, Status>
-{
-	let bs = unsafe { &*BS_TABLE.load(Ordering::Relaxed) };
-	let mut protocol: *mut T = null_mut();
-	let st = unsafe { (bs.handle_protocol)(handle, &raw mut guid, (&raw mut protocol).cast()) };
-	if st.is_error() { Err(st) } else { Ok(protocol) }
-}
-
 /// ## Safety
 /// You must call this function at the beginning of entry point!
 pub unsafe fn efi_init(image_handle: Handle, system_table: *mut SystemTable)

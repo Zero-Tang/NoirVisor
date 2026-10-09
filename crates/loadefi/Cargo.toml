@@ -10,3 +10,6 @@ efi-helpers = { path = "../efi-helpers" }
 [target.'cfg(target_os="uefi")'.dependencies.nvcvm]
 path = "../nvcvm"
 features = ["user"]
+
+[features]
+skip_block = []

@@ -12,7 +12,6 @@
 
 use core::{
 	hint::{cold_path, spin_loop},
-	mem::MaybeUninit,
 	slice,
 	sync::atomic::Ordering,
 };
@@ -28,7 +27,6 @@ use npt::NptFaultCode;
 use xpf_core::{
 	asm::cpuid::cpuid2,
 	ci::is_ci_phys_page,
-	trytask::try_task,
 	x86::{crdr::*, descriptors::SegmentFlags, rflags::Rflags},
 };
 
@@ -211,35 +209,6 @@ impl SvmVcpu
 	/// Return `None` if this `rdmsr` request failed. Exception was injected.
 	fn handle_rdmsr(&mut self, index: u32) -> Option<u64>
 	{
-		#[repr(C, align(8))]
-		struct MsrContext
-		{
-			index: u32,
-			value: MaybeUninit<u64>,
-		}
-		extern "C" fn try_rdmsr(ctxt: *mut c_void)
-		{
-			let ctxt: &mut MsrContext = unsafe { &mut *ctxt.cast() };
-			ctxt.value.write(rdmsr(ctxt.index));
-		}
-		if self.under_hvm && (0x40000000..0x80000000).contains(&index)
-		{
-			// If NoirVisor is running under a hypervisor (e.g.: Hyper-V), we may pass-thru this MSR to upper hypervisor.
-			let mut x = MsrContext { index, value: MaybeUninit::uninit() };
-			match unsafe { try_task(try_rdmsr, (&raw mut x).cast()) }
-			{
-				Ok(_) => return Some(unsafe { x.value.assume_init() }),
-				Err(e) =>
-				{
-					error!(
-						"Failed to pass-thru Microsoft TLFS MSR-read (index=0x{index:X}) request! Vector={}, Error-Code: {:X?}",
-						e.vector, e.error_code
-					);
-					self.inject_event(e.vector, EventType::HardwareException, e.error_code, true);
-					return None;
-				}
-			}
-		}
 		match index
 		{
 			(0x40000000..0x80000000) =>
@@ -273,23 +242,9 @@ impl SvmVcpu
 			MSR_HSAVE_PA => Some(self.nested_hvm.hsave_pa),
 			_ =>
 			{
-				let mut x: MsrContext = MsrContext { index, value: MaybeUninit::uninit() };
-				warn!("Unexpected rdmsr is intercepted! Index=0x{index:X}");
-				match unsafe { try_task(try_rdmsr, (&raw mut x).cast()) }
-				{
-					Ok(_) =>
-					{
-						let v = unsafe { x.value.assume_init() };
-						warn!("Value is 0x{v:X}");
-						Some(v)
-					}
-					Err(e) =>
-					{
-						error!("The rdmsr task failed! Vector={}, Error-Code: {:X?}", e.vector, e.error_code);
-						self.inject_event(e.vector, EventType::HardwareException, e.error_code, true);
-						None
-					}
-				}
+				warn!("Unexpected rdmsr is intercepted! Index=0x{index:X}. Injecting #GP(0)...");
+				self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
+				None
 			}
 		}
 	}
@@ -300,36 +255,6 @@ impl SvmVcpu
 	/// Return `false` if this `wrmsr` request failed. Exception was injected.
 	fn handle_wrmsr(&mut self, index: u32, value: u64) -> bool
 	{
-		#[repr(C)]
-		struct MsrContext
-		{
-			index: u32,
-			value: u64,
-		}
-		extern "C" fn try_wrmsr(ctxt: *mut c_void)
-		{
-			let ctxt: &mut MsrContext = unsafe { &mut *ctxt.cast() };
-			wrmsr(ctxt.index, ctxt.value);
-		}
-		if self.under_hvm && (0x40000000..0x80000000).contains(&index)
-		{
-			// If NoirVisor is running under a hypervisor (e.g.: Hyper-V), we may pass-thru this MSR to upper hypervisor.
-			let mut x = MsrContext { index, value };
-			// It's not guaranteed this MSR is valid.
-			match unsafe { try_task(try_wrmsr, (&raw mut x).cast()) }
-			{
-				Ok(_) => return true,
-				Err(e) =>
-				{
-					error!(
-						"Failed to pass-thru Microsoft TLFS MSR-write (index=0x{index:X}) request! Vector={}, Error-Code: {:X?}",
-						e.vector, e.error_code
-					);
-					self.inject_event(e.vector, EventType::HardwareException, e.error_code, true);
-					return false;
-				}
-			}
-		}
 		match index
 		{
 			(0x40000000..0x80000000) =>
@@ -396,18 +321,9 @@ impl SvmVcpu
 			}
 			_ =>
 			{
-				let mut x: MsrContext = MsrContext { index, value };
-				warn!("Unexpected wrmsr is intercepted! Index=0x{index:X}");
-				match unsafe { try_task(try_wrmsr, (&raw mut x).cast()) }
-				{
-					Ok(_) => true,
-					Err(e) =>
-					{
-						error!("The wrmsr task failed! Vector={}, Error-Code: {:X?}", e.vector, e.error_code);
-						self.inject_event(e.vector, EventType::HardwareException, e.error_code, true);
-						false
-					}
-				}
+				warn!("Unexpected wrmsr is intercepted! Index=0x{index:X}. Injecting #GP(0)...");
+				self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
+				false
 			}
 		}
 	}
