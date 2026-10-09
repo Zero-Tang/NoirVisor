@@ -4,6 +4,6 @@
 *.c linguist-language=C
 *.h linguist-language=C
 *.asm linguist-language=Assembly
-*.nasm linguist-language=Assembly
+*.s linguist-language=Assembly
 *.inc linguist-language=Assembly
 *.bat linguist-detectable=false

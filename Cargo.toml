@@ -1,0 +1,60 @@
+[package]
+name = "nvcore"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[profile.dev]
+debug = "full"
+panic = "abort"
+
+# Disassembler engines have insane binary size.
+# Enable optimization even in dev profile.
+[profile.dev.package.yaxpeax-x86]
+opt-level = "s"
+
+[profile.dev.package.yaxpeax-arch]
+opt-level = "s"
+
+[profile.release]
+panic = "abort"
+debug = "full"
+codegen-units = 1
+# If lto is set to "fat" or true, the linker might drop the platform-specific crate.
+# Therefore, resort to "thin" lto.
+lto = "thin"
+opt-level = 3
+
+[workspace]
+members = ["crates/cvmock","crates/cvsched","crates/efi-helpers","crates/htable","crates/loadefi","crates/nvcvm","crates/uefibsdrv","crates/windrv","src/booting/uefirtdrv"]
+
+[dependencies]
+pastey = "0.2.3"
+nvcvm = {path = "crates/nvcvm"}
+spin = "0.12.3"
+log = "0.4.34"
+bitfield-struct = "*"
+portable-dlmalloc = "1.3.0"
+
+[dependencies.static-collections]
+version = "0.6.0"
+features = ["use_crt"]
+
+[dependencies.zerocopy]
+version = "0.8.58"
+features = ["derive"]
+
+[dependencies.yaxpeax-x86]
+version = "2.2.0"
+default-features = false
+features = ["fmt"]
+
+[dependencies.yaxpeax-arch]
+version = "0.3.2"
+default-features = false
+features = []
+
+[target.'cfg(target_os="uefi")'.dependencies.uefirtdrv]
+path = "src/booting/uefirtdrv"

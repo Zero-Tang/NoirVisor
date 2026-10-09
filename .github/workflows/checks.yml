@@ -1,0 +1,91 @@
+name: Cargo Checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Audit dependencies
+        run: cargo audit
+
+  clippy:
+    runs-on: ubuntu-26.04
+    env:
+      AR_x86_64-unknown-uefi: llvm-ar
+      CC_x86_64-unknown-uefi: clang-cl
+      CFLAGS_x86_64-unknown-uefi: /GS- --target=x86_64-pc-windows-msvc -mno-sse -gcodeview
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+          targets: x86_64-unknown-uefi, x86_64-pc-windows-msvc
+      - name: Install LLVM tools
+        run: |
+          sudo apt update
+          sudo apt install --yes clang llvm
+      - name: Clippy for UEFI
+        run: cargo clippy --target x86_64-unknown-uefi --package nvcore --package loadefi --package cvsched
+      - name: Clippy for Windows
+        run: cargo clippy --target x86_64-pc-windows-msvc --package cvsched
+      - name: Clippy for cvmock
+        run: cargo clippy --package cvmock --all-targets
+
+  format:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --check
+    
+  build-uefi:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-uefi
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y clang lld llvm mtools nasm qemu-utils
+      - name: Build for UEFI (Checked)
+        run: python3 make.py /target uefi
+      - name: Build for UEFI (Free)
+        run: python3 make.py /target uefi /opt:yes
+  
+  build-windows:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y clang lld llvm osslsigncode
+      - name: Build for Windows (Checked)
+        run: python3 make.py /target windows
+      - name: Build for Windows (Free)
+        run: python3 make.py /target windows /opt:yes
+
+  test:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Test with cargo
+        run: cargo test --package cvsched --package htable

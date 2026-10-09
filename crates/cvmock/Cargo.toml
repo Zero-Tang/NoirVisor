@@ -1,0 +1,12 @@
+[package]
+name = "cvmock"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+spin = "*"
+
+[dependencies.nvcvm]
+path = "../nvcvm"
+default-features = false
+features = ["kernel"]

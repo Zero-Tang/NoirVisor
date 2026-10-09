@@ -1,0 +1,244 @@
+/*
+ * NoirVisor Core in Rust
+ *
+ * Copyright (c) Zero Tang, 2018-2026. All rights reserved.
+ *
+ * This file implements synchronization wrappers for the Windows kernel.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * without any warranty (no matter implied warranty or merchantability
+ * or fitness for a particular purpose, etc.).
+ */
+
+use core::{
+	cell::UnsafeCell,
+	mem::MaybeUninit,
+	ops::{Deref, DerefMut},
+	ptr::null_mut,
+};
+
+use windows_sys::{
+	Wdk::{
+		Foundation::{ERESOURCE, FAST_MUTEX},
+		System::SystemServices::{
+			ExAcquireFastMutex, ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExDeleteResourceLite,
+			ExInitializeResourceLite, ExReleaseFastMutex, ExReleaseResourceLite, FM_LOCK_BIT, KeEnterCriticalRegion,
+			KeInitializeEvent, KeLeaveCriticalRegion,
+		},
+	},
+	Win32::{Foundation::STATUS_SUCCESS, System::Kernel::SynchronizationEvent},
+};
+
+#[repr(C)]
+struct EResource
+{
+	lock: ERESOURCE,
+	// This pad is due to incorrect definition of `_ERESOURCE` structure in windows_sys crate.
+	#[allow(dead_code)]
+	pad: u64,
+}
+
+/// ## Resource Lock
+/// Resource Lock is a read-write lock which supports recursive acquisition.
+#[repr(C)]
+pub struct RwLock<T>
+{
+	lock: EResource,
+	cell: UnsafeCell<T>,
+}
+
+unsafe impl<T: Send> Send for RwLock<T> {}
+unsafe impl<T: Send + Sync> Sync for RwLock<T> {}
+
+impl<T> RwLock<T>
+{
+	pub const fn new(data: T) -> Self
+	{
+		Self { lock: unsafe { MaybeUninit::zeroed().assume_init() }, cell: UnsafeCell::new(data) }
+	}
+
+	/// The `init` method initializes the RwLock.
+	///
+	/// ## Safety
+	/// RwLock cannot be initialized twice. \
+	/// An RwLock created by `new` cannot be used before `init`.
+	pub unsafe fn init(&self) -> bool
+	{
+		unsafe { ExInitializeResourceLite(self.lock_ptr()) == STATUS_SUCCESS }
+	}
+
+	/// The `deinit` method drops the resource lock.
+	///
+	/// ## Safety
+	/// After `deinit`, the lock is still accessible. \
+	/// However, you must `init` it again in order to use it safely. \
+	/// Any attempt to use a dropped resource lock may cause runtime panic.
+	pub unsafe fn deinit(&self)
+	{
+		unsafe {
+			ExDeleteResourceLite(self.lock_ptr());
+		}
+	}
+
+	const fn lock_ptr(&self) -> *mut ERESOURCE
+	{
+		&raw const self.lock as *mut ERESOURCE
+	}
+
+	pub fn read(&self) -> RwLockSharedGuard<'_, T>
+	{
+		unsafe {
+			KeEnterCriticalRegion();
+			ExAcquireResourceSharedLite(self.lock_ptr(), true);
+		}
+		RwLockSharedGuard(self)
+	}
+
+	pub fn write(&self) -> RwLockExclusiveGuard<'_, T>
+	{
+		unsafe {
+			KeEnterCriticalRegion();
+			ExAcquireResourceExclusiveLite(self.lock_ptr(), true);
+		}
+		RwLockExclusiveGuard(self)
+	}
+}
+
+impl<T> Drop for RwLock<T>
+{
+	fn drop(&mut self)
+	{
+		unsafe {
+			self.deinit();
+		}
+	}
+}
+
+pub struct RwLockSharedGuard<'a, T>(&'a RwLock<T>);
+
+impl<T> Drop for RwLockSharedGuard<'_, T>
+{
+	fn drop(&mut self)
+	{
+		unsafe {
+			ExReleaseResourceLite(self.0.lock_ptr());
+			KeLeaveCriticalRegion();
+		}
+	}
+}
+
+impl<T> Deref for RwLockSharedGuard<'_, T>
+{
+	type Target = T;
+	fn deref(&self) -> &Self::Target
+	{
+		unsafe { &*self.0.cell.get() }
+	}
+}
+
+pub struct RwLockExclusiveGuard<'a, T>(&'a RwLock<T>);
+
+impl<T> Drop for RwLockExclusiveGuard<'_, T>
+{
+	fn drop(&mut self)
+	{
+		unsafe {
+			ExReleaseResourceLite(self.0.lock_ptr());
+			KeLeaveCriticalRegion();
+		}
+	}
+}
+
+impl<T> Deref for RwLockExclusiveGuard<'_, T>
+{
+	type Target = T;
+	fn deref(&self) -> &Self::Target
+	{
+		unsafe { &*self.0.cell.get() }
+	}
+}
+
+impl<T> DerefMut for RwLockExclusiveGuard<'_, T>
+{
+	fn deref_mut(&mut self) -> &mut Self::Target
+	{
+		unsafe { &mut *self.0.cell.get() }
+	}
+}
+
+pub struct Mutex<T>
+{
+	lock: FAST_MUTEX,
+	data: UnsafeCell<T>,
+}
+
+unsafe impl<T: Send> Send for Mutex<T> {}
+unsafe impl<T: Send> Sync for Mutex<T> {}
+
+impl<T> Mutex<T>
+{
+	pub const fn new(data: T) -> Self
+	{
+		Self { lock: unsafe { MaybeUninit::zeroed().assume_init() }, data: UnsafeCell::new(data) }
+	}
+
+	/// The `init` method initializes the mutex.
+	///
+	/// ## Safety
+	/// Mutex cannot be initialized twice. \
+	/// A mutex created by `new` cannot be used before `init`.
+	pub unsafe fn init(&self) -> bool
+	{
+		// The ExInitializeFastMutex is actually a force-inlined routine in WDK.
+		unsafe {
+			let lk = self.lock_ptr();
+			(*lk).Count = FM_LOCK_BIT as i32;
+			(*lk).Owner = null_mut();
+			(*lk).Contention = 0;
+			KeInitializeEvent(&raw mut (*lk).Event, SynchronizationEvent, false);
+		}
+		true
+	}
+
+	const fn lock_ptr(&self) -> *mut FAST_MUTEX
+	{
+		&raw const self.lock as *mut FAST_MUTEX
+	}
+
+	pub fn lock(&self) -> MutexGuard<'_, T>
+	{
+		unsafe {
+			ExAcquireFastMutex(self.lock_ptr());
+			MutexGuard(self)
+		}
+	}
+}
+
+pub struct MutexGuard<'a, T>(&'a Mutex<T>);
+
+impl<T> Drop for MutexGuard<'_, T>
+{
+	fn drop(&mut self)
+	{
+		unsafe {
+			ExReleaseFastMutex(self.0.lock_ptr());
+		}
+	}
+}
+
+impl<T> Deref for MutexGuard<'_, T>
+{
+	type Target = T;
+	fn deref(&self) -> &Self::Target
+	{
+		unsafe { &*self.0.data.get() }
+	}
+}
+
+impl<T> DerefMut for MutexGuard<'_, T>
+{
+	fn deref_mut(&mut self) -> &mut Self::Target
+	{
+		unsafe { &mut *self.0.data.get() }
+	}
+}

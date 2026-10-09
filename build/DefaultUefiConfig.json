@@ -1,6 +1,7 @@
 {
 	"DebugPort":"qemu_debugcon",
-	"QemuDebugConPortNumber":1026,
+	"QemuDebugConPortNumber":233,
 	"CpuidPresence":true,
-	"NestedVirtualization":false
+	"NestedVirtualization":false,
+	"EnableIommu":true
 }

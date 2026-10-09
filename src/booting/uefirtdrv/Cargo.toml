@@ -1,0 +1,13 @@
+[package]
+name = "uefirtdrv"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+r-efi = "*"
+static-collections = "*"
+utf16_lit = "*"
+efi-helpers = { path = "../../../crates/efi-helpers" }
+
+[features]
+skip_block = []

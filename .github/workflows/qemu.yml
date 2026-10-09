@@ -1,0 +1,54 @@
+name: QEMU Checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tcg-svm-single_core:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 36
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-uefi
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y clang lld llvm mtools nasm qemu-utils qemu-system-x86
+      - name: Build for UEFI
+        run: python3 make.py /target uefi /extra-arg cargo:--features /extra-arg cargo:uefirtdrv/skip_block,loadefi/skip_block
+      - name: Run UEFI
+        run: |
+          cd tests/
+          python3 run_qemu.py -auto-check
+      - name: Run UEFI /w Intel VT-d
+        run: |
+          cd tests/
+          python3 run_qemu.py -auto-check -iommu intel
+
+  tcg-svm-quad_core:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 36
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-uefi
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y clang lld llvm mtools nasm qemu-utils qemu-system-x86
+      - name: Build for UEFI
+        run: python3 make.py /target uefi /extra-arg cargo:--features /extra-arg cargo:uefirtdrv/skip_block,loadefi/skip_block
+      - name: Run UEFI
+        run: |
+          cd tests/
+          python3 run_qemu.py -auto-check -smp 4
+      - name: Run UEFI /w Intel VT-d
+        run: |
+          cd tests/
+          python3 run_qemu.py -auto-check -iommu intel -smp 4

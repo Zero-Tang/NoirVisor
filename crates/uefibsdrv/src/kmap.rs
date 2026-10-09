@@ -1,0 +1,116 @@
+/*
+ * NoirVisor Core in Rust
+ *
+ * Copyright (c) Zero Tang, 2018-2026. All rights reserved.
+ *
+ * This file implements kernel memory mapping for the UEFI boot-service driver.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * without any warranty (no matter implied warranty or merchantability
+ * or fitness for a particular purpose, etc.).
+ */
+
+use alloc::alloc::AllocError;
+use core::{ffi::c_void, sync::atomic::Ordering};
+
+use efi_helpers::BS_TABLE;
+use nvcvm::{interface::Vpcb, status::Status};
+use r_efi::efi::{ALLOCATE_ANY_PAGES, BOOT_SERVICES_DATA, Status as EfiStatus};
+
+pub struct Kmap
+{
+	phys: u64,
+	size: usize,
+}
+
+unsafe impl Send for Kmap {}
+unsafe impl Sync for Kmap {}
+
+impl Kmap
+{
+	pub fn new(uva: u64, size: usize) -> Result<Self, Status>
+	{
+		Ok(Self { phys: uva, size })
+	}
+
+	pub fn uva(&self) -> *mut c_void
+	{
+		self.phys as *mut c_void
+	}
+
+	pub fn size(&self) -> usize
+	{
+		self.size
+	}
+
+	pub fn iter(&self) -> KmapIter<'_>
+	{
+		KmapIter { source: self, offset: 0 }
+	}
+}
+
+pub struct KmapIter<'a>
+{
+	source: &'a Kmap,
+	offset: usize,
+}
+
+impl<'a> Iterator for KmapIter<'a>
+{
+	type Item = u64;
+
+	fn next(&mut self) -> Option<Self::Item>
+	{
+		if self.offset < self.source.size
+		{
+			let phys = self.source.phys + self.offset as u64;
+			self.offset += 0x1000;
+			Some(phys)
+		}
+		else
+		{
+			None
+		}
+	}
+}
+
+pub struct UniversalPage(u64);
+
+impl UniversalPage
+{
+	pub fn new() -> Result<Self, AllocError>
+	{
+		let mut x = 0;
+		let st = unsafe {
+			let bs = &*BS_TABLE.load(Ordering::Relaxed);
+			(bs.allocate_pages)(ALLOCATE_ANY_PAGES, BOOT_SERVICES_DATA, 1, &raw mut x)
+		};
+		if st == EfiStatus::SUCCESS { Ok(Self(x)) } else { Err(AllocError) }
+	}
+
+	pub fn uva(&self) -> *mut Vpcb
+	{
+		self.0 as *mut Vpcb
+	}
+
+	pub fn kva(&self) -> *mut Vpcb
+	{
+		self.0 as *mut Vpcb
+	}
+
+	pub fn hpa(&self) -> u64
+	{
+		self.0
+	}
+}
+
+impl Drop for UniversalPage
+{
+	fn drop(&mut self)
+	{
+		unsafe {
+			let bs = &*BS_TABLE.load(Ordering::Relaxed);
+			(bs.free_pages)(self.0, 1);
+		}
+	}
+}

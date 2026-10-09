@@ -1,0 +1,17 @@
+[package]
+name = "windrv"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+utf16_lit = "*"
+log = "*"
+nvcvm = { path = "../nvcvm" }
+
+[dependencies.static-collections]
+version = "*"
+features = ["use_crt"]
+
+[dependencies.windows-sys]
+version = "*"
+features = ["Win32_Foundation","Win32_Security","Win32_Storage_FileSystem","Win32_System_IO","Win32_System_Ioctl","Win32_System_Kernel","Win32_System_Diagnostics_Debug","Win32_System_Power","Wdk_Foundation","Wdk_Storage_FileSystem","Wdk_System_SystemServices"]
