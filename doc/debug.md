@@ -116,7 +116,7 @@ For this debugging mode, the connection is considered a console. The remote host
 NoirVisor uses buffers with a size of 512 bytes. Therefore, any single print should not exceed this limit. Overflown parts will be discarded.
 
 ## Interactive Debugging
-The specification is unavailable yet. You may use GDB or WinDbg EXDI.
+The specification of NoirVisor's interactive debugging stub is unavailable yet. You may use GDB or WinDbg eXDI instead to interactively debug NoirVisor in source-level.
 
 ## WinDbg EXDI
 Use this option when you are debugging NoirVisor running inside a target which can be debugged via WinDbg eXDI (eXtensible Debugging Interface). Note that this option doesn't work great with NoirVisor as UEFI Runtime Driver since WinDbg currently can't enumerate images in UEFI. \

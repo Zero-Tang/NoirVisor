@@ -339,7 +339,12 @@ impl VirtualMachine
 	pub fn set_mapping(&mut self, as_id: u32, gpa: u64, hva: u64, pages: usize, flags: CvmMappingFlags) -> Status
 	{
 		type Context = CvmHypercallSetMappingContext;
-		let size = size_of::<Context>() + (pages << 3);
+		let Some(size) = size_of::<Context>().checked_add(pages.checked_shl(3).unwrap_or(usize::MAX))
+		else
+		{
+			// If `pages` is too large that it overflows `usize` type, then it is an invalid parameter.
+			return Status::INVALID_PARAMETER;
+		};
 		let layout = unsafe { Layout::from_size_align_unchecked(size, align_of::<Context>()) };
 		if self.hva_ranges.insert(hva as *mut c_void, pages << 12).is_err()
 		{
@@ -361,12 +366,18 @@ impl VirtualMachine
 			ctxt.pages = pages as u32;
 			ctxt.gpa = gpa;
 			let hpa_list = unsafe { slice::from_raw_parts_mut(ctxt.hpa.as_mut_ptr(), pages) };
-			for (i, p) in self.hva_ranges.partial_iter(hva as *mut c_void, pages << 12).unwrap().enumerate()
+			match self.hva_ranges.partial_iter(hva as *mut c_void, pages << 12)
 			{
-				info!("Map page {i} with physical address: 0x{p:X}");
-				hpa_list[i] = p;
+				Some(iterator) =>
+				{
+					for (i, p) in iterator.enumerate()
+					{
+						info!("Map page {i} with physical address: 0x{p:X}");
+						hpa_list[i] = p;
+					}
+				}
+				None => return Status::INVALID_PARAMETER,
 			}
-			// TODO: iterate the HPAs.
 			unsafe { hypercall(CVM_HYPERCALL_SET_MAPPING, ctxt, size) }
 		};
 		unsafe {

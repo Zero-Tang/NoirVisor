@@ -13,8 +13,7 @@ The [debug.md](/doc/debug.md) file describes methods to debug NoirVisor.
 **Note:** The remastered version of NoirVisor in Rust did not implement secure virtualization yet. \
 These documents may subject to a significant change in the future as the development goes on.
 
-The [nsv.md](/doc/nsv.md) file describes the architecture of how NoirVisor Secure Virtualization works. \
-The [parhelion.md](/doc/parhelion.md) file describes a more formalized version for NoirVisor Secure Virtualization.
+The [parhelion.md](/doc/parhelion.md) file describes the formalized version for NoirVisor Secure Virtualization.
 
 ## Events
 The [events.md](/doc/events.md) file records significant development events for NoirVisor.

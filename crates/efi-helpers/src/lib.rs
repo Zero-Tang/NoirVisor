@@ -423,14 +423,15 @@ pub unsafe fn convert_device_path_to_text(path: *mut device_path::Protocol) -> S
 	}
 }
 
+/// ## Safety
+/// The shutdown routine terminates the whole machine unsafely!
 pub unsafe fn shutdown() -> !
 {
 	unsafe {
 		let rt = &*RT_TABLE.load(Ordering::Relaxed);
 		(rt.reset_system)(RESET_SHUTDOWN, Status::SUCCESS, 0, null_mut());
 	}
-	loop
-	{}
+	panic!("The shutdown routine did not manage to shutdown!");
 }
 
 /// ## Safety

@@ -5,23 +5,9 @@ By virtue of the formally-verified memory-safety guaranteed by the compiler, cor
 ## Getting Started
 Install [Visual Studio Code](https://code.visualstudio.com) and [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) extension.
 
-## Code Architecture
-All C codes are going be remastered with the Rust Programming Language.
-
-System Assembly codes will be remastered with LLVM's module-level inline assembler as they support Microsoft's stack-unwinding directives. \
-Trivial assembly codes will be remastered with Rust inline assembly.
-
-Rust codes will be managed with the Cargo package manager. They will be compiled into static library and linked via linker. In other words, we will be calling the `cargo` command from the compiling script.
-
-NoirVisor uses Rust 2024 standard.
-
 ## Allocator
 NoirVisor uses [portable-dlmalloc](https://github.com/Zero-Tang/portable-dlmalloc) as the global allocator. \
 You should avoid using allocators while in VM-Exit handlers! For example, you should use `sort_unstable` instead of `sort` to avoid allocation.
-
-## Automated Testing
-NoirVisor uses `cargo test` suite to test NoirVisor. However, system subversion and restoration are not currently included in tests yet. \
-To develop test cases, you should toggle `rust-analyzer.cfg.setTest` to true in `rust-analyzer` plugin and then reload VSCode.
 
 ## Modifying Dependencies
 There are six rules that must be enforced when modifying the dependencies in the workspace:

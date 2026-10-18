@@ -16,41 +16,48 @@ use log::{info, warn};
 use nvcvm::status::Status;
 
 use super::VtVcpu;
-use crate::xpf_core::x86::interrupts::INVALID_OPCODE_FAULT;
+use crate::{disasm::emulator::EmulatorOps, xpf_core::x86::interrupts::INVALID_OPCODE_FAULT};
 
 impl VtVcpu
 {
-	fn hvcall_unknown(&mut self, code: u32, context: *mut c_void) -> Result<Status, (u8, Option<u32>)>
+	fn hvcall_unknown(&mut self, context: *mut c_void, _context_size: usize) -> Result<Status, (u8, Option<u32>)>
 	{
+		let code = self.get_gpr(1) as u32;
 		warn!("Unknown Hypercall Code 0x{code:X} is called! Context={context:p}");
 		Err((INVALID_OPCODE_FAULT, None))
 	}
 
-	fn hvcall_restore(&mut self, _code: u32, _context: *mut c_void) -> Result<Status, (u8, Option<u32>)>
+	fn hvcall_restore(&mut self, _context: *mut c_void, _context_size: usize) -> Result<Status, (u8, Option<u32>)>
 	{
 		// Since NoirVisor is strictly Type-I Hypervisor, this hypercall code is reserved now.
 		Err((INVALID_OPCODE_FAULT, None))
 	}
 
-	fn hvcall_alloc_tlb_tag(&mut self, _code: u32, _context: *mut c_void) -> Result<Status, (u8, Option<u32>)>
+	fn hvcall_alloc_tlb_tag(&mut self, _context: *mut c_void, _context_size: usize) -> Result<Status, (u8, Option<u32>)>
 	{
 		Ok(Status::NOT_IMPLEMENTED)
 	}
 
-	fn hvcall_exit_boot_services(&mut self, _code: u32, _context: *mut c_void) -> Result<Status, (u8, Option<u32>)>
+	fn hvcall_exit_boot_services(&mut self, _context: *mut c_void, _context_size: usize) -> Result<Status, (u8, Option<u32>)>
 	{
 		info!("ExitBootServices event is triggered! UEFI now enters Runtime Stage!");
 		Ok(Status::SUCCESS)
 	}
+
+	fn hvcall_get_cap(&mut self, _context: *mut c_void, _context_size: usize) -> Result<Status, (u8, Option<u32>)>
+	{
+		warn!("CVM is not implemented on Intel VT-x yet.");
+		Ok(Status::NOT_IMPLEMENTED)
+	}
 }
 
-pub(super) type VtHypercallHandler = fn(&mut VtVcpu, code: u32, context: *mut c_void) -> Result<Status, (u8, Option<u32>)>;
+pub(super) type VtHypercallHandler = fn(&mut VtVcpu, context: *mut c_void, context_size: usize) -> Result<Status, (u8, Option<u32>)>;
 
 static VT_HYPERCALL_HANDLER_BASE: [VtHypercallHandler; 4] =
 	[VtVcpu::hvcall_unknown, VtVcpu::hvcall_restore, VtVcpu::hvcall_alloc_tlb_tag, VtVcpu::hvcall_exit_boot_services];
 
 static VT_HYPERCALL_HANDLER_CVM: [VtHypercallHandler; 6] = [
-	VtVcpu::hvcall_unknown,
+	VtVcpu::hvcall_get_cap,
 	VtVcpu::hvcall_unknown,
 	VtVcpu::hvcall_unknown,
 	VtVcpu::hvcall_unknown,

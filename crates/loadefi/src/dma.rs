@@ -22,7 +22,7 @@ use efi_helpers::{
 };
 use r_efi::{
 	efi::{Handle, Status},
-	protocols::loaded_image,
+	protocols::{device_path::TYPE_MESSAGING, loaded_image},
 };
 
 fn do_test_dma(address: *mut c_void)
@@ -62,8 +62,12 @@ fn do_test_dma(address: *mut c_void)
 									);
 								}
 								let path = unsafe { &*dev_path };
-								assert_eq!(path.r#type, 3);
-								assert_eq!(path.sub_type, 18);
+								assert_eq!(path.r#type, TYPE_MESSAGING);
+								if path.sub_type != 18
+								{
+									println!("NoirVisor is not loaded on SATA disk! Skipping DMA attack...");
+									return;
+								}
 								assert_eq!(path.length[0], 10);
 								let hba_port = unsafe { dev_path.byte_add(4).cast::<u16>().read_unaligned() };
 								let mult_port = unsafe { dev_path.byte_add(6).cast::<u16>().read_unaligned() };

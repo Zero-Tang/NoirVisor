@@ -16,7 +16,10 @@ struct Page(UnsafeCell<[u8; 0x1000]>);
 use core::{cell::UnsafeCell, ptr::null_mut};
 
 use efi_helpers::println;
-use nvcvm::interface::{CvmHandle, CvmMappingFlags, InterceptCode, Vpcb, c_api::*};
+use nvcvm::{
+	interface::{CvmCapabilityFeatures, CvmHandle, CvmMappingFlags, InterceptCode, Vpcb, c_api::*},
+	status::Status,
+};
 
 unsafe impl Send for Page {}
 unsafe impl Sync for Page {}
@@ -47,9 +50,14 @@ static GUEST_PAGE: Page = Page::new();
 pub fn test_cvm()
 {
 	println!("Running CVM cases...");
-	let mut cap: [u32; 7] = [0; 7];
+	let mut cap: CvmCapabilityFeatures = CvmCapabilityFeatures::default();
 	let st = unsafe { ncv_get_capability(0, cap.as_mut_ptr()) };
 	println!("ncv_get_capability: {st}");
+	if st != Status::SUCCESS
+	{
+		println!("NoirVisor on the current system is not capable of CVM!");
+		return;
+	}
 	let mut vm = CvmHandle(u32::MAX);
 	let st = unsafe { ncv_create_vm(&raw mut vm) };
 	println!("ncv_create_vm: {st}, handle: {}", vm.0);

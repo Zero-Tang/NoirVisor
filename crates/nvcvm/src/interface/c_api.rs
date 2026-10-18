@@ -23,7 +23,8 @@ use crate::windows as platform;
 /// This API gets the hypervisor's capability.
 ///
 /// ## Safety
-/// This function is unsafe because it's FFI.
+/// This function is unsafe because it's FFI. \
+/// You must ensure `buffer` points to a valid buffer to a `[u32; 8]` type.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ncv_get_capability(capability_code: u32, buffer: *mut u32) -> Status
 {
@@ -35,7 +36,7 @@ pub unsafe extern "C" fn ncv_get_capability(capability_code: u32, buffer: *mut u
 		let st = platform::do_ioctl(IOCTL_CODE_HV_GET_CAPABILITY, &raw const in_buff, out_buff);
 		if st == Status::SUCCESS
 		{
-			core::ptr::copy_nonoverlapping(out_buff.capability.as_ptr(), buffer, 7);
+			core::ptr::copy_nonoverlapping(out_buff.capability.as_ptr(), buffer, 8);
 		}
 		st
 	}

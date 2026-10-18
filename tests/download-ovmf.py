@@ -1,5 +1,6 @@
 import os
 import requests
+import sys
 import zipfile
 
 if __name__=="__main__":
@@ -7,7 +8,10 @@ if __name__=="__main__":
 		print("Missing OVMF Binary files...")
 		if not os.path.exists("ovmf.zip"):
 			print("Missing OVMF Archive... Downloading from GitHub...")
-			url="https://github.com/user-attachments/files/21815836/ovmf.zip"
+			if len(sys.argv)>1 and sys.argv[1]=="bochs":
+				url="https://github.com/user-attachments/files/33619214/ovmf.zip"
+			else:
+				url="https://github.com/user-attachments/files/21815836/ovmf.zip"
 			try:
 				resp=requests.get(url)
 				f=open("ovmf.zip",'wb')

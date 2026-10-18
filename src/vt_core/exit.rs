@@ -287,7 +287,7 @@ impl VtVcpu
 		let gpr_state = &mut context.gpr_state;
 		let vmcall_func = gpr_state.rcx as u32;
 		let handler_fn = dispatch_hypercall(vmcall_func);
-		match handler_fn(self, vmcall_func, gpr_state.rdx as *mut c_void)
+		match handler_fn(self, gpr_state.rdx as *mut c_void, gpr_state.r8 as usize)
 		{
 			Ok(st) =>
 			{

@@ -1001,7 +1001,7 @@ impl HypervisorEssentials for VtHypervisor
 			debug!("Base: {:p}, Size: 0x{:X}", self.image_base, self.image_size);
 			noir_generic_call(subvert_processor_thunk, self as *mut Self as *mut c_void);
 		}
-		sysdprintln!("System Subversion Completed!");
+		info!("System subversion completed!");
 		Status::SUCCESS
 	}
 

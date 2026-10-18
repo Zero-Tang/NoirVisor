@@ -10,12 +10,16 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{alloc::Layout, ffi::c_void, mem::MaybeUninit};
+use core::{
+	alloc::Layout,
+	ffi::c_void,
+	mem::{MaybeUninit, offset_of},
+};
 
 use log::warn;
 use nvcvm::{
 	hvcall::*,
-	interface::{CvmHandle, CvmMapping},
+	interface::{CVM_CAPABILITY_CODE_FEATURES, CvmCapabilityFeatures, CvmHandle, CvmMapping},
 	status::{Status, unwrap_status},
 };
 use pastey::paste;
@@ -63,10 +67,43 @@ impl SvmVcpu
 		Ok(Status::SUCCESS)
 	}
 
-	fn hvcall_get_cap(&mut self, _context: *mut c_void, _context_size: usize) -> Result<Status, (u8, Option<u32>)>
+	fn hvcall_get_cap(&mut self, context: *mut c_void, context_size: usize) -> Result<Status, (u8, Option<u32>)>
 	{
-		error!("Get-Capability is not supported!");
-		Ok(Status::NOT_IMPLEMENTED)
+		check_context_size!(GetCapability, context_size);
+		let mut buff: MaybeUninit<u32> = MaybeUninit::uninit();
+		if let Err((code, fault_va)) = self
+			.read_virt((context as usize + offset_of!(CvmHypercallGetCapabilityContext, code)) as u64, unsafe {
+				slice::from_raw_parts_mut(buff.as_mut_ptr().cast(), 4)
+			})
+		{
+			error!("Page-Fault while reading from CVM-Hypercall Context! CR2: 0x{fault_va:X}, Code: {code}");
+			self.write_cr2(fault_va);
+			return Err((PAGE_FAULT, Some(code.into_bits())));
+		}
+		match unsafe { buff.assume_init() }
+		{
+			CVM_CAPABILITY_CODE_FEATURES =>
+			{
+				let cap = CvmCapabilityFeatures { rsvd: [0; 8] };
+				match self.write_virt((context as usize + offset_of!(CvmHypercallGetCapabilityContext, raw)) as u64, unsafe {
+					slice::from_raw_parts((&raw const cap).cast(), size_of::<CvmCapabilityFeatures>())
+				})
+				{
+					Ok(_) => Ok(Status::SUCCESS),
+					Err((code, fault_va)) =>
+					{
+						error!("Page-Fault while writing to CVM-Hypercall Context! CR2: 0x{fault_va:X}, Code: {code}");
+						self.write_cr2(fault_va);
+						Err((PAGE_FAULT, Some(code.into_bits())))
+					}
+				}
+			}
+			code =>
+			{
+				error!("Get-Capability is not supported for code 0x{code:X}!");
+				Ok(Status::NOT_IMPLEMENTED)
+			}
+		}
 	}
 
 	fn hvcall_create_vm(&mut self, context: *mut c_void, context_size: usize) -> Result<Status, (u8, Option<u32>)>

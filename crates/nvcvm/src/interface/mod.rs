@@ -15,6 +15,23 @@ use bitfield_struct::bitfield;
 #[cfg(feature = "user")]
 pub mod c_api;
 
+#[derive(Clone, Copy, Default, Debug)]
+#[repr(C)]
+pub struct CvmCapabilityFeatures
+{
+	pub rsvd: [u32; 8],
+}
+
+impl CvmCapabilityFeatures
+{
+	pub fn as_mut_ptr(&mut self) -> *mut u32
+	{
+		(&raw mut *self).cast()
+	}
+}
+
+pub const CVM_CAPABILITY_CODE_FEATURES: u32 = 0;
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[repr(C)]
 pub struct CvmHandle(pub u32);

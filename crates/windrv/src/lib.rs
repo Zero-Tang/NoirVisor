@@ -14,10 +14,7 @@
 
 extern crate alloc;
 
-use core::{
-	ffi::c_void,
-	ptr::{null, null_mut},
-};
+use core::{ffi::c_void, ptr::null_mut};
 
 use nvcvm::status::Status;
 use utf16_lit::utf16;
@@ -26,9 +23,9 @@ use windows_sys::{
 		Foundation::{DEVICE_OBJECT, DRIVER_OBJECT, FILE_OBJECT, IRP},
 		Storage::FileSystem::IO_NO_INCREMENT,
 		System::SystemServices::{
-			FILE_DEVICE_SECURE_OPEN, HighPagePriority, IO_COMPLETION_ROUTINE, IRP_MJ_CLOSE, IRP_MJ_CREATE, IRP_MJ_DEVICE_CONTROL,
-			IoCreateDevice, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IofCompleteRequest, KernelMode, MmCached,
-			MmMapLockedPagesSpecifyCache, PsGetCurrentProcessId, PsSetCreateProcessNotifyRoutine,
+			FILE_DEVICE_SECURE_OPEN, IO_COMPLETION_ROUTINE, IRP_MJ_CLOSE, IRP_MJ_CREATE, IRP_MJ_DEVICE_CONTROL, IoCreateDevice,
+			IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IofCompleteRequest, PsGetCurrentProcessId,
+			PsSetCreateProcessNotifyRoutine,
 		},
 	},
 	Win32::{
@@ -36,7 +33,7 @@ use windows_sys::{
 			NTSTATUS, STATUS_DEVICE_CONFIGURATION_ERROR, STATUS_INVALID_DEVICE_REQUEST, STATUS_SUCCESS, STATUS_UNSUCCESSFUL,
 			UNICODE_STRING,
 		},
-		System::Ioctl::{FILE_DEVICE_UNKNOWN, METHOD_BUFFERED, METHOD_NEITHER, METHOD_OUT_DIRECT},
+		System::Ioctl::{FILE_DEVICE_UNKNOWN, METHOD_BUFFERED},
 	},
 };
 
@@ -62,6 +59,9 @@ static DEVICE_NAME: &[u16] = &utf16!("\\Device\\NoirVisor");
 static LINK_NAME: &[u16] = &utf16!("\\DosDevices\\NoirVisor");
 
 // The definition from windows_sys crate is incorrect.
+// In WDK, all of these fields must be aligned on pointer-width-boundary.
+// Therefore, all of the following fields, except input_buffer, must be
+// treated as 32-bit values.
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct DeviceIoControlParameter
@@ -132,64 +132,21 @@ const fn function_from_ctl_code(ctl_code: u32) -> usize
 	((ctl_code >> 2) & 0x7FF) as usize
 }
 
-unsafe fn get_input_buffer(irp: *const IRP) -> *mut c_void
+unsafe fn get_io_buffer(irp: *const IRP) -> Option<(u32, *mut c_void, *mut c_void)>
 {
-	unsafe {
-		let irpsp = get_current_irpsp(irp);
-		if (*irpsp).major_function == IRP_MJ_DEVICE_CONTROL as u8
+	let irpsp = unsafe { &mut *get_current_irpsp(irp) };
+	if irpsp.major_function == IRP_MJ_DEVICE_CONTROL as u8
+	{
+		let ioctl_code = unsafe { irpsp.parameters.device_io_control.io_control_code } as u32;
+		match method_from_ctl_code(ioctl_code)
 		{
-			let method = method_from_ctl_code((*irpsp).parameters.device_io_control.io_control_code as u32);
-			if method == METHOD_NEITHER
-			{
-				(*irpsp).parameters.device_io_control.type3_input_buffer
-			}
-			else
-			{
-				(*irp).AssociatedIrp.SystemBuffer
-			}
-		}
-		else
-		{
-			null_mut()
+			METHOD_BUFFERED => Some(unsafe { (ioctl_code, (*irp).AssociatedIrp.SystemBuffer, (*irp).AssociatedIrp.SystemBuffer) }),
+			_ => None,
 		}
 	}
-}
-
-unsafe fn get_output_buffer(irp: *const IRP) -> *mut c_void
-{
-	unsafe {
-		let irpsp = get_current_irpsp(irp);
-		if (*irpsp).major_function == IRP_MJ_DEVICE_CONTROL as u8
-		{
-			let method = method_from_ctl_code((*irpsp).parameters.device_io_control.io_control_code as u32);
-			if method == METHOD_BUFFERED
-			{
-				(*irp).AssociatedIrp.SystemBuffer
-			}
-			else if method == METHOD_OUT_DIRECT
-			{
-				// Manually implement MmGetSystemAddressForMdlSafe
-				let mdl = (*irp).MdlAddress;
-				const MDL_MAPPED_TO_SYSTEM_VA: i16 = 0x0;
-				const MDL_SOURCE_IS_NONPAGED_POOL: i16 = 0x4;
-				if ((*mdl).MdlFlags & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL)) == 0
-				{
-					MmMapLockedPagesSpecifyCache(mdl, KernelMode as i8, MmCached, null(), 0, HighPagePriority as u32)
-				}
-				else
-				{
-					(*mdl).MappedSystemVa
-				}
-			}
-			else
-			{
-				(*irp).UserBuffer
-			}
-		}
-		else
-		{
-			null_mut()
-		}
+	else
+	{
+		None
 	}
 }
 
@@ -219,12 +176,14 @@ unsafe extern "system" fn dispatch_io_control(_device_object: *const DEVICE_OBJE
 {
 	let mut st: NTSTATUS = STATUS_INVALID_DEVICE_REQUEST;
 	unsafe {
+		let Some((io_ctrl_code, in_buff, out_buff)) = get_io_buffer(irp)
+		else
+		{
+			return STATUS_INVALID_DEVICE_REQUEST;
+		};
 		let irpsp = get_current_irpsp(irp);
-		let in_buff = get_input_buffer(irp);
-		let out_buff = get_output_buffer(irp);
 		let in_size = (*irpsp).parameters.device_io_control.input_buffer_length & 0xffffffff;
 		let out_size = (*irpsp).parameters.device_io_control.output_buffer_length & 0xffffffff;
-		let io_ctrl_code = (*irpsp).parameters.device_io_control.io_control_code as u32;
 		if is_ctl_code_custom(io_ctrl_code)
 		{
 			let code_index = function_from_ctl_code(io_ctrl_code);
