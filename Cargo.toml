@@ -52,7 +52,7 @@ default-features = false
 features = ["fmt"]
 
 [dependencies.yaxpeax-arch]
-version = "0.3.2"
+version = "0.3.3"
 default-features = false
 features = []
 

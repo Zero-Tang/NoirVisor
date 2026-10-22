@@ -1,7 +1,11 @@
 name: Cargo Checks
 
 on:
+  push:
+    branches:
+      - master
   pull_request:
+    branches: [master]
 
 permissions:
   contents: read
@@ -17,7 +21,7 @@ jobs:
       - name: Audit dependencies
         run: cargo audit
 
-  clippy:
+  check-suite:
     runs-on: ubuntu-26.04
     env:
       AR_x86_64-unknown-uefi: llvm-ar
@@ -27,28 +31,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
-          components: clippy
+          components: clippy, rustfmt
           targets: x86_64-unknown-uefi, x86_64-pc-windows-msvc
       - name: Install LLVM tools
         run: |
           sudo apt update
           sudo apt install --yes clang llvm
       - name: Clippy for UEFI
-        run: cargo clippy --target x86_64-unknown-uefi --package nvcore --package loadefi --package cvsched
+        run: cargo clippy --target x86_64-unknown-uefi --package nvcore --package loadefi --package cvsched -- -D warnings
       - name: Clippy for Windows
-        run: cargo clippy --target x86_64-pc-windows-msvc --package cvsched
+        run: cargo clippy --target x86_64-pc-windows-msvc --package cvsched -- -D warnings
       - name: Clippy for cvmock
-        run: cargo clippy --package cvmock --all-targets
-
-  format:
-    runs-on: ubuntu-26.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
-      - name: Check formatting
+        run: cargo clippy --package cvmock --all-targets -- -D warnings
+      - name: Check Formatting
         run: cargo fmt --check
+      - name: Run Cargo Test
+        run: cargo test --package cvsched --package htable
     
   build-uefi:
     runs-on: ubuntu-26.04
@@ -81,11 +79,3 @@ jobs:
         run: python3 make.py /target windows
       - name: Build for Windows (Free)
         run: python3 make.py /target windows /opt:yes
-
-  test:
-    runs-on: ubuntu-26.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-      - name: Test with cargo
-        run: cargo test --package cvsched --package htable
