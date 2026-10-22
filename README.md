@@ -20,10 +20,14 @@ NoirVisor is a Type-1 bluepill hypervisor that aims to provide custom virtualiza
 
 **IMPORTANT NOTES:** If you're looking for a stealthy hypervisor implementation, you're at the wrong place.
 
+# C Version
+This project was written in C once upon a time. It is archived as the [c-archive branch](https://github.com/Zero-Tang/NoirVisor/tree/c-archive). \
+This branch will no longer receive updates and no patches will be accepted for it.
+
 # Processor Requirement
 Your CPU must support either Intel VT-x /w EPT or AMD-V /w NPT. However, this does not mean only Intel and AMD CPUs are supported.
 
-- Processors produced by Intel, VIA, Zhaoxin (兆芯) and Montage (澜起) may support Intel VT-x. \
+- Processors produced by Intel, VIA, Zhaoxin (兆芯) and Montage (澜起) may support Intel VT-x.
 - Processors produced by AMD and Hygon (海光) may support AMD-V.
 
 # Build

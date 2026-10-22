@@ -71,4 +71,4 @@ jobs:
       - name: Run UEFI /w AMD-Vi
         run: |
           cd tests/
-          python3 run_qemu.py -auto-check -iommu amd
+          python3 run_qemu.py -auto-check -iommu amd -smp 4
