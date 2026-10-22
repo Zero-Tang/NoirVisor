@@ -1,0 +1,37 @@
+name: Bochs Checks
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  bochs-vt-single_core:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 36
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-uefi
+      - name: Install dependencies
+        # Default Bochs from apt is version 2.8. This version is too old to run OVMF.
+		# Install a pre-built Bochs 3.1 package instead.
+        run: |
+          sudo apt update
+          sudo apt install -y clang lld llvm mtools nasm qemu-utils
+          wget https://github.com/user-attachments/files/33604743/bochs_3.1-1_amd64.deb.gz
+          gzip -d bochs_3.1-1_amd64.deb.gz
+          sudo apt install -y ./bochs_3.1-1_amd64.deb
+          rm ./bochs_3.1-1_amd64.deb
+      - name: Build for UEFI
+        run: python3 make.py /target uefi /extra-arg cargo:--features /extra-arg cargo:uefirtdrv/skip_block,loadefi/skip_block
+      - name: Run UEFI
+        run: |
+          cd tests/
+          python3 run_bochs.py --auto-check

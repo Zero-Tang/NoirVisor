@@ -1,0 +1,33 @@
+[package]
+name = "nvcvm"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "NoirVisor Customizable Virtual Machine (CVM) Library for User Hypervisors"
+repository = "https://github.com/Zero-Tang/NoirVisor"
+readme = "readme.md"
+keywords = ["no_std","hypervisor","vmm"]
+categories = ["no-std","virtualization"]
+
+# All dependencies must be from crates.io with a determinate version number.
+# No asterisks (e.g.: "*", "0.4.*") are allowed.
+[dependencies]
+bitfield-struct = "0.13.0"
+r-efi = "7.1.0"
+
+[target.'cfg(windows)'.dependencies.utf16_lit]
+version = "2.0.2"
+optional = true
+
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.61.2"
+features = ["Wdk_Foundation","Wdk_Storage_FileSystem","Wdk_System_SystemServices","Win32_Storage_FileSystem","Win32_System_IO","Win32_Security","Win32_System_Ioctl"]
+
+[features]
+# User-hypervisor should use this feature.
+user = ["dep:utf16_lit"]
+# Kernel scheduler should use this feature.
+kernel = []
+# Only NoirVisor may use this feature.
+hypervisor = []
+default = ["kernel"]

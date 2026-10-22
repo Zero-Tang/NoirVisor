@@ -1,44 +1,157 @@
 # Make Script
-Since the update in January 2024, NoirVisor can be built using a python script. In comparison to the batch script, python script can parallelize the compilation of NoirVisor and thereby the performance in building NoirVisor can be significantly boosted.
+The python script is intended for parallelizing the build progress. It utilizes a simple pipelining algorithm with a dependency resolver.
 
-## Preparation
+## Preparation for Windows
 The minimal version of python required for building is 3.9 since the script is using typing syntax to help reading the codes. \
 Download [Python](https://www.python.org/downloads/windows/) from Python's official website.
 
-## Make Commands
-**Synopsis**
+The minimal version of Rust compiler is 1.85.0 since NoirVisor uses Rust 2024 edition. \
+Download [Rust](https://www.rust-lang.org/tools/install) from Rust-lang's official website. Note that you must install the `nightly` toolchain.
+
+There is no known minimal version requirement for Netwide Assembler (NASM). Just install the newest version you can find. \
+Download [NASM](https://nasm.us/) from NASM's official site. It is recommended to use stable versions. \
+Installer of NASM for Windows does not add itself to `PATH` environment variable. You must add it to `PATH` on your own.
+
+There is no known minimal version requirement for LLVM. Just install the newest version you can find. \
+Download [LLVM](https://github.com/llvm/llvm-project/releases) from LLVM's GitHub repository release page. \
+LLVM is required for building NoirVisor. \
+Installer of LLVM for Windows is somewhat buggy on adding itself to `PATH` environment variable. Check the `PATH` after installation. Add it if it's missing.
+
+There is no known minimal version requirement for QEMU. Just install the newest version you can find. \
+Download [QEMU](https://qemu.weilnetz.de/w64/) from Stefan Weil's website. \
+QEMU is only required for building NoirVisor for UEFI in order to convert raw images into VHDX (Microsoft Hyper-V) and VMDK (VMware Workstation). \
+Installer of QEMU for Windows does not add itself to `PATH` environment variable. You must add it to `PATH` on your own.
+
+There is no known minimal version requirement for osslsigncode. Just install the newest version you can find. \
+Download [osslsigncode](https://github.com/mtrojnar/osslsigncode/releases) from GitHub. \
+osslsigncode is only required for signing the executable file with the test signature. \
+Extract the files to a certain directory, and add that directory to `PATH` environment variable.
+
+There is no known minimal version requirement for OpenSSL. Just install the newest version you can find. \
+You are required to install the `legacy.dll` file to a place where `osslsigncode.exe` can find. It should be at `C:\vcpkg\packages\openssl_x64-windows\bin\legacy.dll`. \
+OpenSSL is only required for signing the executable file with the test signature. \
+[FireDaemon](https://www.firedaemon.com/download-firedaemon-openssl) provides pre-built OpenSSL binaries. After installing FireDaemon OpenSSL, you may copy the `legacy.dll` file and place it properly. \
+It seems like OpenSSL can be installed with `vcpkg` - supposedly the cleanest way - but I'm not sure how to use `vcpkg`.
+
+The GNU `mtools` are required to make raw images for NoirVisor. I have uploaded the [pre-built `mtools` binaries for Windows to GitHub](https://github.com/Zero-Tang/NoirVisor/files/12706542/mtools-4.0.43-bin.zip). \
+Extract the files to a certain directory, and add that directory to `PATH` environment variable.
+
+### NoirVisor Core
+NoirVisor Core is written in Rust. See [documentation for NoirVisor in Rust](./rust.md).
+
+Install [Rust](https://www.rust-lang.org/tools/install). \
+Due to the usage of [unstable feature "`allocator_ext`"](https://github.com/rust-lang/rust/issues/163177), you must use nightly toolchain in order to build NoirVisor. \
+NoirVisor doesn't require a specific version of rustc. You should be fine using the up-to-date nightly compiler.
+
+Currently, NoirVisor Core in Rust can subvert the system with Intel VT-x and AMD-V in UEFI and Windows. \
+However, NoirVisor can only boot Windows from UEFI in single-core scenario.
+
+### Windows Driver
+As the result of the Rust remastering, NoirVisor as the Windows Driver no longer subverts the current operating system. \
+Presets for Free/Release build are available. Please note that the compiled binary under Free build does not come along with a digital signature. You might have to sign it yourself.
+
+You must install `x86_64-pc-windows-msvc` target host for Rust. This should be installed by default, but if you didn't, you may install it by:
 ```
-make <parameters>
+rustup target add x86_64-pc-windows-msvc
 ```
 
-Here is a list of parameters:
+You must execute the python script inside a Visual Studio prompt environment. This means you don't have to mount EWDK image if you have already installed Visual Studio.
 
-| Parameter | Description |
-|---|---|
-| `/j` | Enable parallel compilation. |
-| `/platform` | Specify the target platform. |
-| `/target` | Specify what the script will compile. |
-| `/v` | Enable verbose output. Useful for debugging. |
+### EFI Application and Runtime Driver
+Due to different EFI firmware implementation, most modern computer firmware does not support booting an EFI Runtime Driver directly. Therefore, it is necessary to build a separate EFI Application. In this way, modern computer firmware will boot, and the application can load runtime driver into memory. \
+After NoirVisor 7th Anniversary, the [EDK-II-Library](https://github.com/Zero-Tang/EDK-II-Library) is obsolete. NoirVisor for UEFI will be fully written in Rust. You do not have to setup `edk2` anymore in order build NoirVisor for UEFI.
 
-### Parallel Compilation
-Specifying `/j` option will enable parallel compilation. Please note that there is no option to control the maximum number of simultaneous tasks.
+You must install `x86_64-unknown-uefi` target host for Rust. This is not installed by default, so you may install it by:
+```
+rustup target add x86_64-unknown-uefi
+```
 
-### Verbose Output
-To debug the make script, you may specify `/v` option to see verbose output.
+You do not have to execute the python script inside a Visual Studio prompt environment.
 
-### Platform
-There are three platform keywords: `win7x64`, `win11x64` and `uefix64`. Currently, `uefix64` is not supported. \
-Default is `win7x64`.
+#### Build Windows Driver on Linux
+It is possible to build NoirVisor for Windows on Linux. \
+In addition to Rust compiler, you should install the dependencies so that `lld-link`, `llvm-rc`, `llvm-lib`, and `osslsigncode` are available.
 
-### Target
-The available keywords depend on the platform specified.
+For Ubuntu 26.04 LTS:
+```
+sudo apt install clang lld llvm osslsigncode
+```
+For Fedora 44:
+```
+sudo dnf install clang lld llvm osslsigncode
+```
 
-- If platform is `win7x64` or `win11x64`, available keywords are: `hypervisor`, `disassembler`, `snprintf`.
-- If platform is `uefix64`, available keywords are: `hypervisor`, `loader`, `disassembler`, `snprintf`.
+#### Build EFI Application and Runtime Driver on Linux
+It is possible to build NoirVisor for UEFI on Linux. \
+In addition to Rust compiler, you should install the dependencies so that `clang-cl`, `lld-link`, `llvm-ar`, `mcopy`, `mmd`, `mformat`, `qemu-img`, and `nasm` are available.
 
-Target `hypervisor` builds the NoirVisor itself.
-Target `disassembler` builds the `zydis` disassembler library, a required library for decoding instructions.
-Target `snprintf` builds the `c99-snprintf` string format library, a required library for debug logging.
-Target `loader` builds the booting program that runs NoirVisor as Type-I hypervisor. This is only available on baremetal platforms.
+For Ubuntu 26.04 LTS:
+```
+sudo apt install clang lld llvm mtools nasm qemu
+```
+For Fedora 44:
+```
+sudo dnf install clang lld llvm mtools nasm qemu
+```
 
-Default is `hypervisor`.
+## Synopsis
+For Windows, if you configured default application for `.py` files, you may simply execute:
+```
+make [build|check|clean|test] [/target windows|uefi] [/opt:yes|no]
+```
+Otherwise:
+```
+python make.py [build|check|clean|test] [/target windows|uefi] [/opt:yes|no]
+```
+For Linux, you may need to specify `python3`:
+```
+python3 make.py [build|check|clean|test] [/target windows|uefi] [/opt:yes|no]
+```
+
+### Arguments
+`[build|check|clean|test]` specifies the action performed by the script. Default is `build`. \
+If the action is not `build`, all further arguments are ignored.
+
+`build` action will build NoirVisor into executables. You don't need to specify this action as this is the default.
+
+`check` action instructs the script to invoke `cargo clippy` to check the idiomaticity, and to invoke `cargo audit` to check if there're vulnerable, unmaintained or yanked crates. \
+You must ensure `cargo audit` is installed! If not, install `cargo-audit`:
+```
+cargo install cargo-audit
+```
+
+`clean` action deletes all executables and intermediate files generated during build.
+
+`test` action tests crates that have in-code tests.
+
+`/target windows|uefi` specifies the target binary to be built. \
+Valid options are `windows` and `uefi`. Default is `uefi`.
+
+`/opt:yes|no` specifies whether optimizer is enabled. Default is `no`.
+
+## Customize Your Target
+To customize your target, you may add a json manifest in the root directory of this repository in the format of `build-xxx.json`, where `xxx` is the name of your target.
+
+### JSON Manifest Format
+The JSON manifest is organized as a dictionary with following keys:
+
+- `instructions`: This key is a dictionary that lists all jobs to be done for the make process. The name of keys are used for identifiers. All jobs must be described as dictionaries.
+- `common_flags`: This key is a dictionary that lists arguments shared by the same executable.
+- `opt_flags`: This key is a dictionary that lists arguments shared by the same executable when optimization is enabled.
+- `extra_env`: This key is a dictionary that lists environment variables to be appended.
+- `internal_var`: This key is a dictionary that lists internal variables used by the make script.
+
+#### Instructions
+All keys in `instruction` are also dictionaries.
+
+- `cmd` (list, required): The command used for running this instruction.
+- `progressive` (boolean, optional): If true, this is a progressive instruction. See Remarks.
+- `var` (dictionary, optional): Passes variables when building command-line arguments for this instruction.
+- `dependencies` (list, optional): Blocks this instruction until all dependent instructions in this list are completed. Circular dependencies can cause deadlocks.
+- `cancel_if_opt` (boolean, optional): If true, this instruction will not be executed if the script is running in optimization mode.
+- `cancel_if_intact` (list, optional): If all files in the list are not changed since last run, this instruction will not be executed. If this list is empty or absent, this instruction will always be executed.
+
+**Remarks** \
+Progressive instructions will gain exclusive access to the console because they print their job's progress on the console. \
+However, as a result, progressive instructions block each other and thereby can't be parallelized. \
+So you should try to reduce the number of progressive instruction to at most one for best parallelism.

@@ -1,13 +1,14 @@
 # NoirVisor Disassembler
 This directory is the disassembler engine for NoirVisor.
 
-## Zydis
-NoirVisor chooses Zydis as disassembler engine for Project NoirVisor. \
-Zydis is licensed under the MIT license. \
+NoirVisor chooses a disassembler that satisfies following conditions:
 
-## Build
-Compilation of Zydis is not included in NoirVisor's compilation script. Hence, you should build Zydis before compiling NoirVisor. Since Zydis is included in Project NoirVisor via git submodule, you should make sure that you have cloned NoirVisor's repository recursively. \
-Execute following command to pull Zydis source code:
-```
-git pull --recurse-submodules
-```
+- Fast enough, see [disas-bench](https://github.com/athre0z/disas-bench)
+- Can decode instructions and provide detailed info
+  + Can decode instructions from all operating modes
+  + Can decode common MMIO instructions
+  + Can decode `mov cr`, `mov dr`, `clts`, `lmsw`, `smsw`, `invlpg` and `int` instruction in order to emulate AMD-V decode-assists feature
+  + Can decode instruction length for any instructions that may cause VM-Exits.
+- Minimal or no LibC dependency, no OS-specific dependency
+- Minimal initial allocation, no runtime allocation
+- Minimal build process

@@ -1,0 +1,74 @@
+name: QEMU Checks
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  tcg-svm-single_core:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 36
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-uefi
+      - name: Install dependencies
+        # Default QEMU from apt is version 10.2.1. This version does not properly emulate AMD-Vi.
+        # Install a pre-built QEMU 11.1.2 pakcage instead.
+        run: |
+          sudo apt update
+          sudo apt install -y clang lld llvm mtools nasm
+          wget https://github.com/qemu-pcileech/qemu/releases/download/v11.1.2-pcileech/qemu-pcileech_11.1.2_amd64.deb
+          sudo apt install -y ./qemu-pcileech_11.1.2_amd64.deb
+          rm ./qemu-pcileech_11.1.2_amd64.deb
+      - name: Build for UEFI
+        run: python3 make.py /target uefi /extra-arg cargo:--features /extra-arg cargo:uefirtdrv/skip_block,loadefi/skip_block
+      - name: Run UEFI
+        run: |
+          cd tests/
+          python3 run_qemu.py -auto-check
+      - name: Run UEFI /w Intel VT-d
+        run: |
+          cd tests/
+          python3 run_qemu.py -auto-check -iommu intel
+      - name: Run UEFI /w AMD-Vi
+        run: |
+          cd tests/
+          python3 run_qemu.py -auto-check -iommu amd
+
+  tcg-svm-quad_core:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 36
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-uefi
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y clang lld llvm mtools nasm
+          wget https://github.com/qemu-pcileech/qemu/releases/download/v11.1.2-pcileech/qemu-pcileech_11.1.2_amd64.deb
+          sudo apt install -y ./qemu-pcileech_11.1.2_amd64.deb
+          rm ./qemu-pcileech_11.1.2_amd64.deb
+      - name: Build for UEFI
+        run: python3 make.py /target uefi /extra-arg cargo:--features /extra-arg cargo:uefirtdrv/skip_block,loadefi/skip_block
+      - name: Run UEFI
+        run: |
+          cd tests/
+          python3 run_qemu.py -auto-check -smp 4
+      - name: Run UEFI /w Intel VT-d
+        run: |
+          cd tests/
+          python3 run_qemu.py -auto-check -iommu intel -smp 4
+      - name: Run UEFI /w AMD-Vi
+        run: |
+          cd tests/
+          python3 run_qemu.py -auto-check -iommu amd
