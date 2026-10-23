@@ -15,6 +15,10 @@ NoirVisor - The Grimoire Hypervisor solution for AMD64 Processors.
 
 Tips: if the link does not work, try to hover the shield icon and see text.
 
+# Discontinuation Notice
+The C version of NoirVisor is archived and ceased developments and contributions including maintainence, bug-fixes, updates, etc. in the future. Zero Tang no longer accepts patches to this branch. \
+However, you're free to fork from this archive branch and maintain it on your own.
+
 # Introduction
 NoirVisor is a hardware-accelerated hypervisor (a.k.a VMM, Virtual Machine Monitor) with support to complex functions and purposes. It is designed to support processors based on x86 architecture with hardware-accelerated virtualization feature. For example, Intel processors supporting Intel VT-x or AMD processors supporting AMD-V meet the requirement. By design, NoirVisor determines the processor manufacturer and selects the function core.
 
