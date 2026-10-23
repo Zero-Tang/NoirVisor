@@ -44,9 +44,38 @@ use vt_core::VtHypervisor;
 use xpf_core::{nvbdk::PAGE_4KB_SHIFT, x86::cpuid::*};
 
 // Limit stack size to 32KiB. Should be enough for most circumstances.
-// FIXME: Implement runtime stack overflow detector.
 pub const HYPERVISOR_STACK_PAGE_COUNT: usize = 8;
 pub const HYPERVISOR_STACK_SIZE: usize = HYPERVISOR_STACK_PAGE_COUNT << PAGE_4KB_SHIFT;
+
+#[unsafe(no_mangle)]
+static RUSTC_VERSION: &str = env!("RUSTC_VERSION");
+static GIT_VERSION: Option<&str> = option_env!("GIT_VERSION");
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn noir_get_rustc_version(string: *mut *const u8, length: *mut usize)
+{
+	unsafe {
+		*string = RUSTC_VERSION.as_ptr();
+		*length = RUSTC_VERSION.len();
+	}
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn noir_get_git_version(string: *mut *const u8, length: *mut usize) -> bool
+{
+	match GIT_VERSION
+	{
+		Some(s) =>
+		{
+			unsafe {
+				*string = s.as_ptr();
+				*length = s.len();
+			}
+			true
+		}
+		None => false,
+	}
+}
 
 pub enum ProcessorManufacturer
 {

@@ -13,6 +13,8 @@
 #![no_std]
 #![no_main]
 
+use core::{ptr::null, slice};
+
 use efi_helpers::println;
 use r_efi::efi::{Handle, Status, SystemTable};
 
@@ -29,6 +31,8 @@ unsafe extern "C" {
 	fn nvc_hpet_initialize() -> u32;
 	fn noir_get_virtualization_supportability() -> u32;
 	fn noir_is_virtualization_enabled() -> bool;
+	fn noir_get_rustc_version(string: *mut *const u8, length: *mut usize);
+	fn noir_get_git_version(string: *mut *const u8, length: *mut usize) -> bool;
 }
 
 #[unsafe(no_mangle)]
@@ -37,7 +41,27 @@ extern "efiapi" fn NoirDriverEntry(image_handle: Handle, system_table: *mut Syst
 	unsafe {
 		efi_init(image_handle, system_table);
 	}
+	let rustc_version = unsafe {
+		let mut s = null();
+		let mut l = 0;
+		noir_get_rustc_version(&raw mut s, &raw mut l);
+		str::from_utf8_unchecked(slice::from_raw_parts(s, l))
+	};
+	let git_version = unsafe {
+		let mut s = null();
+		let mut l = 0;
+		if noir_get_git_version(&raw mut s, &raw mut l)
+		{
+			str::from_utf8_unchecked(slice::from_raw_parts(s, l))
+		}
+		else
+		{
+			concat!(env!("CARGO_PKG_VERSION"), " (not built from git repository)")
+		}
+	};
 	println!("Welcome to NoirVisor UEFI Runtime Driver!");
+	println!("NoirVisor is compiled by {rustc_version}");
+	println!("NoirVisor Version: {git_version}");
 	ConfigurationList::init();
 	suppress_image_relocation();
 	init_internal_debugger();
