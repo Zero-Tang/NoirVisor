@@ -24,11 +24,12 @@ use r_efi::{
 	protocols::device_path::{self, End, Media, TYPE_END, TYPE_MEDIA},
 };
 
-use crate::dma::test_dma;
+use crate::{dma::test_dma, erratum361::test_amd_erratum_361};
 
 #[cfg(target_os = "uefi")]
 mod cvm;
 mod dma;
+mod erratum361;
 #[cfg(not(feature = "skip_block"))]
 mod select_boot;
 
@@ -189,6 +190,7 @@ unsafe extern "efiapi" fn uefi_entry(image_handle: Handle, system_table: *mut Sy
 		}
 		None => println!("Failed to load scheduler image!"),
 	}
+	test_amd_erratum_361();
 	#[cfg(feature = "skip_block")]
 	unsafe {
 		efi_helpers::shutdown();
