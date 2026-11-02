@@ -75,6 +75,11 @@ impl EmulatorOps for SvmVcpu
 		self.read_efer()
 	}
 
+	fn get_xcr0(&self) -> Xcr0
+	{
+		Xcr0::from_bits(self.get_stack_top().guest_xcr0)
+	}
+
 	fn is_user_mode(&self) -> bool
 	{
 		self.read_cpl() == 3
@@ -152,6 +157,11 @@ impl EmulatorOps for SvmCustomVcpu
 	fn get_efer(&self) -> Efer
 	{
 		self.read_efer()
+	}
+
+	fn get_xcr0(&self) -> Xcr0
+	{
+		Xcr0::from_bits(self.state.xcrs.xcr0)
 	}
 
 	fn is_user_mode(&self) -> bool

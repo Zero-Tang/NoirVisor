@@ -19,7 +19,7 @@ use yaxpeax_arch::{LengthedInstruction, display::DisplaySink};
 use yaxpeax_x86::{long_mode, protected_mode, real_mode};
 
 use crate::xpf_core::x86::{
-	crdr::{Cr0, Cr4},
+	crdr::{Cr0, Cr4, Xcr0},
 	msr::Efer,
 	paging::{PageFaultErrorCode, read_virtual_address, write_virtual_address},
 };
@@ -663,6 +663,7 @@ pub trait EmulatorOps
 	fn get_cr3(&self) -> u64;
 	fn get_cr4(&self) -> Cr4;
 	fn get_efer(&self) -> Efer;
+	fn get_xcr0(&self) -> Xcr0;
 	fn is_user_mode(&self) -> bool;
 	fn read_gpa(&mut self, gpa: u64, value: &mut [u8]) -> usize;
 	fn write_gpa(&mut self, gpa: u64, value: &[u8]) -> usize;

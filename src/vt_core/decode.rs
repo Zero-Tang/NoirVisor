@@ -19,7 +19,7 @@ use crate::{
 	xpf_core::{
 		asm::vt::{vmread16, vmread32, vmread64, vmreadptr, vmwrite16},
 		x86::{
-			crdr::{Cr0, Cr4},
+			crdr::{Cr0, Cr4, Xcr0},
 			msr::Efer,
 		},
 	},
@@ -70,6 +70,11 @@ impl EmulatorOps for VtVcpu
 	fn get_efer(&self) -> Efer
 	{
 		Efer::from_bits(vmread64(GUEST_MSR_IA32_EFER).unwrap())
+	}
+
+	fn get_xcr0(&self) -> Xcr0
+	{
+		Xcr0::from_bits(self.get_stack_top().guest_xcr0)
 	}
 
 	fn is_user_mode(&self) -> bool
