@@ -415,11 +415,11 @@ impl VtVcpu
 			let mut new_dr6 = Dr6::from_bits(vmreadptr(GUEST_PENDING_DEBUG_EXCEPTIONS).unwrap() as u64);
 			new_dr6.set_bs(true);
 			vmwriteptr(GUEST_PENDING_DEBUG_EXCEPTIONS, new_dr6.into_bits() as usize);
-			// Remove the interrupt shadowing.
-			let interruptibility = self.cached_ctxt.get_interruptibility_mut();
-			interruptibility.set_blocking_by_sti(false);
-			interruptibility.set_blocking_by_mov_ss(false);
 		}
+		// Remove any interrupt shadow.
+		let interruptibility = self.cached_ctxt.get_interruptibility_mut();
+		interruptibility.set_blocking_by_sti(false);
+		interruptibility.set_blocking_by_mov_ss(false);
 		let cs_ar = self.cached_ctxt.cs_ar();
 		if !cs_ar.long_mode()
 		{

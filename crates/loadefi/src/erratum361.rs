@@ -12,7 +12,7 @@
 
 use core::{
 	arch::{asm, naked_asm},
-	sync::atomic::{AtomicU16, Ordering},
+	sync::atomic::{AtomicU16, AtomicU64, AtomicUsize, Ordering},
 };
 
 use efi_helpers::println;
@@ -21,14 +21,30 @@ static CS_STORAGE: AtomicU16 = AtomicU16::new(0);
 static SS_STORAGE: AtomicU16 = AtomicU16::new(0);
 static mut IDT_BUFFER: [u128; 256] = [0; 256];
 
+static LAST_BP_RIP: AtomicU64 = AtomicU64::new(0);
+static LAST_DB_RIP: AtomicU64 = AtomicU64::new(0);
+static LAST_DB_DR6: AtomicU64 = AtomicU64::new(0);
+static BP_HIT_COUNT: AtomicUsize = AtomicUsize::new(0);
+static DB_HIT_COUNT: AtomicUsize = AtomicUsize::new(0);
+
 unsafe extern "win64" fn handle_db(stack: *mut u64)
 {
-	println!("#DB rip=0x{:X}", unsafe { *stack });
+	let dr6: u64;
+	unsafe {
+		asm!(
+			"mov {},dr6",
+			out (reg) dr6
+		);
+	}
+	DB_HIT_COUNT.fetch_add(1, Ordering::Relaxed);
+	LAST_DB_DR6.store(dr6, Ordering::Relaxed);
+	LAST_DB_RIP.store(unsafe { *stack }, Ordering::Relaxed);
 }
 
 unsafe extern "win64" fn handle_bp(stack: *mut u64)
 {
-	println!("#BP rip=0x{:X}", unsafe { *stack });
+	BP_HIT_COUNT.fetch_add(1, Ordering::Relaxed);
+	LAST_BP_RIP.store(unsafe { *stack }, Ordering::Relaxed);
 }
 
 #[unsafe(naked)]
@@ -96,7 +112,7 @@ fn set_idt(vector: u8, handler: unsafe extern "win64" fn())
 	v |= (CS_STORAGE.load(Ordering::Relaxed) as u128) << 16;
 	v |= 0x8E00 << 32;
 	v |= (h & 0xFFFF0000) << 32;
-	v |= (h & 0xFFFFFFFF00000000) << 64;
+	v |= (h & 0xFFFFFFFF00000000) << 32;
 	unsafe {
 		IDT_BUFFER[vector as usize] = v;
 	}
@@ -108,7 +124,6 @@ pub fn test_amd_erratum_361()
 	let cs: u16;
 	unsafe {
 		asm!(
-			"cli",
 			"mov {ss:x},ss",
 			"mov {cs:x},cs",
 			ss = out(reg) ss,
@@ -127,14 +142,13 @@ pub fn test_amd_erratum_361()
 		new_idtr[0] = 0xFFF;
 		new_idtr.as_mut_ptr().add(1).cast::<u64>().write_unaligned(&raw mut IDT_BUFFER as u64);
 		asm!(
+			"cli",
 			"sidt [{}]",
 			"lidt [{}]",
-			in(reg) old_idtr.as_mut_ptr(),
-			in(reg) new_idtr.as_mut_ptr()
-		);
-		asm!(
 			"mov dr0,{}",
 			"mov dr7,{}",
+			in(reg) old_idtr.as_mut_ptr(),
+			in(reg) new_idtr.as_mut_ptr(),
 			in(reg) SS_STORAGE.as_ptr(),
 			in(reg) 0x70402u64
 		);
@@ -142,8 +156,16 @@ pub fn test_amd_erratum_361()
 		asm!(
 			"lidt [{}]",
 			"mov dr7,{}",
+			"sti",
 			in(reg) old_idtr.as_mut_ptr(),
 			in(reg) 0x400u64
+		);
+		println!("#BP Hit Count: {}, last-rip=0x{:X}", BP_HIT_COUNT.load(Ordering::Relaxed), LAST_BP_RIP.load(Ordering::Relaxed));
+		println!(
+			"#DB Hit Count: {}, last-rip=0x{:X}, last-dr6=0x{:X}",
+			DB_HIT_COUNT.load(Ordering::Relaxed),
+			LAST_DB_RIP.load(Ordering::Relaxed),
+			LAST_DB_DR6.load(Ordering::Relaxed)
 		);
 	}
 }

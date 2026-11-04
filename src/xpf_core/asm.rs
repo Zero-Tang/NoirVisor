@@ -646,7 +646,7 @@ pub mod vt
 		unsafe {
 			asm!
 			(
-				"vmread {f},{v}",
+				"vmwrite {f},{v}",
 				v=in(reg) value,
 				f=in(reg) field
 			);
