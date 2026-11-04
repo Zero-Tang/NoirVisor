@@ -2640,6 +2640,29 @@ pub mod apic
 		pub const DSH_ALL_INCLUSIVE: u8 = 2;
 		pub const DSH_ALL_EXCLUSIVE: u8 = 3;
 	}
+
+	/// ## `ApicSvr` structure
+	/// The Spurious-Interrupt Vector Register.
+	#[bitfield(u32)]
+	pub struct ApicSvr
+	{
+		pub vector: u8,
+		pub enable: bool,
+		pub focus_processor_checking: bool,
+		#[bits(2)]
+		rsvd0: u8,
+		pub suppress_eoi_broadcast: bool,
+		#[bits(19)]
+		rsvd1: u32,
+	}
+
+	/// ## `apic_vector_register_offset` function
+	/// Get the offset of the register containing the bit of `vector` in a 256-bit register array (ISR, TMR or IRR) at `base`. \
+	/// The array consists of eight 32-bit registers aligned at 16-byte boundaries.
+	pub const fn apic_vector_register_offset(base: usize, vector: u8) -> usize
+	{
+		base + ((vector as usize >> 5) << 4)
+	}
 }
 
 pub mod xstate
