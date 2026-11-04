@@ -18,10 +18,13 @@ use core::{
 	ptr::null_mut,
 };
 use nvcvm::interface::CvmHandle;
-use static_collections::bitmap::RefBitmap;
+use static_collections::{bitmap::RefBitmap, vec::StaticVec};
 
 use crate::*;
-use drv_core::iommu::{IommuOps, create_iommu};
+use drv_core::{
+	iommu::{IommuOps, create_iommu},
+	lapic::lapic_update_mode,
+};
 use ept::VtEptManager;
 use ia32::msr::*;
 use mshv_core::{MshvVcpuContext, MshvVcpuOps};
@@ -100,18 +103,6 @@ pub struct VtStackTop
 	pub xsaves_mask: u64,
 }
 
-enum VtIrqInterruptibilityState
-{
-	/// Can be immediately delivered.
-	Interruptible,
-	/// Either masked by RFLAGS.IF or interrupt-shadow. \
-	/// Should wait for interrupt window.
-	MaskedByRflags,
-	/// Masked by TPR. \
-	/// Should wait for TPR-below-threshold.
-	MaskedByTpr(u8),
-}
-
 pub struct VtStackMemoryDescriptor
 {
 	descriptor: MemoryDescriptor<HYPERVISOR_STACK_PAGE_COUNT, c_void>,
@@ -136,7 +127,6 @@ pub struct VtVcpu
 {
 	pub vmcs: MemoryDescriptor<1, c_void>,
 	pub vmxon: MemoryDescriptor<1, c_void>,
-	pub vapic: MemoryDescriptor<1, c_void>,
 	pub hv_stack: VtStackMemoryDescriptor,
 	pub hypervisor: *mut c_void,
 	pub ist: [VtStackMemoryDescriptor; 8],
@@ -151,7 +141,12 @@ pub struct VtVcpu
 	pub msr_auto_host: [VmxMsrAutoItem; 5],
 	pub msr_auto_guest: [VmxMsrAutoItem; 5],
 	pub cached_ctxt: CachedExitContext,
-	pub irq_bmp: [u64; 4],
+	/// Stack of acknowledged interrupts held pending for the guest, in the order of arrival. \
+	/// Only interrupts that cannot be put back into the physical Local APIC (e.g.: ExtINT from 8259 PIC) are held here. \
+	/// The 8259 PICs have 16 IRQs at most, and they arrive in the ascending order of priority.
+	pub held_irqs: StaticVec<16, u8>,
+	/// Set if "external-interrupt exiting" is temporarily cleared while waiting for the interrupt-window.
+	pub extint_exiting_suspended: bool,
 	// This context handles exceptions.
 	pub gs_context: PerCpuGsState,
 }
@@ -164,7 +159,6 @@ impl Default for VtVcpu
 		Self {
 			vmcs: MemoryDescriptor::null(),
 			vmxon: MemoryDescriptor::null(),
-			vapic: MemoryDescriptor::null(),
 			hv_stack: VtStackMemoryDescriptor::null(),
 			hypervisor: null_mut(),
 			ist: [const { VtStackMemoryDescriptor::null() }; 8],
@@ -179,7 +173,8 @@ impl Default for VtVcpu
 			msr_auto_host: [VmxMsrAutoItem::default(); 5],
 			msr_auto_guest: [VmxMsrAutoItem::default(); 5],
 			cached_ctxt: CachedExitContext::default(),
-			irq_bmp: [0; 4],
+			held_irqs: StaticVec::new(),
+			extint_exiting_suspended: false,
 			gs_context: PerCpuGsState::default(),
 		}
 	}
@@ -241,45 +236,31 @@ impl VtVcpu
 		unsafe { &mut *self.hv_stack.descriptor.virt.byte_add(HYPERVISOR_STACK_SIZE - size_of::<VtStackTop>()).cast() }
 	}
 
-	fn is_interruptible(&mut self, irq: u8) -> VtIrqInterruptibilityState
+	/// ## `can_inject_extint` method
+	/// Check if an external interrupt can be injected into the guest upon next VM-Entry.
+	///
+	/// TPR is not checked here: NoirVisor does not shadow the TPR, so the guest's TPR is the physical TPR. \
+	/// The physical Local APIC would not dispense an interrupt masked by TPR in the first place.
+	fn can_inject_extint(&mut self) -> bool
 	{
-		let rflags = self.cached_ctxt.rflags();
-		if rflags.r#if()
+		// Only one event can be injected per VM-Entry.
+		if VmxEntryInterruptionInformation::from_bits(vmread32(VMENTRY_INTERRUPTION_INFORMATION_FIELD).unwrap()).valid()
 		{
-			// Not interruptible because it's masked in rflags.
-			// trace!("Current rflags: 0x{rflags:X} and IRQ-Vector 0x{irq:X} will be masked.");
-			VtIrqInterruptibilityState::MaskedByRflags
+			return false;
 		}
-		else
+		// External interrupts are masked by RFLAGS.IF.
+		if !self.cached_ctxt.rflags().r#if()
 		{
-			// Check interruptibility.
-			let interruptibility = self.cached_ctxt.interruptibility();
-			if interruptibility.blocking_by_sti() || interruptibility.blocking_by_mov_ss()
-			{
-				// Not interruptible due to interrupt-shadow.
-				trace!(
-					"Current Interruptibility-State: 0x{:X} and IRQ-Vector 0x{irq:X} will be masked due to interrupt-shadow.",
-					interruptibility.into_bits()
-				);
-				VtIrqInterruptibilityState::MaskedByRflags
-			}
-			else
-			{
-				// Check TPR.
-				let required_priority = irq >> 4;
-				let current_tpr = unsafe { *self.vapic.virt.byte_add(0x80).cast::<u8>() } >> 4;
-				// Interruptible if required priority is higher than current TPR.
-				if required_priority > current_tpr
-				{
-					VtIrqInterruptibilityState::Interruptible
-				}
-				else
-				{
-					// trace!("Current TPR: 0x{current_tpr:X} and IRQ-Vector 0x{irq:X} will be masked.");
-					VtIrqInterruptibilityState::MaskedByTpr(required_priority)
-				}
-			}
+			return false;
 		}
+		// External interrupts are masked by interrupt-shadow.
+		let interruptibility = self.cached_ctxt.interruptibility();
+		if interruptibility.blocking_by_sti() || interruptibility.blocking_by_mov_ss()
+		{
+			return false;
+		}
+		// External interrupts can only be injected in active state or HLT state.
+		matches!(vmread32(GUEST_ACTIVITY_STATE).unwrap(), ActivityState::ACTIVE | ActivityState::HLT)
 	}
 
 	fn setup_msr_auto_list(&mut self, state: &ProcessorState)
@@ -415,12 +396,8 @@ impl VtVcpu
 		vmwriteptr(GUEST_CR4, state.cr4);
 		// vmwriteptr(CR0_READ_SHADOW,state.cr0);
 		vmwriteptr(CR4_READ_SHADOW, Cr4::from_bits(state.cr4 as u64).with_vmxe(false).into_bits() as usize);
-		// CR8 is special. It's located in Virtual APIC Page.
-		unsafe {
-			*self.vapic.virt.byte_add(APIC_OFFSET_TPR).cast::<u64>() = state.cr8 << 4;
-		}
-		// Clear CR8 to 0 in host so that External-Interrupt Exiting can work properly.
-		write_cr8(0);
+		// CR8 is not touched: TPR is not shadowed, so guest and host share the physical TPR.
+		// The guest's TPR must be retained in the physical Local APIC so that it masks interrupts for the guest.
 		// Save Debug Registers.
 		vmwriteptr(GUEST_DR7, state.dr7);
 		// Save Model-Specific Registers.
@@ -445,9 +422,9 @@ impl VtVcpu
 		// Setup Pin-Based VM-Execution Controls.
 		// Filter unsupported fields.
 		let pin_ctrl_msr = VmxPinBasedCtrlMsr::read(true_msr);
-		// In future implementation, we may want to enable external interrupt exiting
-		// in order to enable interrupts delivered by Intel VT-d page faults.
-		// pin_ctrl.set_external_interrupt_exiting(true);
+		// External-interrupt exiting allows NoirVisor to filter out interrupts owned by the hypervisor
+		// (e.g.: IOMMU fault events). Other interrupts are reflected back to the guest.
+		pin_ctrl.set_external_interrupt_exiting(true);
 		pin_ctrl |= pin_ctrl_msr.get_allowed0();
 		pin_ctrl &= pin_ctrl_msr.get_allowed1();
 		// Write to VMCS.
@@ -458,7 +435,9 @@ impl VtVcpu
 	{
 		// Setup Primary Processor-Based VM-Execution Controls
 		let mut proc_ctrl = VmxPrimaryProcessorControls::from_bits(0);
-		// proc_ctrl.set_use_tpr_shadow(true);
+		// Do not use TPR-shadow! NoirVisor does not virtualize the Local APIC.
+		// The physical Local APIC dispenses interrupts according to its own TPR,
+		// so the guest's TPR must remain in the physical Local APIC.
 		proc_ctrl.set_use_io_bitmap(true);
 		proc_ctrl.set_use_msr_bitmap(true);
 		proc_ctrl.set_activate_secondary_controls(true);
@@ -490,8 +469,8 @@ impl VtVcpu
 		// Setup VM-Exit Controls
 		let mut exit_ctrl = VmxExitControls::from_bits(0);
 		exit_ctrl.set_save_debug_controls(true);
-		// Acknowledging interrupts on exit may reduce our effort in handling interrupts.
-		// exit_ctrl.set_acknowledge_interrupt_on_exit(true);
+		// Acknowledging interrupts on exit lets us know the vector of the external interrupt.
+		exit_ctrl.set_acknowledge_interrupt_on_exit(true);
 		exit_ctrl.set_host_address_space_size(cfg!(target_arch = "x86_64"));
 		exit_ctrl.set_load_efer(true);
 		exit_ctrl.set_save_efer(true);
@@ -545,15 +524,11 @@ impl VtVcpu
 		self.setup_memory_virtualization();
 		unsafe {
 			let hv: *const VtHypervisor = self.hypervisor.cast();
-			let apic_base = page_base(rdmsr(MSR_APIC_BASE));
 			// vmwriteptr(CR0_GUEST_HOST_MASK,CR0_PG as usize);
 			vmwriteptr(CR4_GUEST_HOST_MASK, Cr4::new().with_vmxe(true).into_bits() as usize);
 			vmwrite64(ADDRESS_OF_MSR_BITMAP, (*hv).msr_bitmap.phys);
 			vmwrite64(ADDRESS_OF_IO_BITMAP_A, (*hv).io_bitmap_a.phys);
 			vmwrite64(ADDRESS_OF_IO_BITMAP_B, (*hv).io_bitmap_b.phys);
-			vmwrite64(VIRTUAL_APIC_ADDRESS, self.vapic.phys);
-			vmwrite64(APIC_ACCESS_ADDRESS, apic_base);
-			vmwrite32(TPR_THRESHOLD, 0);
 		}
 	}
 
@@ -650,6 +625,8 @@ pub struct VtHypervisor
 	pub xsave_size: usize,
 	pub features: EnabledFeatures,
 	pub rmt_root: ReverseMappingTableRoot,
+	/// Bitmap of interrupt vectors owned by the hypervisor. These interrupts will not be reflected to the guest.
+	pub host_vectors: [u64; 4],
 }
 
 impl VtHypervisor
@@ -682,6 +659,7 @@ impl Default for VtHypervisor
 			xsave_size: xsave_cpuid.supported_size() as usize,
 			features: EnabledFeatures::get(),
 			rmt_root: ReverseMappingTableRoot::new(),
+			host_vectors: [0; 4],
 		}
 	}
 }
@@ -882,6 +860,8 @@ impl HypervisorEssentials for VtHypervisor
 				};
 				// Intercept accesses to the microcode updater.
 				set_interception(MSR_BIOS_UPDATE_TRIGGER, true, true);
+				// Track the mode of the Local APIC.
+				set_interception(MSR_APIC_BASE, false, true);
 				// Intercept accesses to VMX MSRs.
 				set_interception(MSR_VMX_BASIC, true, false);
 				set_interception(MSR_VMX_PIN_BASED_CTLS, true, false);
@@ -935,11 +915,6 @@ impl HypervisorEssentials for VtHypervisor
 				Some(md) => vcpu.vmcs = md,
 				None => fail_cleanup!("Failed to allocate VMCS for processor {i}!"),
 			}
-			match MemoryDescriptor::alloc()
-			{
-				Some(md) => vcpu.vapic = md,
-				None => fail_cleanup!("Failed to allocate Virtual-APIC Page for processor {i}!"),
-			}
 			vcpu.hv_stack.init(alloc_stack());
 			self.host.paging.map_4kb_ranges(
 				vcpu.hv_stack.high_va,
@@ -981,6 +956,8 @@ impl HypervisorEssentials for VtHypervisor
 				}
 			}
 		}
+		// External interrupts are filtered with the help of the physical Local APIC.
+		lapic_update_mode(rdmsr(MSR_APIC_BASE));
 		// Initialize EPT.
 		self.eptm.build_identity_map();
 		self.eptm.setup_mmio_filter(&self.mmio_space);
