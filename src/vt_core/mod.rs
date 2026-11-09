@@ -32,6 +32,7 @@ use vmcs::*;
 use xpf_core::{
 	asm::{crdr::*, msr::*, seg::*, vt::*},
 	hv_host::x86::{HostProcessor, HostSystem, PerCpuGsState},
+	intflt::InterruptSpace,
 	ioflt::IoAddressSpace,
 	nvbdk::*,
 	rmt::ReverseMappingTableRoot,
@@ -625,8 +626,8 @@ pub struct VtHypervisor
 	pub xsave_size: usize,
 	pub features: EnabledFeatures,
 	pub rmt_root: ReverseMappingTableRoot,
-	/// Bitmap of interrupt vectors owned by the hypervisor. These interrupts will not be reflected to the guest.
-	pub host_vectors: [u64; 4],
+	/// Interrupt handlers of the hypervisor. Interrupts owned by them will not be reflected to the guest.
+	pub int_space: InterruptSpace,
 }
 
 impl VtHypervisor
@@ -659,7 +660,7 @@ impl Default for VtHypervisor
 			xsave_size: xsave_cpuid.supported_size() as usize,
 			features: EnabledFeatures::get(),
 			rmt_root: ReverseMappingTableRoot::new(),
-			host_vectors: [0; 4],
+			int_space: InterruptSpace::new(),
 		}
 	}
 }

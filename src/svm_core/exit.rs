@@ -30,8 +30,10 @@ use xpf_core::{
 };
 
 use crate::{
-	cvm_core::x86::cpuid::dispatch_cpuid_handler, drv_core::lapic::*, svm_core::decode::dispatch_cvexit_decoder,
-	xpf_core::allocator::is_allocated_page,
+	cvm_core::x86::cpuid::dispatch_cpuid_handler,
+	drv_core::lapic::*,
+	svm_core::decode::dispatch_cvexit_decoder,
+	xpf_core::{allocator::is_allocated_page, intflt::InterruptDisposition},
 };
 
 use super::*;
@@ -170,37 +172,31 @@ impl SvmVcpu
 		// Every interrupt taken later preempted the earlier ones, so it has higher priority.
 		// Deliver the first one (the lowest priority) to the guest and put the rest back.
 		// The guest would take them as nested interrupts later, as if it were never virtualized.
-		let hv: &SvmHypervisor = unsafe { &*self.hypervisor.cast() };
-		let host_vectors = hv.host_vectors;
-		let is_host_vector = |vector: u8| (host_vectors[vector as usize >> 6] >> (vector & 63)) & 1 != 0;
 		// Interrupts not tracked by the Local APIC (e.g.: ExtINT from 8259 PIC) can't be put back.
 		// Hold them in the order of arrival.
 		for &vector in rest
 		{
-			if !is_host_vector(vector) && !lapic_is_in_service(vector)
+			if !lapic_is_in_service(vector)
 			{
 				self.hold_extint(vector);
 			}
 		}
 		// Interrupts tracked by the Local APIC are in-service now.
 		// EOI always clears the highest in-service vector, so handle them in the reverse order of arrival.
+		// Interrupts raised by the hypervisor's devices are handled. Interrupts of the guest are put back.
 		for &vector in rest.iter().rev()
 		{
-			if is_host_vector(vector)
-			{
-				self.handle_host_interrupt(vector);
-			}
-			else if lapic_is_in_service(vector)
+			if !self.claim_host_interrupt(vector) && lapic_is_in_service(vector)
 			{
 				self.reflect_extint(vector);
 			}
 		}
-		if is_host_vector(first)
+		if self.claim_host_interrupt(first)
 		{
-			// This interrupt is owned by the hypervisor. Filter it out from the guest.
-			self.handle_host_interrupt(first);
+			// This interrupt is raised by the hypervisor's device. Filter it out from the guest.
+			return;
 		}
-		else if self.can_inject_extint()
+		if self.can_inject_extint()
 		{
 			// The guest can take this interrupt right now.
 			// This is exactly what would happen without virtualization.
@@ -327,13 +323,35 @@ impl SvmVcpu
 		self.set_interrupt_window_exiting(true);
 	}
 
-	/// ## `handle_host_interrupt` method
-	/// Handle interrupts owned by the hypervisor (e.g.: IOMMU fault events).
-	fn handle_host_interrupt(&mut self, vector: u8)
+	/// ## `claim_host_interrupt` method
+	/// Dispatch an interrupt to the hypervisor's handler. Returns `true` if the hypervisor claimed and handled it. \
+	/// Otherwise, the interrupt belongs to the guest. Its vector may collide with a guest's device.
+	fn claim_host_interrupt(&mut self, vector: u8) -> bool
 	{
-		trace!("Hypervisor-owned interrupt (vector=0x{vector:02X}) is intercepted on processor {}!", self.vcpu_id);
-		// TODO: Dispatch the interrupt to its handler (e.g.: IOMMU fault-event handler).
-		lapic_eoi();
+		let hv: &mut SvmHypervisor = unsafe { &mut *self.hypervisor.cast() };
+		// The hypervisor's devices deliver interrupts through the Local APIC, so their interrupts must be in-service.
+		// Interrupts not tracked by the Local APIC (e.g.: ExtINT from 8259 PIC) belong to the guest.
+		if !hv.int_space.is_owned(vector) || !lapic_is_in_service(vector)
+		{
+			return false;
+		}
+		match hv.int_space.dispatch(vector, (self as *mut Self).cast())
+		{
+			InterruptDisposition::Handled =>
+			{
+				trace!("Hypervisor-owned interrupt (vector=0x{vector:02X}) is handled on processor {}!", self.vcpu_id);
+				lapic_eoi();
+				true
+			}
+			InterruptDisposition::Unclaimed =>
+			{
+				trace!(
+					"Interrupt (vector=0x{vector:02X}) collides with the guest's device! It is thrown back to the guest on processor {}!",
+					self.vcpu_id
+				);
+				false
+			}
+		}
 	}
 
 	/// ## `set_interrupt_window_exiting` method

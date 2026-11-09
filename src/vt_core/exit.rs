@@ -29,6 +29,7 @@ use crate::{
 		allocator::is_allocated_page,
 		asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*},
 		ci::is_ci_phys_page,
+		intflt::InterruptDisposition,
 		x86::{
 			cpuid::*,
 			crdr::*,
@@ -39,7 +40,6 @@ use crate::{
 	},
 	*,
 };
-use static_collections::bitmap::RefBitmap;
 
 const EVENT_TYPE_SOFTWARE_INTERRUPT: u32 = EventType::SoftwareInterrupt as u32;
 const EVENT_TYPE_PRIVILEGED_SOFTWARE_EXCEPTION: u32 = EventType::PrivilegedSoftwareException as u32;
@@ -93,14 +93,12 @@ impl VtVcpu
 		let vector = int_info.vector();
 		// The VM-Exit might occur during event delivery. Re-inject that event first.
 		self.handle_idt_vectoring();
-		let hv: &VtHypervisor = unsafe { &*self.hypervisor.cast() };
-		let host_vectors: &RefBitmap<256> = unsafe { RefBitmap::from_raw_ptr(hv.host_vectors.as_ptr().cast()) };
-		if host_vectors.test(vector as usize).unwrap_or(false)
+		if self.claim_host_interrupt(vector)
 		{
-			// This interrupt is owned by the hypervisor. Filter it out from the guest.
-			self.handle_host_interrupt(vector);
+			// This interrupt is raised by the hypervisor's device. Filter it out from the guest.
+			return;
 		}
-		else if self.can_inject_extint()
+		if self.can_inject_extint()
 		{
 			// The guest can take this interrupt right now.
 			// This is exactly what would happen without virtualization.
@@ -150,13 +148,35 @@ impl VtVcpu
 		// Spurious interrupts don't require EOI. Discard it since the guest can't take it.
 	}
 
-	/// ## `handle_host_interrupt` method
-	/// Handle interrupts owned by the hypervisor (e.g.: IOMMU fault events).
-	fn handle_host_interrupt(&mut self, vector: u8)
+	/// ## `claim_host_interrupt` method
+	/// Dispatch an interrupt to the hypervisor's handler. Returns `true` if the hypervisor claimed and handled it. \
+	/// Otherwise, the interrupt belongs to the guest. Its vector may collide with a guest's device.
+	fn claim_host_interrupt(&mut self, vector: u8) -> bool
 	{
-		trace!("Hypervisor-owned interrupt (vector=0x{vector:02X}) is intercepted on processor {}!", self.vcpu_id);
-		// TODO: Dispatch the interrupt to its handler (e.g.: IOMMU fault-event handler).
-		lapic_eoi();
+		let hv: &mut VtHypervisor = unsafe { &mut *self.hypervisor.cast() };
+		// The hypervisor's devices deliver interrupts through the Local APIC, so their interrupts must be in-service.
+		// Interrupts not tracked by the Local APIC (e.g.: ExtINT from 8259 PIC) belong to the guest.
+		if !hv.int_space.is_owned(vector) || !lapic_is_in_service(vector)
+		{
+			return false;
+		}
+		match hv.int_space.dispatch(vector, (self as *mut Self).cast())
+		{
+			InterruptDisposition::Handled =>
+			{
+				trace!("Hypervisor-owned interrupt (vector=0x{vector:02X}) is handled on processor {}!", self.vcpu_id);
+				lapic_eoi();
+				true
+			}
+			InterruptDisposition::Unclaimed =>
+			{
+				trace!(
+					"Interrupt (vector=0x{vector:02X}) collides with the guest's device! It is thrown back to the guest on processor {}!",
+					self.vcpu_id
+				);
+				false
+			}
+		}
 	}
 
 	/// ## `inject_extint` method

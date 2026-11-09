@@ -47,6 +47,7 @@ use xpf_core::{
 	allocator::InternalPageAllocator,
 	asm::{crdr::*, msr::*, seg::*, svm::*},
 	hv_host::x86::*,
+	intflt::InterruptSpace,
 	ioflt::IoAddressSpace,
 	nvbdk::*,
 	x86::{crdr::Cr4, interrupts::*, msr::*, xstate::BoxedXState},
@@ -456,8 +457,8 @@ pub struct SvmHypervisor
 	pub xsave_size: usize,
 	pub features: EnabledFeatures,
 	pub rmt_root: ReverseMappingTableRoot,
-	/// Bitmap of interrupt vectors owned by the hypervisor. These interrupts will not be reflected to the guest.
-	pub host_vectors: [u64; 4],
+	/// Interrupt handlers of the hypervisor. Interrupts owned by them will not be reflected to the guest.
+	pub int_space: InterruptSpace,
 	pub vm_list: SvmCustomVmLockedList,
 	pub cvm_iopm: MemoryDescriptor<3, usize, InternalPageAllocator>,
 	pub cvm_msrpm: MemoryDescriptor<2, usize, InternalPageAllocator>,
@@ -538,7 +539,7 @@ impl Default for SvmHypervisor
 			xsave_size: xstate_cpuid.supported_size() as usize,
 			features: EnabledFeatures::get(),
 			rmt_root: ReverseMappingTableRoot::new(),
-			host_vectors: [0; 4],
+			int_space: InterruptSpace::new(),
 			vm_list: Arc::new(RwLock::new(Vec::with_capacity(8))),
 			cvm_iopm,
 			cvm_msrpm,

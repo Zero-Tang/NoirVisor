@@ -15,6 +15,7 @@ pub mod asm;
 pub mod ci;
 pub mod debug;
 pub mod hv_host;
+pub mod intflt;
 pub mod ioflt;
 pub mod nvbdk;
 pub mod rmt;
