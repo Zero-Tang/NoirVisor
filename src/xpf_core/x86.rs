@@ -2364,6 +2364,8 @@ pub mod interrupts
 	pub const MACHINE_CHECK_ABORT: u8 = 18;
 	pub const SIMD_FP_EXCEPTION_FAULT: u8 = 19;
 	pub const CONTROL_PROTECTION_FAULT: u8 = 21;
+	/// Vectors below this one are reserved for exceptions.
+	pub const FIRST_EXTERNAL_INTERRUPT_VECTOR: u8 = 32;
 
 	#[repr(u8)]
 	pub enum EventType

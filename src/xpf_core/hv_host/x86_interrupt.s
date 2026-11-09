@@ -92,7 +92,8 @@ end_of_try:
 	interrupt_handler_epilogue_common
 	// Restore GPR state.
 	popaq_fast 0x90
-	add rsp,0x110
+	// The error code must be popped as well before iretq.
+	add rsp,0x118
 	iretq
 .seh_endproc
 .endm
@@ -115,6 +116,8 @@ end_of_try:
 .extern noir_machine_check_abort_handler
 .extern noir_simd_floating_point_fault_handler
 .extern noir_control_protection_fault_handler
+.extern noir_external_interrupt_handler
+.extern noir_nmi_handler
 
 interrupt_handler_prologue noir_divide_error_fault_handler_a
 	call noir_divide_error_fault_handler
@@ -122,6 +125,10 @@ interrupt_handler_epilogue
 
 interrupt_handler_prologue noir_debug_fault_trap_handler_a
 	call noir_debug_fault_trap_handler
+interrupt_handler_epilogue
+
+interrupt_handler_prologue noir_nmi_handler_a
+	call noir_nmi_handler
 interrupt_handler_epilogue
 
 interrupt_handler_prologue noir_breakpoint_trap_handler_a
@@ -186,4 +193,23 @@ interrupt_handler_epilogue
 
 interrupt_handler_prologue_with_code noir_control_protection_fault_handler_a
 	call noir_control_protection_fault_handler
+interrupt_handler_epilogue_with_code
+
+// Entry stubs of external interrupts (vectors 32-255).
+// Each stub pushes its vector in place of the error code, then goes to the common handler.
+// Each stub is aligned at 16-byte boundary, so the stub of vector `v` is located at
+// `noir_external_interrupt_stubs_a+(v-32)*16`.
+.balign 16
+.global noir_external_interrupt_stubs_a
+noir_external_interrupt_stubs_a:
+.irp hi,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+.irp lo,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+	.balign 16
+	push \hi*16+\lo
+	jmp noir_external_interrupt_handler_a
+.endr
+.endr
+
+interrupt_handler_prologue_with_code noir_external_interrupt_handler_a
+	call noir_external_interrupt_handler
 interrupt_handler_epilogue_with_code

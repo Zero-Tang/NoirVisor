@@ -20,7 +20,7 @@ use crate::xpf_core::{
 	x86::{
 		apic::*,
 		cpuid::{CpuidLeaf, ProcessorCapabilityParameters, StandardProcessorFeatureIdentifiers},
-		msr::{MSR_APIC_BASE, MSR_X2APIC_MSR_START, MSR_X2APIC_SELF_IPI},
+		msr::{MSR_APIC_BASE, MSR_X2APIC_ICR, MSR_X2APIC_ID, MSR_X2APIC_MSR_START, MSR_X2APIC_SELF_IPI},
 	},
 };
 
@@ -31,15 +31,18 @@ struct LocalApicOps
 	read: fn(usize) -> u32,
 	write: fn(usize, u32),
 	self_ipi: fn(u8),
+	nmi_self: fn(),
 }
 
 /// The Local APIC is globally disabled. Only the 8259 PIC can deliver interrupts. \
 /// Reads return zero and writes are discarded.
-static DISABLED_OPS: LocalApicOps = LocalApicOps { read: |_| 0, write: |_, _| {}, self_ipi: |_| {} };
+static DISABLED_OPS: LocalApicOps = LocalApicOps { read: |_| 0, write: |_, _| {}, self_ipi: |_| {}, nmi_self: || {} };
 /// The Local APIC is in xAPIC mode. Registers are accessed through MMIO.
-static XAPIC_OPS: LocalApicOps = LocalApicOps { read: xapic_read, write: xapic_write, self_ipi: xapic_self_ipi };
+static XAPIC_OPS: LocalApicOps =
+	LocalApicOps { read: xapic_read, write: xapic_write, self_ipi: xapic_self_ipi, nmi_self: xapic_nmi_self };
 /// The Local APIC is in x2APIC mode. Registers are accessed through MSRs.
-static X2APIC_OPS: LocalApicOps = LocalApicOps { read: x2apic_read, write: x2apic_write, self_ipi: x2apic_self_ipi };
+static X2APIC_OPS: LocalApicOps =
+	LocalApicOps { read: x2apic_read, write: x2apic_write, self_ipi: x2apic_self_ipi, nmi_self: x2apic_nmi_self };
 
 /// Accessors of the current Local APIC mode.
 ///
@@ -66,6 +69,15 @@ fn xapic_self_ipi(vector: u8)
 	xapic_write(APIC_OFFSET_ICR_LO, icr_lo.into_bits());
 }
 
+fn xapic_nmi_self()
+{
+	// "Self" shorthand only supports fixed interrupts. Address the current processor by its APIC ID.
+	let apic_id = (xapic_read(APIC_OFFSET_ID) >> 24) as u8;
+	xapic_write(APIC_OFFSET_ICR_HI, ApicIcrHi::new().with_destination(apic_id).into_bits());
+	let icr_lo = ApicIcrLo::new().with_message_type(ApicX2Icr::MESSAGE_TYPE_NMI).with_level(true);
+	xapic_write(APIC_OFFSET_ICR_LO, icr_lo.into_bits());
+}
+
 fn x2apic_read(offset: usize) -> u32
 {
 	rdmsr(MSR_X2APIC_MSR_START + (offset >> 4) as u32) as u32
@@ -79,6 +91,14 @@ fn x2apic_write(offset: usize, value: u32)
 fn x2apic_self_ipi(vector: u8)
 {
 	wrmsr(MSR_X2APIC_SELF_IPI, vector as u64)
+}
+
+fn x2apic_nmi_self()
+{
+	// "Self" shorthand only supports fixed interrupts. Address the current processor by its x2APIC ID.
+	let apic_id = rdmsr(MSR_X2APIC_ID) as u32;
+	let icr = ApicX2Icr::new().with_message_type(ApicX2Icr::MESSAGE_TYPE_NMI).with_level(true).with_destination(apic_id);
+	wrmsr(MSR_X2APIC_ICR, icr.into_bits())
 }
 
 #[inline(always)]
@@ -182,6 +202,13 @@ pub fn lapic_is_eoi_broadcast_suppressed() -> bool
 pub fn lapic_eoi()
 {
 	(lapic_ops().write)(APIC_OFFSET_EOI, 0)
+}
+
+/// ## `lapic_send_nmi_to_self` function
+/// Send an NMI to the current processor.
+pub fn lapic_send_nmi_to_self()
+{
+	(lapic_ops().nmi_self)()
 }
 
 /// ## `lapic_self_ipi` function

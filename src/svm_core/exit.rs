@@ -30,7 +30,8 @@ use xpf_core::{
 };
 
 use crate::{
-	cvm_core::x86::cpuid::dispatch_cpuid_handler, svm_core::decode::dispatch_cvexit_decoder, xpf_core::allocator::is_allocated_page,
+	cvm_core::x86::cpuid::dispatch_cpuid_handler, drv_core::lapic::*, svm_core::decode::dispatch_cvexit_decoder,
+	xpf_core::allocator::is_allocated_page,
 };
 
 use super::*;
@@ -144,6 +145,212 @@ impl SvmVcpu
 		self.write_tlb_control(TLB_CONTROL_FLUSH_GUEST_TLB);
 	}
 
+	fn handle_intr(&mut self, _context: &mut SvmStackTop)
+	{
+		// AMD-V does not acknowledge the interrupt on #VMEXIT. It remains pending in the interrupt controller.
+		// Take the pending interrupts in the host. The host IDT handlers record them in the order of arrival.
+		let this: *mut Self = self;
+		unsafe {
+			nvc_svm_accept_interrupts(this);
+		}
+		if self.accepted_nmi
+		{
+			// An NMI held pending by GIF=0 is taken by the host as well. Send it back to the guest.
+			// GIF is cleared again, so the NMI remains pending until the guest is resumed.
+			self.accepted_nmi = false;
+			lapic_send_nmi_to_self();
+		}
+		let accepted = core::mem::take(&mut self.accepted_irqs);
+		let Some((&first, rest)) = accepted.split_first()
+		else
+		{
+			// The interrupt is withdrawn before the host could take it.
+			return;
+		};
+		// Every interrupt taken later preempted the earlier ones, so it has higher priority.
+		// Deliver the first one (the lowest priority) to the guest and put the rest back.
+		// The guest would take them as nested interrupts later, as if it were never virtualized.
+		let hv: &SvmHypervisor = unsafe { &*self.hypervisor.cast() };
+		let host_vectors = hv.host_vectors;
+		let is_host_vector = |vector: u8| (host_vectors[vector as usize >> 6] >> (vector & 63)) & 1 != 0;
+		// Interrupts not tracked by the Local APIC (e.g.: ExtINT from 8259 PIC) can't be put back.
+		// Hold them in the order of arrival.
+		for &vector in rest
+		{
+			if !is_host_vector(vector) && !lapic_is_in_service(vector)
+			{
+				self.hold_extint(vector);
+			}
+		}
+		// Interrupts tracked by the Local APIC are in-service now.
+		// EOI always clears the highest in-service vector, so handle them in the reverse order of arrival.
+		for &vector in rest.iter().rev()
+		{
+			if is_host_vector(vector)
+			{
+				self.handle_host_interrupt(vector);
+			}
+			else if lapic_is_in_service(vector)
+			{
+				self.reflect_extint(vector);
+			}
+		}
+		if is_host_vector(first)
+		{
+			// This interrupt is owned by the hypervisor. Filter it out from the guest.
+			self.handle_host_interrupt(first);
+		}
+		else if self.can_inject_extint()
+		{
+			// The guest can take this interrupt right now.
+			// This is exactly what would happen without virtualization.
+			self.inject_extint(first);
+		}
+		else if lapic_is_in_service(first)
+		{
+			// The guest can't take this interrupt now (e.g.: another event is being delivered).
+			// Put it back. It will be intercepted again once the guest can take it.
+			self.reflect_extint(first);
+		}
+		else
+		{
+			self.hold_extint(first);
+		}
+	}
+
+	fn handle_vintr(&mut self, _context: &mut SvmStackTop)
+	{
+		// The guest opened the interrupt-window. Cancel the virtual interrupt.
+		self.set_interrupt_window_exiting(false);
+		// The most recently held interrupt has the highest priority.
+		if let Some(&irq) = self.held_irqs.last()
+		{
+			if self.can_inject_extint()
+			{
+				self.inject_extint(irq);
+				self.held_irqs.pop();
+				trace!(
+					"Held external interrupt (vector=0x{irq:02X}) is injected on processor {}! {} interrupt(s) remain held.",
+					self.vcpu_id,
+					self.held_irqs.len()
+				);
+			}
+			// Wait for another interrupt-window if there are more held interrupts.
+			if !self.held_irqs.is_empty()
+			{
+				self.set_interrupt_window_exiting(true);
+			}
+		}
+	}
+
+	/// ## `accept_interrupt` method
+	/// Record an interrupt taken by the host. This method is called from the host IDT handler.
+	pub(super) fn accept_interrupt(vcpu: *mut c_void, vector: u8)
+	{
+		let vcpu: &mut Self = unsafe { &mut *vcpu.cast() };
+		if vcpu.accepted_irqs.push(vector).is_err()
+		{
+			error!("Too many interrupts are taken by the host! Vector 0x{vector:02X} is dropped!");
+		}
+	}
+
+	/// ## `accept_nmi` method
+	/// Record an NMI taken by the host. This method is called from the host IDT handler.
+	pub(super) fn accept_nmi(vcpu: *mut c_void)
+	{
+		let vcpu: &mut Self = unsafe { &mut *vcpu.cast() };
+		vcpu.accepted_nmi = true;
+	}
+
+	/// ## `can_inject_extint` method
+	/// Check if an external interrupt can be injected into the guest upon next VMRUN.
+	///
+	/// TPR is not checked here: NoirVisor does not virtualize the guest's CR8, so the guest's TPR is the physical TPR. \
+	/// The physical Local APIC would not dispense an interrupt masked by TPR in the first place.
+	fn can_inject_extint(&self) -> bool
+	{
+		// Only one event can be injected per VMRUN. Note that the interrupted event delivery will be re-injected.
+		if self.read_event_injection().valid() || self.read_exit_int_info().valid()
+		{
+			return false;
+		}
+		// External interrupts are masked by RFLAGS.IF and interrupt-shadow.
+		self.ref_rflags().r#if() && !self.read_guest_interrupt().interrupt_shadow()
+	}
+
+	/// ## `inject_extint` method
+	/// Inject an external interrupt into the guest. Make sure the guest can take it before calling this method.
+	fn inject_extint(&mut self, vector: u8)
+	{
+		self.inject_event(vector, EventType::ExternalInterrupt, None, true);
+	}
+
+	/// ## `reflect_extint` method
+	/// Put an in-service interrupt back to the IRR of the Local APIC. \
+	/// The interrupt must be the highest in-service vector because EOI clears exactly that vector.
+	fn reflect_extint(&mut self, vector: u8)
+	{
+		let level = lapic_is_level_triggered(vector);
+		lapic_eoi();
+		// For a level-triggered interrupt, the EOI broadcast lets the I/O APIC resend it as the line is still asserted.
+		// Otherwise, we have to resend this interrupt by ourselves.
+		if !level || lapic_is_eoi_broadcast_suppressed()
+		{
+			lapic_self_ipi(vector);
+		}
+	}
+
+	/// ## `hold_extint` method
+	/// Hold an interrupt not tracked by the Local APIC, and inject it when the guest opens the interrupt-window.
+	fn hold_extint(&mut self, vector: u8)
+	{
+		if vector == lapic_spurious_vector()
+		{
+			// Spurious interrupts don't require EOI. Discard it since the guest can't take it.
+			return;
+		}
+		// In fully-nested mode, the 8259 PIC dispenses an interrupt only if it has higher priority than all in-service
+		// interrupts. Held interrupts remain in-service in the 8259 PIC as the guest hasn't issued EOI for them.
+		// Therefore, every held interrupt has higher priority than those held before it.
+		if self.held_irqs.push(vector).is_err()
+		{
+			error!("Too many held external interrupts! Vector 0x{vector:02X} is dropped!");
+		}
+		else
+		{
+			trace!(
+				"External interrupt (vector=0x{vector:02X}) is held on processor {}! {} interrupt(s) are held.",
+				self.vcpu_id,
+				self.held_irqs.len()
+			);
+		}
+		self.set_interrupt_window_exiting(true);
+	}
+
+	/// ## `handle_host_interrupt` method
+	/// Handle interrupts owned by the hypervisor (e.g.: IOMMU fault events).
+	fn handle_host_interrupt(&mut self, vector: u8)
+	{
+		trace!("Hypervisor-owned interrupt (vector=0x{vector:02X}) is intercepted on processor {}!", self.vcpu_id);
+		// TODO: Dispatch the interrupt to its handler (e.g.: IOMMU fault-event handler).
+		lapic_eoi();
+	}
+
+	/// ## `set_interrupt_window_exiting` method
+	/// AMD-V has no interrupt-window exiting. Request a virtual interrupt and intercept it instead. \
+	/// The virtual interrupt is taken (thus intercepted) as soon as the guest can take interrupts.
+	fn set_interrupt_window_exiting(&mut self, enable: bool)
+	{
+		let mut avic_ctrl = self.read_avic_control();
+		avic_ctrl.set_v_irq(enable);
+		// The virtual interrupt is only a signal. Don't let the guest's TPR mask it.
+		avic_ctrl.set_v_ignore_tpr(enable);
+		self.write_avic_control(avic_ctrl);
+		let mut iv1 = self.read_intercept_vector1();
+		iv1.set_virt_intr(enable);
+		self.write_intercept_vector1(iv1);
+	}
+
 	fn handle_cpuid(&mut self, context: &mut SvmStackTop)
 	{
 		let gpr_state: &mut GprState = &mut context.gpr_state;
@@ -208,6 +415,16 @@ impl SvmVcpu
 	{
 		match index
 		{
+			MSR_APIC_BASE =>
+			{
+				// Track the mode of the Local APIC.
+				let r = lapic_write_base(value);
+				if !r
+				{
+					self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
+				}
+				r
+			}
 			(0x40000000..0x80000000) =>
 			{
 				let mut v = value;
@@ -670,6 +887,8 @@ static SVM_EXIT_HANDLER_GROUP1: [SvmExitHandler; SVM_MAXIMUM_CODE1] = {
 	array[INTERCEPTED_CR4_READ as usize] = SvmVcpu::handle_cr4_read;
 	array[INTERCEPTED_CR4_WRITE as usize] = SvmVcpu::handle_cr4_write;
 	array[INTERCEPTED_SX_EXCEPTION as usize] = SvmVcpu::handle_sx;
+	array[INTERCEPTED_INTERRUPT as usize] = SvmVcpu::handle_intr;
+	array[INTERCEPTED_VINTR as usize] = SvmVcpu::handle_vintr;
 	array[INTERCEPTED_CPUID as usize] = SvmVcpu::handle_cpuid;
 	array[INTERCEPTED_MSR as usize] = SvmVcpu::handle_msr;
 	array[INTERCEPTED_SHUTDOWN as usize] = SvmVcpu::handle_shutdown;

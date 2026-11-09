@@ -128,3 +128,23 @@ nvc_svm_subvert_processor_a:
 	jmp nvc_svm_exit_handler_a
 
 .seh_endproc
+
+// Take pending interrupts in the host.
+// AMD-V does not acknowledge the interrupt on #VMEXIT. Interrupts can only be taken through the IDT.
+// The first argument (the vCPU) is unused here. It tells the compiler the vCPU may be modified.
+.global nvc_svm_accept_interrupts
+.seh_proc nvc_svm_accept_interrupts
+nvc_svm_accept_interrupts:
+	pushfq
+	.seh_stackalloc 8
+	.seh_endprologue
+	// The sti instruction blocks interrupts until the stgi instruction completes.
+	sti
+	stgi
+	// Pending interrupts are taken right here.
+	nop
+	clgi
+	// Restore the host IF.
+	popfq
+	ret
+.seh_endproc

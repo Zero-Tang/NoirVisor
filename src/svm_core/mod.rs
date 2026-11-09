@@ -21,12 +21,18 @@ use core::{
 use bitfield_struct::bitfield;
 use log::*;
 use spin::RwLock;
-use static_collections::bitmap::{BitmapSlice, RefBitmap};
+use static_collections::{
+	bitmap::{BitmapSlice, RefBitmap},
+	vec::StaticVec,
+};
 
 use crate::{
 	cvm_core::x86::cpuid::StaticCpuidData,
 	disasm::emulator::Instruction,
-	drv_core::iommu::{IommuOps, create_iommu},
+	drv_core::{
+		iommu::{IommuOps, create_iommu},
+		lapic::lapic_update_mode,
+	},
 	svm_core::decode::{DECODE_ASSIST_SUPPORT, NEXT_RIP_SAVING_SUPPORT},
 	xpf_core::rmt::ReverseMappingTableRoot,
 	*,
@@ -144,6 +150,14 @@ pub struct SvmVcpu
 	// This context handles exceptions.
 	pub gs_context: PerCpuGsState,
 	pub cv_host_save: SvmCvHostVcpuState,
+	/// Interrupts taken by the host in the order of arrival. Only used while handling physical interrupt intercepts.
+	pub accepted_irqs: StaticVec<32, u8>,
+	/// Set if an NMI is taken by the host. Only used while handling physical interrupt intercepts.
+	pub accepted_nmi: bool,
+	/// Stack of acknowledged interrupts held pending for the guest, in the order of arrival. \
+	/// Only interrupts that cannot be put back into the physical Local APIC (e.g.: ExtINT from 8259 PIC) are held here. \
+	/// The 8259 PICs have 16 IRQs at most, and they arrive in the ascending order of priority.
+	pub held_irqs: StaticVec<16, u8>,
 }
 
 static SVM_MSHV_VCPU_OPS: MshvVcpuOps = MshvVcpuOps {
@@ -197,6 +211,9 @@ impl SvmVcpu
 			svm_feats: SvmFeatureIdentifier::new(),
 			gs_context: PerCpuGsState::default(),
 			cv_host_save: SvmCvHostVcpuState::default(),
+			accepted_irqs: StaticVec::new(),
+			accepted_nmi: false,
+			held_irqs: StaticVec::new(),
 		}
 	}
 }
@@ -205,6 +222,8 @@ unsafe extern "win64" {
 	#[allow(improper_ctypes)]
 	fn nvc_svm_subvert_processor_a(stack_lo: *mut SvmStackTop, stack_hi: *mut SvmStackTop);
 	fn nvc_svm_guest_start();
+	#[allow(improper_ctypes)]
+	fn nvc_svm_accept_interrupts(vcpu: *mut SvmVcpu);
 }
 
 global_asm!(include_str!("svm_hv.s"));
@@ -255,6 +274,12 @@ impl SvmVcpu
 			self.vmwrite(INTERCEPT_WRITE_CR, 1u16 << 4);
 			self.vmwrite(INTERCEPT_EXCEPTIONS, 1u32 << SECURITY_EXCEPTION_FAULT);
 			let mut iv1 = InterceptVector1::from_bits(0);
+			// Intercept physical interrupts so that NoirVisor can filter out interrupts owned by the hypervisor
+			// (e.g.: IOMMU fault events). Other interrupts are reflected back to the guest.
+			// Do not set V_INTR_MASKING! It would virtualize the guest's CR8, the same problem as TPR-shadowing.
+			// Without V_INTR_MASKING, the guest's RFLAGS.IF and the physical TPR mask physical interrupts.
+			// Hence physical interrupts are intercepted only if the guest can take them.
+			iv1.set_phys_intr(true);
 			iv1.set_cpuid(true);
 			iv1.set_invlpga(true);
 			iv1.set_io(true);
@@ -340,6 +365,8 @@ impl SvmVcpu
 			self.gs_context.this = &raw mut self.gs_context;
 			self.gs_context.host_vcpu = (&raw mut *self).cast();
 			self.gs_context.stack_base = self.hv_stack.high_va;
+			self.gs_context.interrupt_handler = Some(SvmVcpu::accept_interrupt);
+			self.gs_context.nmi_handler = Some(SvmVcpu::accept_nmi);
 			// Save Model-Specific Registers.
 			self.vmwrite(GUEST_PAT, state.pat);
 			self.vmwrite(GUEST_EFER, state.efer);
@@ -429,6 +456,8 @@ pub struct SvmHypervisor
 	pub xsave_size: usize,
 	pub features: EnabledFeatures,
 	pub rmt_root: ReverseMappingTableRoot,
+	/// Bitmap of interrupt vectors owned by the hypervisor. These interrupts will not be reflected to the guest.
+	pub host_vectors: [u64; 4],
 	pub vm_list: SvmCustomVmLockedList,
 	pub cvm_iopm: MemoryDescriptor<3, usize, InternalPageAllocator>,
 	pub cvm_msrpm: MemoryDescriptor<2, usize, InternalPageAllocator>,
@@ -509,6 +538,7 @@ impl Default for SvmHypervisor
 			xsave_size: xstate_cpuid.supported_size() as usize,
 			features: EnabledFeatures::get(),
 			rmt_root: ReverseMappingTableRoot::new(),
+			host_vectors: [0; 4],
 			vm_list: Arc::new(RwLock::new(Vec::with_capacity(8))),
 			cvm_iopm,
 			cvm_msrpm,
@@ -674,6 +704,8 @@ impl HypervisorEssentials for SvmHypervisor
 			let apic_bar=rdmsr(MSR_APIC_BASE);
 			self.mmio_space.add_region(IoRegion::new("lapic",None,svm_apic_output_handler,page_4kb_base(apic_bar),PAGE_SIZE as u64));
 		}*/
+		// External interrupts are filtered with the help of the physical Local APIC.
+		lapic_update_mode(rdmsr(MSR_APIC_BASE));
 		// Initialize NPT.
 		self.nptm.build_identity_map();
 		if self.features.enable_iommu()
