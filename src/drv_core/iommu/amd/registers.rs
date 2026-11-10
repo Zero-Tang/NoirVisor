@@ -347,3 +347,80 @@ pub struct IommuStatusRegister
 }
 
 derive_mmio_rw!(IommuStatusRegister, 0x2020);
+
+/// ## `MsiCapabilityHeaderRegister` structure
+/// Shadows the header of the IOMMU MSI capability block. Available if `IommuExtendedFeatureRegister::msi_cap_mmio_sup`.
+#[bitfield(u32)]
+pub struct MsiCapabilityHeaderRegister
+{
+	pub msi_cap_id: u8,
+	rsvd0: u8,
+	pub msi_en: bool,
+	#[bits(3)]
+	pub msi_mult_mess_cap: u8,
+	#[bits(3)]
+	pub msi_mult_mess_en: u8,
+	pub msi_64_en: bool,
+	rsvd1: u8,
+}
+
+derive_mmio_rw!(MsiCapabilityHeaderRegister, 0x0158);
+
+/// ## `MsiAddressLowRegister` structure
+/// Shadows the low 32 bits of the IOMMU MSI address.
+#[bitfield(u32)]
+pub struct MsiAddressLowRegister
+{
+	#[bits(2)]
+	rsvd: u32,
+	#[bits(30)]
+	pub msi_addr: u32,
+}
+
+derive_mmio_rw!(MsiAddressLowRegister, 0x015C);
+
+/// ## `MsiAddressHighRegister` structure
+/// Shadows the high 32 bits of the IOMMU MSI address.
+#[bitfield(u32)]
+pub struct MsiAddressHighRegister
+{
+	pub msi_addr_hi: u32,
+}
+
+derive_mmio_rw!(MsiAddressHighRegister, 0x0160);
+
+/// ## `MsiDataRegister` structure
+/// Shadows the IOMMU MSI data.
+#[bitfield(u32)]
+pub struct MsiDataRegister
+{
+	pub msi_data: u16,
+	rsvd: u16,
+}
+
+derive_mmio_rw!(MsiDataRegister, 0x0164);
+
+/// ## `XtGeneralInterruptControlRegister` structure
+/// Defines the interrupt message of Event Log and Completion-Wait interrupts if `IommuControlRegister::int_cap_xt_en`.
+#[bitfield(u64)]
+pub struct XtGeneralInterruptControlRegister
+{
+	#[bits(2)]
+	rsvd0: u64,
+	/// 0 = Physical Mode, 1 = Logical Mode
+	pub xt_int_dest_mode: bool,
+	#[bits(5)]
+	rsvd1: u64,
+	/// Destination bits 23:0
+	#[bits(24)]
+	pub xt_int_dest_lo: u32,
+	pub xt_int_vector: u8,
+	/// 0 = Fixed, 1 = Arbitrated
+	pub xt_int_dm: bool,
+	#[bits(15)]
+	rsvd2: u64,
+	/// Destination bits 31:24
+	pub xt_int_dest_hi: u8,
+}
+
+derive_mmio_rw!(XtGeneralInterruptControlRegister, 0x0170);
