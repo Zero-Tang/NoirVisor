@@ -2658,6 +2658,33 @@ pub mod apic
 		rsvd1: u32,
 	}
 
+	/// ## `MsiAddress` structure
+	/// The address of a Message Signaled Interrupt (MSI) in compatibility format.
+	#[bitfield(u32)]
+	pub struct MsiAddress
+	{
+		#[bits(2)]
+		rsvd0: u8,
+		/// ## Destination Mode
+		/// - 0: Physical destination mode. The destination is an APIC ID.
+		/// - 1: Logical destination mode.
+		pub destination_mode: bool,
+		/// ## Redirection Hint
+		pub redirection_hint: bool,
+		rsvd1: u8,
+		/// ## Destination ID
+		/// In x2APIC mode, this field holds bits 7:0 of the x2APIC ID.
+		pub destination: u8,
+		/// Must be `MsiAddress::BASE`.
+		#[bits(12)]
+		pub base: u16,
+	}
+
+	impl MsiAddress
+	{
+		pub const BASE: u16 = 0xFEE;
+	}
+
 	/// ## `apic_vector_register_offset` function
 	/// Get the offset of the register containing the bit of `vector` in a 256-bit register array (ISR, TMR or IRR) at `base`. \
 	/// The array consists of eight 32-bit registers aligned at 16-byte boundaries.

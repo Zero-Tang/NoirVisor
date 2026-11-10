@@ -32,17 +32,18 @@ struct LocalApicOps
 	write: fn(usize, u32),
 	self_ipi: fn(u8),
 	nmi_self: fn(),
+	id: fn() -> Option<u32>,
 }
 
 /// The Local APIC is globally disabled. Only the 8259 PIC can deliver interrupts. \
 /// Reads return zero and writes are discarded.
-static DISABLED_OPS: LocalApicOps = LocalApicOps { read: |_| 0, write: |_, _| {}, self_ipi: |_| {}, nmi_self: || {} };
+static DISABLED_OPS: LocalApicOps = LocalApicOps { read: |_| 0, write: |_, _| {}, self_ipi: |_| {}, nmi_self: || {}, id: || None };
 /// The Local APIC is in xAPIC mode. Registers are accessed through MMIO.
 static XAPIC_OPS: LocalApicOps =
-	LocalApicOps { read: xapic_read, write: xapic_write, self_ipi: xapic_self_ipi, nmi_self: xapic_nmi_self };
+	LocalApicOps { read: xapic_read, write: xapic_write, self_ipi: xapic_self_ipi, nmi_self: xapic_nmi_self, id: xapic_id };
 /// The Local APIC is in x2APIC mode. Registers are accessed through MSRs.
 static X2APIC_OPS: LocalApicOps =
-	LocalApicOps { read: x2apic_read, write: x2apic_write, self_ipi: x2apic_self_ipi, nmi_self: x2apic_nmi_self };
+	LocalApicOps { read: x2apic_read, write: x2apic_write, self_ipi: x2apic_self_ipi, nmi_self: x2apic_nmi_self, id: x2apic_id };
 
 /// Accessors of the current Local APIC mode.
 ///
@@ -78,6 +79,11 @@ fn xapic_nmi_self()
 	xapic_write(APIC_OFFSET_ICR_LO, icr_lo.into_bits());
 }
 
+fn xapic_id() -> Option<u32>
+{
+	Some(xapic_read(APIC_OFFSET_ID) >> 24)
+}
+
 fn x2apic_read(offset: usize) -> u32
 {
 	rdmsr(MSR_X2APIC_MSR_START + (offset >> 4) as u32) as u32
@@ -91,6 +97,11 @@ fn x2apic_write(offset: usize, value: u32)
 fn x2apic_self_ipi(vector: u8)
 {
 	wrmsr(MSR_X2APIC_SELF_IPI, vector as u64)
+}
+
+fn x2apic_id() -> Option<u32>
+{
+	Some(rdmsr(MSR_X2APIC_ID) as u32)
 }
 
 fn x2apic_nmi_self()
@@ -209,6 +220,14 @@ pub fn lapic_eoi()
 pub fn lapic_send_nmi_to_self()
 {
 	(lapic_ops().nmi_self)()
+}
+
+/// ## `lapic_id` function
+/// Get the APIC ID (or x2APIC ID in x2APIC mode) of the current processor. \
+/// Returns `None` if the Local APIC is globally disabled.
+pub fn lapic_id() -> Option<u32>
+{
+	(lapic_ops().id)()
 }
 
 /// ## `lapic_self_ipi` function

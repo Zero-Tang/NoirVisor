@@ -149,6 +149,9 @@ impl SvmVcpu
 
 	fn handle_intr(&mut self, _context: &mut SvmStackTop)
 	{
+		// The processor is subverted, and interrupts are blocked in the host. Unmask IOMMU fault events now.
+		let hv: &SvmHypervisor = unsafe { &*self.hypervisor.cast() };
+		hv.enable_iommu_fault_events();
 		// AMD-V does not acknowledge the interrupt on #VMEXIT. It remains pending in the interrupt controller.
 		// Take the pending interrupts in the host. The host IDT handlers record them in the order of arrival.
 		let this: *mut Self = self;

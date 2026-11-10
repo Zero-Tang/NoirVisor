@@ -16,6 +16,7 @@ use core::{
 	arch::{global_asm, x86_64::_xgetbv},
 	ffi::c_void,
 	ptr::null_mut,
+	sync::atomic::{AtomicBool, Ordering},
 };
 use nvcvm::interface::CvmHandle;
 use static_collections::{bitmap::RefBitmap, vec::StaticVec};
@@ -628,10 +629,28 @@ pub struct VtHypervisor
 	pub rmt_root: ReverseMappingTableRoot,
 	/// Interrupt handlers of the hypervisor. Interrupts owned by them will not be reflected to the guest.
 	pub int_space: InterruptSpace,
+	/// IOMMU fault events are unmasked upon the first intercepted external interrupt after subversion. \
+	/// Only the host context of a subverted processor can access the IOMMU, and interrupts are blocked there, \
+	/// so the first fault event is guaranteed to be intercepted.
+	pub iommu_fault_events_armed: AtomicBool,
 }
 
 impl VtHypervisor
 {
+	/// ## `enable_iommu_fault_events` method
+	/// Unmask IOMMU fault events if they are armed. Fault events are delivered to the current processor. \
+	/// Call this method in the host context.
+	pub fn enable_iommu_fault_events(&self)
+	{
+		// Check before swapping, so that processors don't contend for the cache line on every interrupt.
+		if self.iommu_fault_events_armed.load(Ordering::Relaxed)
+			&& self.iommu_fault_events_armed.swap(false, Ordering::Relaxed)
+			&& let Some(iommu) = &self.iommu_manager
+		{
+			iommu.enable_fault_events();
+		}
+	}
+
 	pub fn is_rip_from_hypervisor(&self, rip: usize) -> bool
 	{
 		let start = self.image_base as usize;
@@ -661,6 +680,7 @@ impl Default for VtHypervisor
 			features: EnabledFeatures::get(),
 			rmt_root: ReverseMappingTableRoot::new(),
 			int_space: InterruptSpace::new(),
+			iommu_fault_events_armed: AtomicBool::new(false),
 		}
 	}
 }
@@ -955,6 +975,10 @@ impl HypervisorEssentials for VtHypervisor
 				{
 					self.mmio_space.add_region(x);
 				}
+				// Filter interrupts of the IOMMU (e.g.: fault events).
+				let handlers = iommu.get_interrupt_handlers();
+				let registered = !handlers.is_empty() && handlers.into_iter().all(|h| self.int_space.add_handler(h).is_ok());
+				self.iommu_fault_events_armed.store(registered, Ordering::Relaxed);
 			}
 		}
 		// External interrupts are filtered with the help of the physical Local APIC.

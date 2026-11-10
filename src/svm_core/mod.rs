@@ -459,6 +459,10 @@ pub struct SvmHypervisor
 	pub rmt_root: ReverseMappingTableRoot,
 	/// Interrupt handlers of the hypervisor. Interrupts owned by them will not be reflected to the guest.
 	pub int_space: InterruptSpace,
+	/// IOMMU fault events are unmasked upon the first intercepted external interrupt after subversion. \
+	/// Only the host context of a subverted processor can access the IOMMU, and interrupts are blocked there, \
+	/// so the first fault event is guaranteed to be intercepted.
+	pub iommu_fault_events_armed: AtomicBool,
 	pub vm_list: SvmCustomVmLockedList,
 	pub cvm_iopm: MemoryDescriptor<3, usize, InternalPageAllocator>,
 	pub cvm_msrpm: MemoryDescriptor<2, usize, InternalPageAllocator>,
@@ -467,6 +471,20 @@ pub struct SvmHypervisor
 
 impl SvmHypervisor
 {
+	/// ## `enable_iommu_fault_events` method
+	/// Unmask IOMMU fault events if they are armed. Fault events are delivered to the current processor. \
+	/// Call this method in the host context.
+	pub fn enable_iommu_fault_events(&self)
+	{
+		// Check before swapping, so that processors don't contend for the cache line on every interrupt.
+		if self.iommu_fault_events_armed.load(Ordering::Relaxed)
+			&& self.iommu_fault_events_armed.swap(false, Ordering::Relaxed)
+			&& let Some(iommu) = &self.iommu_manager
+		{
+			iommu.enable_fault_events();
+		}
+	}
+
 	pub fn is_rip_from_hypervisor(&self, rip: u64) -> bool
 	{
 		let start = self.image_base as u64;
@@ -540,6 +558,7 @@ impl Default for SvmHypervisor
 			features: EnabledFeatures::get(),
 			rmt_root: ReverseMappingTableRoot::new(),
 			int_space: InterruptSpace::new(),
+			iommu_fault_events_armed: AtomicBool::new(false),
 			vm_list: Arc::new(RwLock::new(Vec::with_capacity(8))),
 			cvm_iopm,
 			cvm_msrpm,
@@ -724,6 +743,10 @@ impl HypervisorEssentials for SvmHypervisor
 				{
 					self.mmio_space.add_region(x);
 				}
+				// Filter interrupts of the IOMMU (e.g.: fault events).
+				let handlers = iommu.get_interrupt_handlers();
+				let registered = !handlers.is_empty() && handlers.into_iter().all(|h| self.int_space.add_handler(h).is_ok());
+				self.iommu_fault_events_armed.store(registered, Ordering::Relaxed);
 			}
 		}
 		self.nptm.setup_mmio_filter(&self.mmio_space);

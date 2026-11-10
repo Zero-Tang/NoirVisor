@@ -83,6 +83,9 @@ impl VtVcpu
 
 	fn handle_extint(&mut self, _context: &mut VtStackTop)
 	{
+		// The processor is subverted, and interrupts are blocked in the host. Unmask IOMMU fault events now.
+		let hv: &VtHypervisor = unsafe { &*self.hypervisor.cast() };
+		hv.enable_iommu_fault_events();
 		// The interrupt has been acknowledged on VM-Exit.
 		let int_info = VmxExitInterruptionInformation::from_bits(vmread32(VMEXIT_INTERRUPTION_INFORMATION).unwrap());
 		if !int_info.valid()
