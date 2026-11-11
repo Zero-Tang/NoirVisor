@@ -643,6 +643,7 @@ impl SvmNptManager
 	pub fn setup_mmio_filter(&mut self, mmio_space: &IoAddressSpace)
 	{
 		// NPT will handle MMIO filters in the host system.
+		// Accesses forwarded to the hardware go to the same physical address, so the pages are identity-mapped.
 		for r in &mmio_space.regions
 		{
 			let (mut p, s) = r.base_size();
@@ -664,9 +665,9 @@ impl SvmNptManager
 				};
 				match increment
 				{
-					PAGE_1GB_SIZE => self.update_pdpte(p, 0, r.forward_input(), r.forward_output(), false, true),
-					PAGE_2MB_SIZE => self.update_pde(p, 0, r.forward_input(), r.forward_output(), false, true),
-					PAGE_4KB_SIZE => self.update_pte(p, 0, r.forward_input(), r.forward_output(), false),
+					PAGE_1GB_SIZE => self.update_pdpte(p, p, r.forward_input(), r.forward_output(), false, true),
+					PAGE_2MB_SIZE => self.update_pde(p, p, r.forward_input(), r.forward_output(), false, true),
+					PAGE_4KB_SIZE => self.update_pte(p, p, r.forward_input(), r.forward_output(), false),
 					_ => panic!("Unknown increment size: 0x{:X}!", increment),
 				}
 				p += increment as u64;

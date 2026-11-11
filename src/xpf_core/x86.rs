@@ -2550,6 +2550,7 @@ pub mod apic
 	pub const APIC_OFFSET_EOI: usize = 0xB0;
 	pub const APIC_OFFSET_REMOTE_READ: usize = 0xC0;
 	pub const APIC_OFFSET_LDR: usize = 0xD0;
+	pub const APIC_OFFSET_DFR: usize = 0xE0;
 	pub const APIC_OFFSET_SVR: usize = 0xF0;
 	pub const APIC_OFFSET_ISR: usize = 0x100;
 	pub const APIC_OFFSET_TMR: usize = 0x180;

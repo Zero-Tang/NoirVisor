@@ -10,11 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{
-	hint::{cold_path, spin_loop},
-	slice,
-	sync::atomic::Ordering,
-};
+use core::{hint::cold_path, slice};
 
 use pastey::paste;
 
@@ -24,10 +20,7 @@ use decode::{SoftwareDecodeAssistOps, dispatch_decoder};
 use disasm::emulator::{EmulatorOps, Instruction};
 use hvcall::dispatch_hypercall;
 use npt::NptFaultCode;
-use xpf_core::{
-	ci::is_ci_phys_page,
-	x86::{crdr::*, descriptors::SegmentFlags, rflags::Rflags},
-};
+use xpf_core::{ci::is_ci_phys_page, x86::crdr::*};
 
 use crate::{
 	cvm_core::x86::cpuid::dispatch_cpuid_handler,
@@ -74,85 +67,49 @@ impl SvmVcpu
 		self.advance_rip();
 	}
 
-	fn handle_sx(&mut self, context: &mut SvmStackTop)
+	fn handle_sx(&mut self, _context: &mut SvmStackTop)
 	{
 		// #SX exception happened! This means INIT signal is converted to #SX.
 		let err_code: u32 = unsafe { self.vmread(EXIT_INFO1) };
 		assert_eq!(err_code, 1, "#SX error code is not 1! (actual: 0x{err_code:X})");
-		self.wait_for_sipi.store(true, Ordering::SeqCst);
-		// General-Purpose Registers
-		for i in 0..16usize
+		// Post the INIT signal to the current processor. It is emulated at the end of this VM-Exit.
+		let hv: &SvmHypervisor = unsafe { &*self.hypervisor.cast() };
+		if let Some(mb) = hv.ipi_mailboxes.get(self.vcpu_id as usize)
 		{
-			context.gpr_state.write(i, 0);
+			mb.post_init();
 		}
-		self.write_rsp(0);
-		self.write_rip(0xFFF0);
-		self.write_rflags(Rflags::from_bits(2));
-		// Control Registers.
-		let old_cr0 = self.read_cr0();
-		let cr0 = Cr0::new().with_et(true).with_cd(old_cr0.cd()).with_nw(old_cr0.nw());
-		self.write_cr0(cr0);
-		self.write_cr2(0);
-		self.write_cr3(0);
-		self.write_cr4(Cr4::new());
-		// INIT clears EFER to 0, but SVME bit must be set as a guest.
-		self.write_efer(Efer::new().with_svme(true));
-		// Segment Registers
-		let mut attrib = SvmSegmentFlags::new()
-			.with_segment_type(SegmentFlags::CODE_EXECUTE_READ_ACCESSED)
-			.with_user_segment(true)
-			.with_present(true);
-		self.write_cs(SvmSegmentRegister { selector: 0xF000, attrib, limit: 0xFFFF, base: 0xFFFF0000 });
-		attrib.set_segment_type(SegmentFlags::DATA_READ_WRITE_ACCESSED);
-		let data_seg = SvmSegmentRegister { selector: 0, attrib, limit: 0xFFFF, base: 0 };
-		self.write_ds(data_seg);
-		self.write_es(data_seg);
-		self.write_fs(data_seg);
-		self.write_gs(data_seg);
-		self.write_ss(data_seg);
-		{
-			let idtr = self.ref_idtr_mut();
-			idtr.limit = 0xFFFF;
-			idtr.base = 0;
-		}
-		{
-			let gdtr = self.ref_gdtr_mut();
-			gdtr.limit = 0xFFFF;
-			gdtr.base = 0;
-		}
-		attrib.set_user_segment(false);
-		attrib.set_segment_type(SegmentFlags::LDT);
-		self.write_ldtr(SvmSegmentRegister { selector: 0, attrib, limit: 0xFFFF, base: 0 });
-		attrib.set_segment_type(SegmentFlags::BUSY_TSS_16BIT);
-		self.write_tr(SvmSegmentRegister { selector: 0, attrib, limit: 0xFFFF, base: 0 });
-		// Debug Registers
-		self.write_dr6(Dr6::from_bits(0xFFFF0FF0));
-		self.write_dr7(Dr7::from_bits(0x400));
-		// Emulate the wait-for-SIPI via spin-locking.
-		info!("INIT signal is successfully emulated! Waiting for SIPI now...");
-		while self.wait_for_sipi.load(Ordering::SeqCst)
-		{
-			spin_loop();
-		}
-		// Startup-IPI is received. Resume.
-		{
-			let vector = self.sipi_vector.load(Ordering::SeqCst);
-			info!("Received SIPI with vector 0x{vector:02X}!");
-			let cs = self.ref_cs_mut();
-			cs.selector = (vector as u16) << 8;
-			cs.base = (vector as u64) << 12;
-		}
-		self.write_rip(0);
-		// Because CR0/CR4 are changed, flush the TLBs.
-		self.write_tlb_control(TLB_CONTROL_FLUSH_GUEST_TLB);
 	}
 
+	/// ## `handle_intr` method
+	/// Handles intercepted physical interrupts.
 	fn handle_intr(&mut self, _context: &mut SvmStackTop)
 	{
 		// The processor is subverted, and interrupts are blocked in the host. Unmask IOMMU fault events now.
+		// Fault events are delivered to the processor that unmasks them. Use the BSP, because an AP may be held
+		// in the host for a long time while it's waiting for a Startup-IPI.
 		let hv: &SvmHypervisor = unsafe { &*self.hypervisor.cast() };
-		hv.enable_iommu_fault_events();
-		// AMD-V does not acknowledge the interrupt on #VMEXIT. It remains pending in the interrupt controller.
+		if self.vcpu_id == 0
+		{
+			hv.enable_iommu_fault_events();
+		}
+		self.accept_host_events();
+		self.dispatch_accepted_interrupts();
+	}
+
+	/// ## `handle_nmi` method
+	/// Handles intercepted NMIs.
+	fn handle_nmi(&mut self, _context: &mut SvmStackTop)
+	{
+		self.accept_host_events();
+		// Interrupts may be taken by the host along with the NMI. Dispatch them as well.
+		self.dispatch_accepted_interrupts();
+	}
+
+	/// ## `accept_host_events` method
+	/// Take the pending interrupts and NMIs in the host, and deliver the pending NMI to the guest.
+	fn accept_host_events(&mut self)
+	{
+		// AMD-V does not acknowledge the interrupt (or NMI) on #VMEXIT. It remains pending in the interrupt controller.
 		// Take the pending interrupts in the host. The host IDT handlers record them in the order of arrival.
 		let this: *mut Self = self;
 		unsafe {
@@ -160,11 +117,18 @@ impl SvmVcpu
 		}
 		if self.accepted_nmi
 		{
-			// An NMI held pending by GIF=0 is taken by the host as well. Send it back to the guest.
-			// GIF is cleared again, so the NMI remains pending until the guest is resumed.
+			// An NMI held pending by GIF=0 is taken by the host as well.
 			self.accepted_nmi = false;
-			lapic_send_nmi_to_self();
+			self.take_nmi();
 		}
+		// NMI has higher priority than external interrupts.
+		self.deliver_pending_nmi();
+	}
+
+	/// ## `dispatch_accepted_interrupts` method
+	/// Dispatch the interrupts taken by the host to the hypervisor's devices or to the guest.
+	fn dispatch_accepted_interrupts(&mut self)
+	{
 		let accepted = core::mem::take(&mut self.accepted_irqs);
 		let Some((&first, rest)) = accepted.split_first()
 		else
@@ -214,6 +178,43 @@ impl SvmVcpu
 		else
 		{
 			self.hold_extint(first);
+		}
+	}
+
+	/// ## `handle_iret` method
+	/// Handles the intercepted `iret` instruction that returns from the guest's NMI handler.
+	fn handle_iret(&mut self, _context: &mut SvmStackTop)
+	{
+		// The guest is returning from its NMI handler. NMIs are unmasked once this `iret` retires.
+		let mut iv1 = self.read_intercept_vector1();
+		iv1.set_iret(false);
+		self.write_intercept_vector1(iv1);
+		self.nmi_masked = false;
+		self.nmi_iret_rip = Some(self.read_rip());
+		self.deliver_pending_nmi();
+	}
+
+	/// ## `handle_db` method
+	/// Handles the intercepted #DB exception, which may be the single-step trap after the guest's `iret`.
+	fn handle_db(&mut self, _context: &mut SvmStackTop)
+	{
+		match self.disable_nmi_singlestep()
+		{
+			Some(guest_tf) =>
+			{
+				// The single-step trap after `iret`. NMIs are unmasked now.
+				if !guest_tf
+				{
+					self.ref_dr6_mut().set_bs(false);
+				}
+				self.nmi_iret_rip = None;
+				self.deliver_pending_nmi();
+			}
+			None =>
+			{
+				// This #DB belongs to the guest.
+				self.inject_event(DEBUG_FAULT_OR_TRAP, EventType::HardwareException, None, true);
+			}
 		}
 	}
 
@@ -360,7 +361,7 @@ impl SvmVcpu
 	/// ## `set_interrupt_window_exiting` method
 	/// AMD-V has no interrupt-window exiting. Request a virtual interrupt and intercept it instead. \
 	/// The virtual interrupt is taken (thus intercepted) as soon as the guest can take interrupts.
-	fn set_interrupt_window_exiting(&mut self, enable: bool)
+	pub(super) fn set_interrupt_window_exiting(&mut self, enable: bool)
 	{
 		let mut avic_ctrl = self.read_avic_control();
 		avic_ctrl.set_v_irq(enable);
@@ -445,6 +446,21 @@ impl SvmVcpu
 					self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
 				}
 				r
+			}
+			MSR_X2APIC_ICR =>
+			{
+				// Writing reserved bits, or writing the ICR in non-x2APIC mode, would cause #GP.
+				const ICR_RESERVED_BITS: u64 = 0xFFF33000;
+				if !lapic_is_x2apic_mode() || value & ICR_RESERVED_BITS != 0
+				{
+					self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
+					return false;
+				}
+				if !self.filter_icr(value as u32, (value >> 32) as u32)
+				{
+					wrmsr(MSR_X2APIC_ICR, value);
+				}
+				true
 			}
 			(0x40000000..0x80000000) =>
 			{
@@ -620,8 +636,12 @@ impl SvmVcpu
 		let fault: NptFaultCode = unsafe { self.vmread(EXIT_INFO1) };
 		let gpa: u64 = unsafe { self.vmread(EXIT_INFO2) };
 		let rip: u64 = self.read_rip();
+		let hv: &SvmHypervisor = unsafe { &*self.hypervisor.cast() };
+		// Check the MMIO Filter before Code Integrity. Checking Code Integrity takes locks, and the guest on this processor
+		// may hold them right now. Filtered MMIO (e.g.: EOI to the Local APIC) could be accessed by an interrupt handler.
+		let is_filtered_mmio = !fault.code_fetch() && hv.mmio_space.is_filtered(gpa);
 		// Check if this #NPF is due to Code Integrity violation.
-		if is_ci_phys_page(gpa) || is_allocated_page(gpa)
+		if !is_filtered_mmio && (is_ci_phys_page(gpa) || is_allocated_page(gpa))
 		{
 			// Decode the instruction length.
 			let ins_bytes = self.instruction_bytes();
@@ -709,6 +729,8 @@ unsafe extern "win64" fn nvc_svm_exit_handler(stack: *mut SvmStackTop)
 		decoder(vcpu);
 		handler(vcpu, unsafe { &mut *stack });
 		vcpu.handle_idt_vectoring();
+		// INIT discards pending events. Handle it at last.
+		vcpu.process_init_signal(unsafe { &mut *stack });
 		// The rax in GPR state should be the physical address of VMCB
 		// in order to execute the vmrun instruction properly.
 		// Reading/Writing the rax is like the vmptrst/vmptrld instruction in Intel VT-x.
@@ -907,10 +929,13 @@ static SVM_EXIT_HANDLER_GROUP1: [SvmExitHandler; SVM_MAXIMUM_CODE1] = {
 	let mut array: [SvmExitHandler; SVM_MAXIMUM_CODE1] = [SvmVcpu::handle_unknown; SVM_MAXIMUM_CODE1];
 	array[INTERCEPTED_CR4_READ as usize] = SvmVcpu::handle_cr4_read;
 	array[INTERCEPTED_CR4_WRITE as usize] = SvmVcpu::handle_cr4_write;
+	array[INTERCEPTED_DB_EXCEPTION as usize] = SvmVcpu::handle_db;
 	array[INTERCEPTED_SX_EXCEPTION as usize] = SvmVcpu::handle_sx;
 	array[INTERCEPTED_INTERRUPT as usize] = SvmVcpu::handle_intr;
+	array[INTERCEPTED_NMI as usize] = SvmVcpu::handle_nmi;
 	array[INTERCEPTED_VINTR as usize] = SvmVcpu::handle_vintr;
 	array[INTERCEPTED_CPUID as usize] = SvmVcpu::handle_cpuid;
+	array[INTERCEPTED_IRET as usize] = SvmVcpu::handle_iret;
 	array[INTERCEPTED_MSR as usize] = SvmVcpu::handle_msr;
 	array[INTERCEPTED_SHUTDOWN as usize] = SvmVcpu::handle_shutdown;
 	array[INTERCEPTED_VMRUN as usize] = SvmVcpu::handle_vmrun;

@@ -222,6 +222,104 @@ pub fn lapic_send_nmi_to_self()
 	(lapic_ops().nmi_self)()
 }
 
+/// ## `lapic_is_x2apic_mode` function
+/// Check whether the Local APIC is in x2APIC mode.
+pub fn lapic_is_x2apic_mode() -> bool
+{
+	LAPIC_OPS.load(Ordering::Relaxed).cast_const() == &raw const X2APIC_OPS
+}
+
+/// ## `lapic_write_icr` function
+/// Write the Interrupt Command Register in the format of the current Local APIC mode. \
+/// In xAPIC mode, the destination is located at bits 24-31 of `icr_hi`. In x2APIC mode, `icr_hi` is the destination.
+pub fn lapic_write_icr(icr_lo: u32, icr_hi: u32)
+{
+	if lapic_is_x2apic_mode()
+	{
+		wrmsr(MSR_X2APIC_ICR, ((icr_hi as u64) << 32) | icr_lo as u64)
+	}
+	else
+	{
+		let ops = lapic_ops();
+		(ops.write)(APIC_OFFSET_ICR_HI, icr_hi);
+		(ops.write)(APIC_OFFSET_ICR_LO, icr_lo);
+	}
+}
+
+/// ## `lapic_send_nmi` function
+/// Send an NMI to the processor whose APIC ID (or x2APIC ID in x2APIC mode) is `destination`.
+pub fn lapic_send_nmi(destination: u32)
+{
+	let icr_lo = ApicIcrLo::new().with_message_type(ApicX2Icr::MESSAGE_TYPE_NMI).with_level(true).into_bits();
+	if lapic_is_x2apic_mode()
+	{
+		lapic_write_icr(icr_lo, destination)
+	}
+	else
+	{
+		// The ICR-High may hold a destination written by the guest. Preserve it.
+		let ops = lapic_ops();
+		let old_hi = (ops.read)(APIC_OFFSET_ICR_HI);
+		lapic_write_icr(icr_lo, ApicIcrHi::new().with_destination(destination as u8).into_bits());
+		(ops.write)(APIC_OFFSET_ICR_HI, old_hi);
+	}
+}
+
+/// ## `lapic_logical_destination` function
+/// Get the Logical Destination Register and the Destination Format Register in xAPIC mode. \
+/// Returns `None` if the Local APIC isn't in xAPIC mode.
+pub fn lapic_logical_destination() -> Option<(u32, u32)>
+{
+	if LAPIC_OPS.load(Ordering::Relaxed).cast_const() == &raw const XAPIC_OPS
+	{
+		Some((xapic_read(APIC_OFFSET_LDR), xapic_read(APIC_OFFSET_DFR)))
+	}
+	else
+	{
+		None
+	}
+}
+
+/// ## `lapic_reset_for_init` function
+/// Put the Local APIC of the current processor into the state right after an INIT signal. \
+/// The APIC ID, the mode and the logical destination are preserved.
+///
+/// Interrupts held in-service are dismissed by EOI. Level-triggered interrupts may be resent by the I/O APIC.
+pub fn lapic_reset_for_init()
+{
+	let ops = lapic_ops();
+	(ops.write)(APIC_OFFSET_TPR, 0);
+	// EOI always dismisses the highest in-service vector. There are 256 vectors at most.
+	for _ in 0..256
+	{
+		let in_service = (0..8).any(|i| (ops.read)(APIC_OFFSET_ISR + (i << 4)) != 0);
+		if !in_service
+		{
+			break;
+		}
+		(ops.write)(APIC_OFFSET_EOI, 0);
+	}
+	// Mask all LVT entries and stop the timer.
+	// The Thermal and Performance Counter LVT entries are implemented only if the version register reports them.
+	const LVT_MASKED: u32 = 1 << 16;
+	let max_lvt = ((ops.read)(APIC_OFFSET_VERSION) >> 16) & 0xFF;
+	for offset in [APIC_OFFSET_LVT_TIMER, APIC_OFFSET_LVT_LINT0, APIC_OFFSET_LVT_LINT1, APIC_OFFSET_LVT_ERROR]
+	{
+		(ops.write)(offset, LVT_MASKED);
+	}
+	if max_lvt >= 4
+	{
+		(ops.write)(APIC_OFFSET_LVT_PERF, LVT_MASKED);
+	}
+	if max_lvt >= 5
+	{
+		(ops.write)(APIC_OFFSET_LVT_THERMAL, LVT_MASKED);
+	}
+	(ops.write)(APIC_OFFSET_TIMER_INITIAL_COUNT, 0);
+	// Software-disable the Local APIC. INIT, SIPI and NMI are still accepted.
+	(ops.write)(APIC_OFFSET_SVR, ApicSvr::new().with_vector(0xFF).into_bits());
+}
+
 /// ## `lapic_id` function
 /// Get the APIC ID (or x2APIC ID in x2APIC mode) of the current processor. \
 /// Returns `None` if the Local APIC is globally disabled.
