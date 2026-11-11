@@ -1279,7 +1279,11 @@ pub mod crdr
 		#[bits(7)]
 		rsvd0: u32,
 		pub buslock_detected: bool,
-		rsvd1: bool,
+		/// Breakpoint Enabled bit
+		///
+		/// This bit is not architecturally defined in DR6.
+		/// However, it is seen in Guest Pending Debug Exception field in VMCS (Intel VT-x).
+		pub bp_en: bool,
 		pub bd: bool,
 		pub bs: bool,
 		pub bt: bool,
@@ -1360,11 +1364,40 @@ pub mod cpuid
 	use core::{
 		arch::x86_64::{__cpuid, __cpuid_count, CpuidResult},
 		mem::MaybeUninit,
+		ops::{BitAndAssign, BitOrAssign, BitXorAssign},
 		slice,
 	};
 
 	use bitfield_struct::bitfield;
 	use log::*;
+
+	macro_rules! derive_bitops_assign {
+		($type_name:ty) => {
+			impl BitAndAssign for $type_name
+			{
+				fn bitand_assign(&mut self, rhs: Self)
+				{
+					self.0 &= rhs.0;
+				}
+			}
+
+			impl BitOrAssign for $type_name
+			{
+				fn bitor_assign(&mut self, rhs: Self)
+				{
+					self.0 |= rhs.0;
+				}
+			}
+
+			impl BitXorAssign for $type_name
+			{
+				fn bitxor_assign(&mut self, rhs: Self)
+				{
+					self.0 ^= rhs.0;
+				}
+			}
+		};
+	}
 
 	// Standard Leaf
 	pub const CPUID_STD_MAX_NUMBER_VENDOR_STRING: u32 = 0x0;
@@ -1373,7 +1406,7 @@ pub mod cpuid
 	pub const CPUID_STD_THERMAL_FEATURE: u32 = 0x6;
 	pub const CPUID_STD_STRUCTURED_EXTENDED_FEATURE_ID: u32 = 0x7;
 	pub const CPUID_STD_EXTENDED_TOPOLOGY_INFORMATION: u32 = 0xB;
-	pub const CPUID_STD_PROCESOR_EXTENDED_STATE_ENUMERATION: u32 = 0xD;
+	pub const CPUID_STD_PROCESSOR_EXTENDED_STATE_ENUMERATION: u32 = 0xD;
 	// Extended Leaf
 	pub const CPUID_EXT_MAX_NUMBER_VENDOR_STRING: u32 = 0x80000000;
 	pub const CPUID_EXT_PROCESSOR_FEATURE: u32 = 0x80000001;
@@ -1515,6 +1548,7 @@ pub mod cpuid
 		};
 	}
 
+	#[derive(Clone, Copy, Default, Debug)]
 	pub struct MaxStandardLeafAndVendorString
 	{
 		pub max_leaf: u32,
@@ -1545,7 +1579,7 @@ pub mod cpuid
 		fn as_result(&self) -> CpuidResult
 		{
 			let s: &[u32] = unsafe { slice::from_raw_parts(self.vendor_string.as_ptr().cast(), 3) };
-			CpuidResult { eax: self.max_leaf, ebx: s[0], ecx: s[1], edx: s[2] }
+			CpuidResult { eax: self.max_leaf, ebx: s[0], ecx: s[2], edx: s[1] }
 		}
 	}
 
@@ -1634,6 +1668,7 @@ pub mod cpuid
 	}
 
 	derive_cpuid_trait!(StandardProcessorFeatureIdentifiers, 1, None);
+	derive_bitops_assign!(StandardProcessorFeatureIdentifiers);
 
 	#[bitfield(u128)]
 	pub struct MonitorMwaitIdentifiers
@@ -1649,6 +1684,7 @@ pub mod cpuid
 	}
 
 	derive_cpuid_trait!(MonitorMwaitIdentifiers, 5, None);
+	derive_bitops_assign!(MonitorMwaitIdentifiers);
 
 	#[bitfield(u128)]
 	pub struct PowerManagementFeatures
@@ -1664,6 +1700,7 @@ pub mod cpuid
 	}
 
 	derive_cpuid_trait!(PowerManagementFeatures, 6, None);
+	derive_bitops_assign!(PowerManagementFeatures);
 
 	#[bitfield(u128)]
 	pub struct StructuredExtendedFeatures0
@@ -1732,6 +1769,7 @@ pub mod cpuid
 	}
 
 	derive_cpuid_trait!(StructuredExtendedFeatures0, 7, Some(0));
+	derive_bitops_assign!(StructuredExtendedFeatures0);
 
 	#[bitfield(u128)]
 	pub struct StructuredExtendedFeatures1
@@ -1745,6 +1783,7 @@ pub mod cpuid
 	}
 
 	derive_cpuid_trait!(StructuredExtendedFeatures1, 7, Some(1));
+	derive_bitops_assign!(StructuredExtendedFeatures1);
 
 	#[bitfield(u32)]
 	pub struct ExtendedTopologyEnumerationEax
@@ -1776,6 +1815,7 @@ pub mod cpuid
 		pub x2apic_id: u32,
 	}
 
+	#[derive(Clone, Copy, Debug, Default)]
 	pub struct ExtendedTopologyEnumeration<const N: u32>
 	{
 		pub a: ExtendedTopologyEnumerationEax,
@@ -1813,6 +1853,7 @@ pub mod cpuid
 	}
 
 	derive_cpuid_trait!(ExtendedStateEnumeration0, 0xD, Some(0));
+	derive_bitops_assign!(ExtendedStateEnumeration0);
 
 	#[bitfield(u128)]
 	pub struct ExtendedStateEnumeration1
@@ -1834,6 +1875,7 @@ pub mod cpuid
 	}
 
 	derive_cpuid_trait!(ExtendedStateEnumeration1, 0xD, Some(1));
+	derive_bitops_assign!(ExtendedStateEnumeration1);
 
 	#[bitfield(u32)]
 	pub struct ExtendedStateEnumerationNEcx
@@ -1845,6 +1887,7 @@ pub mod cpuid
 		rsvd: u32,
 	}
 
+	#[derive(Clone, Copy, Debug, Default)]
 	pub struct ExtendedStateEnumerationN<const N: u32>
 	{
 		pub size: u32,
@@ -1873,6 +1916,7 @@ pub mod cpuid
 		}
 	}
 
+	#[derive(Clone, Copy, Default, Debug)]
 	pub struct MaxExtendedLeafAndVendorString
 	{
 		pub max_leaf: u32,
@@ -1903,7 +1947,7 @@ pub mod cpuid
 		fn as_result(&self) -> CpuidResult
 		{
 			let s: &[u32] = unsafe { slice::from_raw_parts(self.vendor_string.as_ptr().cast(), 3) };
-			CpuidResult { eax: self.max_leaf, ebx: s[0], ecx: s[1], edx: s[2] }
+			CpuidResult { eax: self.max_leaf, ebx: s[0], ecx: s[2], edx: s[1] }
 		}
 	}
 
@@ -1994,7 +2038,9 @@ pub mod cpuid
 	}
 
 	derive_cpuid_trait!(ExtendedFeatureIdentifier, 0x80000001, None);
+	derive_bitops_assign!(ExtendedFeatureIdentifier);
 
+	#[derive(Clone, Copy, Debug)]
 	pub struct ProcessorBrandString
 	{
 		len: usize,
@@ -2006,6 +2052,14 @@ pub mod cpuid
 		pub fn brand_string(&self) -> &str
 		{
 			unsafe { str::from_utf8_unchecked(&self.buffer[..self.len]) }
+		}
+	}
+
+	impl Default for ProcessorBrandString
+	{
+		fn default() -> Self
+		{
+			Self { len: 0, buffer: [0; 0x30] }
 		}
 	}
 
@@ -2036,8 +2090,8 @@ pub mod cpuid
 			let s: &[u32] = unsafe { slice::from_raw_parts(self.buffer.as_ptr().cast(), 12) };
 			[
 				CpuidResult { eax: s[0x0], ebx: s[0x1], ecx: s[0x2], edx: s[0x3] },
-				CpuidResult { eax: s[0x5], ebx: s[0x6], ecx: s[0x6], edx: s[0x7] },
-				CpuidResult { eax: s[0x9], ebx: s[0xA], ecx: s[0xB], edx: s[0xB] },
+				CpuidResult { eax: s[0x4], ebx: s[0x5], ecx: s[0x6], edx: s[0x7] },
+				CpuidResult { eax: s[0x8], ebx: s[0x9], ecx: s[0xA], edx: s[0xB] },
 			]
 		}
 	}
@@ -2078,9 +2132,9 @@ pub mod cpuid
 	{
 		pub line_size: u8,
 		#[bits(4)]
-		lines_per_tag: u32,
+		pub lines_per_tag: u32,
 		#[bits(4)]
-		associativity: u32,
+		pub associativity: u32,
 		pub size_kb: u16,
 	}
 
@@ -2089,30 +2143,56 @@ pub mod cpuid
 	{
 		pub line_size: u8,
 		#[bits(4)]
-		lines_per_tag: u32,
+		pub lines_per_tag: u32,
 		#[bits(4)]
-		associativity: u32,
+		pub associativity: u32,
 		#[bits(2)]
 		rsvd: u32,
 		#[bits(14)]
 		pub size_kb: u32,
 	}
 
-	pub struct CacheAndTlbInformation
+	#[bitfield(u32)]
+	pub struct Tlb1GInfo
 	{
-		pub l1_large_tlb: L1TlbInfo,
-		pub l1_small_tlb: L1TlbInfo,
-		pub l1d_cache: L1CacheInfo,
-		pub l1i_cache: L1CacheInfo,
-		pub l2_large_tlb: L2TlbInfo,
-		pub l2_small_tlb: L2TlbInfo,
-		pub l2_cache: L2CacheInfo,
-		pub l3_cache: L3CacheInfo,
+		#[bits(12)]
+		pub i_entries: usize,
+		#[bits(4)]
+		pub i_associativity: u8,
+		#[bits(12)]
+		pub d_entries: usize,
+		#[bits(4)]
+		pub d_associativity: u8,
 	}
 
-	impl CoalescedCpuidLeaf<2> for CacheAndTlbInformation
+	#[derive(Clone, Copy, Debug, Default)]
+	pub struct CacheAndTlbInformation
 	{
-		const LEAF_INDICES: [(u32, Option<u32>); 2] = [(0x80000005, None), (0x80000006, None)];
+		/// cpuid.[eax=0x80000005].eax
+		pub l1_large_tlb: L1TlbInfo,
+		/// cpuid.[eax=0x80000005].ebx
+		pub l1_small_tlb: L1TlbInfo,
+		/// cpuid.[eax=0x80000005].ecx
+		pub l1d_cache: L1CacheInfo,
+		/// cpuid.[eax=0x80000005].edx
+		pub l1i_cache: L1CacheInfo,
+		/// cpuid.[eax=0x80000006].eax
+		pub l2_large_tlb: L2TlbInfo,
+		/// cpuid.[eax=0x80000006].ebx
+		pub l2_small_tlb: L2TlbInfo,
+		/// cpuid.[eax=0x80000006].ecx
+		pub l2_cache: L2CacheInfo,
+		/// cpuid.[eax=0x80000006].edx
+		pub l3_cache: L3CacheInfo,
+		/// cpuid.[eax=0x80000019].eax
+		pub l1_huge_tlb: Tlb1GInfo,
+		/// cpuid.[eax=0x80000019].ebx
+		pub l2_huge_tlb: Tlb1GInfo,
+	}
+
+	impl CoalescedCpuidLeaf<3> for CacheAndTlbInformation
+	{
+		const LEAF_INDICES: [(u32, Option<u32>); 3] = [(0x80000005, None), (0x80000006, None), (0x80000019, None)];
 
 		fn init(&mut self, index: usize, result: &CpuidResult)
 		{
@@ -2132,15 +2212,21 @@ pub mod cpuid
 					self.l2_cache.0 = result.ecx;
 					self.l3_cache.0 = result.edx;
 				}
+				2 =>
+				{
+					self.l1_huge_tlb.0 = result.eax;
+					self.l2_huge_tlb.0 = result.ebx;
+				}
 				_ => warn!("Unrecognized index 0x{index:X} while enumerating Cache and TLB Information in CPUID!"),
 			}
 		}
 
-		fn as_results(&self) -> [CpuidResult; 2]
+		fn as_results(&self) -> [CpuidResult; 3]
 		{
 			[
 				CpuidResult { eax: self.l1_large_tlb.0, ebx: self.l1_small_tlb.0, ecx: self.l1d_cache.0, edx: self.l1i_cache.0 },
 				CpuidResult { eax: self.l2_large_tlb.0, ebx: self.l2_small_tlb.0, ecx: self.l2_cache.0, edx: self.l3_cache.0 },
+				CpuidResult { eax: self.l1_huge_tlb.0, ebx: self.l2_huge_tlb.0, ecx: 0, edx: 0 },
 			]
 		}
 	}
@@ -2197,7 +2283,26 @@ pub mod cpuid
 		pub max_rdpru_id: u16,
 	}
 
+	derive_bitops_assign!(ProcessorCapabilityParameters);
 	derive_cpuid_trait!(ProcessorCapabilityParameters, 0x80000008, None);
+
+	#[bitfield(u128)]
+	pub struct ProcessorTopologyInformation
+	{
+		pub x2apic_id: u32,
+		pub compute_unit_id: u8,
+		pub threads_per_compute_unit: u8,
+		rsvd: u16,
+		pub node_id: u8,
+		#[bits(3)]
+		pub nodes_per_processor: u8,
+		#[bits(21)]
+		rsvd0: u32,
+		rsvd1: u32,
+	}
+
+	derive_bitops_assign!(ProcessorTopologyInformation);
+	derive_cpuid_trait!(ProcessorTopologyInformation, 0x8000001E, None);
 }
 
 pub mod rflags

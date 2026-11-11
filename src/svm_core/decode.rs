@@ -13,6 +13,8 @@
 
 use core::{hint::cold_path, sync::atomic::Ordering};
 
+use crate::cvm_core::x86::cpuid::CpuidHandlerOps;
+
 use super::*;
 use custom::SvmCustomVcpu;
 use disasm::emulator::{EmulatorOps, Instruction, MovCrInfo, MovDrInfo};
@@ -107,6 +109,14 @@ impl EmulatorOps for SvmVcpu
 			dest.copy_from_slice(value);
 		}
 		value.len()
+	}
+}
+
+impl CpuidHandlerOps for SvmVcpu
+{
+	fn static_cpuid_data(&self) -> &StaticCpuidData
+	{
+		&self.static_cpuid
 	}
 }
 

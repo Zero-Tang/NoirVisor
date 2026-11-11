@@ -17,6 +17,7 @@ use nvcvm::interface::{
 };
 
 use crate::*;
+use cvm_core::x86::cpuid::StaticCpuidData;
 use xpf_core::{nvbdk::*, x86::xstate::BoxedXState};
 
 pub mod cpuid;
@@ -36,6 +37,8 @@ pub struct CvmX86Vcpu
 	pub xsaves_state: BoxedXState,
 	pub current_as_id: u32,
 	pub exit_context: ExitContext,
+	/// The static CPUID data.
+	pub static_cpuid: StaticCpuidData,
 }
 
 impl CvmX86Vcpu
@@ -97,6 +100,7 @@ impl CvmX86Vcpu
 			xsaves_state: xsave,
 			current_as_id: CVM_MAPPING_ASID_DEFAULT,
 			exit_context: ExitContext { next_rip: 0, context: ExitContextUnion::default() },
+			static_cpuid: StaticCpuidData::default(),
 		})
 	}
 

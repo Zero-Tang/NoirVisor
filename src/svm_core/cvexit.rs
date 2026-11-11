@@ -16,7 +16,7 @@ use log::{error, trace};
 use nvcvm::interface::{CvmMemoryAccessFlags, InterceptCode};
 
 use crate::{
-	cvm_core::x86::cpuid::dispatch_cpuid_handler,
+	cvm_core::x86::cpuid::{CpuidHandlerOps, StaticCpuidData, dispatch_cpuid_handler},
 	disasm::emulator::EmulatorOps,
 	svm_core::{
 		SvmVcpu, VmcbOps,
@@ -34,6 +34,14 @@ use crate::{
 		},
 	},
 };
+
+impl CpuidHandlerOps for SvmCustomVcpu
+{
+	fn static_cpuid_data(&self) -> &StaticCpuidData
+	{
+		&self.state.static_cpuid
+	}
+}
 
 impl SvmCustomVcpu
 {

@@ -96,6 +96,11 @@ pub const MSHV_CPUID_HANDLERS: [TlfsCpuidHandler; MSHV_CPUID_HANDLERS_COUNT] = [
 	nvc_mshv_cpuid_implementation_hardware_handler,
 ];
 
+pub trait MshvCpuidType: CpuidLeaf
+{
+	fn guest() -> Self;
+}
+
 pub const CPUID_LEAF_RANGE_AND_VENDOR_STRING: u32 = 0x40000000;
 pub const CPUID_VENDOR_NEUTRAL_INTERFACE_ID: u32 = 0x40000001;
 pub const CPUID_HYPERVISOR_SYSTEM_ID: u32 = 0x40000002;
@@ -167,6 +172,14 @@ impl MaxHypervisorLeafAndVendorString
 	}
 }
 
+impl MshvCpuidType for MaxHypervisorLeafAndVendorString
+{
+	fn guest() -> Self
+	{
+		Self { max_leaf: (MSHV_CPUID_HANDLERS_COUNT + 0x3FFFFFFF) as u32, vendor_string: *b"NoirVisor ZT" }
+	}
+}
+
 pub struct HypervisorVendorNeutralInterface
 {
 	pub interface_id: u32,
@@ -200,6 +213,38 @@ impl HypervisorVendorNeutralInterface
 			let s: &[u8] = slice::from_raw_parts((&raw const self.interface_id).cast(), 4);
 			str::from_utf8_unchecked(s)
 		}
+	}
+}
+
+impl MshvCpuidType for HypervisorVendorNeutralInterface
+{
+	fn guest() -> Self
+	{
+		Self { interface_id: u32::from_le_bytes(*b"Hv#1"), rsvd: [0; 3] }
+	}
+}
+
+#[bitfield(u128)]
+pub struct HypervisorSystemIdentity
+{
+	pub build_number: u32,
+	pub major_version: u16,
+	pub minor_version: u16,
+	pub service_pack: u32,
+	#[bits(24)]
+	pub service_number: u32,
+	pub service_branch: u8,
+}
+
+derive_bitfield_cpuid_leaf_impl!(HypervisorSystemIdentity, 0x40000002);
+
+impl MshvCpuidType for HypervisorSystemIdentity
+{
+	fn guest() -> Self
+	{
+		// TODO: Fetch the guest identity. It cannot be done via global variable,
+		// in that this method would be shared between CVM guest and subverted host.
+		Self::new()
 	}
 }
 
@@ -270,6 +315,14 @@ pub struct HypervisorFeatureId
 
 derive_bitfield_cpuid_leaf_impl!(HypervisorFeatureId, 0x40000003);
 
+impl MshvCpuidType for HypervisorFeatureId
+{
+	fn guest() -> Self
+	{
+		Self::new().with_hypercall_msr(true).with_vp_index(true)
+	}
+}
+
 #[bitfield(u128)]
 pub struct HypervisorImplementationRecommendation
 {
@@ -304,6 +357,14 @@ pub struct HypervisorImplementationRecommendation
 
 derive_bitfield_cpuid_leaf_impl!(HypervisorImplementationRecommendation, 0x40000004);
 
+impl MshvCpuidType for HypervisorImplementationRecommendation
+{
+	fn guest() -> Self
+	{
+		Self::new().with_relaxed_timing(true)
+	}
+}
+
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct HypervisorImplementationLimits
@@ -333,6 +394,14 @@ impl CpuidLeaf for HypervisorImplementationLimits
 	}
 }
 
+impl MshvCpuidType for HypervisorImplementationLimits
+{
+	fn guest() -> Self
+	{
+		Self { max_lcpu_supported: 0, max_vcpu_supported: 0, max_phys_intr_vectors: 0, rsvd: 0 }
+	}
+}
+
 #[bitfield(u128)]
 pub struct HypervisorImplementationHardwareFeatures
 {
@@ -351,3 +420,11 @@ pub struct HypervisorImplementationHardwareFeatures
 }
 
 derive_bitfield_cpuid_leaf_impl!(HypervisorImplementationHardwareFeatures, 0x40000006);
+
+impl MshvCpuidType for HypervisorImplementationHardwareFeatures
+{
+	fn guest() -> Self
+	{
+		Self::new().with_msr_bitmaps(true).with_slat(true)
+	}
+}

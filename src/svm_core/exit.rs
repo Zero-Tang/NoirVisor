@@ -25,15 +25,16 @@ use disasm::emulator::{EmulatorOps, Instruction};
 use hvcall::dispatch_hypercall;
 use npt::NptFaultCode;
 use xpf_core::{
-	asm::cpuid::cpuid2,
 	ci::is_ci_phys_page,
 	x86::{crdr::*, descriptors::SegmentFlags, rflags::Rflags},
 };
 
-use crate::{svm_core::decode::dispatch_cvexit_decoder, xpf_core::allocator::is_allocated_page};
+use crate::{
+	cvm_core::x86::cpuid::dispatch_cpuid_handler, svm_core::decode::dispatch_cvexit_decoder, xpf_core::allocator::is_allocated_page,
+};
 
 use super::*;
-use mshv_core::{cpuid::*, msr::dispatch_mshv_msr_handler};
+use mshv_core::msr::dispatch_mshv_msr_handler;
 
 // Place all VM-Exit handlers from the subverted host into this implementation!
 // Rules of thumb in implementing VM-Exit Handlers: Do not allocate memories from heap!
@@ -145,60 +146,10 @@ impl SvmVcpu
 
 	fn handle_cpuid(&mut self, context: &mut SvmStackTop)
 	{
-		let hv: &SvmHypervisor = unsafe { &*self.hypervisor.cast() };
 		let gpr_state: &mut GprState = &mut context.gpr_state;
 		let ia = gpr_state.rax as u32;
-		let ic = gpr_state.rcx as u32;
-		let (a, b, c, d) = if (ia & 0x40000000) == 0x40000000
-		{
-			if self.under_hvm
-			{
-				// We're under a hypervisor which exposes its hypervisor interfaces.
-				// Current implementation would directly pass-thru their CPUID.
-				cpuid2(ia, ic)
-			}
-			else if hv.features.cpuid_hv_presence()
-			{
-				// This is Hypervisor's CPUID.
-				let leaf_func = (ia & 0x3FFFFFFF) as usize;
-				match MSHV_CPUID_HANDLERS.get(leaf_func)
-				{
-					Some(f) => f(ia, ic),
-					None => (0, 0, 0, 0),
-				}
-			}
-			else
-			{
-				(0, 0, 0, 0)
-			}
-		}
-		else
-		{
-			// This is processor's CPUID.
-			// Execute the original CPUID and filter stuff.
-			let (mut a, mut b, mut c, mut d) = cpuid2(ia, ic);
-			match ia
-			{
-				CPUID_STD_PROCESSOR_FEATURE =>
-				{
-					c |= if hv.features.cpuid_hv_presence() { CPUID_UNDER_HYPERVISOR } else { 0 };
-					if !self.ref_cr4().osxsave()
-					{
-						c &= !CPUID_OSXSAVE;
-					}
-				}
-				// NoirVisor currently does not support nested virtualization.
-				CPUID_EXT_PROCESSOR_FEATURE => c &= !CPUID_SVM,
-				CPUID_EXT_SECURE_VIRTUAL_MACHINE_FEATURE => (a, b, c, d) = (0, 0, 0, 0),
-				_ => (),
-			};
-			(a, b, c, d)
-		};
-		// Write the results back to eax, ebx, ecx and edx and clear the higher 32 bits.
-		gpr_state.rax = a as u64;
-		gpr_state.rbx = b as u64;
-		gpr_state.rcx = c as u64;
-		gpr_state.rdx = d as u64;
+		let handler = dispatch_cpuid_handler(ia);
+		handler(self);
 		// Advance the rip.
 		self.advance_rip();
 	}

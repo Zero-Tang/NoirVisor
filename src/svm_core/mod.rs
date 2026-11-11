@@ -24,6 +24,7 @@ use spin::RwLock;
 use static_collections::bitmap::{BitmapSlice, RefBitmap};
 
 use crate::{
+	cvm_core::x86::cpuid::StaticCpuidData,
 	disasm::emulator::Instruction,
 	drv_core::iommu::{IommuOps, create_iommu},
 	svm_core::decode::{DECODE_ASSIST_SUPPORT, NEXT_RIP_SAVING_SUPPORT},
@@ -51,12 +52,10 @@ pub mod amd64;
 pub mod custom;
 pub mod cvexit;
 mod cvmsr;
-#[allow(dead_code)]
 mod decode;
 #[allow(dead_code)]
 mod exit;
 mod hvcall;
-#[allow(dead_code)]
 mod npt;
 #[allow(dead_code)]
 mod vmcb;
@@ -139,6 +138,7 @@ pub struct SvmVcpu
 	pub sipi_vector: AtomicU8,
 	pub flags: SvmVcpuFlags,
 	pub decoded_instruction: Instruction,
+	pub static_cpuid: StaticCpuidData,
 	// Features supported by the processors.
 	pub svm_feats: SvmFeatureIdentifier,
 	// This context handles exceptions.
@@ -193,6 +193,7 @@ impl SvmVcpu
 			sipi_vector: AtomicU8::new(0),
 			flags: SvmVcpuFlags::new(),
 			decoded_instruction: Instruction::new([0; 15]),
+			static_cpuid: StaticCpuidData::new(),
 			svm_feats: SvmFeatureIdentifier::new(),
 			gs_context: PerCpuGsState::default(),
 			cv_host_save: SvmCvHostVcpuState::default(),
