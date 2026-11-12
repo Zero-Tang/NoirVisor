@@ -386,7 +386,7 @@ impl SvmVcpu
 	/// # `handle_rdmsr`
 	/// Handles an incoming `rdmsr` on this vCPU.
 	/// Return `Some(u64)` if this `rdmsr` request should advance rip.
-	/// Return `None` if this `rdmsr` request failed. Exception was injected.
+	/// Return `None` if this `rdmsr` request failed. The caller should inject `#GP(0)`.
 	fn handle_rdmsr(&mut self, index: u32) -> Option<u64>
 	{
 		match index
@@ -408,7 +408,6 @@ impl SvmVcpu
 			MSR_TSC_RATIO =>
 			{
 				error!("TSC Ratio rdmsr handler is not implemented!");
-				self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
 				None
 			}
 			MSR_VMCR => Some(self.nested_hvm.vmcr),
@@ -416,14 +415,12 @@ impl SvmVcpu
 			MSR_SMM_CTRL =>
 			{
 				error!("SMM_CTRL rdmsr handler is not implemented!");
-				self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
 				None
 			}
 			MSR_HSAVE_PA => Some(self.nested_hvm.hsave_pa),
 			_ =>
 			{
 				warn!("Unexpected rdmsr is intercepted! Index=0x{index:X}. Injecting #GP(0)...");
-				self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
 				None
 			}
 		}
@@ -432,7 +429,7 @@ impl SvmVcpu
 	/// # `handle_wrmsr`
 	/// Handles an incoming `wrmsr` on this vCPU.
 	/// Return `true` if this `wrmsr` request should advance rip.
-	/// Return `false` if this `wrmsr` request failed. Exception was injected.
+	/// Return `false` if this `wrmsr` request failed. The caller should inject `#GP(0)`.
 	fn handle_wrmsr(&mut self, index: u32, value: u64) -> bool
 	{
 		match index
@@ -440,12 +437,7 @@ impl SvmVcpu
 			MSR_APIC_BASE =>
 			{
 				// Track the mode of the Local APIC.
-				let r = lapic_write_base(value);
-				if !r
-				{
-					self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
-				}
-				r
+				lapic_write_base(value)
 			}
 			MSR_X2APIC_ICR =>
 			{
@@ -453,7 +445,6 @@ impl SvmVcpu
 				const ICR_RESERVED_BITS: u64 = 0xFFF33000;
 				if !lapic_is_x2apic_mode() || value & ICR_RESERVED_BITS != 0
 				{
-					self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
 					return false;
 				}
 				if !self.filter_icr(value as u32, (value >> 32) as u32)
@@ -479,7 +470,6 @@ impl SvmVcpu
 			MSR_TSC_RATIO =>
 			{
 				// TSC Ratio is not supported.
-				self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
 				false
 			}
 			MSR_VMCR =>
@@ -491,7 +481,6 @@ impl SvmVcpu
 				// Only the lowest bit can be set to 1.
 				if (value & (u64::MAX - 1)) != 0
 				{
-					self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
 					false
 				}
 				else
@@ -503,7 +492,6 @@ impl SvmVcpu
 			MSR_SMM_CTRL =>
 			{
 				error!("SMM_CTRL wrmsr handler is not implemented!");
-				self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
 				false
 			}
 			MSR_HSAVE_PA =>
@@ -511,7 +499,6 @@ impl SvmVcpu
 				// HSAVE must be aligned on page-boundary.
 				if page_4kb_offset(value) != 0
 				{
-					self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
 					false
 				}
 				else
@@ -527,7 +514,6 @@ impl SvmVcpu
 			_ =>
 			{
 				warn!("Unexpected wrmsr is intercepted! Index=0x{index:X}. Injecting #GP(0)...");
-				self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
 				false
 			}
 		}
@@ -537,25 +523,32 @@ impl SvmVcpu
 	{
 		let index = context.gpr_state.rcx as u32;
 		let op_write: bool = unsafe { self.vmread(EXIT_INFO1) };
-		if op_write
+		let success = if op_write
 		{
 			let value = (context.gpr_state.rax & u32::MAX as u64) | (context.gpr_state.rdx << 32);
-			if self.handle_wrmsr(index, value)
-			{
-				// Advance rip.
-				self.advance_rip();
-			}
+			self.handle_wrmsr(index, value)
 		}
 		else if let Some(value) = self.handle_rdmsr(index)
 		{
-			// Write back to registers and advance rip.
-			let lo = value as u32;
-			let hi = (value >> 32) as u32;
-			unsafe {
-				(&raw mut context.gpr_state.rax).cast::<u32>().write(lo);
-				(&raw mut context.gpr_state.rdx).cast::<u32>().write(hi);
-				self.advance_rip();
-			}
+			// Write back to registers.
+			// The processor clears the higher 32 bits of RAX and RDX. Leaving them dirty corrupts the 64-bit value
+			// the guest assembles from EDX:EAX (e.g.: Linux propagates EFER of the BSP into the AP trampoline).
+			context.gpr_state.rax = value & u32::MAX as u64;
+			context.gpr_state.rdx = value >> 32;
+			true
+		}
+		else
+		{
+			false
+		};
+		if success
+		{
+			self.advance_rip();
+		}
+		else
+		{
+			// The request failed. Inject #GP(0) without advancing rip.
+			self.inject_event(GENERAL_PROTECTION_FAULT, EventType::HardwareException, Some(0), true);
 		}
 	}
 
