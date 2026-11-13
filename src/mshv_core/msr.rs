@@ -12,9 +12,9 @@
 
 use core::fmt::Display;
 
-use alloc::slice;
+use alloc::{slice, string::String};
 use bitfield_struct::bitfield;
-use log::{info, trace};
+use log::{error, info, trace, warn};
 
 use super::hvcall::{MSHV_HYPERCALL_CODE32, MSHV_HYPERCALL_CODE64};
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
 			crdr::{read_cr8, write_cr8},
 			msr::{rdmsr, wrmsr},
 		},
-		nvbdk::{noir_find_virt_by_phys, page_4kb_base},
+		nvbdk::{PAGE_4KB_SIZE, noir_find_virt_by_phys, page_4kb_base, page_4kb_offset},
 		x86::msr::*,
 	},
 };
@@ -130,6 +130,88 @@ impl MshvVcpuContext
 		}
 		true
 	}
+
+	fn handle_crash_param<const N: usize>(&mut self, write: bool, value: &mut u64) -> bool
+	{
+		if write
+		{
+			self.crash_params[N] = *value;
+		}
+		else
+		{
+			*value = self.crash_params[N];
+		}
+		true
+	}
+
+	fn handle_crash_ctl(&mut self, write: bool, value: &mut u64) -> bool
+	{
+		if write
+		{
+			let ctl = CrashControl::from_bits(*value);
+			if ctl.crash_notify()
+			{
+				let [p0, p1, p2, p3, p4] = self.crash_params;
+				error!("Guest reported a crash on vCPU {}!", self.get_vp_index());
+				error!("P0=0x{p0:016X}, P1=0x{p1:016X}, P2=0x{p2:016X}, P3=0x{p3:016X}, P4=0x{p4:016X}");
+				if ctl.crash_message()
+				{
+					// P3 is the guest-physical address of the message. P4 is the length of the message.
+					self.log_crash_message(p3, p4);
+				}
+			}
+		}
+		else
+		{
+			// Report the supported crash actions.
+			*value = CrashControl::new().with_crash_message(true).with_crash_notify(true).into_bits();
+		}
+		true
+	}
+
+	fn log_crash_message(&self, gpa: u64, length: u64)
+	{
+		if length > MAX_CRASH_MESSAGE_LENGTH as u64
+		{
+			warn!("Crash message is too long ({length} bytes)!");
+			return;
+		}
+		let mut buffer = [0u8; MAX_CRASH_MESSAGE_LENGTH];
+		let message = &mut buffer[..length as usize];
+		// The message may span over two pages. Copy it page by page.
+		let mut copied = 0;
+		while copied < message.len()
+		{
+			let pa = gpa + copied as u64;
+			let size = (PAGE_4KB_SIZE - page_4kb_offset(pa) as usize).min(message.len() - copied);
+			// FIXME: Use vcpu's read_gpa method to read memory.
+			let virt: *const u8 = unsafe { noir_find_virt_by_phys(pa) }.cast();
+			if virt.is_null()
+			{
+				warn!("Crash message at 0x{pa:X} is not accessible!");
+				return;
+			}
+			message[copied..copied + size].copy_from_slice(unsafe { slice::from_raw_parts(virt, size) });
+			copied += size;
+		}
+		let message = String::from_utf8_lossy(message);
+		error!("Crash message: {}", message.trim_end_matches('\0'));
+	}
+}
+
+/// The maximum length of guest crash message is 4096 bytes.
+const MAX_CRASH_MESSAGE_LENGTH: usize = 4096;
+
+/// Contents of the `HV_X64_MSR_CRASH_CTL` synthetic MSR.
+#[bitfield(u64)]
+pub struct CrashControl
+{
+	#[bits(62)]
+	rsvd: u64,
+	/// `HV_X64_MSR_CRASH_P3` is the GPA of the crash message, and `HV_X64_MSR_CRASH_P4` is its length.
+	pub crash_message: bool,
+	/// The guest has written the crash parameters. The hypervisor should log them.
+	pub crash_notify: bool,
 }
 
 /// Microsoft Hypervisor Top Level Functional Specification MSR Handler
@@ -145,10 +227,22 @@ impl MshvVcpuContext
 /// - If failed, inject `#GP(0)` exception and resume the guest.
 pub type TlfsMsrHandler = fn(context: &mut MshvVcpuContext, write: bool, value: &mut u64) -> bool;
 
-const MSHV_MSR_HANDLERS_COUNT: usize = 6;
+const MSHV_MSR_HANDLERS_COUNT: usize = 12;
 
-static MSHV_MSR_INDICES: [u32; MSHV_MSR_HANDLERS_COUNT] =
-	[HV_X64_MSR_GUEST_OS_ID, HV_X64_MSR_HYPERCALL, HV_X64_MSR_VP_INDEX, HV_X64_MSR_EOI, HV_X64_MSR_ICR, HV_X64_MSR_TPR];
+static MSHV_MSR_INDICES: [u32; MSHV_MSR_HANDLERS_COUNT] = [
+	HV_X64_MSR_GUEST_OS_ID,
+	HV_X64_MSR_HYPERCALL,
+	HV_X64_MSR_VP_INDEX,
+	HV_X64_MSR_EOI,
+	HV_X64_MSR_ICR,
+	HV_X64_MSR_TPR,
+	HV_X64_MSR_CRASH_P0,
+	HV_X64_MSR_CRASH_P1,
+	HV_X64_MSR_CRASH_P2,
+	HV_X64_MSR_CRASH_P3,
+	HV_X64_MSR_CRASH_P4,
+	HV_X64_MSR_CRASH_CTL,
+];
 
 static MSHV_MSR_HANDLERS: [TlfsMsrHandler; MSHV_MSR_HANDLERS_COUNT] = [
 	MshvVcpuContext::handle_guest_os_id,
@@ -157,6 +251,12 @@ static MSHV_MSR_HANDLERS: [TlfsMsrHandler; MSHV_MSR_HANDLERS_COUNT] = [
 	MshvVcpuContext::handle_eoi,
 	MshvVcpuContext::handle_icr,
 	MshvVcpuContext::handle_tpr,
+	MshvVcpuContext::handle_crash_param::<0>,
+	MshvVcpuContext::handle_crash_param::<1>,
+	MshvVcpuContext::handle_crash_param::<2>,
+	MshvVcpuContext::handle_crash_param::<3>,
+	MshvVcpuContext::handle_crash_param::<4>,
+	MshvVcpuContext::handle_crash_ctl,
 ];
 
 pub fn dispatch_mshv_msr_handler(index: u32) -> TlfsMsrHandler

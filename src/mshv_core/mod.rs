@@ -27,6 +27,8 @@ pub struct MshvVcpuContext
 	pub root: *mut c_void,
 	pub hypercall_gpfn: u64,
 	pub guest_os_id: u64,
+	/// Guest crash parameters `HV_X64_MSR_CRASH_P0` - `HV_X64_MSR_CRASH_P4`.
+	pub crash_params: [u64; 5],
 	pub ops: &'static MshvVcpuOps,
 }
 
@@ -34,7 +36,7 @@ impl MshvVcpuContext
 {
 	pub const fn new(ops: &'static MshvVcpuOps) -> Self
 	{
-		Self { root: null_mut(), hypercall_gpfn: 0, guest_os_id: 0, ops }
+		Self { root: null_mut(), hypercall_gpfn: 0, guest_os_id: 0, crash_params: [0; 5], ops }
 	}
 
 	pub fn inform_apic_icr(&mut self, icr_lo: u32, icr_hi: u32)
