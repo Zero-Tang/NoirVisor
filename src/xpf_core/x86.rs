@@ -2366,6 +2366,10 @@ pub mod interrupts
 	pub const CONTROL_PROTECTION_FAULT: u8 = 21;
 	/// Vectors below this one are reserved for exceptions.
 	pub const FIRST_EXTERNAL_INTERRUPT_VECTOR: u8 = 32;
+	/// The Local APIC accepts interrupts with vectors starting from this one. \
+	/// Vectors 16-31 are reserved for exceptions, but the guest may still use them for interrupts. \
+	/// For example, Windows uses vector 0x1F for APC interrupts.
+	pub const FIRST_LAPIC_VECTOR: u8 = 16;
 
 	#[repr(u8)]
 	pub enum EventType

@@ -347,10 +347,22 @@ impl HostIDT
 		r.set_idt_entry(SIMD_FP_EXCEPTION_FAULT, selector, noir_simd_floating_point_fault_handler_a, 0);
 		r.set_idt_entry(CONTROL_PROTECTION_FAULT, selector, noir_control_protection_fault_handler_a, 0);
 		// External interrupts share a common handler. Each vector has its own entry stub to tell the vector.
+		// The guest may use vectors 16-31 for interrupts (e.g.: Windows uses vector 0x1F for APC interrupts).
+		// The host must be able to take them while accepting the guest's interrupts.
+		// Vectors of exceptions that may happen in the host keep their exception handlers. Note that #SX (vector 30)
+		// may happen in the host if INIT signal is redirected, but its handler is not implemented yet.
+		const HOST_EXCEPTION_VECTORS: [u8; 6] = [
+			X87_FP_EXCEPTION_FAULT,
+			ALIGNMENT_CHECK_FAULT,
+			MACHINE_CHECK_ABORT,
+			SIMD_FP_EXCEPTION_FAULT,
+			CONTROL_PROTECTION_FAULT,
+			30,
+		];
 		let stubs_base = noir_external_interrupt_stubs_a as *const () as usize;
-		for vector in FIRST_EXTERNAL_INTERRUPT_VECTOR..=u8::MAX
+		for vector in (FIRST_LAPIC_VECTOR..=u8::MAX).filter(|v| !HOST_EXCEPTION_VECTORS.contains(v))
 		{
-			let offset = (vector - FIRST_EXTERNAL_INTERRUPT_VECTOR) as usize * EXTERNAL_INTERRUPT_STUB_SIZE;
+			let offset = (vector - FIRST_LAPIC_VECTOR) as usize * EXTERNAL_INTERRUPT_STUB_SIZE;
 			// The stub is a valid entry of interrupt handler in assembly.
 			let stub = unsafe { transmute::<usize, AsmInterruptHandler>(stubs_base + offset) };
 			r.set_idt_entry(vector, selector, stub, 0);
@@ -725,7 +737,7 @@ unsafe extern "C" fn noir_control_protection_fault_handler(
 	handle_exception_with_error_code(exception_frame, gpr_state, CONTROL_PROTECTION_FAULT, "Control-Protection Fault");
 }
 
-/// ## Vectors 32-255 - External Interrupts
+/// ## Vectors 16-255 - External Interrupts
 /// This function handles external interrupts taken by the host. \
 /// The entry stub pushes the vector in place of the error code. \
 /// The interrupt is dispatched to the handler registered in the per-processor GS state. \

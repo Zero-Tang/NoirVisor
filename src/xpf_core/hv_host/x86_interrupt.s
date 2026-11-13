@@ -195,14 +195,14 @@ interrupt_handler_prologue_with_code noir_control_protection_fault_handler_a
 	call noir_control_protection_fault_handler
 interrupt_handler_epilogue_with_code
 
-// Entry stubs of external interrupts (vectors 32-255).
+// Entry stubs of external interrupts (vectors 16-255).
 // Each stub pushes its vector in place of the error code, then goes to the common handler.
 // Each stub is aligned at 16-byte boundary, so the stub of vector `v` is located at
-// `noir_external_interrupt_stubs_a+(v-32)*16`.
+// `noir_external_interrupt_stubs_a+(v-16)*16`.
 .balign 16
 .global noir_external_interrupt_stubs_a
 noir_external_interrupt_stubs_a:
-.irp hi,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+.irp hi,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
 .irp lo,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
 	.balign 16
 	push \hi*16+\lo
