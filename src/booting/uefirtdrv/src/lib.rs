@@ -94,6 +94,6 @@ extern "efiapi" fn NoirDriverEntry(image_handle: Handle, system_table: *mut Syst
 	println!("Subverting the system...");
 	build_hypervisor();
 	test_ci();
-	// test_init();
+	test_ap_wakeup();
 	Status::SUCCESS
 }

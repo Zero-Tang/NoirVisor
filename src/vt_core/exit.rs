@@ -10,34 +10,40 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::c_void, hint::unreachable_unchecked};
+use core::ffi::c_void;
 
 use log::*;
 use pastey::paste;
 
 use super::{
-	VtIrqInterruptibilityState, VtStackTop, VtVcpu,
+	VtStackTop, VtVcpu,
 	hvcall::dispatch_hypercall,
 	ia32::{cpuid::CPUID_VMX, msr::*},
 	vmcs::*,
 };
 use crate::{
 	disasm::emulator::{EmulatorOps, Instruction},
+	drv_core::lapic::*,
 	mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler},
 	xpf_core::{
 		allocator::is_allocated_page,
 		asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*},
 		ci::is_ci_phys_page,
+		intflt::InterruptDisposition,
 		x86::{
 			cpuid::*,
 			crdr::*,
 			descriptors::SegmentFlags,
 			interrupts::{EventType, GENERAL_PROTECTION_FAULT},
+			msr::MSR_APIC_BASE,
 		},
 	},
 	*,
 };
-use static_collections::bitmap::RefBitmap;
+
+const EVENT_TYPE_SOFTWARE_INTERRUPT: u32 = EventType::SoftwareInterrupt as u32;
+const EVENT_TYPE_PRIVILEGED_SOFTWARE_EXCEPTION: u32 = EventType::PrivilegedSoftwareException as u32;
+const EVENT_TYPE_SOFTWARE_EXCEPTION: u32 = EventType::SoftwareException as u32;
 
 impl VtVcpu
 {
@@ -77,26 +83,128 @@ impl VtVcpu
 
 	fn handle_extint(&mut self, _context: &mut VtStackTop)
 	{
-		// In future implementations, we should check the interrupt vectors so that we may filter IOMMU-induced events.
+		// The processor is subverted, and interrupts are blocked in the host. Unmask IOMMU fault events now.
+		let hv: &VtHypervisor = unsafe { &*self.hypervisor.cast() };
+		hv.enable_iommu_fault_events();
+		// The interrupt has been acknowledged on VM-Exit.
 		let int_info = VmxExitInterruptionInformation::from_bits(vmread32(VMEXIT_INTERRUPTION_INFORMATION).unwrap());
-		// info!("External Interrupt occured! Info: 0x{:X}",int_info.into_bits());
-		let irq_bmp: &mut RefBitmap<256> = unsafe { RefBitmap::from_raw_mut_ptr(self.irq_bmp.as_mut_ptr().cast()) };
-		// Set the interrupt as pending in the bitmap.
-		match irq_bmp.set(int_info.vector() as usize)
+		if !int_info.valid()
 		{
-			Ok(b) =>
-			{
-				if b
-				{
-					error!("Interrupt Vector {} is already set as pending!", int_info.vector());
-				}
-			}
-			// This branch is impossible to reach. Don't bother to check it.
-			Err(_) =>
-			unsafe { unreachable_unchecked() },
+			error!("External interrupt is intercepted without acknowledgement!");
+			return;
 		}
-		// We might be able to immediately inject the interrupt at this moment.
-		self.handle_pending_interrupt();
+		let vector = int_info.vector();
+		// The VM-Exit might occur during event delivery. Re-inject that event first.
+		self.handle_idt_vectoring();
+		if self.claim_host_interrupt(vector)
+		{
+			// This interrupt is raised by the hypervisor's device. Filter it out from the guest.
+			return;
+		}
+		if self.can_inject_extint()
+		{
+			// The guest can take this interrupt right now.
+			// This is exactly what would happen without virtualization.
+			self.inject_extint(vector);
+		}
+		else if lapic_is_in_service(vector)
+		{
+			// The guest can't take this interrupt now, but it is already in-service in the physical Local APIC.
+			// Keeping it in-service is dangerous: the guest may issue EOI for another interrupt in the meantime,
+			// which would clear this vector instead and corrupt the in-service state of the Local APIC.
+			// Therefore, put it back to the IRR and let the Local APIC hold it pending as if it were never acknowledged.
+			// Since the APIC dispensed this vector, it must be the highest in-service vector. EOI clears exactly this vector.
+			let level = lapic_is_level_triggered(vector);
+			lapic_eoi();
+			// For a level-triggered interrupt, the EOI broadcast lets the I/O APIC resend it as the line is still asserted.
+			// Otherwise, we have to resend this interrupt by ourselves.
+			if !level || lapic_is_eoi_broadcast_suppressed()
+			{
+				lapic_self_ipi(vector);
+			}
+			// The Local APIC keeps asserting this interrupt. Stop intercepting external interrupts until the guest can take
+			// interrupts. Interrupt-window exits take priority over external interrupts and wake the processor from HLT,
+			// so the guest could not receive any interrupts natively in the meantime.
+			self.suspend_extint_exiting();
+		}
+		else if vector != lapic_spurious_vector()
+		{
+			// This interrupt is not tracked by the Local APIC (e.g.: ExtINT from 8259 PIC). It can't be put back.
+			// Hold it pending and inject it when the guest opens the interrupt-window.
+			// In fully-nested mode, the 8259 PIC dispenses an interrupt only if it has higher priority than all in-service
+			// interrupts. Held interrupts remain in-service in the 8259 PIC as the guest hasn't issued EOI for them.
+			// Therefore, every held interrupt has higher priority than those held before it.
+			if self.held_irqs.push(vector).is_err()
+			{
+				error!("Too many held external interrupts! Vector 0x{vector:02X} is dropped!");
+			}
+			else
+			{
+				trace!(
+					"External interrupt (vector=0x{vector:02X}) is held on processor {}! {} interrupt(s) are held.",
+					self.vcpu_id,
+					self.held_irqs.len()
+				);
+			}
+			self.cached_ctxt.get_proc_ctrl1_mut().set_interrupt_window_exiting(true);
+		}
+		// Spurious interrupts don't require EOI. Discard it since the guest can't take it.
+	}
+
+	/// ## `claim_host_interrupt` method
+	/// Dispatch an interrupt to the hypervisor's handler. Returns `true` if the hypervisor claimed and handled it. \
+	/// Otherwise, the interrupt belongs to the guest. Its vector may collide with a guest's device.
+	fn claim_host_interrupt(&mut self, vector: u8) -> bool
+	{
+		let hv: &mut VtHypervisor = unsafe { &mut *self.hypervisor.cast() };
+		// The hypervisor's devices deliver interrupts through the Local APIC, so their interrupts must be in-service.
+		// Interrupts not tracked by the Local APIC (e.g.: ExtINT from 8259 PIC) belong to the guest.
+		if !hv.int_space.is_owned(vector) || !lapic_is_in_service(vector)
+		{
+			return false;
+		}
+		match hv.int_space.dispatch(vector, (self as *mut Self).cast())
+		{
+			InterruptDisposition::Handled =>
+			{
+				trace!("Hypervisor-owned interrupt (vector=0x{vector:02X}) is handled on processor {}!", self.vcpu_id);
+				lapic_eoi();
+				true
+			}
+			InterruptDisposition::Unclaimed =>
+			{
+				trace!(
+					"Interrupt (vector=0x{vector:02X}) collides with the guest's device! It is thrown back to the guest on processor {}!",
+					self.vcpu_id
+				);
+				false
+			}
+		}
+	}
+
+	/// ## `inject_extint` method
+	/// Inject an external interrupt into the guest. Make sure the guest can take it before calling this method.
+	fn inject_extint(&mut self, vector: u8)
+	{
+		// The injected interrupt wakes the guest from HLT state.
+		vmwrite32(GUEST_ACTIVITY_STATE, ActivityState::ACTIVE);
+		unsafe {
+			inject_event(vector, EventType::ExternalInterrupt, None, true, 0);
+		}
+	}
+
+	/// ## `suspend_extint_exiting` method
+	/// Clear "external-interrupt exiting" until the guest opens the interrupt-window.
+	fn suspend_extint_exiting(&mut self)
+	{
+		if !self.extint_exiting_suspended
+		{
+			let mut pin_ctrl = VmxPinBasedControls::from_bits(vmread32(PIN_BASED_VM_EXECUTION_CONTROLS).unwrap());
+			pin_ctrl.set_external_interrupt_exiting(false);
+			vmwrite32(PIN_BASED_VM_EXECUTION_CONTROLS, pin_ctrl.into_bits());
+			self.extint_exiting_suspended = true;
+		}
+		self.cached_ctxt.get_proc_ctrl1_mut().set_interrupt_window_exiting(true);
 	}
 
 	fn handle_triple_fault(&mut self, _context: &mut VtStackTop)
@@ -211,11 +319,36 @@ impl VtVcpu
 	fn handle_interrupt_window(&mut self, _context: &mut VtStackTop)
 	{
 		// Cancel interrupt-window exiting.
-		let proc_ctrl1 = self.cached_ctxt.get_proc_ctrl1_mut();
-		proc_ctrl1.set_interrupt_window_exiting(false);
-		// trace!("Cancelled interrupt-window exiting.");
-		// Interrupt-window is quite an opportunity to inject an external interrupt.
-		self.handle_pending_interrupt();
+		self.cached_ctxt.get_proc_ctrl1_mut().set_interrupt_window_exiting(false);
+		if self.extint_exiting_suspended
+		{
+			// Resume intercepting external interrupts.
+			// The interrupt held pending in the Local APIC will be intercepted again right after VM-Entry.
+			let mut pin_ctrl = VmxPinBasedControls::from_bits(vmread32(PIN_BASED_VM_EXECUTION_CONTROLS).unwrap());
+			pin_ctrl.set_external_interrupt_exiting(true);
+			vmwrite32(PIN_BASED_VM_EXECUTION_CONTROLS, pin_ctrl.into_bits());
+			self.extint_exiting_suspended = false;
+		}
+		// Interrupt-window is quite an opportunity to inject a held external interrupt.
+		// The most recently held interrupt has the highest priority.
+		if let Some(&irq) = self.held_irqs.as_slice().last()
+		{
+			if self.can_inject_extint()
+			{
+				self.inject_extint(irq);
+				self.held_irqs.pop();
+				trace!(
+					"Held external interrupt (vector=0x{irq:02X}) is injected on processor {}! {} interrupt(s) remain held.",
+					self.vcpu_id,
+					self.held_irqs.len()
+				);
+			}
+			// Wait for another interrupt-window if there are more held interrupts.
+			if !self.held_irqs.is_empty()
+			{
+				self.cached_ctxt.get_proc_ctrl1_mut().set_interrupt_window_exiting(true);
+			}
+		}
 	}
 
 	fn handle_cpuid(&mut self, context: &mut VtStackTop)
@@ -435,6 +568,8 @@ impl VtVcpu
 			// Prevent the Guest from updating microcode.
 			// Do so by ignoring the update request.
 			MSR_BIOS_UPDATE_TRIGGER => false,
+			// Track the mode of the Local APIC.
+			MSR_APIC_BASE => !lapic_write_base((context.gpr_state.rax & 0xFFFFFFFF) | (context.gpr_state.rdx << 32)),
 			(0x40000000..0x80000000) =>
 			{
 				let f = dispatch_mshv_msr_handler(index);
@@ -468,15 +603,6 @@ impl VtVcpu
 	fn handle_invalid_auto_msr(&mut self, _context: &mut VtStackTop)
 	{
 		panic!("Invalid Auto-MSR List!");
-	}
-
-	fn handle_tpr_below_threshold(&mut self, _context: &mut VtStackTop)
-	{
-		// Clear TPR-Threshold to disable TPR-below-threshold exiting.
-		vmwrite32(TPR_THRESHOLD, 0);
-		// trace!("Cleared TPR-Threshold.");
-		// As TPR is below the threshold, there may be a chance for us to inject the interrupt.
-		self.handle_pending_interrupt();
 	}
 
 	fn handle_ept_violation(&mut self, _context: &mut VtStackTop)
@@ -583,41 +709,6 @@ impl VtVcpu
 		panic!("Unknown VM-Exit is intercepted! Exit-Reason: {} (0x{exit_reason:X})", exit_reason & 0xFFFF);
 	}
 
-	// Call this routine only from handlers that may produce a chance for injection!
-	fn handle_pending_interrupt(&mut self)
-	{
-		let irq_bmp: &mut RefBitmap<256> = unsafe { RefBitmap::from_raw_mut_ptr(self.irq_bmp.as_mut_ptr().cast()) };
-		// Find the last set bit (highest-priority) in the bitmap.
-		if let Some(irq) = irq_bmp.search_set_backward()
-		{
-			// Check if the pending IRQ can interrupt the guest now.
-			match self.is_interruptible(irq as u8)
-			{
-				VtIrqInterruptibilityState::Interruptible =>
-				unsafe {
-					// Inject the interrupt because it's interruptible now.
-					// trace!("Injecting pending Interrupt Vector {irq} into Guest now.");
-					inject_event(irq as u8, EventType::ExternalInterrupt, None, true, 0);
-					// Reset the interrupt as not pending in the bitmap.
-					irq_bmp.reset(irq).unwrap();
-				},
-				VtIrqInterruptibilityState::MaskedByRflags =>
-				{
-					// Wait for interrupt window.
-					// trace!("Interrupt Vector {irq} will be held pending since it's masked by RFLAGS.IF or Interrupt-Shadow.");
-					let proc_ctrl1 = self.cached_ctxt.get_proc_ctrl1_mut();
-					proc_ctrl1.set_interrupt_window_exiting(true);
-				}
-				VtIrqInterruptibilityState::MaskedByTpr(required_priority) =>
-				{
-					// Wait for TPR-below-threshold.
-					// trace!("Interrupt Vector {irq} will be held pending since it's masked by TPR. (Required Priority: {required_priority})");
-					vmwrite32(TPR_THRESHOLD, required_priority as u32);
-				}
-			}
-		}
-	}
-
 	fn handle_idt_vectoring(&mut self)
 	{
 		let idt_vec_info = VmxIdtVectoringInformation::from_bits(vmread32(IDT_VECTORING_INFORMATION).unwrap());
@@ -632,7 +723,15 @@ impl VtVcpu
 			vmwrite32(VMENTRY_INTERRUPTION_INFORMATION_FIELD, idt_vec_info.into_bits());
 			if idt_vec_info.error_code_valid()
 			{
-				vmwrite32(VMENTRY_EXCEPTION_ERROR_CODE, idt_vec_info.into_bits());
+				vmwrite32(VMENTRY_EXCEPTION_ERROR_CODE, error_code);
+			}
+			// Software interrupts and software exceptions require the instruction length.
+			if matches!(
+				idt_vec_info.interruption_type(),
+				EVENT_TYPE_SOFTWARE_INTERRUPT | EVENT_TYPE_PRIVILEGED_SOFTWARE_EXCEPTION | EVENT_TYPE_SOFTWARE_EXCEPTION
+			)
+			{
+				vmwrite32(VMENTRY_INSTRUCTION_LENGTH, self.cached_ctxt.exit_instruction_length());
 			}
 		}
 	}
@@ -766,7 +865,6 @@ static VT_EXIT_HANDLERS: [VtExitHandler; VT_MAXIMUM_CODE] = {
 	array[INTERCEPTED_WRMSR as usize] = VtVcpu::handle_wrmsr;
 	array[INVALID_GUEST_STATE as usize] = VtVcpu::handle_invalid_state;
 	array[MSR_LOADING_FAILURE as usize] = VtVcpu::handle_invalid_auto_msr;
-	array[TPR_BELOW_THRESHOLD as usize] = VtVcpu::handle_tpr_below_threshold;
 	array[EPT_VIOLATION as usize] = VtVcpu::handle_ept_violation;
 	array[EPT_MISCONFIGURATION as usize] = VtVcpu::handle_ept_misconfig;
 	array[INTERCEPTED_XSETBV as usize] = VtVcpu::handle_xsetbv;

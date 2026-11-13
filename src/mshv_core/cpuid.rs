@@ -48,6 +48,8 @@ fn nvc_mshv_cpuid_hypervisor_feature_id_handler(_ia: u32, _ic: u32) -> (u32, u32
 	// Requirements for Minimal Hv#1 interface.
 	r.set_hypercall_msr(true);
 	r.set_vp_index(true);
+	// Guest crash enlightenment.
+	r.set_guest_crash_msr(true);
 	let a: &[u32; 4] = unsafe { &*(&raw const r.0).cast() };
 	(a[0], a[1], a[2], a[3])
 }
@@ -319,7 +321,7 @@ impl MshvCpuidType for HypervisorFeatureId
 {
 	fn guest() -> Self
 	{
-		Self::new().with_hypercall_msr(true).with_vp_index(true)
+		Self::new().with_hypercall_msr(true).with_vp_index(true).with_guest_crash_msr(true)
 	}
 }
 

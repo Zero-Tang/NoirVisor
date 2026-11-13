@@ -15,18 +15,24 @@ use core::{
 	arch::{global_asm, x86_64::_xgetbv},
 	ffi::c_void,
 	ptr::*,
-	sync::atomic::{AtomicBool, AtomicU8, Ordering},
+	sync::atomic::{AtomicBool, Ordering},
 };
 
 use bitfield_struct::bitfield;
 use log::*;
 use spin::RwLock;
-use static_collections::bitmap::{BitmapSlice, RefBitmap};
+use static_collections::{
+	bitmap::{BitmapSlice, RefBitmap},
+	vec::StaticVec,
+};
 
 use crate::{
 	cvm_core::x86::cpuid::StaticCpuidData,
 	disasm::emulator::Instruction,
-	drv_core::iommu::{IommuOps, create_iommu},
+	drv_core::{
+		iommu::{IommuOps, create_iommu},
+		lapic::{lapic_is_x2apic_mode, lapic_update_mode, lapic_write_icr},
+	},
 	svm_core::decode::{DECODE_ASSIST_SUPPORT, NEXT_RIP_SAVING_SUPPORT},
 	xpf_core::rmt::ReverseMappingTableRoot,
 	*,
@@ -34,6 +40,7 @@ use crate::{
 use amd64::{cpuid::*, msr::*};
 use custom::{SvmCustomVm, SvmCvHostVcpuState};
 use decode::SoftwareDecodeAssistOps;
+use ipi::{SvmIpiMailbox, SvmLapicRegion};
 use mshv_core::{MshvVcpuContext, MshvVcpuOps};
 use npt::SvmNptManager;
 use vmcb::*;
@@ -41,9 +48,10 @@ use xpf_core::{
 	allocator::InternalPageAllocator,
 	asm::{crdr::*, msr::*, seg::*, svm::*},
 	hv_host::x86::*,
+	intflt::InterruptSpace,
 	ioflt::IoAddressSpace,
 	nvbdk::*,
-	x86::{crdr::Cr4, interrupts::*, msr::*, xstate::BoxedXState},
+	x86::{apic::ApicBar, crdr::Cr4, interrupts::*, msr::*, xstate::BoxedXState},
 };
 
 pub mod amd64;
@@ -56,6 +64,7 @@ mod decode;
 #[allow(dead_code)]
 mod exit;
 mod hvcall;
+mod ipi;
 mod npt;
 #[allow(dead_code)]
 mod vmcb;
@@ -134,8 +143,6 @@ pub struct SvmVcpu
 	pub mshv_ctxt: MshvVcpuContext,
 	pub nested_hvm: SvmNestedVcpu,
 	pub under_hvm: bool,
-	pub wait_for_sipi: AtomicBool,
-	pub sipi_vector: AtomicU8,
 	pub flags: SvmVcpuFlags,
 	pub decoded_instruction: Instruction,
 	pub static_cpuid: StaticCpuidData,
@@ -144,6 +151,22 @@ pub struct SvmVcpu
 	// This context handles exceptions.
 	pub gs_context: PerCpuGsState,
 	pub cv_host_save: SvmCvHostVcpuState,
+	/// Interrupts taken by the host in the order of arrival. Only used while handling physical interrupt intercepts.
+	pub accepted_irqs: StaticVec<32, u8>,
+	/// Set if an NMI is taken by the host. Only used while handling physical interrupt intercepts.
+	pub accepted_nmi: bool,
+	/// Stack of acknowledged interrupts held pending for the guest, in the order of arrival. \
+	/// Only interrupts that cannot be put back into the physical Local APIC (e.g.: ExtINT from 8259 PIC) are held here. \
+	/// The 8259 PICs have 16 IRQs at most, and they arrive in the ascending order of priority.
+	pub held_irqs: StaticVec<16, u8>,
+	/// An NMI is pending for the guest.
+	pub nmi_pending: bool,
+	/// The guest is running its NMI handler. NMIs are masked until its `iret` retires.
+	pub nmi_masked: bool,
+	/// The `iret` instruction of the guest's NMI handler is intercepted at this rip and has not retired yet.
+	pub nmi_iret_rip: Option<u64>,
+	/// The guest is single-stepped over the `iret` instruction. The value is `RFLAGS.TF` of the guest.
+	pub nmi_singlestep: Option<bool>,
 }
 
 static SVM_MSHV_VCPU_OPS: MshvVcpuOps = MshvVcpuOps {
@@ -154,9 +177,14 @@ static SVM_MSHV_VCPU_OPS: MshvVcpuOps = MshvVcpuOps {
 
 impl SvmVcpu
 {
-	unsafe fn inform_apic_icr(_vcpu: *mut c_void, _icr_lo: u32, _icr_hi: u32)
+	unsafe fn inform_apic_icr(vcpu: *mut c_void, icr_lo: u32, icr_hi: u32)
 	{
-		panic!("APIC-ICR ops is unimplemented!");
+		let vcpu: &mut Self = unsafe { &mut *vcpu.cast() };
+		// INIT and Startup-IPI must go through the filter.
+		if !vcpu.filter_icr(icr_lo, icr_hi)
+		{
+			lapic_write_icr(icr_lo, icr_hi);
+		}
 	}
 
 	fn in_long_mode(vcpu: *const c_void) -> bool
@@ -189,14 +217,19 @@ impl SvmVcpu
 			mshv_ctxt: MshvVcpuContext::new(&SVM_MSHV_VCPU_OPS),
 			nested_hvm: SvmNestedVcpu { ignne: 0, hsave_pa: 0, vmcr: 0, svm_key: 0 },
 			under_hvm: false,
-			wait_for_sipi: AtomicBool::new(false),
-			sipi_vector: AtomicU8::new(0),
 			flags: SvmVcpuFlags::new(),
 			decoded_instruction: Instruction::new([0; 15]),
 			static_cpuid: StaticCpuidData::new(),
 			svm_feats: SvmFeatureIdentifier::new(),
 			gs_context: PerCpuGsState::default(),
 			cv_host_save: SvmCvHostVcpuState::default(),
+			accepted_irqs: StaticVec::new(),
+			accepted_nmi: false,
+			held_irqs: StaticVec::new(),
+			nmi_pending: false,
+			nmi_masked: false,
+			nmi_iret_rip: None,
+			nmi_singlestep: None,
 		}
 	}
 }
@@ -205,6 +238,8 @@ unsafe extern "win64" {
 	#[allow(improper_ctypes)]
 	fn nvc_svm_subvert_processor_a(stack_lo: *mut SvmStackTop, stack_hi: *mut SvmStackTop);
 	fn nvc_svm_guest_start();
+	#[allow(improper_ctypes)]
+	fn nvc_svm_accept_interrupts(vcpu: *mut SvmVcpu);
 }
 
 global_asm!(include_str!("svm_hv.s"));
@@ -255,6 +290,15 @@ impl SvmVcpu
 			self.vmwrite(INTERCEPT_WRITE_CR, 1u16 << 4);
 			self.vmwrite(INTERCEPT_EXCEPTIONS, 1u32 << SECURITY_EXCEPTION_FAULT);
 			let mut iv1 = InterceptVector1::from_bits(0);
+			// Intercept NMIs so that NoirVisor can deliver INIT signals to the processor. See the `ipi` module.
+			// Other NMIs are virtualized and injected into the guest.
+			iv1.set_nmi(true);
+			// Intercept physical interrupts so that NoirVisor can filter out interrupts owned by the hypervisor
+			// (e.g.: IOMMU fault events). Other interrupts are reflected back to the guest.
+			// Do not set V_INTR_MASKING! It would virtualize the guest's CR8, the same problem as TPR-shadowing.
+			// Without V_INTR_MASKING, the guest's RFLAGS.IF and the physical TPR mask physical interrupts.
+			// Hence physical interrupts are intercepted only if the guest can take them.
+			iv1.set_phys_intr(true);
 			iv1.set_cpuid(true);
 			iv1.set_invlpga(true);
 			iv1.set_io(true);
@@ -296,6 +340,11 @@ impl SvmVcpu
 			self.x2apic_id = ext_topo_enum.d.x2apic_id();
 			// Setup Family-Model-Stepping.
 			self.cpuid_fms = cpu_feat_id.into_bits() as u32;
+			// Processors without the Extended Topology Enumeration leaf don't support x2APIC.
+			if self.x2apic_id == 0
+			{
+				self.x2apic_id = self.apic_id as u32;
+			}
 			// Check if we are under nested hypervisor.
 			self.under_hvm = cpu_feat_id.hypervisor();
 			// Set to the maximum XCR0.
@@ -340,6 +389,8 @@ impl SvmVcpu
 			self.gs_context.this = &raw mut self.gs_context;
 			self.gs_context.host_vcpu = (&raw mut *self).cast();
 			self.gs_context.stack_base = self.hv_stack.high_va;
+			self.gs_context.interrupt_handler = Some(SvmVcpu::accept_interrupt);
+			self.gs_context.nmi_handler = Some(SvmVcpu::accept_nmi);
 			// Save Model-Specific Registers.
 			self.vmwrite(GUEST_PAT, state.pat);
 			self.vmwrite(GUEST_EFER, state.efer);
@@ -367,6 +418,9 @@ impl SvmVcpu
 			vmload(self.vmcb.phys);
 		}
 		trace!("Processor {} Completed setting up VMCB! (0x{:X})", self.vcpu_id, self.vmcb.phys);
+		// INIT and Startup-IPI aimed at this processor will be emulated from now on.
+		let hv = unsafe { &*(self.hypervisor as *const SvmHypervisor) };
+		hv.ipi_mailboxes[self.vcpu_id as usize].go_online(self.apic_id, self.x2apic_id);
 		// "Return" puts the VMCB on rax register.
 		self.vmcb.phys
 	}
@@ -429,6 +483,14 @@ pub struct SvmHypervisor
 	pub xsave_size: usize,
 	pub features: EnabledFeatures,
 	pub rmt_root: ReverseMappingTableRoot,
+	/// Interrupt handlers of the hypervisor. Interrupts owned by them will not be reflected to the guest.
+	pub int_space: InterruptSpace,
+	/// IOMMU fault events are unmasked upon the first intercepted external interrupt after subversion. \
+	/// Only the host context of a subverted processor can access the IOMMU, and interrupts are blocked there, \
+	/// so the first fault event is guaranteed to be intercepted.
+	pub iommu_fault_events_armed: AtomicBool,
+	/// INIT and Startup-IPI posted to each processor.
+	pub ipi_mailboxes: Vec<SvmIpiMailbox>,
 	pub vm_list: SvmCustomVmLockedList,
 	pub cvm_iopm: MemoryDescriptor<3, usize, InternalPageAllocator>,
 	pub cvm_msrpm: MemoryDescriptor<2, usize, InternalPageAllocator>,
@@ -437,6 +499,20 @@ pub struct SvmHypervisor
 
 impl SvmHypervisor
 {
+	/// ## `enable_iommu_fault_events` method
+	/// Unmask IOMMU fault events if they are armed. Fault events are delivered to the current processor. \
+	/// Call this method in the host context.
+	pub fn enable_iommu_fault_events(&self)
+	{
+		// Check before swapping, so that processors don't contend for the cache line on every interrupt.
+		if self.iommu_fault_events_armed.load(Ordering::Relaxed)
+			&& self.iommu_fault_events_armed.swap(false, Ordering::Relaxed)
+			&& let Some(iommu) = &self.iommu_manager
+		{
+			iommu.enable_fault_events();
+		}
+	}
+
 	pub fn is_rip_from_hypervisor(&self, rip: u64) -> bool
 	{
 		let start = self.image_base as u64;
@@ -509,6 +585,9 @@ impl Default for SvmHypervisor
 			xsave_size: xstate_cpuid.supported_size() as usize,
 			features: EnabledFeatures::get(),
 			rmt_root: ReverseMappingTableRoot::new(),
+			int_space: InterruptSpace::new(),
+			iommu_fault_events_armed: AtomicBool::new(false),
+			ipi_mailboxes: Vec::new(),
 			vm_list: Arc::new(RwLock::new(Vec::with_capacity(8))),
 			cvm_iopm,
 			cvm_msrpm,
@@ -601,6 +680,8 @@ impl HypervisorEssentials for SvmHypervisor
 					}
 				};
 				set_interception(MSR_APIC_BASE, false, true);
+				// Filter INIT and Startup-IPI sent in x2APIC mode.
+				set_interception(MSR_X2APIC_ICR, false, true);
 				set_interception(MSR_EFER, true, true);
 				set_interception(MSR_TSC_RATIO, true, true);
 				set_interception(MSR_VMCR, true, true);
@@ -666,14 +747,17 @@ impl HypervisorEssentials for SvmHypervisor
 			vcpu.host_xsave.init(self.xsave_size);
 			vcpu.vcpu_id = i;
 			self.vcpus.push(vcpu);
+			self.ipi_mailboxes.push(SvmIpiMailbox::new());
 		}
-		// Intercept APIC Accesses.
-		/*#[cfg(target_os="uefi")]
+		// External interrupts are filtered with the help of the physical Local APIC.
+		let apic_base = ApicBar::from_bits(rdmsr(MSR_APIC_BASE));
+		lapic_update_mode(apic_base.into_bits());
+		// Filter writes to the xAPIC page so that INIT and Startup-IPI sent in xAPIC mode are intercepted.
+		// Note: relocating the xAPIC page is not supported. Operating systems don't do this in practice.
+		if apic_base.enable()
 		{
-			use exit::svm_apic_output_handler;
-			let apic_bar=rdmsr(MSR_APIC_BASE);
-			self.mmio_space.add_region(IoRegion::new("lapic",None,svm_apic_output_handler,page_4kb_base(apic_bar),PAGE_SIZE as u64));
-		}*/
+			self.mmio_space.add_region(Box::new(SvmLapicRegion::new(apic_base.bar() << 12)));
+		}
 		// Initialize NPT.
 		self.nptm.build_identity_map();
 		if self.features.enable_iommu()
@@ -691,6 +775,10 @@ impl HypervisorEssentials for SvmHypervisor
 				{
 					self.mmio_space.add_region(x);
 				}
+				// Filter interrupts of the IOMMU (e.g.: fault events).
+				let handlers = iommu.get_interrupt_handlers();
+				let registered = !handlers.is_empty() && handlers.into_iter().all(|h| self.int_space.add_handler(h).is_ok());
+				self.iommu_fault_events_armed.store(registered, Ordering::Relaxed);
 			}
 		}
 		self.nptm.setup_mmio_filter(&self.mmio_space);

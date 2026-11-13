@@ -2364,6 +2364,12 @@ pub mod interrupts
 	pub const MACHINE_CHECK_ABORT: u8 = 18;
 	pub const SIMD_FP_EXCEPTION_FAULT: u8 = 19;
 	pub const CONTROL_PROTECTION_FAULT: u8 = 21;
+	/// Vectors below this one are reserved for exceptions.
+	pub const FIRST_EXTERNAL_INTERRUPT_VECTOR: u8 = 32;
+	/// The Local APIC accepts interrupts with vectors starting from this one. \
+	/// Vectors 16-31 are reserved for exceptions, but the guest may still use them for interrupts. \
+	/// For example, Windows uses vector 0x1F for APC interrupts.
+	pub const FIRST_LAPIC_VECTOR: u8 = 16;
 
 	#[repr(u8)]
 	pub enum EventType
@@ -2548,6 +2554,7 @@ pub mod apic
 	pub const APIC_OFFSET_EOI: usize = 0xB0;
 	pub const APIC_OFFSET_REMOTE_READ: usize = 0xC0;
 	pub const APIC_OFFSET_LDR: usize = 0xD0;
+	pub const APIC_OFFSET_DFR: usize = 0xE0;
 	pub const APIC_OFFSET_SVR: usize = 0xF0;
 	pub const APIC_OFFSET_ISR: usize = 0x100;
 	pub const APIC_OFFSET_TMR: usize = 0x180;
@@ -2639,6 +2646,56 @@ pub mod apic
 		pub const DSH_SELF: u8 = 1;
 		pub const DSH_ALL_INCLUSIVE: u8 = 2;
 		pub const DSH_ALL_EXCLUSIVE: u8 = 3;
+	}
+
+	/// ## `ApicSvr` structure
+	/// The Spurious-Interrupt Vector Register.
+	#[bitfield(u32)]
+	pub struct ApicSvr
+	{
+		pub vector: u8,
+		pub enable: bool,
+		pub focus_processor_checking: bool,
+		#[bits(2)]
+		rsvd0: u8,
+		pub suppress_eoi_broadcast: bool,
+		#[bits(19)]
+		rsvd1: u32,
+	}
+
+	/// ## `MsiAddress` structure
+	/// The address of a Message Signaled Interrupt (MSI) in compatibility format.
+	#[bitfield(u32)]
+	pub struct MsiAddress
+	{
+		#[bits(2)]
+		rsvd0: u8,
+		/// ## Destination Mode
+		/// - 0: Physical destination mode. The destination is an APIC ID.
+		/// - 1: Logical destination mode.
+		pub destination_mode: bool,
+		/// ## Redirection Hint
+		pub redirection_hint: bool,
+		rsvd1: u8,
+		/// ## Destination ID
+		/// In x2APIC mode, this field holds bits 7:0 of the x2APIC ID.
+		pub destination: u8,
+		/// Must be `MsiAddress::BASE`.
+		#[bits(12)]
+		pub base: u16,
+	}
+
+	impl MsiAddress
+	{
+		pub const BASE: u16 = 0xFEE;
+	}
+
+	/// ## `apic_vector_register_offset` function
+	/// Get the offset of the register containing the bit of `vector` in a 256-bit register array (ISR, TMR or IRR) at `base`. \
+	/// The array consists of eight 32-bit registers aligned at 16-byte boundaries.
+	pub const fn apic_vector_register_offset(base: usize, vector: u8) -> usize
+	{
+		base + ((vector as usize >> 5) << 4)
 	}
 }
 

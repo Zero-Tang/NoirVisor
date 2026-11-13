@@ -172,6 +172,9 @@ if __name__=="__main__":
 			i=debugcon.find("System subversion completed!")
 			assert i!=-1
 			assert debugcon.find("CI-fault",i)!=-1
+			if smp_count>1:
+				# Check if APs can be woken up after subversion.
+				assert serial.find("[AP Test] All {} processors responded after subversion!".format(smp_count))!=-1
 			if not iommu is None:
 				# IOMMU is enabled. Check if MBR signature word is zeroed.
 				i=serial.find("MBR Signature Word: 0x0000")

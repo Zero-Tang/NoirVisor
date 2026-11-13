@@ -15,12 +15,12 @@ use core::arch::x86::__cpuid;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::__cpuid;
 use core::{
-	arch::{asm, naked_asm},
+	arch::naked_asm,
 	ffi::c_void,
 	mem::offset_of,
 	ptr::null_mut,
 	slice,
-	sync::atomic::Ordering,
+	sync::atomic::{AtomicU32, Ordering},
 };
 
 use efi_helpers::{BS_TABLE, IMAGE_INFO, ST_TABLE, pe::*};
@@ -40,6 +40,8 @@ unsafe extern "C" {
 	fn noir_activate_ci() -> bool;
 	fn nvc_logger_initialize(level: u32) -> bool;
 	fn nvc_build_hypervisor() -> u32;
+	fn noir_generic_call(worker: extern "C" fn(*mut c_void, u32), context: *mut c_void);
+	fn noir_get_processor_count() -> u32;
 	fn NoirInitializeDisassembler();
 	fn strlen(string: *const i8) -> usize;
 }
@@ -285,36 +287,33 @@ pub fn test_ci()
 	}
 }
 
-#[allow(dead_code)]
-pub fn test_init()
+/// ## `test_ap_wakeup` function
+/// Wake up all APs after subversion. /// The MP Services Protocol may wake up APs with INIT-SIPI-SIPI, which exercises INIT and Startup-IPI emulation.
+pub fn test_ap_wakeup()
 {
+	static RESPONSES: AtomicU32 = AtomicU32::new(0);
+	extern "C" fn worker(_context: *mut c_void, _processor_id: u32)
+	{
+		RESPONSES.fetch_add(1, Ordering::SeqCst);
+	}
+	let count = unsafe { noir_get_processor_count() };
+	if count < 2
+	{
+		return;
+	}
+	println!("[AP Test] Waking up all processors after subversion...");
+	RESPONSES.store(0, Ordering::SeqCst);
 	unsafe {
-		let bs = &*BS_TABLE.load(Ordering::Relaxed);
-		let p = &mut *(0x1000 as *mut [u8; 2]);
-		p[0] = 0xEB;
-		p[1] = 0xFE;
-		let apic_base: *mut u32;
-		asm!
-		(
-			"rdmsr",
-			"shl rdx,32",
-			"and eax,0xFFFFF000",
-			"or rax,rdx",
-			in("ecx") 0x1b,
-			out("rax") apic_base
-		);
-		println!("Sending INIT (APIC-Base={apic_base:p}...");
-		apic_base.byte_add(0x310).write_volatile(1);
-		apic_base.byte_add(0x300).write_volatile(0xC4500);
-		println!("Sent INIT!");
-		(bs.stall)(1000000);
-		apic_base.byte_add(0x310).write_volatile(1);
-		apic_base.byte_add(0x300).write_volatile(0xC4601);
-		println!("Sent SIPI!");
-		(bs.stall)(1000000);
-		apic_base.byte_add(0x310).write_volatile(1);
-		apic_base.byte_add(0x300).write_volatile(0xC4601);
-		println!("Sent SIPI!");
+		noir_generic_call(worker, null_mut());
+	}
+	let responses = RESPONSES.load(Ordering::SeqCst);
+	if responses == count
+	{
+		println!("[AP Test] All {count} processors responded after subversion!");
+	}
+	else
+	{
+		println!("[AP Test] Only {responses} of {count} processors responded after subversion!");
 	}
 }
 
