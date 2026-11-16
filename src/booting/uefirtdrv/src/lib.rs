@@ -35,6 +35,10 @@ unsafe extern "C" {
 	fn noir_get_git_version(string: *mut *const u8, length: *mut usize) -> bool;
 }
 
+/// Seconds to wait for the user to confirm subversion before continuing automatically.
+#[cfg(not(feature = "skip_block"))]
+const SUBVERSION_PROMPT_TIMEOUT: u64 = 8;
+
 #[unsafe(no_mangle)]
 extern "efiapi" fn NoirDriverEntry(image_handle: Handle, system_table: *mut SystemTable) -> Status
 {
@@ -82,8 +86,13 @@ extern "efiapi" fn NoirDriverEntry(image_handle: Handle, system_table: *mut Syst
 	}
 	#[cfg(not(feature = "skip_block"))]
 	{
-		println!("Press Enter Key to continue subversion!");
-		host::block_until_keystroke('\r');
+		println!(
+			"Press Enter Key to continue subversion! Subversion continues automatically in {SUBVERSION_PROMPT_TIMEOUT} seconds..."
+		);
+		if !efi_helpers::wait_for_key_with_timeout('\r', SUBVERSION_PROMPT_TIMEOUT)
+		{
+			println!("Time is out. Continuing subversion...");
+		}
 	}
 	register_exit_boot_services_event();
 	init_ci();

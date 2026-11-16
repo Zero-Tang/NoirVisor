@@ -88,15 +88,6 @@ pub unsafe fn efi_init(image_handle: Handle, system_table: *mut SystemTable)
 	}
 }
 
-pub fn block_until_keystroke(ch: char)
-{
-	let mut x = efi_helpers::block_until_keystroke();
-	while x != ch
-	{
-		x = efi_helpers::block_until_keystroke();
-	}
-}
-
 #[unsafe(no_mangle)]
 extern "C" fn noir_system_debugger_write(string: *const u8, length: usize)
 {

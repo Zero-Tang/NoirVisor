@@ -197,18 +197,23 @@ unsafe extern "efiapi" fn uefi_entry(image_handle: Handle, system_table: *mut Sy
 	}
 	#[cfg(not(feature = "skip_block"))]
 	{
-		use efi_helpers::block_until_keystroke;
-		println!("Press Enter key to enter boot selection. Press Space key to leave.");
+		use efi_helpers::{Timer, wait_for_keystroke};
+		println!(
+			"Press Enter key to enter boot selection. Press Space key to leave. Boot selection begins automatically in {} seconds...",
+			select_boot::BOOT_PROMPT_TIMEOUT
+		);
+		let timer = Timer::with_seconds(select_boot::BOOT_PROMPT_TIMEOUT).unwrap();
 		loop
 		{
-			match block_until_keystroke()
+			match wait_for_keystroke(&timer)
 			{
-				'\r' =>
+				Some(Ok('\r')) | None =>
 				{
+					drop(timer);
 					select_boot::select_boot_option(image_handle);
 					break;
 				}
-				' ' => break,
+				Some(Ok(' ')) => break,
 				_ => continue,
 			}
 		}
