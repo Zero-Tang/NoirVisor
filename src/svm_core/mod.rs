@@ -219,7 +219,8 @@ impl SvmVcpu
 			under_hvm: false,
 			flags: SvmVcpuFlags::new(),
 			decoded_instruction: Instruction::new([0; 15]),
-			static_cpuid: StaticCpuidData::new(),
+			// CPUID data is processor-specific (e.g.: APIC IDs), so it is built in `subvert_i`.
+			static_cpuid: StaticCpuidData::default(),
 			svm_feats: SvmFeatureIdentifier::new(),
 			gs_context: PerCpuGsState::default(),
 			cv_host_save: SvmCvHostVcpuState::default(),
@@ -338,6 +339,8 @@ impl SvmVcpu
 			let ext_topo_enum: ExtendedTopologyEnumeration<0> = ExtendedTopologyEnumeration::cpuid();
 			self.apic_id = cpu_feat_id.local_apic_id();
 			self.x2apic_id = ext_topo_enum.d.x2apic_id();
+			// The vCPU was built on the BSP. Build CPUID data on this processor so that it has this processor's APIC IDs and topology.
+			self.static_cpuid = StaticCpuidData::new();
 			// Setup Family-Model-Stepping.
 			self.cpuid_fms = cpu_feat_id.into_bits() as u32;
 			// Processors without the Extended Topology Enumeration leaf don't support x2APIC.
