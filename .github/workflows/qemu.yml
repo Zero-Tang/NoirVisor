@@ -72,3 +72,32 @@ jobs:
         run: |
           cd tests/
           python3 run_qemu.py -auto-check -iommu amd -smp 4
+
+  tcg-svm-single-core-ltp:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: x86_64-unknown-uefi
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y clang lld llvm mtools nasm
+          wget https://github.com/qemu-pcileech/qemu/releases/download/v11.1.2-pcileech/qemu-pcileech_11.1.2_amd64.deb
+          sudo apt install -y ./qemu-pcileech_11.1.2_amd64.deb
+          rm ./qemu-pcileech_11.1.2_amd64.deb
+      - name: Build for UEFI
+        run: |
+          python3 make.py /target uefi
+          cargo clean
+      - name: Download Ubuntu-26.04 Image
+        run: |
+          cd tests/
+          wget https://pub-83f393033b2947e784ec2b517b2cebc2.r2.dev/Ubuntu-26.04-LTP/compressed-disk.qcow2
+          wget https://pub-83f393033b2947e784ec2b517b2cebc2.r2.dev/Ubuntu-26.04-LTP/ovmf-code.fd
+          wget https://pub-83f393033b2947e784ec2b517b2cebc2.r2.dev/Ubuntu-26.04-LTP/ovmf-vars.fd
+      - name: Run QEMU /w Ubuntu LTP
+        run: |
+          cd tests/
+          python3 run_ubuntu.py
