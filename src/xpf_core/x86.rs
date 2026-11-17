@@ -439,6 +439,7 @@ pub mod paging
 	use core::{
 		fmt::{self, Display, Formatter},
 		slice,
+		sync::atomic::Ordering,
 	};
 
 	use bitfield_struct::bitfield;
@@ -802,9 +803,11 @@ pub mod paging
 				let offset_mask: u64 = (1 << shift_amount) - 1;
 				let base: u64 = (pml_e.into_bits() >> shift_amount) << shift_amount;
 				let pa = (va & offset_mask) | phys_addr_mask(base);
-				// Set accessed & dirty bits.
-				let new_pml_d = pml_e.with_accessed(true).with_dirty(w).into_bits().to_le_bytes();
-				vcpu.write_gpa(pml_pa, &new_pml_d);
+				// Set accessed & dirty bits atomically, as the processor does. Never clear them.
+				if !pml_e.accessed() || (w && !pml_e.dirty())
+				{
+					vcpu.set_gpa_bits64(pml_pa, CommonPmle::new().with_accessed(true).with_dirty(w).into_bits(), Ordering::SeqCst);
+				}
 				Ok(pa)
 			}
 		}
@@ -812,9 +815,11 @@ pub mod paging
 		{
 			// This is the intermediate level!
 			let next_pt_base = phys_page_4kb_base(pml_e.into_bits());
-			// Set accessed & dirty bits.
-			let new_pml_d = pml_e.with_accessed(true).into_bits().to_le_bytes();
-			vcpu.write_gpa(pml_pa, &new_pml_d);
+			// Set accessed bit atomically, as the processor does.
+			if !pml_e.accessed()
+			{
+				vcpu.set_gpa_bits64(pml_pa, CommonPmle::new().with_accessed(true).into_bits(), Ordering::SeqCst);
+			}
 			translate_64bit_va_routine(va, vcpu, next_pt_base, level - 1, w, x, ss)
 		}
 	}
@@ -842,7 +847,8 @@ pub mod paging
 				{
 					// Long-Mode is activated. Virtual-Address is 64-bit!
 					let level = if cr4.la57() { 5 } else { 4 };
-					translate_64bit_va_routine(va, vcpu, cr3, level, w, x, ss)
+					// The lower 12 bits of CR3 are the PCID (or PWT and PCD bits), not the address.
+					translate_64bit_va_routine(va, vcpu, phys_page_4kb_base(cr3), level, w, x, ss)
 				}
 				else
 				{
@@ -850,7 +856,8 @@ pub mod paging
 					va &= u32::MAX as u64;
 					let pdpe_index = va >> PAGE_1GB_SHIFT;
 					let mut pdpe_buff: [u8; 8] = [0; 8];
-					vcpu.read_gpa(vcpu.get_cr3() + (pdpe_index << 3), &mut pdpe_buff);
+					// In PAE paging, CR3 points to a 32-byte aligned PDPT. The lower 5 bits are not the address.
+					vcpu.read_gpa((cr3 & 0xFFFF_FFE0) + (pdpe_index << 3), &mut pdpe_buff);
 					let pdpe_pa = CommonPmle::from_bits(u64::from_le_bytes(pdpe_buff));
 					// PDPE only has a present bit, no W/NX bits.
 					if pdpe_pa.present()

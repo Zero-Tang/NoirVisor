@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{fmt, mem::MaybeUninit};
+use core::{fmt, mem::MaybeUninit, sync::atomic::Ordering};
 
 use log::{error, warn};
 use pastey::paste;
@@ -667,6 +667,12 @@ pub trait EmulatorOps
 	fn is_user_mode(&self) -> bool;
 	fn read_gpa(&mut self, gpa: u64, value: &mut [u8]) -> usize;
 	fn write_gpa(&mut self, gpa: u64, value: &[u8]) -> usize;
+
+	/// Atomically set `bits` in the 8-byte-aligned 64-bit value at `gpa` in system memory. \
+	/// This is how the processor sets Accessed and Dirty bits of paging-structure entries. Other processors may update the
+	/// same entry simultaneously (e.g.: Windows takes page-table locks with the software-available bits of the entry), so
+	/// the entry must never be written back as a whole.
+	fn set_gpa_bits64(&mut self, gpa: u64, bits: u64, ordering: Ordering) -> u64;
 
 	fn read_virt(&mut self, va: u64, value: &mut [u8]) -> Result<(), (PageFaultErrorCode, u64)>
 	where

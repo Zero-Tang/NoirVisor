@@ -11,7 +11,10 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::slice;
+use core::{
+	slice,
+	sync::atomic::{AtomicU64, Ordering},
+};
 
 use crate::{
 	disasm::emulator::EmulatorOps,
@@ -97,6 +100,12 @@ impl EmulatorOps for VtVcpu
 		let dest = unsafe { slice::from_raw_parts_mut(gpa as *mut u8, value.len()) };
 		dest.copy_from_slice(value);
 		value.len()
+	}
+
+	fn set_gpa_bits64(&mut self, gpa: u64, bits: u64, ordering: Ordering) -> u64
+	{
+		// The subverted host's system memory is identity-mapped.
+		unsafe { AtomicU64::from_ptr(gpa as *mut u64) }.fetch_or(bits, ordering)
 	}
 }
 

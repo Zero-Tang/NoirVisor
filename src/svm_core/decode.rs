@@ -11,7 +11,10 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{hint::cold_path, sync::atomic::Ordering};
+use core::{
+	hint::cold_path,
+	sync::atomic::{AtomicU64, Ordering},
+};
 
 use crate::cvm_core::x86::cpuid::CpuidHandlerOps;
 
@@ -110,6 +113,12 @@ impl EmulatorOps for SvmVcpu
 		}
 		value.len()
 	}
+
+	fn set_gpa_bits64(&mut self, gpa: u64, bits: u64, ordering: Ordering) -> u64
+	{
+		// The subverted host's system memory is identity-mapped.
+		unsafe { AtomicU64::from_ptr(gpa as *mut u64) }.fetch_or(bits, ordering)
+	}
 }
 
 impl CpuidHandlerOps for SvmVcpu
@@ -207,6 +216,20 @@ impl EmulatorOps for SvmCustomVcpu
 			offset += len;
 		}
 		offset
+	}
+
+	fn set_gpa_bits64(&mut self, gpa: u64, bits: u64, ordering: Ordering) -> u64
+	{
+		// The processor does not set Accessed and Dirty bits in read-only memory either.
+		if let Some((hpa, true, _)) = self.translate(gpa)
+		{
+			unsafe { AtomicU64::from_ptr(hpa as *mut u64) }.fetch_or(bits, ordering)
+		}
+		else
+		{
+			warn!("GPA 0x{gpa:X} is not mapped for atomic operations!");
+			0
+		}
 	}
 }
 
