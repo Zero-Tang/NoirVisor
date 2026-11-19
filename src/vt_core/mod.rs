@@ -22,6 +22,7 @@ use nvcvm::interface::CvmHandle;
 use static_collections::{bitmap::RefBitmap, vec::StaticVec};
 
 use crate::*;
+use cvm_core::x86::cpuid::StaticCpuidData;
 use drv_core::{
 	iommu::{IommuOps, create_iommu},
 	lapic::lapic_update_mode,
@@ -134,6 +135,8 @@ pub struct VtVcpu
 	pub ist: [VtStackMemoryDescriptor; 8],
 	pub host_xsave: BoxedXState,
 	pub cpuid_fms: u32,
+	/// CPUID data presented to the guest. It is processor-specific (e.g.: APIC IDs), so it is built in `subvert_i`.
+	pub static_cpuid: StaticCpuidData,
 	pub vcpu_id: u32,
 	pub under_hvm: bool,
 	pub apic_id: u8,
@@ -166,6 +169,7 @@ impl Default for VtVcpu
 			ist: [const { VtStackMemoryDescriptor::null() }; 8],
 			host_xsave: BoxedXState::null(),
 			cpuid_fms: (std_leaf.ext_model() << 16) | 0x600,
+			static_cpuid: StaticCpuidData::default(),
 			vcpu_id: 0,
 			under_hvm: false,
 			apic_id: 0,
@@ -538,6 +542,18 @@ impl VtVcpu
 	{
 		let state = ProcessorState::new();
 		self.mshv_ctxt.root = (&raw mut *self).cast();
+		// Setup APIC ID.
+		let cpu_feat_id = StandardProcessorFeatureIdentifiers::cpuid();
+		let ext_topo_enum: ExtendedTopologyEnumeration<0> = ExtendedTopologyEnumeration::cpuid();
+		self.apic_id = cpu_feat_id.local_apic_id();
+		self.x2apic_id = ext_topo_enum.d.x2apic_id();
+		// Processors without the Extended Topology Enumeration leaf don't support x2APIC.
+		if self.x2apic_id == 0
+		{
+			self.x2apic_id = self.apic_id as u32;
+		}
+		// The vCPU was built on the BSP. Build CPUID data on this processor so that it has this processor's APIC IDs and topology.
+		self.static_cpuid = StaticCpuidData::new();
 		self.setup_guest_state_area(&state, gsp, gssp);
 		self.setup_msr_auto_list(&state);
 		self.setup_host_state_area(&state);
