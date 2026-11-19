@@ -390,6 +390,16 @@ impl CachedExitContext
 		self.dirty_fields = DirtyExitFields::new();
 	}
 
+	/// ## `request_nmi_window_now` method
+	/// Set "NMI-window exiting" in both the cached controls and the VMCS right now, without waiting for the flush.
+	pub fn request_nmi_window_now(&mut self)
+	{
+		self.proc_ctrl1.set_nmi_window_exiting(true);
+		let mut proc_ctrl = VmxPrimaryProcessorControls::from_bits(vmread32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS).unwrap());
+		proc_ctrl.set_nmi_window_exiting(true);
+		vmwrite32(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, proc_ctrl.into_bits());
+	}
+
 	build_clean_method!(cs_ar, GUEST_CS_ACCESS_RIGHTS, SegmentAccessRights, 32);
 	build_clean_method!(rflags, GUEST_RFLAGS, Rflags, 64);
 	build_clean_method!(exit_instruction_length, VMEXIT_INSTRUCTION_LENGTH, u32, 32);

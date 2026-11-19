@@ -12,6 +12,7 @@
  */
 
 use core::{
+	ffi::c_void,
 	slice,
 	sync::atomic::{AtomicU64, Ordering},
 };
@@ -19,7 +20,7 @@ use core::{
 use crate::{
 	cvm_core::x86::cpuid::{CpuidHandlerOps, StaticCpuidData},
 	disasm::emulator::EmulatorOps,
-	vt_core::{VtVcpu, vmcs::*},
+	vt_core::{VtHypervisor, VtVcpu, vmcs::*},
 	xpf_core::{
 		asm::vt::{vmread16, vmread32, vmread64, vmreadptr, vmwrite16},
 		x86::{
@@ -89,17 +90,25 @@ impl EmulatorOps for VtVcpu
 
 	fn read_gpa(&mut self, gpa: u64, value: &mut [u8]) -> usize
 	{
-		// TODO: dispatch MMIO inputs.
-		let src = unsafe { slice::from_raw_parts(gpa as *const u8, value.len()) };
-		value.copy_from_slice(src);
+		let hv: &mut VtHypervisor = unsafe { &mut *self.hypervisor.cast() };
+		if hv.mmio_space.dispatch_input(gpa, value, self as *mut Self as *mut c_void).is_err()
+		{
+			// Cannot dispatch MMIO input handler. Then simply pass-thru to system memory.
+			let src = unsafe { slice::from_raw_parts(gpa as *const u8, value.len()) };
+			value.copy_from_slice(src);
+		}
 		value.len()
 	}
 
 	fn write_gpa(&mut self, gpa: u64, value: &[u8]) -> usize
 	{
-		// TODO: dispatch MMIO outputs.
-		let dest = unsafe { slice::from_raw_parts_mut(gpa as *mut u8, value.len()) };
-		dest.copy_from_slice(value);
+		let hv: &mut VtHypervisor = unsafe { &mut *self.hypervisor.cast() };
+		if hv.mmio_space.dispatch_output(gpa, value, self as *mut Self as *mut c_void).is_err()
+		{
+			// Cannot dispatch MMIO output handler. Then simply pass-thru to system memory.
+			let dest = unsafe { slice::from_raw_parts_mut(gpa as *mut u8, value.len()) };
+			dest.copy_from_slice(value);
+		}
 		value.len()
 	}
 

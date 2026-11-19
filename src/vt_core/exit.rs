@@ -31,11 +31,9 @@ use crate::{
 		ci::is_ci_phys_page,
 		intflt::InterruptDisposition,
 		x86::{
-			cpuid::*,
 			crdr::*,
-			descriptors::SegmentFlags,
 			interrupts::{EventType, GENERAL_PROTECTION_FAULT},
-			msr::MSR_APIC_BASE,
+			msr::{MSR_APIC_BASE, MSR_X2APIC_ICR},
 		},
 	},
 	*,
@@ -212,108 +210,31 @@ impl VtVcpu
 		panic!("Triple-Fault occured!");
 	}
 
-	fn handle_init(&mut self, context: &mut VtStackTop)
+	/// ## `handle_exception_nmi` method
+	/// Handles the VM-Exit due to an exception or an NMI. NoirVisor doesn't intercept exceptions, so it must be an NMI.
+	fn handle_exception_nmi(&mut self, _context: &mut VtStackTop)
 	{
-		let gpr_state = &mut context.gpr_state;
-		info!("INIT-signal is intercepted for CPU {}! rip=0x{:X}", self.vcpu_id, self.cached_ctxt.rip);
-		unsafe {
-			// General-Purpose Registers
-			for i in 0..16usize
-			{
-				gpr_state.write(i, 0);
-			}
-			gpr_state.rdx = self.cpuid_fms as u64;
-			vmwrite_unchecked(GUEST_RSP, 0);
-			vmwrite_unchecked(GUEST_RIP, 0xFFF0);
-			vmwrite_unchecked(GUEST_RFLAGS, 2);
-			// Control Registers
-			// CR0.ET is always set during INIT.
-			let mut cr0 = Cr0::new().with_et(true);
-			// Fix CR0 bits
-			cr0 |= rdmsr(MSR_VMX_CR0_FIXED1);
-			cr0 &= rdmsr(MSR_VMX_CR0_FIXED0);
-			// CR0.PE and CR0.PG are cleared by INIT.
-			cr0.set_pe(false);
-			cr0.set_pg(false);
-			vmwrite_unchecked(GUEST_CR0, cr0.into_bits() as usize);
-			vmwrite_unchecked(CR0_READ_SHADOW, cr0.into_bits() as usize);
-			write_cr2(0);
-			vmwrite_unchecked(GUEST_CR3, 0);
-			// CR4 is cleared to 0 upon INIT. But as a guest, CR4.VMXE must be set.
-			let mut cr4 = 0;
-			cr4 |= rdmsr(MSR_VMX_CR4_FIXED0) as usize;
-			cr4 &= rdmsr(MSR_VMX_CR4_FIXED1) as usize;
-			vmwrite_unchecked(GUEST_CR4, cr4);
-			vmwrite_unchecked(CR4_READ_SHADOW, 0);
-			// EFER is cleared to 0 upon INIT.
-			vmwrite_unchecked(GUEST_MSR_IA32_EFER, 0);
-			// Debug Registers
-			write_dr0(0);
-			write_dr1(0);
-			write_dr2(0);
-			write_dr3(0);
-			write_dr6(0xffff0ff0);
-			vmwrite_unchecked(GUEST_DR7, 0x400);
-			// Segment Registers
-			macro_rules! vmcs_write_seg {
-				($name:tt,$sel:literal,$ar:expr,$lim:literal,$base:literal) => {
-					paste! {
-						vmwrite_unchecked([<GUEST_ $name:upper _SELECTOR>],$sel as usize);
-						vmwrite_unchecked([<GUEST_ $name:upper _ACCESS_RIGHTS>],$ar as usize);
-						vmwrite_unchecked([<GUEST_ $name:upper _LIMIT>],$lim as usize);
-						vmwrite_unchecked([<GUEST_ $name:upper _BASE>],$base);
-					}
-				};
-			}
-			let mut ar = SegmentAccessRights::new();
-			ar.set_segment_type(SegmentFlags::CODE_EXECUTE_READ_ACCESSED as u32);
-			ar.set_descriptor_type(true);
-			ar.set_present(true);
-			vmcs_write_seg!(cs, 0xF000, ar.into_bits(), 0xFFFF, 0xFFFF0000);
-			ar.set_segment_type(SegmentFlags::DATA_READ_WRITE_ACCESSED as u32);
-			vmcs_write_seg!(ds, 0, ar.into_bits(), 0xFFFF, 0);
-			vmcs_write_seg!(es, 0, ar.into_bits(), 0xFFFF, 0);
-			vmcs_write_seg!(fs, 0, ar.into_bits(), 0xFFFF, 0);
-			vmcs_write_seg!(gs, 0, ar.into_bits(), 0xFFFF, 0);
-			vmcs_write_seg!(ss, 0, ar.into_bits(), 0xFFFF, 0);
-			// LDTR & TR
-			ar.set_segment_type(SegmentFlags::LDT as u32);
-			ar.set_descriptor_type(false);
-			vmcs_write_seg!(ldtr, 0, ar.into_bits(), 0xFFFF, 0);
-			ar.set_segment_type(SegmentFlags::BUSY_TSS_16BIT as u32);
-			vmcs_write_seg!(tr, 0, ar.into_bits(), 0xFFFF, 0);
-			// IDTR & GDTR
-			vmwrite_unchecked(GUEST_GDTR_BASE, 0);
-			vmwrite_unchecked(GUEST_IDTR_BASE, 0);
-			vmwrite_unchecked(GUEST_GDTR_LIMIT, 0xFFFF);
-			vmwrite_unchecked(GUEST_IDTR_LIMIT, 0xFFFF);
-			// VM-Entry Controls: Guest is definitely not in IA-32e mode.
-			let mut entry_ctrl = VmxEntryControls::from_bits(vmread_unchecked(VMENTRY_CONTROLS) as u32);
-			entry_ctrl.set_ia32e_mode_guest(false);
-			vmwrite_unchecked(VMENTRY_CONTROLS, entry_ctrl.into_bits() as usize);
-			// Upon INIT, vCPU enters inactive state to wait for Startup-IPI.
-			vmwrite_unchecked(GUEST_ACTIVITY_STATE, ActivityState::WAIT_FOR_SIPI as usize);
+		let int_info = VmxExitInterruptionInformation::from_bits(vmread32(VMEXIT_INTERRUPTION_INFORMATION).unwrap());
+		if int_info.interruption_type() != EventType::NonMaskableInterrupt as u32
+		{
+			panic!("Unexpected exception is intercepted! Interruption-Information: {int_info:X?}");
 		}
-		info!("INIT-signal is completed for CPU {}! Awaiting SIPI...", self.vcpu_id);
+		self.handle_nmi_exit(int_info);
+	}
+
+	fn handle_init(&mut self, _context: &mut VtStackTop)
+	{
+		// A physical INIT signal is intercepted. The guest doesn't send INIT signals to subverted processors physically,
+		// but devices may still do so. Emulate it at the end of this VM-Exit.
+		info!("INIT-signal is intercepted for CPU {}! rip=0x{:X}", self.vcpu_id, self.cached_ctxt.rip);
+		self.post_init_to_self();
 	}
 
 	fn handle_sipi(&mut self, _context: &mut VtStackTop)
 	{
-		unsafe {
-			let vector = vmread_unchecked(VMEXIT_QUALIFICATION);
-			info!("SIPI-signal is intercepted for CPU {}! Vector=0x{vector:X}", self.vcpu_id);
-			vmwrite_unchecked(GUEST_CS_SELECTOR, vector << 8);
-			vmwrite_unchecked(GUEST_CS_BASE, vector << 12);
-			vmwrite_unchecked(GUEST_RIP, 0);
-			// Startup-IPI is received. Resume to active state.
-			vmwrite_unchecked(GUEST_ACTIVITY_STATE, ActivityState::ACTIVE as usize);
-			// Invalid TLB since paging is switched off.
-			let ivc = InvvpidContext::Single(vmread_unchecked(GUEST_VPID) as u16);
-			invvpid(&ivc);
-			// Dump some codes.
-			let codes = &*((vector << 12) as *const [u8; 32]);
-			info!("SIPI Vector Code Bytes: {codes:02X?}");
-		}
+		// NoirVisor never puts the guest into the wait-for-SIPI state, so this VM-Exit is not expected.
+		let vector = vmreadptr(VMEXIT_QUALIFICATION).unwrap();
+		warn!("Unexpected SIPI-signal is intercepted for CPU {}! Vector=0x{vector:X}", self.vcpu_id);
 	}
 
 	fn handle_interrupt_window(&mut self, _context: &mut VtStackTop)
@@ -530,6 +451,25 @@ impl VtVcpu
 			MSR_BIOS_UPDATE_TRIGGER => false,
 			// Track the mode of the Local APIC.
 			MSR_APIC_BASE => !lapic_write_base((context.gpr_state.rax & 0xFFFFFFFF) | (context.gpr_state.rdx << 32)),
+			MSR_X2APIC_ICR =>
+			{
+				// Writing reserved bits, or writing the ICR in non-x2APIC mode, would cause #GP.
+				const ICR_RESERVED_BITS: u64 = 0xFFF33000;
+				let value = (context.gpr_state.rax & 0xFFFFFFFF) | (context.gpr_state.rdx << 32);
+				if !lapic_is_x2apic_mode() || value & ICR_RESERVED_BITS != 0
+				{
+					true
+				}
+				else
+				{
+					// INIT and Startup-IPI must go through the filter.
+					if !self.filter_icr(value as u32, (value >> 32) as u32)
+					{
+						wrmsr(MSR_X2APIC_ICR, value);
+					}
+					false
+				}
+			}
 			(0x40000000..0x80000000) =>
 			{
 				let f = dispatch_mshv_msr_handler(index);
@@ -580,7 +520,25 @@ impl VtVcpu
 			let interruptibility = self.cached_ctxt.get_interruptibility_mut();
 			interruptibility.set_blocking_by_nmi(true);
 		}
-		if is_ci_phys_page(gpa) || is_allocated_page(gpa)
+		// Check the MMIO Filter before Code Integrity. Checking Code Integrity takes locks, and the guest on this processor
+		// may hold them right now. Filtered MMIO (e.g.: EOI to the Local APIC) could be accessed by an interrupt handler.
+		let hv: &VtHypervisor = unsafe { &*self.hypervisor.cast() };
+		if !qual.is_execute() && hv.mmio_space.is_filtered(gpa)
+		{
+			// Intel VT-x doesn't provide the instruction bytes. Fetch the instruction via software.
+			let mut instruction = Instruction::new(self.fetch_instruction());
+			instruction.decode(self.get_current_bitness());
+			if qual.is_write()
+			{
+				self.emulate_mmio_output(&instruction, gpa);
+			}
+			else
+			{
+				self.emulate_mmio_input(&instruction, gpa);
+			}
+			self.advance_rip_manually(instruction.len() as u32);
+		}
+		else if is_ci_phys_page(gpa) || is_allocated_page(gpa)
 		{
 			let mut inslen = self.cached_ctxt.exit_instruction_length();
 			error!("CI-fault for GPA=0x{gpa:X} is intercepted! rip=0x{rip:X}, Instruction-Length: {inslen}");
@@ -669,7 +627,7 @@ impl VtVcpu
 		panic!("Unknown VM-Exit is intercepted! Exit-Reason: {} (0x{exit_reason:X})", exit_reason & 0xFFFF);
 	}
 
-	fn handle_idt_vectoring(&mut self)
+	pub(super) fn handle_idt_vectoring(&mut self)
 	{
 		let idt_vec_info = VmxIdtVectoringInformation::from_bits(vmread32(IDT_VECTORING_INFORMATION).unwrap());
 		if idt_vec_info.valid()
@@ -711,8 +669,15 @@ unsafe extern "win64" fn nvc_vt_exit_handler(context: *mut VtStackTop)
 	ctxt.guest_frame.return_rip = vcpu.cached_ctxt.rip;
 	let handler = dispatch_handler(vcpu.cached_ctxt.exit_reason);
 	handler(vcpu, ctxt);
+	// INIT discards pending events. Handle it after the VM-Exit is handled.
+	vcpu.process_init_signal(ctxt);
+	// Deliver the NMIs taken by the host and those held pending.
+	vcpu.take_host_nmi();
+	vcpu.deliver_pending_nmi();
 	// Flush cached context into the VMCS.
 	vcpu.cached_ctxt.flush();
+	// The flush may overwrite the "NMI-window exiting" set by an NMI that arrived in the meantime.
+	vcpu.recheck_host_nmi();
 }
 
 #[unsafe(no_mangle)]
@@ -811,11 +776,13 @@ type VtExitHandler = fn(&mut VtVcpu, &mut VtStackTop);
 // Defining sparse array is much easier in Rust than in C!
 static VT_EXIT_HANDLERS: [VtExitHandler; VT_MAXIMUM_CODE] = {
 	let mut array: [VtExitHandler; VT_MAXIMUM_CODE] = [VtVcpu::handle_unknown; VT_MAXIMUM_CODE];
+	array[INTERCEPTED_EXCEPTION_NMI as usize] = VtVcpu::handle_exception_nmi;
 	array[INTERCEPTED_EXTERNAL_INTERRUPT as usize] = VtVcpu::handle_extint;
 	array[INTERCEPTED_TRIPLE_FAULT as usize] = VtVcpu::handle_triple_fault;
 	array[INTERCEPTED_INIT_SIGNAL as usize] = VtVcpu::handle_init;
 	array[INTERCEPTED_STARTUP_IPI as usize] = VtVcpu::handle_sipi;
 	array[INTERCEPTED_INTERRUPT_WINDOW as usize] = VtVcpu::handle_interrupt_window;
+	array[INTERCEPTED_NMI_WINDOW as usize] = VtVcpu::handle_nmi_window;
 	array[INTERCEPTED_CPUID as usize] = VtVcpu::handle_cpuid;
 	array[INTERCEPTED_GETSEC as usize] = VtVcpu::handle_getsec;
 	array[INTERCEPTED_INVD as usize] = VtVcpu::handle_invd;
