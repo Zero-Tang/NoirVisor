@@ -15,19 +15,19 @@ use core::ffi::c_void;
 use log::*;
 use pastey::paste;
 
-use super::{
-	VtStackTop, VtVcpu,
-	hvcall::dispatch_hypercall,
-	ia32::{cpuid::CPUID_VMX, msr::*},
-	vmcs::*,
-};
+use super::{VtStackTop, VtVcpu, hvcall::dispatch_hypercall, ia32::msr::*, vmcs::*};
 use crate::{
+	cvm_core::x86::cpuid::dispatch_cpuid_handler,
 	disasm::emulator::{EmulatorOps, Instruction},
 	drv_core::lapic::*,
-	mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler},
+	mshv_core::msr::dispatch_mshv_msr_handler,
 	xpf_core::{
 		allocator::is_allocated_page,
-		asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*},
+		asm::{
+			misc::wbinvd,
+			msr::{rdmsr, wrmsr},
+			vt::*,
+		},
 		ci::is_ci_phys_page,
 		intflt::InterruptDisposition,
 		x86::{
@@ -354,49 +354,9 @@ impl VtVcpu
 	fn handle_cpuid(&mut self, context: &mut VtStackTop)
 	{
 		let gpr_state = &mut context.gpr_state;
-		let hv: &VtHypervisor = unsafe { &*self.hypervisor.cast() };
 		let ia = gpr_state.rax as u32;
-		let ic = gpr_state.rcx as u32;
-		let (a, b, c, d) = if (ia & 0x40000000) == 0x40000000
-		{
-			if hv.features.cpuid_hv_presence()
-			{
-				let leaf_func = (ia & 0x3FFFFFFF) as usize;
-				match MSHV_CPUID_HANDLERS.get(leaf_func)
-				{
-					Some(f) => f(ia, ic),
-					None => (0, 0, 0, 0),
-				}
-			}
-			else
-			{
-				(0, 0, 0, 0)
-			}
-		}
-		else
-		{
-			// This is processor's CPUID.
-			// Execute the original CPUID and filter stuff.
-			#[allow(unused_mut)]
-			let (mut a, mut b, mut c, mut d) = cpuid2(ia, ic);
-			if ia == CPUID_STD_PROCESSOR_FEATURE
-			{
-				c |= if hv.features.cpuid_hv_presence() { CPUID_UNDER_HYPERVISOR } else { 0 };
-				c &= !CPUID_VMX;
-				let cr4 = self.get_cr4();
-				if !cr4.osxsave()
-				{
-					// The OSXSAVE bit of CPUID must equal to CR4.OSXSAVE!
-					c &= !CPUID_OSXSAVE;
-				}
-			}
-			(a, b, c, d)
-		};
-		// Write the results back to eax, ebx, ecx and edx and clear the higher 32 bits.
-		gpr_state.rax = a as u64;
-		gpr_state.rbx = b as u64;
-		gpr_state.rcx = c as u64;
-		gpr_state.rdx = d as u64;
+		let handler = dispatch_cpuid_handler(ia);
+		handler(self);
 		// Advance the rip.
 		self.advance_rip();
 	}

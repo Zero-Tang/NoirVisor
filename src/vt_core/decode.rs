@@ -17,6 +17,7 @@ use core::{
 };
 
 use crate::{
+	cvm_core::x86::cpuid::{CpuidHandlerOps, StaticCpuidData},
 	disasm::emulator::EmulatorOps,
 	vt_core::{VtVcpu, vmcs::*},
 	xpf_core::{
@@ -136,5 +137,13 @@ impl VtVcpu
 			panic!("Page-fault is triggered by software while fetching instruction! Code: 0x{:08X}, rip=0x{rip:016X}", e.into_bits());
 		}
 		instruction_bytes
+	}
+}
+
+impl CpuidHandlerOps for VtVcpu
+{
+	fn static_cpuid_data(&self) -> &StaticCpuidData
+	{
+		&self.static_cpuid
 	}
 }
