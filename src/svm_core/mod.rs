@@ -40,14 +40,16 @@ use crate::{
 use amd64::{cpuid::*, msr::*};
 use custom::{SvmCustomVm, SvmCvHostVcpuState};
 use decode::SoftwareDecodeAssistOps;
-use ipi::{SvmIpiMailbox, SvmLapicRegion};
 use mshv_core::{MshvVcpuContext, MshvVcpuOps};
 use npt::SvmNptManager;
 use vmcb::*;
 use xpf_core::{
 	allocator::InternalPageAllocator,
 	asm::{crdr::*, msr::*, seg::*, svm::*},
-	hv_host::x86::*,
+	hv_host::x86::{
+		ipi::{IpiMailbox, LapicRegion},
+		*,
+	},
 	intflt::InterruptSpace,
 	ioflt::IoAddressSpace,
 	nvbdk::*,
@@ -493,7 +495,7 @@ pub struct SvmHypervisor
 	/// so the first fault event is guaranteed to be intercepted.
 	pub iommu_fault_events_armed: AtomicBool,
 	/// INIT and Startup-IPI posted to each processor.
-	pub ipi_mailboxes: Vec<SvmIpiMailbox>,
+	pub ipi_mailboxes: Vec<IpiMailbox>,
 	pub vm_list: SvmCustomVmLockedList,
 	pub cvm_iopm: MemoryDescriptor<3, usize, InternalPageAllocator>,
 	pub cvm_msrpm: MemoryDescriptor<2, usize, InternalPageAllocator>,
@@ -750,7 +752,7 @@ impl HypervisorEssentials for SvmHypervisor
 			vcpu.host_xsave.init(self.xsave_size);
 			vcpu.vcpu_id = i;
 			self.vcpus.push(vcpu);
-			self.ipi_mailboxes.push(SvmIpiMailbox::new());
+			self.ipi_mailboxes.push(IpiMailbox::new());
 		}
 		// External interrupts are filtered with the help of the physical Local APIC.
 		let apic_base = ApicBar::from_bits(rdmsr(MSR_APIC_BASE));
@@ -759,7 +761,7 @@ impl HypervisorEssentials for SvmHypervisor
 		// Note: relocating the xAPIC page is not supported. Operating systems don't do this in practice.
 		if apic_base.enable()
 		{
-			self.mmio_space.add_region(Box::new(SvmLapicRegion::new(apic_base.bar() << 12)));
+			self.mmio_space.add_region(Box::new(LapicRegion::<SvmVcpu>::new(apic_base.bar() << 12)));
 		}
 		// Initialize NPT.
 		self.nptm.build_identity_map();

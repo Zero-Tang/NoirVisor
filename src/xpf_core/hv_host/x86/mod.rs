@@ -10,6 +10,8 @@
  * or fitness for a particular purpose, etc.).
  */
 
+pub mod ipi;
+
 use alloc::vec::Vec;
 use core::{
 	arch::global_asm,
@@ -303,7 +305,7 @@ impl HostGDT
 	}
 }
 
-/// The size of each entry stub of external interrupts. See `x86_interrupt.s` for details.
+/// The size of each entry stub of external interrupts. See `interrupt.s` for details.
 const EXTERNAL_INTERRUPT_STUB_SIZE: usize = 16;
 
 #[repr(C, align(16))]
@@ -785,4 +787,4 @@ unsafe extern "C" {
 	fn noir_external_interrupt_stubs_a() -> !;
 }
 
-global_asm!(include_str!("x86_interrupt.s"));
+global_asm!(include_str!("interrupt.s"));

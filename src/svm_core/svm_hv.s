@@ -8,7 +8,7 @@
 // without any warranty (no matter implied warranty of merchantability or
 // fitness for a particular purpose, etc.).
 
-.include "src/xpf_core/hv_host/asm_helper_x86.inc"
+.include "src/xpf_core/hv_host/x86/asm_helper.inc"
 
 .extern nvc_svm_exit_handler
 .extern nvc_svm_subvert_processor_i
