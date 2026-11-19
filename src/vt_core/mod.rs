@@ -25,7 +25,7 @@ use crate::*;
 use cvm_core::x86::cpuid::StaticCpuidData;
 use drv_core::{
 	iommu::{IommuOps, create_iommu},
-	lapic::lapic_update_mode,
+	lapic::{lapic_update_mode, lapic_write_icr},
 };
 use ept::VtEptManager;
 use ia32::msr::*;
@@ -33,7 +33,10 @@ use mshv_core::{MshvVcpuContext, MshvVcpuOps};
 use vmcs::*;
 use xpf_core::{
 	asm::{crdr::*, msr::*, seg::*, vt::*},
-	hv_host::x86::{HostProcessor, HostSystem, PerCpuGsState},
+	hv_host::x86::{
+		HostProcessor, HostSystem, PerCpuGsState,
+		ipi::{IpiMailbox, LapicRegion},
+	},
 	intflt::InterruptSpace,
 	ioflt::IoAddressSpace,
 	nvbdk::*,
@@ -44,7 +47,7 @@ use xpf_core::{
 		crdr::*,
 		descriptors::{SELECTOR_RPLTI_MASK, SegmentFlags},
 		interrupts::InterruptStackFrameWithErrorCode,
-		msr::{MSR_APIC_BASE, MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR},
+		msr::{MSR_APIC_BASE, MSR_CSTAR, MSR_KERNEL_GS_BASE, MSR_LSTAR, MSR_SFMASK, MSR_STAR, MSR_X2APIC_ICR},
 		xstate::BoxedXState,
 	},
 };
@@ -61,6 +64,7 @@ mod ept;
 #[allow(dead_code)]
 mod exit;
 mod hvcall;
+mod ipi;
 
 #[bitfield(u32)]
 pub struct VtStackContextFlags
@@ -152,6 +156,10 @@ pub struct VtVcpu
 	pub held_irqs: StaticVec<16, u8>,
 	/// Set if "external-interrupt exiting" is temporarily cleared while waiting for the interrupt-window.
 	pub extint_exiting_suspended: bool,
+	/// An NMI is pending for the guest.
+	pub nmi_pending: bool,
+	/// Set by the host's NMI handler if an NMI is taken in VMX root operation.
+	pub host_nmi: AtomicBool,
 	// This context handles exceptions.
 	pub gs_context: PerCpuGsState,
 }
@@ -181,6 +189,8 @@ impl Default for VtVcpu
 			cached_ctxt: CachedExitContext::default(),
 			held_irqs: StaticVec::new(),
 			extint_exiting_suspended: false,
+			nmi_pending: false,
+			host_nmi: AtomicBool::new(false),
 			gs_context: PerCpuGsState::default(),
 		}
 	}
@@ -206,15 +216,13 @@ static VT_MSHV_VCPU_OPS: MshvVcpuOps =
 
 impl VtVcpu
 {
-	unsafe fn inform_apic_icr(_vcpu: *mut c_void, icr_lo: u32, icr_hi: u32)
+	unsafe fn inform_apic_icr(vcpu: *mut c_void, icr_lo: u32, icr_hi: u32)
 	{
-		// Forward this to APIC.
-		// FIXME: Generalize APIC BAR
-		let bar = 0xfee00000 as *mut u32;
-		unsafe {
-			// TODO: Filter INIT/SIPI ICR writes.
-			bar.byte_add(APIC_OFFSET_ICR_HI).write_volatile(icr_hi);
-			bar.byte_add(APIC_OFFSET_ICR_LO).write_volatile(icr_lo);
+		let vcpu: &mut Self = unsafe { &mut *vcpu.cast() };
+		// INIT and Startup-IPI must go through the filter.
+		if !vcpu.filter_icr(icr_lo, icr_hi)
+		{
+			lapic_write_icr(icr_lo, icr_hi);
 		}
 	}
 
@@ -431,6 +439,10 @@ impl VtVcpu
 		// External-interrupt exiting allows NoirVisor to filter out interrupts owned by the hypervisor
 		// (e.g.: IOMMU fault events). Other interrupts are reflected back to the guest.
 		pin_ctrl.set_external_interrupt_exiting(true);
+		// NMIs are intercepted so that NoirVisor can kick processors with NMIs in order to emulate INIT signals.
+		// Virtual NMIs let the processor track the NMI-blocking of the guest.
+		pin_ctrl.set_nmi_exiting(true);
+		pin_ctrl.set_virtual_nmi(true);
 		pin_ctrl |= pin_ctrl_msr.get_allowed0();
 		pin_ctrl &= pin_ctrl_msr.get_allowed1();
 		// Write to VMCS.
@@ -576,6 +588,11 @@ impl VtVcpu
 		let cr4 = vmreadptr(HOST_CR4).unwrap();
 		info!("Using Host CR4=0x{cr4:X}");
 		info!("Processor {} completed setting up VMCS!", self.vcpu_id);
+		// NMIs taken by the host are virtualized from now on.
+		self.gs_context.nmi_handler = Some(VtVcpu::accept_nmi);
+		// INIT and Startup-IPI aimed at this processor will be emulated from now on.
+		let hv: &VtHypervisor = unsafe { &*self.hypervisor.cast() };
+		hv.ipi_mailboxes[self.vcpu_id as usize].go_online(self.apic_id, self.x2apic_id);
 		// xpf_core::asm::misc::int3();
 		let r = unsafe { vmlaunch() };
 		panic!("Failed to launch VM! {r}");
@@ -638,6 +655,8 @@ pub struct VtHypervisor
 	pub iommu_manager: Option<Box<dyn IommuOps>>,
 	pub pio_space: IoAddressSpace,
 	pub mmio_space: IoAddressSpace,
+	/// INIT and Startup-IPI posted to each processor.
+	pub ipi_mailboxes: Vec<IpiMailbox>,
 	pub image_base: *mut c_void,
 	pub image_size: u32,
 	pub xsave_size: usize,
@@ -690,6 +709,7 @@ impl Default for VtHypervisor
 			iommu_manager: None,
 			pio_space: IoAddressSpace { regions: Vec::new() },
 			mmio_space: IoAddressSpace { regions: Vec::new() },
+			ipi_mailboxes: Vec::new(),
 			image_base: null_mut(),
 			image_size: 0,
 			xsave_size: xsave_cpuid.supported_size() as usize,
@@ -899,6 +919,8 @@ impl HypervisorEssentials for VtHypervisor
 				set_interception(MSR_BIOS_UPDATE_TRIGGER, true, true);
 				// Track the mode of the Local APIC.
 				set_interception(MSR_APIC_BASE, false, true);
+				// Filter INIT and Startup-IPI sent in x2APIC mode.
+				set_interception(MSR_X2APIC_ICR, false, true);
 				// Intercept accesses to VMX MSRs.
 				set_interception(MSR_VMX_BASIC, true, false);
 				set_interception(MSR_VMX_PIN_BASED_CTLS, true, false);
@@ -974,6 +996,7 @@ impl HypervisorEssentials for VtHypervisor
 			vcpu.host_xsave.init(self.xsave_size);
 			vcpu.vcpu_id = i;
 			self.vcpus.push(vcpu);
+			self.ipi_mailboxes.push(IpiMailbox::new());
 		}
 		if self.features.enable_iommu()
 		{
@@ -998,7 +1021,14 @@ impl HypervisorEssentials for VtHypervisor
 			}
 		}
 		// External interrupts are filtered with the help of the physical Local APIC.
-		lapic_update_mode(rdmsr(MSR_APIC_BASE));
+		let apic_base = ApicBar::from_bits(rdmsr(MSR_APIC_BASE));
+		lapic_update_mode(apic_base.into_bits());
+		// Filter writes to the xAPIC page so that INIT and Startup-IPI sent in xAPIC mode are intercepted.
+		// Note: relocating the xAPIC page is not supported. Operating systems don't do this in practice.
+		if apic_base.enable()
+		{
+			self.mmio_space.add_region(Box::new(LapicRegion::<VtVcpu>::new(apic_base.bar() << 12)));
+		}
 		// Initialize EPT.
 		self.eptm.build_identity_map();
 		self.eptm.setup_mmio_filter(&self.mmio_space);
