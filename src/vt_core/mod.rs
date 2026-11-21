@@ -632,8 +632,12 @@ impl VtVcpu
 						info!("VMCS has been loaded to CPU {} successfully!", self.vcpu_id);
 						unsafe {
 							nvc_vt_subvert_processor_a(self as *mut Self);
-							sysdprintln!("Processor {} completed subversion!", self.vcpu_id);
 						}
+						// Don't print to the system's debugger here: this routine runs on Application Processors as well.
+						// In UEFI, the system's debugger is the Console Output Protocol of the Boot Services, which
+						// is not multiprocessor-safe. Calling it from an AP races with the BSP on the TPL and may trap the
+						// AP into a dead loop due to a failed assertion in the firmware.
+						info!("Processor {} completed subversion!", self.vcpu_id);
 					}
 					r => panic!("Failed to execute vmptrld! Reason: {r}"),
 				},
