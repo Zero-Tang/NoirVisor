@@ -472,7 +472,8 @@ pub(super) trait SoftwareDecodeAssistOps: VmcbOps + EmulatorOps
 			if self.ins_mut().is_decoded()
 				&& let Some(info) = self.ins_mut().decode_invlpg()
 			{
-				let p = info.calc_addr(self);
+				let ins_len = self.ins_mut().len();
+				let p = info.calc_addr(self, ins_len);
 				// Then put the results back.
 				self.write_exit_info1(p);
 			}
