@@ -10,16 +10,21 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
 use core::{ffi::c_void, hint::spin_loop, slice, sync::atomic::Ordering};
 
-use log::{error, info, trace};
+use log::{error, info, trace, warn};
 use nvcvm::status::Status;
 
-use super::IommuOps;
+use super::{IOMMU_FAULT_EVENT_VECTOR, IommuOps};
 use crate::{
-	drv_core::{acpi::tables::DmaRemappingReportingStructure, iommu::intel::registers::*},
-	xpf_core::{ioflt::IoRegionOps, nvbdk::*},
+	drv_core::{acpi::tables::DmaRemappingReportingStructure, iommu::intel::registers::*, lapic::lapic_id},
+	xpf_core::{
+		intflt::{InterruptDisposition, InterruptOps},
+		ioflt::IoRegionOps,
+		nvbdk::*,
+		x86::apic::MsiAddress,
+	},
 };
 
 use acpi::*;
@@ -40,6 +45,111 @@ pub struct IntelDmarUnit
 	pub fault_record_offset: usize,
 	pub fault_record_limit: usize,
 	pub iotlb_reg_offset: usize,
+	/// Extended Interrupt Mode is supported: fault events can target 32-bit x2APIC IDs.
+	pub eim: bool,
+}
+
+impl IntelDmarUnit
+{
+	fn virt(&self) -> *mut c_void
+	{
+		self.bar.virt.load(Ordering::Relaxed)
+	}
+
+	/// ## `service_faults` method
+	/// Log and clear the faults reported by this unit. \
+	/// Returns `false` without side effects if this unit reports no faults, i.e.: it didn't raise the fault event.
+	fn service_faults(&self) -> bool
+	{
+		let virt = self.virt();
+		let fsts_reg: *mut FaultStatusRegister = unsafe { virt.byte_add(FaultStatusRegister::MMIO_OFFSET).cast() };
+		let fsts = unsafe { fsts_reg.read_volatile() };
+		if !(fsts.pfo() || fsts.ppf() || fsts.iqe() || fsts.ice() || fsts.ite())
+		{
+			return false;
+		}
+		if fsts.ppf()
+		{
+			// Faults are recorded in the fault recording registers circularly, starting from the index in FRI.
+			let count = self.fault_record_limit;
+			for i in 0..count
+			{
+				let index = (fsts.fri() as usize + i) % count;
+				let offset = self.fault_record_offset + index * size_of::<FaultRecordingRegister>();
+				let record: *mut u64 = unsafe { virt.byte_add(offset).cast() };
+				// Read the register in 64-bit halves. 128-bit MMIO accesses aren't guaranteed to work.
+				let (lo, hi) = unsafe { (record.read_volatile(), record.add(1).read_volatile()) };
+				let fr = FaultRecordingRegister::from_bits(((hi as u128) << 64) | lo as u128);
+				if !fr.f()
+				{
+					break;
+				}
+				let access = match (fr.t2(), fr.t1())
+				{
+					(false, false) => "Write",
+					(false, true) => "Read",
+					(true, false) => "Page-Request",
+					(true, true) => "AtomicOp",
+				};
+				let sid = fr.sid();
+				warn!(
+					"DMA fault is reported by IOMMU 0x{:X}! Source: {:02X}:{:02X}.{}, Address: 0x{:X}, Access: {access}, Reason: 0x{:02X}",
+					self.bar.phys,
+					sid >> 8,
+					(sid >> 3) & 0x1F,
+					sid & 7,
+					fr.fi() << 12,
+					fr.fr()
+				);
+				// Clear the F field (RW1C) by writing to the highest DWORD of the register.
+				unsafe {
+					record.cast::<u32>().add(3).write_volatile(1 << 31);
+				}
+			}
+		}
+		if fsts.pfo()
+		{
+			warn!("Fault records of IOMMU 0x{:X} overflowed! Some DMA faults are not recorded!", self.bar.phys);
+		}
+		if fsts.iqe() || fsts.ice() || fsts.ite()
+		{
+			error!("IOMMU 0x{:X} reported invalidation errors! Fault Status: {fsts:?}", self.bar.phys);
+		}
+		// Clear the status fields (RW1CS). PPF is evaluated by hardware from the F fields cleared above.
+		let clear = FaultStatusRegister::new().with_pfo(fsts.pfo()).with_iqe(fsts.iqe()).with_ice(fsts.ice()).with_ite(fsts.ite());
+		unsafe {
+			fsts_reg.write_volatile(clear);
+		}
+		true
+	}
+}
+
+/// ## `IntelDmarFaultHandler` structure
+/// Handles fault events of all Intel VT-d units. All units share the same vector.
+pub struct IntelDmarFaultHandler(Vec<Arc<IntelDmarUnit>>);
+
+impl InterruptOps for IntelDmarFaultHandler
+{
+	fn name(&self) -> &str
+	{
+		"Intel VT-d Fault Event"
+	}
+
+	fn base_count(&self) -> (u8, usize)
+	{
+		(IOMMU_FAULT_EVENT_VECTOR, 1)
+	}
+
+	fn handle(&mut self, _vector: u8, _context: *mut c_void) -> InterruptDisposition
+	{
+		// Service every unit: fault events from several units may be coalesced into one interrupt.
+		let mut claimed = false;
+		for unit in &self.0
+		{
+			claimed |= unit.service_faults();
+		}
+		if claimed { InterruptDisposition::Handled } else { InterruptDisposition::Unclaimed }
+	}
 }
 
 pub struct IntelDmarUnitRegion(Arc<IntelDmarUnit>);
@@ -357,9 +467,9 @@ impl IommuOps for IntelIommuManager
 		{
 			let virt = dmar.bar.virt.load(Ordering::Relaxed);
 			unsafe {
-				// Disable IOMMU fault notification.
+				// Mask IOMMU fault events until NoirVisor is ready to intercept them. See `enable_fault_events` method.
 				let fault_msi_ctrl: *mut FaultEventControlRegister = virt.byte_add(FaultEventControlRegister::MMIO_OFFSET).cast();
-				fault_msi_ctrl.write_volatile(FaultEventControlRegister::new());
+				fault_msi_ctrl.write_volatile(FaultEventControlRegister::new().with_im(true));
 				// Set Root-Table Pointer.
 				let root_reg: *mut RootTableAddressRegister = virt.byte_add(RootTableAddressRegister::MMIO_OFFSET).cast();
 				root_reg.write_volatile(RootTableAddressRegister::from_bits(self.root.phys));
@@ -407,6 +517,54 @@ impl IommuOps for IntelIommuManager
 	}
 
 	fn restore(&mut self) {}
+
+	fn get_interrupt_handlers(&self) -> Vec<Box<dyn InterruptOps>>
+	{
+		let units = self.dmar_units.iter().map(Arc::clone).collect();
+		vec![Box::new(IntelDmarFaultHandler(units))]
+	}
+
+	fn enable_fault_events(&self)
+	{
+		let Some(apic_id) = lapic_id()
+		else
+		{
+			error!("The Local APIC is disabled! IOMMU fault events remain masked!");
+			return;
+		};
+		for dmar in &self.dmar_units
+		{
+			if apic_id > u8::MAX as u32 && !dmar.eim
+			{
+				error!("IOMMU 0x{:X} can't deliver fault events to APIC ID 0x{apic_id:X}! They remain masked!", dmar.bar.phys);
+				continue;
+			}
+			let virt = dmar.virt();
+			// Fixed delivery mode, edge-triggered, physical destination mode.
+			let data = FaultEventDataRegister::new().with_imd(IOMMU_FAULT_EVENT_VECTOR as u16);
+			let addr = MsiAddress::new().with_base(MsiAddress::BASE).with_destination(apic_id as u8);
+			unsafe {
+				virt.byte_add(FaultEventDataRegister::MMIO_OFFSET).cast::<FaultEventDataRegister>().write_volatile(data);
+				let fe_addr = FaultEventAddressRegister::from_bits(addr.into_bits());
+				virt.byte_add(FaultEventAddressRegister::MMIO_OFFSET).cast::<FaultEventAddressRegister>().write_volatile(fe_addr);
+				if dmar.eim
+				{
+					// The upper address holds bits 31:8 of the x2APIC ID.
+					let fe_uaddr = FaultEventUpperAddressRegister::new().with_mua(apic_id & !0xFF);
+					virt.byte_add(FaultEventUpperAddressRegister::MMIO_OFFSET)
+						.cast::<FaultEventUpperAddressRegister>()
+						.write_volatile(fe_uaddr);
+				}
+				// Unmask fault events. A fault event held pending by the mask is issued right now.
+				let fe_ctrl: *mut FaultEventControlRegister = virt.byte_add(FaultEventControlRegister::MMIO_OFFSET).cast();
+				fe_ctrl.write_volatile(FaultEventControlRegister::new());
+			}
+			info!(
+				"Fault events of IOMMU 0x{:X} are enabled! Vector: 0x{IOMMU_FAULT_EVENT_VECTOR:02X}, APIC ID: 0x{apic_id:X}",
+				dmar.bar.phys
+			);
+		}
+	}
 
 	fn get_bar_pages(&self) -> Vec<Box<dyn IoRegionOps>>
 	{
@@ -467,6 +625,7 @@ pub(super) fn create_iommu(acpi_tables: &[*const DmaRemappingReportingStructure]
 					fault_record_offset: 0,
 					fault_record_limit: 0,
 					iotlb_reg_offset: 0,
+					eim: false,
 				}));
 			}
 			else if remap_type == RemappingTypeHeader::TYPE_RMRR
@@ -489,6 +648,7 @@ pub(super) fn create_iommu(acpi_tables: &[*const DmaRemappingReportingStructure]
 			bar.fault_record_offset = cap.fro() << 4;
 			bar.fault_record_limit = cap.nfr() + 1;
 			bar.iotlb_reg_offset = ext_cap.iro() << 4;
+			bar.eim = ext_cap.eim();
 		}
 		info!(
 			"IOMMU Fault-Record Offset: 0x{:X}, Limit: {}, IOTLB Register Offset: 0x{:X}",

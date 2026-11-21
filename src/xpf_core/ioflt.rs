@@ -82,6 +82,13 @@ impl<A: Allocator> IoAddressSpace<A>
 		}
 	}
 
+	/// ## `is_filtered` method
+	/// Check whether the address is located in a filtered I/O region. This method doesn't take any locks.
+	pub fn is_filtered(&self, addr: u64) -> bool
+	{
+		self.regions.binary_search_by(|r| r.binary_search_helper(addr)).is_ok()
+	}
+
 	/// ## `try_dispatch` method
 	/// This is an internal method which uses binary search to dispatch I/O.
 	fn try_dispatch(&mut self, addr: u64) -> Option<&mut dyn IoRegionOps>

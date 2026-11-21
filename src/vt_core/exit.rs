@@ -10,34 +10,39 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{ffi::c_void, hint::unreachable_unchecked};
+use core::ffi::c_void;
 
 use log::*;
 use pastey::paste;
 
-use super::{
-	VtIrqInterruptibilityState, VtStackTop, VtVcpu,
-	hvcall::dispatch_hypercall,
-	ia32::{cpuid::CPUID_VMX, msr::*},
-	vmcs::*,
-};
+use super::{VtStackTop, VtVcpu, hvcall::dispatch_hypercall, ia32::msr::*, vmcs::*};
 use crate::{
+	cvm_core::x86::cpuid::dispatch_cpuid_handler,
 	disasm::emulator::{EmulatorOps, Instruction},
-	mshv_core::{cpuid::MSHV_CPUID_HANDLERS, msr::dispatch_mshv_msr_handler},
+	drv_core::lapic::*,
+	mshv_core::msr::dispatch_mshv_msr_handler,
 	xpf_core::{
 		allocator::is_allocated_page,
-		asm::{cpuid::cpuid2, crdr::*, misc::wbinvd, msr::rdmsr, vt::*},
+		asm::{
+			misc::wbinvd,
+			msr::{rdmsr, wrmsr},
+			vt::*,
+		},
 		ci::is_ci_phys_page,
+		intflt::InterruptDisposition,
+		nvbdk::PAGE_4KB_SIZE,
 		x86::{
-			cpuid::*,
 			crdr::*,
-			descriptors::SegmentFlags,
 			interrupts::{EventType, GENERAL_PROTECTION_FAULT},
+			msr::{MSR_APIC_BASE, MSR_X2APIC_ICR},
 		},
 	},
 	*,
 };
-use static_collections::bitmap::RefBitmap;
+
+const EVENT_TYPE_SOFTWARE_INTERRUPT: u32 = EventType::SoftwareInterrupt as u32;
+const EVENT_TYPE_PRIVILEGED_SOFTWARE_EXCEPTION: u32 = EventType::PrivilegedSoftwareException as u32;
+const EVENT_TYPE_SOFTWARE_EXCEPTION: u32 = EventType::SoftwareException as u32;
 
 impl VtVcpu
 {
@@ -77,26 +82,128 @@ impl VtVcpu
 
 	fn handle_extint(&mut self, _context: &mut VtStackTop)
 	{
-		// In future implementations, we should check the interrupt vectors so that we may filter IOMMU-induced events.
+		// The processor is subverted, and interrupts are blocked in the host. Unmask IOMMU fault events now.
+		let hv: &VtHypervisor = unsafe { &*self.hypervisor.cast() };
+		hv.enable_iommu_fault_events();
+		// The interrupt has been acknowledged on VM-Exit.
 		let int_info = VmxExitInterruptionInformation::from_bits(vmread32(VMEXIT_INTERRUPTION_INFORMATION).unwrap());
-		// info!("External Interrupt occured! Info: 0x{:X}",int_info.into_bits());
-		let irq_bmp: &mut RefBitmap<256> = unsafe { RefBitmap::from_raw_mut_ptr(self.irq_bmp.as_mut_ptr().cast()) };
-		// Set the interrupt as pending in the bitmap.
-		match irq_bmp.set(int_info.vector() as usize)
+		if !int_info.valid()
 		{
-			Ok(b) =>
-			{
-				if b
-				{
-					error!("Interrupt Vector {} is already set as pending!", int_info.vector());
-				}
-			}
-			// This branch is impossible to reach. Don't bother to check it.
-			Err(_) =>
-			unsafe { unreachable_unchecked() },
+			error!("External interrupt is intercepted without acknowledgement!");
+			return;
 		}
-		// We might be able to immediately inject the interrupt at this moment.
-		self.handle_pending_interrupt();
+		let vector = int_info.vector();
+		// The VM-Exit might occur during event delivery. Re-inject that event first.
+		self.handle_idt_vectoring();
+		if self.claim_host_interrupt(vector)
+		{
+			// This interrupt is raised by the hypervisor's device. Filter it out from the guest.
+			return;
+		}
+		if self.can_inject_extint()
+		{
+			// The guest can take this interrupt right now.
+			// This is exactly what would happen without virtualization.
+			self.inject_extint(vector);
+		}
+		else if lapic_is_in_service(vector)
+		{
+			// The guest can't take this interrupt now, but it is already in-service in the physical Local APIC.
+			// Keeping it in-service is dangerous: the guest may issue EOI for another interrupt in the meantime,
+			// which would clear this vector instead and corrupt the in-service state of the Local APIC.
+			// Therefore, put it back to the IRR and let the Local APIC hold it pending as if it were never acknowledged.
+			// Since the APIC dispensed this vector, it must be the highest in-service vector. EOI clears exactly this vector.
+			let level = lapic_is_level_triggered(vector);
+			lapic_eoi();
+			// For a level-triggered interrupt, the EOI broadcast lets the I/O APIC resend it as the line is still asserted.
+			// Otherwise, we have to resend this interrupt by ourselves.
+			if !level || lapic_is_eoi_broadcast_suppressed()
+			{
+				lapic_self_ipi(vector);
+			}
+			// The Local APIC keeps asserting this interrupt. Stop intercepting external interrupts until the guest can take
+			// interrupts. Interrupt-window exits take priority over external interrupts and wake the processor from HLT,
+			// so the guest could not receive any interrupts natively in the meantime.
+			self.suspend_extint_exiting();
+		}
+		else if vector != lapic_spurious_vector()
+		{
+			// This interrupt is not tracked by the Local APIC (e.g.: ExtINT from 8259 PIC). It can't be put back.
+			// Hold it pending and inject it when the guest opens the interrupt-window.
+			// In fully-nested mode, the 8259 PIC dispenses an interrupt only if it has higher priority than all in-service
+			// interrupts. Held interrupts remain in-service in the 8259 PIC as the guest hasn't issued EOI for them.
+			// Therefore, every held interrupt has higher priority than those held before it.
+			if self.held_irqs.push(vector).is_err()
+			{
+				error!("Too many held external interrupts! Vector 0x{vector:02X} is dropped!");
+			}
+			else
+			{
+				trace!(
+					"External interrupt (vector=0x{vector:02X}) is held on processor {}! {} interrupt(s) are held.",
+					self.vcpu_id,
+					self.held_irqs.len()
+				);
+			}
+			self.cached_ctxt.get_proc_ctrl1_mut().set_interrupt_window_exiting(true);
+		}
+		// Spurious interrupts don't require EOI. Discard it since the guest can't take it.
+	}
+
+	/// ## `claim_host_interrupt` method
+	/// Dispatch an interrupt to the hypervisor's handler. Returns `true` if the hypervisor claimed and handled it. \
+	/// Otherwise, the interrupt belongs to the guest. Its vector may collide with a guest's device.
+	fn claim_host_interrupt(&mut self, vector: u8) -> bool
+	{
+		let hv: &mut VtHypervisor = unsafe { &mut *self.hypervisor.cast() };
+		// The hypervisor's devices deliver interrupts through the Local APIC, so their interrupts must be in-service.
+		// Interrupts not tracked by the Local APIC (e.g.: ExtINT from 8259 PIC) belong to the guest.
+		if !hv.int_space.is_owned(vector) || !lapic_is_in_service(vector)
+		{
+			return false;
+		}
+		match hv.int_space.dispatch(vector, (self as *mut Self).cast())
+		{
+			InterruptDisposition::Handled =>
+			{
+				trace!("Hypervisor-owned interrupt (vector=0x{vector:02X}) is handled on processor {}!", self.vcpu_id);
+				lapic_eoi();
+				true
+			}
+			InterruptDisposition::Unclaimed =>
+			{
+				trace!(
+					"Interrupt (vector=0x{vector:02X}) collides with the guest's device! It is thrown back to the guest on processor {}!",
+					self.vcpu_id
+				);
+				false
+			}
+		}
+	}
+
+	/// ## `inject_extint` method
+	/// Inject an external interrupt into the guest. Make sure the guest can take it before calling this method.
+	fn inject_extint(&mut self, vector: u8)
+	{
+		// The injected interrupt wakes the guest from HLT state.
+		vmwrite32(GUEST_ACTIVITY_STATE, ActivityState::ACTIVE);
+		unsafe {
+			inject_event(vector, EventType::ExternalInterrupt, None, true, 0);
+		}
+	}
+
+	/// ## `suspend_extint_exiting` method
+	/// Clear "external-interrupt exiting" until the guest opens the interrupt-window.
+	fn suspend_extint_exiting(&mut self)
+	{
+		if !self.extint_exiting_suspended
+		{
+			let mut pin_ctrl = VmxPinBasedControls::from_bits(vmread32(PIN_BASED_VM_EXECUTION_CONTROLS).unwrap());
+			pin_ctrl.set_external_interrupt_exiting(false);
+			vmwrite32(PIN_BASED_VM_EXECUTION_CONTROLS, pin_ctrl.into_bits());
+			self.extint_exiting_suspended = true;
+		}
+		self.cached_ctxt.get_proc_ctrl1_mut().set_interrupt_window_exiting(true);
 	}
 
 	fn handle_triple_fault(&mut self, _context: &mut VtStackTop)
@@ -104,166 +211,74 @@ impl VtVcpu
 		panic!("Triple-Fault occured!");
 	}
 
-	fn handle_init(&mut self, context: &mut VtStackTop)
+	/// ## `handle_exception_nmi` method
+	/// Handles the VM-Exit due to an exception or an NMI. NoirVisor doesn't intercept exceptions, so it must be an NMI.
+	fn handle_exception_nmi(&mut self, _context: &mut VtStackTop)
 	{
-		let gpr_state = &mut context.gpr_state;
-		info!("INIT-signal is intercepted for CPU {}! rip=0x{:X}", self.vcpu_id, self.cached_ctxt.rip);
-		unsafe {
-			// General-Purpose Registers
-			for i in 0..16usize
-			{
-				gpr_state.write(i, 0);
-			}
-			gpr_state.rdx = self.cpuid_fms as u64;
-			vmwrite_unchecked(GUEST_RSP, 0);
-			vmwrite_unchecked(GUEST_RIP, 0xFFF0);
-			vmwrite_unchecked(GUEST_RFLAGS, 2);
-			// Control Registers
-			// CR0.ET is always set during INIT.
-			let mut cr0 = Cr0::new().with_et(true);
-			// Fix CR0 bits
-			cr0 |= rdmsr(MSR_VMX_CR0_FIXED1);
-			cr0 &= rdmsr(MSR_VMX_CR0_FIXED0);
-			// CR0.PE and CR0.PG are cleared by INIT.
-			cr0.set_pe(false);
-			cr0.set_pg(false);
-			vmwrite_unchecked(GUEST_CR0, cr0.into_bits() as usize);
-			vmwrite_unchecked(CR0_READ_SHADOW, cr0.into_bits() as usize);
-			write_cr2(0);
-			vmwrite_unchecked(GUEST_CR3, 0);
-			// CR4 is cleared to 0 upon INIT. But as a guest, CR4.VMXE must be set.
-			let mut cr4 = 0;
-			cr4 |= rdmsr(MSR_VMX_CR4_FIXED0) as usize;
-			cr4 &= rdmsr(MSR_VMX_CR4_FIXED1) as usize;
-			vmwrite_unchecked(GUEST_CR4, cr4);
-			vmwrite_unchecked(CR4_READ_SHADOW, 0);
-			// EFER is cleared to 0 upon INIT.
-			vmwrite_unchecked(GUEST_MSR_IA32_EFER, 0);
-			// Debug Registers
-			write_dr0(0);
-			write_dr1(0);
-			write_dr2(0);
-			write_dr3(0);
-			write_dr6(0xffff0ff0);
-			vmwrite_unchecked(GUEST_DR7, 0x400);
-			// Segment Registers
-			macro_rules! vmcs_write_seg {
-				($name:tt,$sel:literal,$ar:expr,$lim:literal,$base:literal) => {
-					paste! {
-						vmwrite_unchecked([<GUEST_ $name:upper _SELECTOR>],$sel as usize);
-						vmwrite_unchecked([<GUEST_ $name:upper _ACCESS_RIGHTS>],$ar as usize);
-						vmwrite_unchecked([<GUEST_ $name:upper _LIMIT>],$lim as usize);
-						vmwrite_unchecked([<GUEST_ $name:upper _BASE>],$base);
-					}
-				};
-			}
-			let mut ar = SegmentAccessRights::new();
-			ar.set_segment_type(SegmentFlags::CODE_EXECUTE_READ_ACCESSED as u32);
-			ar.set_descriptor_type(true);
-			ar.set_present(true);
-			vmcs_write_seg!(cs, 0xF000, ar.into_bits(), 0xFFFF, 0xFFFF0000);
-			ar.set_segment_type(SegmentFlags::DATA_READ_WRITE_ACCESSED as u32);
-			vmcs_write_seg!(ds, 0, ar.into_bits(), 0xFFFF, 0);
-			vmcs_write_seg!(es, 0, ar.into_bits(), 0xFFFF, 0);
-			vmcs_write_seg!(fs, 0, ar.into_bits(), 0xFFFF, 0);
-			vmcs_write_seg!(gs, 0, ar.into_bits(), 0xFFFF, 0);
-			vmcs_write_seg!(ss, 0, ar.into_bits(), 0xFFFF, 0);
-			// LDTR & TR
-			ar.set_segment_type(SegmentFlags::LDT as u32);
-			ar.set_descriptor_type(false);
-			vmcs_write_seg!(ldtr, 0, ar.into_bits(), 0xFFFF, 0);
-			ar.set_segment_type(SegmentFlags::BUSY_TSS_16BIT as u32);
-			vmcs_write_seg!(tr, 0, ar.into_bits(), 0xFFFF, 0);
-			// IDTR & GDTR
-			vmwrite_unchecked(GUEST_GDTR_BASE, 0);
-			vmwrite_unchecked(GUEST_IDTR_BASE, 0);
-			vmwrite_unchecked(GUEST_GDTR_LIMIT, 0xFFFF);
-			vmwrite_unchecked(GUEST_IDTR_LIMIT, 0xFFFF);
-			// VM-Entry Controls: Guest is definitely not in IA-32e mode.
-			let mut entry_ctrl = VmxEntryControls::from_bits(vmread_unchecked(VMENTRY_CONTROLS) as u32);
-			entry_ctrl.set_ia32e_mode_guest(false);
-			vmwrite_unchecked(VMENTRY_CONTROLS, entry_ctrl.into_bits() as usize);
-			// Upon INIT, vCPU enters inactive state to wait for Startup-IPI.
-			vmwrite_unchecked(GUEST_ACTIVITY_STATE, ActivityState::WAIT_FOR_SIPI as usize);
+		let int_info = VmxExitInterruptionInformation::from_bits(vmread32(VMEXIT_INTERRUPTION_INFORMATION).unwrap());
+		if int_info.interruption_type() != EventType::NonMaskableInterrupt as u32
+		{
+			panic!("Unexpected exception is intercepted! Interruption-Information: {int_info:X?}");
 		}
-		info!("INIT-signal is completed for CPU {}! Awaiting SIPI...", self.vcpu_id);
+		self.handle_nmi_exit(int_info);
+	}
+
+	fn handle_init(&mut self, _context: &mut VtStackTop)
+	{
+		// A physical INIT signal is intercepted. The guest doesn't send INIT signals to subverted processors physically,
+		// but devices may still do so. Emulate it at the end of this VM-Exit.
+		info!("INIT-signal is intercepted for CPU {}! rip=0x{:X}", self.vcpu_id, self.cached_ctxt.rip);
+		self.post_init_to_self();
 	}
 
 	fn handle_sipi(&mut self, _context: &mut VtStackTop)
 	{
-		unsafe {
-			let vector = vmread_unchecked(VMEXIT_QUALIFICATION);
-			info!("SIPI-signal is intercepted for CPU {}! Vector=0x{vector:X}", self.vcpu_id);
-			vmwrite_unchecked(GUEST_CS_SELECTOR, vector << 8);
-			vmwrite_unchecked(GUEST_CS_BASE, vector << 12);
-			vmwrite_unchecked(GUEST_RIP, 0);
-			// Startup-IPI is received. Resume to active state.
-			vmwrite_unchecked(GUEST_ACTIVITY_STATE, ActivityState::ACTIVE as usize);
-			// Invalid TLB since paging is switched off.
-			let ivc = InvvpidContext::Single(vmread_unchecked(GUEST_VPID) as u16);
-			invvpid(&ivc);
-			// Dump some codes.
-			let codes = &*((vector << 12) as *const [u8; 32]);
-			info!("SIPI Vector Code Bytes: {codes:02X?}");
-		}
+		// NoirVisor never puts the guest into the wait-for-SIPI state, so this VM-Exit is not expected.
+		let vector = vmreadptr(VMEXIT_QUALIFICATION).unwrap();
+		warn!("Unexpected SIPI-signal is intercepted for CPU {}! Vector=0x{vector:X}", self.vcpu_id);
 	}
 
 	fn handle_interrupt_window(&mut self, _context: &mut VtStackTop)
 	{
 		// Cancel interrupt-window exiting.
-		let proc_ctrl1 = self.cached_ctxt.get_proc_ctrl1_mut();
-		proc_ctrl1.set_interrupt_window_exiting(false);
-		// trace!("Cancelled interrupt-window exiting.");
-		// Interrupt-window is quite an opportunity to inject an external interrupt.
-		self.handle_pending_interrupt();
+		self.cached_ctxt.get_proc_ctrl1_mut().set_interrupt_window_exiting(false);
+		if self.extint_exiting_suspended
+		{
+			// Resume intercepting external interrupts.
+			// The interrupt held pending in the Local APIC will be intercepted again right after VM-Entry.
+			let mut pin_ctrl = VmxPinBasedControls::from_bits(vmread32(PIN_BASED_VM_EXECUTION_CONTROLS).unwrap());
+			pin_ctrl.set_external_interrupt_exiting(true);
+			vmwrite32(PIN_BASED_VM_EXECUTION_CONTROLS, pin_ctrl.into_bits());
+			self.extint_exiting_suspended = false;
+		}
+		// Interrupt-window is quite an opportunity to inject a held external interrupt.
+		// The most recently held interrupt has the highest priority.
+		if let Some(&irq) = self.held_irqs.as_slice().last()
+		{
+			if self.can_inject_extint()
+			{
+				self.inject_extint(irq);
+				self.held_irqs.pop();
+				trace!(
+					"Held external interrupt (vector=0x{irq:02X}) is injected on processor {}! {} interrupt(s) remain held.",
+					self.vcpu_id,
+					self.held_irqs.len()
+				);
+			}
+			// Wait for another interrupt-window if there are more held interrupts.
+			if !self.held_irqs.is_empty()
+			{
+				self.cached_ctxt.get_proc_ctrl1_mut().set_interrupt_window_exiting(true);
+			}
+		}
 	}
 
 	fn handle_cpuid(&mut self, context: &mut VtStackTop)
 	{
 		let gpr_state = &mut context.gpr_state;
-		let hv: &VtHypervisor = unsafe { &*self.hypervisor.cast() };
 		let ia = gpr_state.rax as u32;
-		let ic = gpr_state.rcx as u32;
-		let (a, b, c, d) = if (ia & 0x40000000) == 0x40000000
-		{
-			if hv.features.cpuid_hv_presence()
-			{
-				let leaf_func = (ia & 0x3FFFFFFF) as usize;
-				match MSHV_CPUID_HANDLERS.get(leaf_func)
-				{
-					Some(f) => f(ia, ic),
-					None => (0, 0, 0, 0),
-				}
-			}
-			else
-			{
-				(0, 0, 0, 0)
-			}
-		}
-		else
-		{
-			// This is processor's CPUID.
-			// Execute the original CPUID and filter stuff.
-			#[allow(unused_mut)]
-			let (mut a, mut b, mut c, mut d) = cpuid2(ia, ic);
-			if ia == CPUID_STD_PROCESSOR_FEATURE
-			{
-				c |= if hv.features.cpuid_hv_presence() { CPUID_UNDER_HYPERVISOR } else { 0 };
-				c &= !CPUID_VMX;
-				let cr4 = self.get_cr4();
-				if !cr4.osxsave()
-				{
-					// The OSXSAVE bit of CPUID must equal to CR4.OSXSAVE!
-					c &= !CPUID_OSXSAVE;
-				}
-			}
-			(a, b, c, d)
-		};
-		// Write the results back to eax, ebx, ecx and edx and clear the higher 32 bits.
-		gpr_state.rax = a as u64;
-		gpr_state.rbx = b as u64;
-		gpr_state.rcx = c as u64;
-		gpr_state.rdx = d as u64;
+		let handler = dispatch_cpuid_handler(ia);
+		handler(self);
 		// Advance the rip.
 		self.advance_rip();
 	}
@@ -435,6 +450,27 @@ impl VtVcpu
 			// Prevent the Guest from updating microcode.
 			// Do so by ignoring the update request.
 			MSR_BIOS_UPDATE_TRIGGER => false,
+			// Track the mode of the Local APIC.
+			MSR_APIC_BASE => !lapic_write_base((context.gpr_state.rax & 0xFFFFFFFF) | (context.gpr_state.rdx << 32)),
+			MSR_X2APIC_ICR =>
+			{
+				// Writing reserved bits, or writing the ICR in non-x2APIC mode, would cause #GP.
+				const ICR_RESERVED_BITS: u64 = 0xFFF33000;
+				let value = (context.gpr_state.rax & 0xFFFFFFFF) | (context.gpr_state.rdx << 32);
+				if !lapic_is_x2apic_mode() || value & ICR_RESERVED_BITS != 0
+				{
+					true
+				}
+				else
+				{
+					// INIT and Startup-IPI must go through the filter.
+					if !self.filter_icr(value as u32, (value >> 32) as u32)
+					{
+						wrmsr(MSR_X2APIC_ICR, value);
+					}
+					false
+				}
+			}
 			(0x40000000..0x80000000) =>
 			{
 				let f = dispatch_mshv_msr_handler(index);
@@ -470,15 +506,6 @@ impl VtVcpu
 		panic!("Invalid Auto-MSR List!");
 	}
 
-	fn handle_tpr_below_threshold(&mut self, _context: &mut VtStackTop)
-	{
-		// Clear TPR-Threshold to disable TPR-below-threshold exiting.
-		vmwrite32(TPR_THRESHOLD, 0);
-		// trace!("Cleared TPR-Threshold.");
-		// As TPR is below the threshold, there may be a chance for us to inject the interrupt.
-		self.handle_pending_interrupt();
-	}
-
 	fn handle_ept_violation(&mut self, _context: &mut VtStackTop)
 	{
 		let gpa = vmread64(GUEST_PHYSICAL_ADDRESS).unwrap();
@@ -494,7 +521,39 @@ impl VtVcpu
 			let interruptibility = self.cached_ctxt.get_interruptibility_mut();
 			interruptibility.set_blocking_by_nmi(true);
 		}
-		if is_ci_phys_page(gpa) || is_allocated_page(gpa)
+		// Check the MMIO Filter before Code Integrity. Checking Code Integrity takes locks, and the guest on this processor
+		// may hold them right now. Filtered MMIO (e.g.: EOI to the Local APIC) could be accessed by an interrupt handler.
+		let hv: &VtHypervisor = unsafe { &*self.hypervisor.cast() };
+		if !qual.is_execute() && hv.mmio_space.is_filtered(gpa)
+		{
+			// Intel VT-x doesn't provide the instruction bytes. Fetch the instruction via software.
+			let mut instruction = Instruction::new(self.fetch_instruction());
+			instruction.decode(self.get_current_bitness());
+			// The guest-physical address is exact only if the access is due to a linear address.
+			// In nested virtualization, the outer hypervisor (e.g.: Linux KVM) may emulate the instruction by itself and
+			// report the EPT violation without the guest-linear address and with the page-aligned guest-physical address.
+			// In this case, take the offset into the page from the effective address of the instruction.
+			// Paging translates in units of pages, so the offset is the same in both linear and physical addresses.
+			let gpa = match instruction.decode_mmio_operand()
+			{
+				Some(op) if !qual.linear_address_valid() =>
+				{
+					let ea = op.calc_addr(self, instruction.len());
+					(gpa & !(PAGE_4KB_SIZE as u64 - 1)) | (ea & (PAGE_4KB_SIZE as u64 - 1))
+				}
+				_ => gpa,
+			};
+			if qual.is_write()
+			{
+				self.emulate_mmio_output(&instruction, gpa);
+			}
+			else
+			{
+				self.emulate_mmio_input(&instruction, gpa);
+			}
+			self.advance_rip_manually(instruction.len() as u32);
+		}
+		else if is_ci_phys_page(gpa) || is_allocated_page(gpa)
 		{
 			let mut inslen = self.cached_ctxt.exit_instruction_length();
 			error!("CI-fault for GPA=0x{gpa:X} is intercepted! rip=0x{rip:X}, Instruction-Length: {inslen}");
@@ -583,42 +642,7 @@ impl VtVcpu
 		panic!("Unknown VM-Exit is intercepted! Exit-Reason: {} (0x{exit_reason:X})", exit_reason & 0xFFFF);
 	}
 
-	// Call this routine only from handlers that may produce a chance for injection!
-	fn handle_pending_interrupt(&mut self)
-	{
-		let irq_bmp: &mut RefBitmap<256> = unsafe { RefBitmap::from_raw_mut_ptr(self.irq_bmp.as_mut_ptr().cast()) };
-		// Find the last set bit (highest-priority) in the bitmap.
-		if let Some(irq) = irq_bmp.search_set_backward()
-		{
-			// Check if the pending IRQ can interrupt the guest now.
-			match self.is_interruptible(irq as u8)
-			{
-				VtIrqInterruptibilityState::Interruptible =>
-				unsafe {
-					// Inject the interrupt because it's interruptible now.
-					// trace!("Injecting pending Interrupt Vector {irq} into Guest now.");
-					inject_event(irq as u8, EventType::ExternalInterrupt, None, true, 0);
-					// Reset the interrupt as not pending in the bitmap.
-					irq_bmp.reset(irq).unwrap();
-				},
-				VtIrqInterruptibilityState::MaskedByRflags =>
-				{
-					// Wait for interrupt window.
-					// trace!("Interrupt Vector {irq} will be held pending since it's masked by RFLAGS.IF or Interrupt-Shadow.");
-					let proc_ctrl1 = self.cached_ctxt.get_proc_ctrl1_mut();
-					proc_ctrl1.set_interrupt_window_exiting(true);
-				}
-				VtIrqInterruptibilityState::MaskedByTpr(required_priority) =>
-				{
-					// Wait for TPR-below-threshold.
-					// trace!("Interrupt Vector {irq} will be held pending since it's masked by TPR. (Required Priority: {required_priority})");
-					vmwrite32(TPR_THRESHOLD, required_priority as u32);
-				}
-			}
-		}
-	}
-
-	fn handle_idt_vectoring(&mut self)
+	pub(super) fn handle_idt_vectoring(&mut self)
 	{
 		let idt_vec_info = VmxIdtVectoringInformation::from_bits(vmread32(IDT_VECTORING_INFORMATION).unwrap());
 		if idt_vec_info.valid()
@@ -632,7 +656,15 @@ impl VtVcpu
 			vmwrite32(VMENTRY_INTERRUPTION_INFORMATION_FIELD, idt_vec_info.into_bits());
 			if idt_vec_info.error_code_valid()
 			{
-				vmwrite32(VMENTRY_EXCEPTION_ERROR_CODE, idt_vec_info.into_bits());
+				vmwrite32(VMENTRY_EXCEPTION_ERROR_CODE, error_code);
+			}
+			// Software interrupts and software exceptions require the instruction length.
+			if matches!(
+				idt_vec_info.interruption_type(),
+				EVENT_TYPE_SOFTWARE_INTERRUPT | EVENT_TYPE_PRIVILEGED_SOFTWARE_EXCEPTION | EVENT_TYPE_SOFTWARE_EXCEPTION
+			)
+			{
+				vmwrite32(VMENTRY_INSTRUCTION_LENGTH, self.cached_ctxt.exit_instruction_length());
 			}
 		}
 	}
@@ -652,8 +684,15 @@ unsafe extern "win64" fn nvc_vt_exit_handler(context: *mut VtStackTop)
 	ctxt.guest_frame.return_rip = vcpu.cached_ctxt.rip;
 	let handler = dispatch_handler(vcpu.cached_ctxt.exit_reason);
 	handler(vcpu, ctxt);
+	// INIT discards pending events. Handle it after the VM-Exit is handled.
+	vcpu.process_init_signal(ctxt);
+	// Deliver the NMIs taken by the host and those held pending.
+	vcpu.take_host_nmi();
+	vcpu.deliver_pending_nmi();
 	// Flush cached context into the VMCS.
 	vcpu.cached_ctxt.flush();
+	// The flush may overwrite the "NMI-window exiting" set by an NMI that arrived in the meantime.
+	vcpu.recheck_host_nmi();
 }
 
 #[unsafe(no_mangle)]
@@ -752,11 +791,13 @@ type VtExitHandler = fn(&mut VtVcpu, &mut VtStackTop);
 // Defining sparse array is much easier in Rust than in C!
 static VT_EXIT_HANDLERS: [VtExitHandler; VT_MAXIMUM_CODE] = {
 	let mut array: [VtExitHandler; VT_MAXIMUM_CODE] = [VtVcpu::handle_unknown; VT_MAXIMUM_CODE];
+	array[INTERCEPTED_EXCEPTION_NMI as usize] = VtVcpu::handle_exception_nmi;
 	array[INTERCEPTED_EXTERNAL_INTERRUPT as usize] = VtVcpu::handle_extint;
 	array[INTERCEPTED_TRIPLE_FAULT as usize] = VtVcpu::handle_triple_fault;
 	array[INTERCEPTED_INIT_SIGNAL as usize] = VtVcpu::handle_init;
 	array[INTERCEPTED_STARTUP_IPI as usize] = VtVcpu::handle_sipi;
 	array[INTERCEPTED_INTERRUPT_WINDOW as usize] = VtVcpu::handle_interrupt_window;
+	array[INTERCEPTED_NMI_WINDOW as usize] = VtVcpu::handle_nmi_window;
 	array[INTERCEPTED_CPUID as usize] = VtVcpu::handle_cpuid;
 	array[INTERCEPTED_GETSEC as usize] = VtVcpu::handle_getsec;
 	array[INTERCEPTED_INVD as usize] = VtVcpu::handle_invd;
@@ -766,7 +807,6 @@ static VT_EXIT_HANDLERS: [VtExitHandler; VT_MAXIMUM_CODE] = {
 	array[INTERCEPTED_WRMSR as usize] = VtVcpu::handle_wrmsr;
 	array[INVALID_GUEST_STATE as usize] = VtVcpu::handle_invalid_state;
 	array[MSR_LOADING_FAILURE as usize] = VtVcpu::handle_invalid_auto_msr;
-	array[TPR_BELOW_THRESHOLD as usize] = VtVcpu::handle_tpr_below_threshold;
 	array[EPT_VIOLATION as usize] = VtVcpu::handle_ept_violation;
 	array[EPT_MISCONFIGURATION as usize] = VtVcpu::handle_ept_misconfig;
 	array[INTERCEPTED_XSETBV as usize] = VtVcpu::handle_xsetbv;

@@ -13,3 +13,5 @@
 pub mod acpi;
 pub mod hpet;
 pub mod iommu;
+pub mod lapic;
+pub mod pci;

@@ -11,11 +11,16 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::slice;
+use core::{
+	ffi::c_void,
+	slice,
+	sync::atomic::{AtomicU64, Ordering},
+};
 
 use crate::{
+	cvm_core::x86::cpuid::{CpuidHandlerOps, StaticCpuidData},
 	disasm::emulator::EmulatorOps,
-	vt_core::{VtVcpu, vmcs::*},
+	vt_core::{VtHypervisor, VtVcpu, vmcs::*},
 	xpf_core::{
 		asm::vt::{vmread16, vmread32, vmread64, vmreadptr, vmwrite16},
 		x86::{
@@ -85,18 +90,32 @@ impl EmulatorOps for VtVcpu
 
 	fn read_gpa(&mut self, gpa: u64, value: &mut [u8]) -> usize
 	{
-		// TODO: dispatch MMIO inputs.
-		let src = unsafe { slice::from_raw_parts(gpa as *const u8, value.len()) };
-		value.copy_from_slice(src);
+		let hv: &mut VtHypervisor = unsafe { &mut *self.hypervisor.cast() };
+		if hv.mmio_space.dispatch_input(gpa, value, self as *mut Self as *mut c_void).is_err()
+		{
+			// Cannot dispatch MMIO input handler. Then simply pass-thru to system memory.
+			let src = unsafe { slice::from_raw_parts(gpa as *const u8, value.len()) };
+			value.copy_from_slice(src);
+		}
 		value.len()
 	}
 
 	fn write_gpa(&mut self, gpa: u64, value: &[u8]) -> usize
 	{
-		// TODO: dispatch MMIO outputs.
-		let dest = unsafe { slice::from_raw_parts_mut(gpa as *mut u8, value.len()) };
-		dest.copy_from_slice(value);
+		let hv: &mut VtHypervisor = unsafe { &mut *self.hypervisor.cast() };
+		if hv.mmio_space.dispatch_output(gpa, value, self as *mut Self as *mut c_void).is_err()
+		{
+			// Cannot dispatch MMIO output handler. Then simply pass-thru to system memory.
+			let dest = unsafe { slice::from_raw_parts_mut(gpa as *mut u8, value.len()) };
+			dest.copy_from_slice(value);
+		}
 		value.len()
+	}
+
+	fn set_gpa_bits64(&mut self, gpa: u64, bits: u64, ordering: Ordering) -> u64
+	{
+		// The subverted host's system memory is identity-mapped.
+		unsafe { AtomicU64::from_ptr(gpa as *mut u64) }.fetch_or(bits, ordering)
 	}
 }
 
@@ -127,5 +146,13 @@ impl VtVcpu
 			panic!("Page-fault is triggered by software while fetching instruction! Code: 0x{:08X}, rip=0x{rip:016X}", e.into_bits());
 		}
 		instruction_bytes
+	}
+}
+
+impl CpuidHandlerOps for VtVcpu
+{
+	fn static_cpuid_data(&self) -> &StaticCpuidData
+	{
+		&self.static_cpuid
 	}
 }
