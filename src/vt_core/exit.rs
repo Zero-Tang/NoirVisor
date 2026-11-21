@@ -30,6 +30,7 @@ use crate::{
 		},
 		ci::is_ci_phys_page,
 		intflt::InterruptDisposition,
+		nvbdk::PAGE_4KB_SIZE,
 		x86::{
 			crdr::*,
 			interrupts::{EventType, GENERAL_PROTECTION_FAULT},
@@ -528,6 +529,20 @@ impl VtVcpu
 			// Intel VT-x doesn't provide the instruction bytes. Fetch the instruction via software.
 			let mut instruction = Instruction::new(self.fetch_instruction());
 			instruction.decode(self.get_current_bitness());
+			// The guest-physical address is exact only if the access is due to a linear address.
+			// In nested virtualization, the outer hypervisor (e.g.: Linux KVM) may emulate the instruction by itself and
+			// report the EPT violation without the guest-linear address and with the page-aligned guest-physical address.
+			// In this case, take the offset into the page from the effective address of the instruction.
+			// Paging translates in units of pages, so the offset is the same in both linear and physical addresses.
+			let gpa = match instruction.decode_mmio_operand()
+			{
+				Some(op) if !qual.linear_address_valid() =>
+				{
+					let ea = op.calc_addr(self, instruction.len());
+					(gpa & !(PAGE_4KB_SIZE as u64 - 1)) | (ea & (PAGE_4KB_SIZE as u64 - 1))
+				}
+				_ => gpa,
+			};
 			if qual.is_write()
 			{
 				self.emulate_mmio_output(&instruction, gpa);
