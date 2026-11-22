@@ -439,6 +439,7 @@ pub mod paging
 	use core::{
 		fmt::{self, Display, Formatter},
 		slice,
+		sync::atomic::Ordering,
 	};
 
 	use bitfield_struct::bitfield;
@@ -802,9 +803,11 @@ pub mod paging
 				let offset_mask: u64 = (1 << shift_amount) - 1;
 				let base: u64 = (pml_e.into_bits() >> shift_amount) << shift_amount;
 				let pa = (va & offset_mask) | phys_addr_mask(base);
-				// Set accessed & dirty bits.
-				let new_pml_d = pml_e.with_accessed(true).with_dirty(w).into_bits().to_le_bytes();
-				vcpu.write_gpa(pml_pa, &new_pml_d);
+				// Set accessed & dirty bits atomically, as the processor does. Never clear them.
+				if !pml_e.accessed() || (w && !pml_e.dirty())
+				{
+					vcpu.set_gpa_bits64(pml_pa, CommonPmle::new().with_accessed(true).with_dirty(w).into_bits(), Ordering::SeqCst);
+				}
 				Ok(pa)
 			}
 		}
@@ -812,9 +815,11 @@ pub mod paging
 		{
 			// This is the intermediate level!
 			let next_pt_base = phys_page_4kb_base(pml_e.into_bits());
-			// Set accessed & dirty bits.
-			let new_pml_d = pml_e.with_accessed(true).into_bits().to_le_bytes();
-			vcpu.write_gpa(pml_pa, &new_pml_d);
+			// Set accessed bit atomically, as the processor does.
+			if !pml_e.accessed()
+			{
+				vcpu.set_gpa_bits64(pml_pa, CommonPmle::new().with_accessed(true).into_bits(), Ordering::SeqCst);
+			}
 			translate_64bit_va_routine(va, vcpu, next_pt_base, level - 1, w, x, ss)
 		}
 	}
@@ -842,7 +847,8 @@ pub mod paging
 				{
 					// Long-Mode is activated. Virtual-Address is 64-bit!
 					let level = if cr4.la57() { 5 } else { 4 };
-					translate_64bit_va_routine(va, vcpu, cr3, level, w, x, ss)
+					// The lower 12 bits of CR3 are the PCID (or PWT and PCD bits), not the address.
+					translate_64bit_va_routine(va, vcpu, phys_page_4kb_base(cr3), level, w, x, ss)
 				}
 				else
 				{
@@ -850,7 +856,8 @@ pub mod paging
 					va &= u32::MAX as u64;
 					let pdpe_index = va >> PAGE_1GB_SHIFT;
 					let mut pdpe_buff: [u8; 8] = [0; 8];
-					vcpu.read_gpa(vcpu.get_cr3() + (pdpe_index << 3), &mut pdpe_buff);
+					// In PAE paging, CR3 points to a 32-byte aligned PDPT. The lower 5 bits are not the address.
+					vcpu.read_gpa((cr3 & 0xFFFF_FFE0) + (pdpe_index << 3), &mut pdpe_buff);
 					let pdpe_pa = CommonPmle::from_bits(u64::from_le_bytes(pdpe_buff));
 					// PDPE only has a present bit, no W/NX bits.
 					if pdpe_pa.present()
@@ -2364,6 +2371,12 @@ pub mod interrupts
 	pub const MACHINE_CHECK_ABORT: u8 = 18;
 	pub const SIMD_FP_EXCEPTION_FAULT: u8 = 19;
 	pub const CONTROL_PROTECTION_FAULT: u8 = 21;
+	/// Vectors below this one are reserved for exceptions.
+	pub const FIRST_EXTERNAL_INTERRUPT_VECTOR: u8 = 32;
+	/// The Local APIC accepts interrupts with vectors starting from this one. \
+	/// Vectors 16-31 are reserved for exceptions, but the guest may still use them for interrupts. \
+	/// For example, Windows uses vector 0x1F for APC interrupts.
+	pub const FIRST_LAPIC_VECTOR: u8 = 16;
 
 	#[repr(u8)]
 	pub enum EventType
@@ -2548,6 +2561,7 @@ pub mod apic
 	pub const APIC_OFFSET_EOI: usize = 0xB0;
 	pub const APIC_OFFSET_REMOTE_READ: usize = 0xC0;
 	pub const APIC_OFFSET_LDR: usize = 0xD0;
+	pub const APIC_OFFSET_DFR: usize = 0xE0;
 	pub const APIC_OFFSET_SVR: usize = 0xF0;
 	pub const APIC_OFFSET_ISR: usize = 0x100;
 	pub const APIC_OFFSET_TMR: usize = 0x180;
@@ -2639,6 +2653,56 @@ pub mod apic
 		pub const DSH_SELF: u8 = 1;
 		pub const DSH_ALL_INCLUSIVE: u8 = 2;
 		pub const DSH_ALL_EXCLUSIVE: u8 = 3;
+	}
+
+	/// ## `ApicSvr` structure
+	/// The Spurious-Interrupt Vector Register.
+	#[bitfield(u32)]
+	pub struct ApicSvr
+	{
+		pub vector: u8,
+		pub enable: bool,
+		pub focus_processor_checking: bool,
+		#[bits(2)]
+		rsvd0: u8,
+		pub suppress_eoi_broadcast: bool,
+		#[bits(19)]
+		rsvd1: u32,
+	}
+
+	/// ## `MsiAddress` structure
+	/// The address of a Message Signaled Interrupt (MSI) in compatibility format.
+	#[bitfield(u32)]
+	pub struct MsiAddress
+	{
+		#[bits(2)]
+		rsvd0: u8,
+		/// ## Destination Mode
+		/// - 0: Physical destination mode. The destination is an APIC ID.
+		/// - 1: Logical destination mode.
+		pub destination_mode: bool,
+		/// ## Redirection Hint
+		pub redirection_hint: bool,
+		rsvd1: u8,
+		/// ## Destination ID
+		/// In x2APIC mode, this field holds bits 7:0 of the x2APIC ID.
+		pub destination: u8,
+		/// Must be `MsiAddress::BASE`.
+		#[bits(12)]
+		pub base: u16,
+	}
+
+	impl MsiAddress
+	{
+		pub const BASE: u16 = 0xFEE;
+	}
+
+	/// ## `apic_vector_register_offset` function
+	/// Get the offset of the register containing the bit of `vector` in a 256-bit register array (ISR, TMR or IRR) at `base`. \
+	/// The array consists of eight 32-bit registers aligned at 16-byte boundaries.
+	pub const fn apic_vector_register_offset(base: usize, vector: u8) -> usize
+	{
+		base + ((vector as usize >> 5) << 4)
 	}
 }
 

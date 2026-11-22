@@ -14,87 +14,10 @@ use core::{arch::x86_64::CpuidResult, slice};
 
 use bitfield_struct::bitfield;
 
-use crate::{HVM, xpf_core::x86::cpuid::CpuidLeaf};
+use crate::xpf_core::x86::cpuid::CpuidLeaf;
 
-static HYPERVISOR_VENDOR_STRING: &str = "NoirVisor ZT";
-
-fn nvc_mshv_cpuid_hypervisor_vendor_id_handler(_ia: u32, _ic: u32) -> (u32, u32, u32, u32)
-{
-	let hv_vendor = HYPERVISOR_VENDOR_STRING.as_bytes();
-	let a = 0x3FFFFFFF + MSHV_CPUID_HANDLERS_COUNT as u32;
-	let b = u32::from_le_bytes(hv_vendor[..4].try_into().unwrap());
-	let c = u32::from_le_bytes(hv_vendor[4..8].try_into().unwrap());
-	let d = u32::from_le_bytes(hv_vendor[8..].try_into().unwrap());
-	(a, b, c, d)
-}
-
-fn nvc_mshv_cpuid_hypervisor_interface_id_handler(_ia: u32, _ic: u32) -> (u32, u32, u32, u32)
-{
-	let a = u32::from_le_bytes(*b"Hv#1");
-	let b = 0;
-	let c = 0;
-	let d = 0;
-	(a, b, c, d)
-}
-
-fn nvc_mshv_cpuid_hypervisor_system_id_handler(_ia: u32, _ic: u32) -> (u32, u32, u32, u32)
-{
-	(0, 0, 0, 0)
-}
-
-fn nvc_mshv_cpuid_hypervisor_feature_id_handler(_ia: u32, _ic: u32) -> (u32, u32, u32, u32)
-{
-	let mut r = HypervisorFeatureId::new();
-	// Requirements for Minimal Hv#1 interface.
-	r.set_hypercall_msr(true);
-	r.set_vp_index(true);
-	let a: &[u32; 4] = unsafe { &*(&raw const r.0).cast() };
-	(a[0], a[1], a[2], a[3])
-}
-
-fn nvc_mshv_cpuid_implementation_recommendation_handler(_ia: u32, _ic: u32) -> (u32, u32, u32, u32)
-{
-	let mut r = HypervisorImplementationRecommendation::new();
-	// It seems we can't recommend MSR accesses for EOI/ICR/TPR alone.
-	// Windows 10 LTSC 2021 (build 19044) may BSoD during boot while issuing EOI.
-	// r.set_msr_eoi_icr_tpr(true);
-	r.set_relaxed_timing(true);
-	let a: &[u32; 4] = unsafe { &*(&raw const r.0).cast() };
-	(a[0], a[1], a[2], a[3])
-}
-
-fn nvc_mshv_cpuid_implementation_limit_handler(_ia: u32, _ic: u32) -> (u32, u32, u32, u32)
-{
-	// Nothing to limit
-	(0, 0, 0, 0)
-}
-
-fn nvc_mshv_cpuid_implementation_hardware_handler(_ia: u32, _ic: u32) -> (u32, u32, u32, u32)
-{
-	let mut r = HypervisorImplementationHardwareFeatures::new();
-	r.set_slat(true);
-	r.set_msr_bitmaps(true);
-	if HVM.get().unwrap().is_iommu_active()
-	{
-		r.set_dma_protection(true);
-		r.set_dma_remap(true);
-	}
-	let a: &[u32; 4] = unsafe { &*(&raw const r.0).cast() };
-	(a[0], a[1], a[2], a[3])
-}
-
-type TlfsCpuidHandler = fn(u32, u32) -> (u32, u32, u32, u32);
-
-const MSHV_CPUID_HANDLERS_COUNT: usize = 7;
-pub const MSHV_CPUID_HANDLERS: [TlfsCpuidHandler; MSHV_CPUID_HANDLERS_COUNT] = [
-	nvc_mshv_cpuid_hypervisor_vendor_id_handler,
-	nvc_mshv_cpuid_hypervisor_interface_id_handler,
-	nvc_mshv_cpuid_hypervisor_system_id_handler,
-	nvc_mshv_cpuid_hypervisor_feature_id_handler,
-	nvc_mshv_cpuid_implementation_recommendation_handler,
-	nvc_mshv_cpuid_implementation_limit_handler,
-	nvc_mshv_cpuid_implementation_hardware_handler,
-];
+/// Number of the Microsoft TLFS CPUID leaves presented by NoirVisor (0x40000000~0x40000006).
+const MSHV_CPUID_LEAF_COUNT: usize = 7;
 
 pub trait MshvCpuidType: CpuidLeaf
 {
@@ -176,7 +99,7 @@ impl MshvCpuidType for MaxHypervisorLeafAndVendorString
 {
 	fn guest() -> Self
 	{
-		Self { max_leaf: (MSHV_CPUID_HANDLERS_COUNT + 0x3FFFFFFF) as u32, vendor_string: *b"NoirVisor ZT" }
+		Self { max_leaf: (MSHV_CPUID_LEAF_COUNT + 0x3FFFFFFF) as u32, vendor_string: *b"NoirVisor ZT" }
 	}
 }
 
@@ -319,7 +242,7 @@ impl MshvCpuidType for HypervisorFeatureId
 {
 	fn guest() -> Self
 	{
-		Self::new().with_hypercall_msr(true).with_vp_index(true)
+		Self::new().with_hypercall_msr(true).with_vp_index(true).with_guest_crash_msr(true)
 	}
 }
 

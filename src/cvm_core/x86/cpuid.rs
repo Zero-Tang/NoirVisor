@@ -264,8 +264,12 @@ impl StaticCpuidData
 			.with_phys_threads(u8::MAX)
 			.with_apic_id_size(0xF);
 		r.proc_cap_param &= supported;
-		r.proc_cap_param.set_efer_lmsle_unsupported(true);
 		r.ext_vendor.max_leaf = core::cmp::min(CPUID_EXT_PROCESSOR_TOPOLOGY_INFORMATION, r.ext_vendor.max_leaf);
+		// Intel processors return the data of the highest standard leaf for leaves above the maximum extended leaf.
+		if r.ext_vendor.max_leaf < CPUID_EXT_PROCESSOR_TOPOLOGY_INFORMATION
+		{
+			r.proc_topo_info = ProcessorTopologyInformation::default();
+		}
 		log::trace!("After Mask CPUID: {r:X?}");
 		r
 	}

@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{sync::Arc, vec, vec::Vec};
 use core::{
 	ffi::c_void,
 	hint::spin_loop,
@@ -20,8 +20,15 @@ use core::{
 use log::*;
 use pastey::paste;
 
-use super::IommuOps;
-use crate::{drv_core::acpi::tables::IoVirtualizationReportingStructure, *};
+use super::{IOMMU_FAULT_EVENT_VECTOR, IommuOps};
+use crate::{
+	drv_core::{acpi::tables::IoVirtualizationReportingStructure, lapic::lapic_id, pci::*},
+	xpf_core::{
+		intflt::{InterruptDisposition, InterruptOps},
+		x86::apic::MsiAddress,
+	},
+	*,
+};
 use acpi::*;
 use cmdbuf::*;
 use devtbl::*;
@@ -72,7 +79,7 @@ macro_rules! derive_pml_get_methods {
 
 impl AmdIommuManager
 {
-	fn push_bar(&mut self, bar: u64, cap_offset: u16)
+	fn push_bar(&mut self, bar: u64, cap_offset: u16, device_id: u16, segment: u16)
 	{
 		#[allow(clippy::arc_with_non_send_sync)]
 		match self.ivrs_units.binary_search_by(|iommu| iommu.bar.phys.cmp(&bar))
@@ -83,6 +90,8 @@ impl AmdIommuManager
 				Arc::new(AmdIommuBar {
 					bar: MappedDescriptor::map(bar, 4 << PAGE_SHIFT),
 					cap_offset: cap_offset as usize,
+					device_id,
+					segment,
 					size: 4 << PAGE_SHIFT,
 					iotlb_sup: true,
 					cmd_base: MemoryDescriptor::alloc().unwrap(),
@@ -221,7 +230,8 @@ impl IommuOps for AmdIommuManager
 				.with_mode(4)
 				.with_ir(true)
 				.with_iw(true);
-			dt.p2 = AmdIommuDteP2::new().with_did(1).with_i(true).with_se(true).with_sa(true);
+			// Don't suppress I/O page fault events (SE and SA), so that NoirVisor can keep track of DMA faults.
+			dt.p2 = AmdIommuDteP2::new().with_did(1).with_i(true);
 			dt.p3 = AmdIommuDteP3::new();
 			dt.p4 = AmdIommuDteP4::new();
 		}
@@ -269,6 +279,61 @@ impl IommuOps for AmdIommuManager
 
 	fn restore(&mut self) {}
 
+	fn get_interrupt_handlers(&self) -> Vec<Box<dyn InterruptOps>>
+	{
+		let units = self.ivrs_units.iter().map(Arc::clone).collect();
+		vec![Box::new(AmdIommuEventHandler { units, trailing_interrupt: false })]
+	}
+
+	fn enable_fault_events(&self)
+	{
+		let Some(apic_id) = lapic_id()
+		else
+		{
+			error!("The Local APIC is disabled! IOMMU fault events remain masked!");
+			return;
+		};
+		for ivrs in &self.ivrs_units
+		{
+			let virt = ivrs.virt();
+			let efr = unsafe { IommuExtendedFeatureRegister::read(virt) };
+			let mut ctrl = unsafe { IommuControlRegister::read(virt) };
+			if let Ok(dest) = u8::try_from(apic_id)
+			{
+				if !ivrs.setup_msi(dest, efr.msi_cap_mmio_sup())
+				{
+					continue;
+				}
+			}
+			else if efr.xt_sup()
+			{
+				// MSI can't address x2APIC IDs beyond 255. Generate x2APIC interrupts instead.
+				let xt_ctrl = XtGeneralInterruptControlRegister::new()
+					.with_xt_int_vector(IOMMU_FAULT_EVENT_VECTOR)
+					.with_xt_int_dest_lo(apic_id & 0xFF_FFFF)
+					.with_xt_int_dest_hi((apic_id >> 24) as u8);
+				unsafe {
+					xt_ctrl.write(virt);
+				}
+				ctrl.set_int_cap_xt_en(true);
+			}
+			else
+			{
+				error!("IOMMU 0x{:X} can't deliver fault events to APIC ID 0x{apic_id:X}! They remain masked!", ivrs.bar.phys);
+				continue;
+			}
+			// Unmask the event log interrupt. Pending events raise the interrupt right now.
+			ctrl.set_event_int_en(true);
+			unsafe {
+				ctrl.write(virt);
+			}
+			info!(
+				"Fault events of IOMMU 0x{:X} are enabled! Vector: 0x{IOMMU_FAULT_EVENT_VECTOR:02X}, APIC ID: 0x{apic_id:X}",
+				ivrs.bar.phys
+			);
+		}
+	}
+
 	fn set_pdpte(&mut self, gpa: u64, hpa: u64, r: bool, w: bool, _x: bool)
 	{
 		self.split_pml4e(gpa);
@@ -305,6 +370,10 @@ pub struct AmdIommuBar
 {
 	pub bar: MappedDescriptor<c_void>,
 	pub cap_offset: usize,
+	/// The PCI device ID (bus, device and function) of the IOMMU.
+	pub device_id: u16,
+	/// The PCI segment of the IOMMU.
+	pub segment: u16,
 	pub size: usize,
 	pub iotlb_sup: bool,
 	pub cmd_index: AtomicUsize,
@@ -312,8 +381,193 @@ pub struct AmdIommuBar
 	pub log_base: MemoryDescriptor<1, u128>,
 }
 
+/// Number of entries in the event log. The event log occupies a page with 16-byte entries.
+const EVENT_LOG_ENTRIES: usize = PAGE_SIZE / size_of::<u128>();
+
+/// Names of event codes in the event log.
+const EVENT_NAMES: [&str; 16] = [
+	"Reserved",
+	"ILLEGAL_DEV_TABLE_ENTRY",
+	"IO_PAGE_FAULT",
+	"DEV_TAB_HARDWARE_ERROR",
+	"PAGE_TAB_HARDWARE_ERROR",
+	"ILLEGAL_COMMAND_ERROR",
+	"COMMAND_HARDWARE_ERROR",
+	"IOTLB_INV_TIMEOUT",
+	"INVALID_DEVICE_REQUEST",
+	"INVALID_PPR_REQUEST",
+	"EVENT_COUNTER_ZERO",
+	"GUEST_EVENT_FAULT",
+	"VIOMMU_HARDWARE_ERROR",
+	"Unknown",
+	"RMP_PAGE_FAULT",
+	"RMP_HARDWARE_ERROR",
+];
+
+const EVENT_CODE_IO_PAGE_FAULT: u8 = 0b0010;
+
 impl AmdIommuBar
 {
+	fn virt(&self) -> *mut c_void
+	{
+		self.bar.virt.load(Ordering::Relaxed)
+	}
+
+	/// ## `setup_msi` method
+	/// Program the MSI capability of the IOMMU to deliver the fault events to the processor with APIC ID `dest`. \
+	/// Returns `false` if the MSI capability is inaccessible.
+	fn setup_msi(&self, dest: u8, mmio: bool) -> bool
+	{
+		// Fixed delivery mode, edge-triggered, physical destination mode.
+		let addr = MsiAddress::new().with_base(MsiAddress::BASE).with_destination(dest).into_bits();
+		let data = IOMMU_FAULT_EVENT_VECTOR as u16;
+		if mmio
+		{
+			// The MSI capability block is accessible via MMIO.
+			let virt = self.virt();
+			unsafe {
+				MsiAddressLowRegister::from_bits(addr).write(virt);
+				MsiAddressHighRegister::new().write(virt);
+				MsiDataRegister::new().with_msi_data(data).write(virt);
+				// Enable MSI with a single message.
+				let header = MsiCapabilityHeaderRegister::read(virt);
+				header.with_msi_mult_mess_en(0).with_msi_en(true).write(virt);
+			}
+			return true;
+		}
+		// Access the MSI capability block via the PCI configuration space.
+		if self.segment != 0
+		{
+			error!("IOMMU 0x{:X} is in PCI segment {}, which is not supported yet!", self.bar.phys, self.segment);
+			return false;
+		}
+		let bdf = self.device_id;
+		let Some(cap) = pci_find_capability(bdf, PCI_CAPABILITY_ID_MSI)
+		else
+		{
+			error!("IOMMU 0x{:X} has no MSI capability!", self.bar.phys);
+			return false;
+		};
+		let header = pci_cfg_read32(bdf, cap);
+		let msg_ctrl = header >> 16;
+		let addr64 = msg_ctrl & (1 << 7) != 0;
+		let per_vector_mask = msg_ctrl & (1 << 8) != 0;
+		pci_cfg_write32(bdf, cap + 4, addr);
+		let data_offset = if addr64
+		{
+			pci_cfg_write32(bdf, cap + 8, 0);
+			cap + 12
+		}
+		else
+		{
+			cap + 8
+		};
+		pci_cfg_write32(bdf, data_offset, data as u32);
+		if per_vector_mask
+		{
+			// Unmask the first message.
+			let mask = pci_cfg_read32(bdf, data_offset + 4);
+			pci_cfg_write32(bdf, data_offset + 4, mask & !1);
+		}
+		// Enable MSI with a single message.
+		let msg_ctrl = (msg_ctrl & !0x70) | 1;
+		pci_cfg_write32(bdf, cap, (header & 0xFFFF) | (msg_ctrl << 16));
+		true
+	}
+
+	/// ## `service_events` method
+	/// Log and consume the events in the event log. \
+	/// Returns `false` without side effects if this IOMMU didn't raise the event log interrupt.
+	fn service_events(&self) -> bool
+	{
+		let virt = self.virt();
+		let status = unsafe { IommuStatusRegister::read(virt) };
+		if !(status.event_log_int() || status.event_overflow())
+		{
+			return false;
+		}
+		// Acknowledge the interrupt (RW1C) before draining the log. Events logged afterwards raise another interrupt.
+		unsafe {
+			IommuStatusRegister::new().with_event_log_int(status.event_log_int()).write(virt);
+		}
+		let tail = unsafe { EventBufferTailPointerRegister::read(virt) }.event_tail_ptr();
+		let mut head = unsafe { EventBufferHeadPointerRegister::read(virt) }.event_head_ptr();
+		while head != tail
+		{
+			let entry = unsafe { self.log_base.virt.add(head).read_volatile() };
+			self.log_event(entry);
+			head = (head + 1) % EVENT_LOG_ENTRIES;
+		}
+		unsafe {
+			EventBufferHeadPointerRegister::new().with_event_head_ptr(head).write(virt);
+		}
+		if status.event_overflow()
+		{
+			warn!("Event log of IOMMU 0x{:X} overflowed! Some events are discarded!", self.bar.phys);
+			self.restart_event_log();
+		}
+		true
+	}
+
+	/// ## `restart_event_log` method
+	/// Event logging stops on overflow. Restart it with the procedure specified by AMD-Vi manual.
+	fn restart_event_log(&self)
+	{
+		let virt = self.virt();
+		unsafe {
+			while IommuStatusRegister::read(virt).event_log_run()
+			{
+				spin_loop();
+			}
+			let ctrl = IommuControlRegister::read(virt);
+			ctrl.with_event_log_en(false).write(virt);
+			IommuStatusRegister::new().with_event_overflow(true).write(virt);
+			ctrl.with_event_log_en(true).write(virt);
+		}
+	}
+
+	/// ## `log_event` method
+	/// Log an entry of the event log.
+	fn log_event(&self, entry: u128)
+	{
+		let code = (entry >> 60) as u8 & 0xF;
+		let operand1 = entry as u64 & ((1 << 60) - 1);
+		let operand2 = (entry >> 64) as u64;
+		if code == EVENT_CODE_IO_PAGE_FAULT
+		{
+			let device_id = entry as u16;
+			let flags = (entry >> 32) as u32;
+			let present = flags & (1 << 20) != 0;
+			let access = if flags & (1 << 19) != 0
+			{
+				"Interrupt"
+			}
+			else if flags & (1 << 21) != 0
+			{
+				"Write"
+			}
+			else
+			{
+				"Read"
+			};
+			warn!(
+				"DMA fault is reported by IOMMU 0x{:X}! Source: {:02X}:{:02X}.{}, Address: 0x{operand2:X}, Access: {access}, Present: {present}, Flags: 0x{:03X}",
+				self.bar.phys,
+				device_id >> 8,
+				(device_id >> 3) & 0x1F,
+				device_id & 7,
+				(flags >> 16) & 0xFFF
+			);
+		}
+		else
+		{
+			warn!(
+				"IOMMU 0x{:X} reported {} event! Operands: 0x{operand1:015X}, 0x{operand2:016X}",
+				self.bar.phys, EVENT_NAMES[code as usize]
+			);
+		}
+	}
+
 	fn wait(&self)
 	{
 		let virt = self.bar.virt.load(Ordering::Relaxed);
@@ -346,6 +600,57 @@ impl AmdIommuBar
 			*self.cmd_base.virt.add(i) = cmd.into();
 		}
 		i
+	}
+}
+
+/// ## `AmdIommuEventHandler` structure
+/// Handles event log interrupts of all AMD-Vi units. All units share the same vector.
+pub struct AmdIommuEventHandler
+{
+	units: Vec<Arc<AmdIommuBar>>,
+	/// Set if the last interrupt drained the event log. Another interrupt may be pending for the drained events.
+	trailing_interrupt: bool,
+}
+
+impl InterruptOps for AmdIommuEventHandler
+{
+	fn name(&self) -> &str
+	{
+		"AMD-Vi Event Log"
+	}
+
+	fn base_count(&self) -> (u8, usize)
+	{
+		(IOMMU_FAULT_EVENT_VECTOR, 1)
+	}
+
+	fn handle(&mut self, _vector: u8, _context: *mut c_void) -> InterruptDisposition
+	{
+		// Service every unit: interrupts from several units may be coalesced into one interrupt.
+		let mut claimed = false;
+		for unit in &self.units
+		{
+			claimed |= unit.service_events();
+		}
+		if claimed
+		{
+			self.trailing_interrupt = true;
+			InterruptDisposition::Handled
+		}
+		else if core::mem::take(&mut self.trailing_interrupt)
+		{
+			// Some implementations (e.g.: QEMU) send an interrupt for every event, rather than for the 0-to-1 transition of
+			// `EventLogInt`. Events logged while the interrupt was in-service are drained already, but their interrupt is
+			// still pending in the Local APIC. Absorb it. Otherwise, the guest would receive an interrupt it never expects,
+			// and it may never issue EOI for it, which blocks all interrupts with lower priority (e.g.: the timer).
+			// Interrupts are coalesced in the Local APIC, so there is one such interrupt at most.
+			trace!("Absorbed the trailing interrupt of AMD-Vi event log!");
+			InterruptDisposition::Handled
+		}
+		else
+		{
+			InterruptDisposition::Unclaimed
+		}
 	}
 }
 
@@ -429,17 +734,20 @@ pub(super) fn create_iommu(acpi_tables: &[*const IoVirtualizationReportingStruct
 					IvdbOption::Ivhd10(ivhd) =>
 					{
 						info!("IVHD-10H Features: {:X?}", ivhd.iommu_feature_reporting.get());
-						x.push_bar(ivhd.iommu_base_pa.get(), ivhd.capability_offset.get());
+						let (bar, cap) = (ivhd.iommu_base_pa.get(), ivhd.capability_offset.get());
+						x.push_bar(bar, cap, ivhd.device_id.get(), ivhd.pci_segment_group.get());
 					}
 					IvdbOption::Ivhd11(ivhd) =>
 					{
 						info!("IVHD-11H Attributes: {:X?}", ivhd.iommu_attributes.get());
-						x.push_bar(ivhd.iommu_base_pa.get(), ivhd.capability_offset.get());
+						let (bar, cap) = (ivhd.iommu_base_pa.get(), ivhd.capability_offset.get());
+						x.push_bar(bar, cap, ivhd.device_id.get(), ivhd.pci_segment_group.get());
 					}
 					IvdbOption::Ivhd40(ivhd) =>
 					{
 						info!("IVHD-40H Attributes: {:X?}", ivhd.iommu_attributes.get());
-						x.push_bar(ivhd.iommu_base_pa.get(), ivhd.capability_offset.get());
+						let (bar, cap) = (ivhd.iommu_base_pa.get(), ivhd.capability_offset.get());
+						x.push_bar(bar, cap, ivhd.device_id.get(), ivhd.pci_segment_group.get());
 					}
 					IvdbOption::Ivmd(ivmd) =>
 					{

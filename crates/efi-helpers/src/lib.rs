@@ -30,8 +30,8 @@ use core::{
 
 use r_efi::{
 	efi::{
-		ALLOCATE_ANY_PAGES, BOOT_SERVICES_DATA, BY_PROTOCOL, Boolean, BootServices, Guid, Handle, RESET_SHUTDOWN, RuntimeServices,
-		Status, SystemTable,
+		ALLOCATE_ANY_PAGES, BOOT_SERVICES_DATA, BY_PROTOCOL, Boolean, BootServices, EVT_TIMER, Event, Guid, Handle, RESET_SHUTDOWN,
+		RuntimeServices, Status, SystemTable, TIMER_RELATIVE, TPL_CALLBACK,
 	},
 	protocols::{
 		device_path, device_path_to_text, loaded_image,
@@ -341,6 +341,97 @@ pub fn block_until_keystroke2() -> Result<char, u16>
 		let st = (stdin.read_key_stroke)(stdin, &raw mut key);
 		assert_eq!(st, Status::SUCCESS);
 		if key.scan_code == 0 { Ok(char::decode_utf16([key.unicode_char]).next().unwrap().unwrap()) } else { Err(key.scan_code) }
+	}
+}
+
+/// A one-shot timer that is signaled once the specified time has elapsed.
+pub struct Timer(Event);
+
+impl Timer
+{
+	/// Number of timer ticks (100ns) in one second.
+	pub const TICKS_PER_SECOND: u64 = 10_000_000;
+
+	/// Create a one-shot timer that is signaled after `ticks` 100ns units.
+	pub fn new(ticks: u64) -> Result<Self, Status>
+	{
+		unsafe {
+			let bs = &*BS_TABLE.load(Ordering::Relaxed);
+			let mut event: Event = null_mut();
+			let st = (bs.create_event)(EVT_TIMER, TPL_CALLBACK, None, null_mut(), &raw mut event);
+			if st.is_error()
+			{
+				return Err(st);
+			}
+			let timer = Self(event);
+			let st = (bs.set_timer)(event, TIMER_RELATIVE, ticks);
+			if st.is_error() { Err(st) } else { Ok(timer) }
+		}
+	}
+
+	/// Create a one-shot timer that is signaled after `seconds` seconds.
+	pub fn with_seconds(seconds: u64) -> Result<Self, Status>
+	{
+		Self::new(seconds * Self::TICKS_PER_SECOND)
+	}
+}
+
+impl Drop for Timer
+{
+	fn drop(&mut self)
+	{
+		unsafe {
+			let bs = &*BS_TABLE.load(Ordering::Relaxed);
+			(bs.close_event)(self.0);
+		}
+	}
+}
+
+/// Wait for a keystroke until the `timer` is signaled.
+///
+/// Return `None` if the `timer` is signaled before any keystroke. \
+/// Otherwise, return the keystroke in the same way of `block_until_keystroke2`.
+pub fn wait_for_keystroke(timer: &Timer) -> Option<Result<char, u16>>
+{
+	unsafe {
+		let stdin = &mut *STDIN_PROTOCOL.load(Ordering::Relaxed);
+		let bs = &*BS_TABLE.load(Ordering::Relaxed);
+		let mut events = [stdin.wait_for_key, timer.0];
+		let mut i: usize = 0;
+		let st = (bs.wait_for_event)(events.len(), events.as_mut_ptr(), &raw mut i);
+		assert_eq!(st, Status::SUCCESS);
+		if i != 0
+		{
+			return None;
+		}
+		let mut key = InputKey::default();
+		let st = (stdin.read_key_stroke)(stdin, &raw mut key);
+		assert_eq!(st, Status::SUCCESS);
+		if key.scan_code == 0
+		{
+			Some(Ok(char::decode_utf16([key.unicode_char]).next().unwrap().unwrap()))
+		}
+		else
+		{
+			Some(Err(key.scan_code))
+		}
+	}
+}
+
+/// Wait until the `ch` key is pressed, or `seconds` seconds have elapsed.
+///
+/// Return `true` if the key is pressed. Return `false` if the time is out.
+pub fn wait_for_key_with_timeout(ch: char, seconds: u64) -> bool
+{
+	let timer = Timer::with_seconds(seconds).unwrap();
+	loop
+	{
+		match wait_for_keystroke(&timer)
+		{
+			Some(Ok(c)) if c == ch => return true,
+			Some(_) => continue,
+			None => return false,
+		}
 	}
 }
 

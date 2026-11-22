@@ -13,7 +13,7 @@ categories = ["no-std","virtualization"]
 # No asterisks (e.g.: "*", "0.4.*") are allowed.
 [dependencies]
 bitfield-struct = "0.13.0"
-r-efi = "7.1.0"
+r-efi = "7.2.0"
 
 [target.'cfg(windows)'.dependencies.utf16_lit]
 version = "2.0.2"

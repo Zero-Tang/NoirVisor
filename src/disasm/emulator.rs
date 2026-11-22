@@ -10,7 +10,7 @@
  * or fitness for a particular purpose, etc.).
  */
 
-use core::{fmt, mem::MaybeUninit};
+use core::{fmt, mem::MaybeUninit, sync::atomic::Ordering};
 
 use log::{error, warn};
 use pastey::paste;
@@ -163,7 +163,7 @@ impl Instruction
 
 	/// Decode TLB invalidation instruction.
 	/// Returns `None` if this is not an access to debug register.
-	pub fn decode_invlpg(&self) -> Option<InvlpgInfo>
+	pub fn decode_invlpg(&self) -> Option<MemOperandInfo>
 	{
 		match self.decode_result
 		{
@@ -171,6 +171,28 @@ impl Instruction
 			DecodeResult::Protected(ins) => ins.decode_invlpg_instruction(),
 			DecodeResult::Real(ins) => ins.decode_invlpg_instruction(),
 			DecodeResult::Undecoded => None,
+		}
+	}
+
+	/// ## `decode_mmio_operand` method
+	/// Get the address components of the memory operand of an MMIO instruction (i.e.: `mov`) in 64-bit mode. \
+	/// Returns `None` in other modes, or if the operand is addressed with FS or GS, whose segment bases are not
+	/// accounted by [`MemOperandInfo::calc_addr`].
+	pub fn decode_mmio_operand(&self) -> Option<MemOperandInfo>
+	{
+		use long_mode::{Opcode, Segment};
+		match self.decode_result
+		{
+			DecodeResult::Long(ins) if ins.opcode() == Opcode::MOV =>
+			{
+				let index = if ins.operand(0).is_memory() { 0 } else { 1 };
+				if matches!(ins.segment_override_for_op(index), Some(Segment::FS | Segment::GS))
+				{
+					return None;
+				}
+				long_mode_memory_operand(&ins, index)
+			}
+			_ => None,
 		}
 	}
 
@@ -455,72 +477,74 @@ derive_swint_decoder!(real);
 
 trait InvlpgDecoder
 {
-	fn decode_invlpg_instruction(&self) -> Option<InvlpgInfo>;
+	fn decode_invlpg_instruction(&self) -> Option<MemOperandInfo>;
+}
+
+/// ## `long_mode_memory_operand` function
+/// Get the address components of the memory operand at `index` of a 64-bit mode instruction. \
+/// Returns `None` if the operand is not a memory operand or its form is not supported.
+fn long_mode_memory_operand(ins: &long_mode::Instruction, index: u8) -> Option<MemOperandInfo>
+{
+	use long_mode::Operand;
+	match ins.operand(index)
+	{
+		Operand::MemDeref { base } => Some(MemOperandInfo::new_long(Some(base), None, 0, base.width())),
+		Operand::Disp { base, disp } => Some(MemOperandInfo::new_long(Some(base), None, disp, base.width())),
+		Operand::MemBaseIndexScale { base, index, scale } =>
+		{
+			Some(MemOperandInfo::new_long(Some(base), Some((index, scale)), 0, base.width()))
+		}
+		Operand::MemBaseIndexScaleDisp { base, index, scale, disp } =>
+		{
+			Some(MemOperandInfo::new_long(Some(base), Some((index, scale)), disp, base.width()))
+		}
+		Operand::MemIndexScale { index, scale } => Some(MemOperandInfo::new_long(None, Some((index, scale)), 0, index.width())),
+		Operand::MemIndexScaleDisp { index, scale, disp } =>
+		{
+			Some(MemOperandInfo::new_long(None, Some((index, scale)), disp, index.width()))
+		}
+		// A 32-bit absolute address in 64-bit mode is due to the address-size override prefix.
+		Operand::AbsoluteU32 { addr } => Some(MemOperandInfo::new_long(None, None, addr.cast_signed(), 4)),
+		_ => None,
+	}
 }
 
 impl InvlpgDecoder for long_mode::Instruction
 {
-	fn decode_invlpg_instruction(&self) -> Option<InvlpgInfo>
+	fn decode_invlpg_instruction(&self) -> Option<MemOperandInfo>
 	{
-		use long_mode::{Opcode, Operand};
-		if self.opcode() == Opcode::INVLPG
-		{
-			match self.operand(0)
-			{
-				Operand::MemDeref { base } => Some(InvlpgInfo::new_long(Some(base), None, 0, base.width())),
-				Operand::Disp { base, disp } => Some(InvlpgInfo::new_long(Some(base), None, disp, base.width())),
-				Operand::MemBaseIndexScale { base, index, scale } =>
-				{
-					Some(InvlpgInfo::new_long(Some(base), Some((index, scale)), 0, base.width()))
-				}
-				Operand::MemBaseIndexScaleDisp { base, index, scale, disp } =>
-				{
-					Some(InvlpgInfo::new_long(Some(base), Some((index, scale)), disp, base.width()))
-				}
-				Operand::MemIndexScale { index, scale } => Some(InvlpgInfo::new_long(None, Some((index, scale)), 0, index.width())),
-				Operand::MemIndexScaleDisp { index, scale, disp } =>
-				{
-					Some(InvlpgInfo::new_long(None, Some((index, scale)), disp, index.width()))
-				}
-				Operand::AbsoluteU32 { addr } => Some(InvlpgInfo::new_long(None, None, addr.cast_signed(), 8)),
-				_ => None,
-			}
-		}
-		else
-		{
-			None
-		}
+		if self.opcode() == long_mode::Opcode::INVLPG { long_mode_memory_operand(self, 0) } else { None }
 	}
 }
 
 impl InvlpgDecoder for protected_mode::Instruction
 {
-	fn decode_invlpg_instruction(&self) -> Option<InvlpgInfo>
+	fn decode_invlpg_instruction(&self) -> Option<MemOperandInfo>
 	{
 		use protected_mode::{Opcode, Operand};
 		if self.opcode() == Opcode::INVLPG
 		{
 			match self.operand(0)
 			{
-				Operand::MemDeref { base } => Some(InvlpgInfo::new_protected(Some(base), None, 0, base.width())),
-				Operand::Disp { base, disp } => Some(InvlpgInfo::new_protected(Some(base), None, disp, base.width())),
+				Operand::MemDeref { base } => Some(MemOperandInfo::new_protected(Some(base), None, 0, base.width())),
+				Operand::Disp { base, disp } => Some(MemOperandInfo::new_protected(Some(base), None, disp, base.width())),
 				Operand::MemBaseIndexScale { base, index, scale } =>
 				{
-					Some(InvlpgInfo::new_protected(Some(base), Some((index, scale)), 0, base.width()))
+					Some(MemOperandInfo::new_protected(Some(base), Some((index, scale)), 0, base.width()))
 				}
 				Operand::MemBaseIndexScaleDisp { base, index, scale, disp } =>
 				{
-					Some(InvlpgInfo::new_protected(Some(base), Some((index, scale)), disp, base.width()))
+					Some(MemOperandInfo::new_protected(Some(base), Some((index, scale)), disp, base.width()))
 				}
 				Operand::MemIndexScale { index, scale } =>
 				{
-					Some(InvlpgInfo::new_protected(None, Some((index, scale)), 0, index.width()))
+					Some(MemOperandInfo::new_protected(None, Some((index, scale)), 0, index.width()))
 				}
 				Operand::MemIndexScaleDisp { index, scale, disp } =>
 				{
-					Some(InvlpgInfo::new_protected(None, Some((index, scale)), disp, index.width()))
+					Some(MemOperandInfo::new_protected(None, Some((index, scale)), disp, index.width()))
 				}
-				Operand::AbsoluteU32 { addr } => Some(InvlpgInfo::new_long(None, None, addr.cast_signed(), 4)),
+				Operand::AbsoluteU32 { addr } => Some(MemOperandInfo::new_long(None, None, addr.cast_signed(), 4)),
 				_ => None,
 			}
 		}
@@ -533,26 +557,29 @@ impl InvlpgDecoder for protected_mode::Instruction
 
 impl InvlpgDecoder for real_mode::Instruction
 {
-	fn decode_invlpg_instruction(&self) -> Option<InvlpgInfo>
+	fn decode_invlpg_instruction(&self) -> Option<MemOperandInfo>
 	{
 		use real_mode::{Opcode, Operand};
 		if self.opcode() == Opcode::INVLPG
 		{
 			match self.operand(0)
 			{
-				Operand::MemDeref { base } => Some(InvlpgInfo::new_real(Some(base), None, 0, base.width())),
+				Operand::MemDeref { base } => Some(MemOperandInfo::new_real(Some(base), None, 0, base.width())),
 				Operand::MemBaseIndexScale { base, index, scale } =>
 				{
-					Some(InvlpgInfo::new_real(Some(base), Some((index, scale)), 0, base.width()))
+					Some(MemOperandInfo::new_real(Some(base), Some((index, scale)), 0, base.width()))
 				}
 				Operand::MemBaseIndexScaleDisp { base, index, scale, disp } =>
 				{
-					Some(InvlpgInfo::new_real(Some(base), Some((index, scale)), disp, base.width()))
+					Some(MemOperandInfo::new_real(Some(base), Some((index, scale)), disp, base.width()))
 				}
-				Operand::MemIndexScale { index, scale } => Some(InvlpgInfo::new_real(None, Some((index, scale)), 0, index.width())),
+				Operand::MemIndexScale { index, scale } =>
+				{
+					Some(MemOperandInfo::new_real(None, Some((index, scale)), 0, index.width()))
+				}
 				Operand::MemIndexScaleDisp { index, scale, disp } =>
 				{
-					Some(InvlpgInfo::new_real(None, Some((index, scale)), disp, index.width()))
+					Some(MemOperandInfo::new_real(None, Some((index, scale)), disp, index.width()))
 				}
 				_ => None,
 			}
@@ -579,7 +606,7 @@ pub enum MovDrInfo
 	MovFromDr(u8, u8),
 }
 
-pub struct InvlpgInfo
+pub struct MemOperandInfo
 {
 	base: Option<u8>,
 	index_scale: Option<(u8, u8)>,
@@ -587,7 +614,7 @@ pub struct InvlpgInfo
 	disp: i32,
 }
 
-macro_rules! derive_invlpg_info_new {
+macro_rules! derive_mem_operand_info_new {
 	($mode:tt) => {
 		paste! {
 			fn [<new_ $mode>](base:Option<[<$mode _mode>]::RegSpec>,index_scale:Option<([<$mode _mode>]::RegSpec,u8)>,disp:i32,addr_size:u8)->Self
@@ -604,10 +631,10 @@ macro_rules! derive_invlpg_info_new {
 	};
 }
 
-impl InvlpgInfo
+impl MemOperandInfo
 {
-	derive_invlpg_info_new!(real);
-	derive_invlpg_info_new!(protected);
+	derive_mem_operand_info_new!(real);
+	derive_mem_operand_info_new!(protected);
 
 	fn new_long(base: Option<long_mode::RegSpec>, index_scale: Option<(long_mode::RegSpec, u8)>, disp: i32, addr_size: u8) -> Self
 	{
@@ -621,20 +648,27 @@ impl InvlpgInfo
 		}
 	}
 
-	pub fn calc_addr(&self, vcpu: &impl EmulatorOps) -> u64
+	/// ## `calc_addr` method
+	/// Calculate the effective address (i.e.: the offset into the segment) of this memory operand. \
+	/// `ins_len` is the length of the instruction, as RIP-relative addressing is based on the next instruction.
+	pub fn calc_addr(&self, vcpu: &impl EmulatorOps, ins_len: usize) -> u64
 	{
 		let mut p: u64 = 0;
-		let mask = 8u64.wrapping_shl(self.addr_size as u32).wrapping_sub(1);
 		if let Some(base) = self.base
 		{
-			p += if base == 16 { vcpu.get_rip() } else { vcpu.get_gpr(base as usize) };
+			let base = if base == 16 { vcpu.get_rip().wrapping_add(ins_len as u64) } else { vcpu.get_gpr(base as usize) };
+			p = p.wrapping_add(base);
 		}
 		if let Some((index, scale)) = self.index_scale
 		{
-			p += vcpu.get_gpr(index as usize) * scale as u64;
+			p = p.wrapping_add(vcpu.get_gpr(index as usize).wrapping_mul(scale as u64));
 		}
-		p += p.wrapping_add_signed(self.disp as i64);
-		p &= mask;
+		p = p.wrapping_add_signed(self.disp as i64);
+		// The address size is in bytes. Truncate the effective address to the address size.
+		if self.addr_size < 8
+		{
+			p &= (1u64 << (self.addr_size as u32 * 8)) - 1;
+		}
 		p
 	}
 }
@@ -667,6 +701,12 @@ pub trait EmulatorOps
 	fn is_user_mode(&self) -> bool;
 	fn read_gpa(&mut self, gpa: u64, value: &mut [u8]) -> usize;
 	fn write_gpa(&mut self, gpa: u64, value: &[u8]) -> usize;
+
+	/// Atomically set `bits` in the 8-byte-aligned 64-bit value at `gpa` in system memory. \
+	/// This is how the processor sets Accessed and Dirty bits of paging-structure entries. Other processors may update the
+	/// same entry simultaneously (e.g.: Windows takes page-table locks with the software-available bits of the entry), so
+	/// the entry must never be written back as a whole.
+	fn set_gpa_bits64(&mut self, gpa: u64, bits: u64, ordering: Ordering) -> u64;
 
 	fn read_virt(&mut self, va: u64, value: &mut [u8]) -> Result<(), (PageFaultErrorCode, u64)>
 	where

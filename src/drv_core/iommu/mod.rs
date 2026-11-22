@@ -17,6 +17,7 @@ use super::acpi::{search_acpi_table, tables::*};
 use crate::xpf_core::{
 	allocator::PAGE_ALLOC_MANAGER,
 	ci::CI_MANAGER,
+	intflt::InterruptOps,
 	ioflt::IoRegionOps,
 	nvbdk::{PAGE_1GB_SIZE, SYSTEM_PHYSICAL_MEMORY_RANGES, page_1gb_base, page_mult},
 };
@@ -24,6 +25,10 @@ use crate::xpf_core::{
 pub mod amd;
 pub mod intel;
 pub mod virtio;
+
+/// The vector of IOMMU fault events. \
+/// The guest may use this vector for its devices as well. Such interrupts are thrown back to the guest.
+pub const IOMMU_FAULT_EVENT_VECTOR: u8 = 0xDF;
 
 /// The `IommuOps` trait must be implemented on all IOMMU drivers.
 pub trait IommuOps
@@ -47,6 +52,15 @@ pub trait IommuOps
 	fn set_pdpte(&mut self, gpa: u64, hpa: u64, r: bool, w: bool, x: bool);
 	/// List all IOMMU BAR pages in order to filter I/O to them.
 	fn get_bar_pages(&self) -> Vec<Box<dyn IoRegionOps>>;
+	/// List all IOMMU interrupt handlers (e.g.: fault events) in order to filter interrupts to them.
+	fn get_interrupt_handlers(&self) -> Vec<Box<dyn InterruptOps>>
+	{
+		Vec::new()
+	}
+	/// Unmask fault events of the IOMMU. Fault events are delivered to the current processor. \
+	/// Call this method in the host context of a subverted processor with interrupts blocked, after the handlers \
+	/// from `get_interrupt_handlers` are registered. Otherwise, the fault events may go to the guest.
+	fn enable_fault_events(&self) {}
 
 	// Setup Identity Mapping.
 	fn setup_mapping(&mut self)

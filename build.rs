@@ -15,7 +15,7 @@ use std::{env, path::Path, process::Command};
 fn main()
 {
 	// It seems Rust compiler cannot track header files for global_asm.
-	println!("cargo:rerun-if-changed=src/xpf_core/hv_host/asm_helper_x86.inc");
+	println!("cargo:rerun-if-changed=src/xpf_core/hv_host/x86/asm_helper.inc");
 	// Get compiler version.
 	let out = Command::new("rustc").arg("--version").output().unwrap();
 	let s = String::from_utf8(out.stdout).unwrap();

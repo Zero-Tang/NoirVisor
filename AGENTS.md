@@ -17,6 +17,10 @@ Do not modify this structure without updating the project guidelines.
 - If TOML manifest is changed, agent must highlight the change and notify for user's attention.
 - Read [the Rust guidelines](./doc/rust.md) for further details.
 
+## Generating Non-Repository Files
+Users may ask AI coding agents to output texts that are not supposed to be a part of repository. (e.g.: performing a security review and save it as text files) \
+Under such circumstances, unless explicitly specified in the prompt, the generated the files should be saved in the `scratch` folder, which is explicitly ignored in `.gitignore`.
+
 ## Critical Terminal Commands
 At the repository root, the following commands are available:
 - **Clippy and Audit:** `python make.py check`

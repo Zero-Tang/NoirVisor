@@ -17,9 +17,10 @@ use core::{
 	sync::atomic::Ordering,
 };
 
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
 use efi_helpers::{
-	BS_TABLE, RT_TABLE, block_until_keystroke2, clear_screen, convert_device_path_to_text, handle_protocol, print, println,
+	BS_TABLE, IMAGE_INFO, RT_TABLE, Timer, block_until_keystroke2, clear_screen, convert_device_path_to_text, handle_protocol, print,
+	println, wait_for_keystroke,
 };
 use r_efi::{
 	efi::{BY_PROTOCOL, Boolean, GLOBAL_VARIABLE, Handle, Status},
@@ -190,6 +191,9 @@ fn expand_short_device_path(path: Vec<u8>) -> Vec<u8>
 #[allow(dead_code)]
 struct LoadOption
 {
+	/// The `XXXX` in `BootXXXX`. `None` if the name is not hexadecimal (e.g.: `BootNext`).
+	number: Option<u16>,
+	attributes: u32,
 	name: String,
 	description: String,
 	device_path: Vec<u8>,
@@ -214,6 +218,157 @@ impl fmt::Display for LoadOption
 	}
 }
 
+/// Seconds to wait at the prompt before entering boot selection automatically.
+pub const BOOT_PROMPT_TIMEOUT: u64 = 8;
+/// Seconds to wait in boot selection before booting the default selection automatically.
+pub const BOOT_SELECTION_TIMEOUT: u64 = 30;
+
+const LOAD_OPTION_ACTIVE: u32 = 0x1;
+
+/// Read a global UEFI variable. Return `None` if the variable does not exist.
+fn get_global_variable(name: &str) -> Option<Vec<u8>>
+{
+	let rt = unsafe { &*RT_TABLE.load(Ordering::Relaxed) };
+	let mut guid = GLOBAL_VARIABLE;
+	let mut name: Vec<u16> = name.encode_utf16().chain([0]).collect();
+	let mut size: usize = 0;
+	let st = unsafe { (rt.get_variable)(name.as_mut_ptr(), &raw mut guid, null_mut(), &raw mut size, null_mut()) };
+	if st != Status::BUFFER_TOO_SMALL
+	{
+		return None;
+	}
+	let mut data = vec![0u8; size];
+	let st = unsafe { (rt.get_variable)(name.as_mut_ptr(), &raw mut guid, null_mut(), &raw mut size, data.as_mut_ptr().cast()) };
+	if st.is_error()
+	{
+		return None;
+	}
+	data.truncate(size);
+	Some(data)
+}
+
+/// Copy the device path (including the end node) into a vector.
+///
+/// ## Safety
+/// `path` must point to a valid device path.
+unsafe fn copy_device_path(path: *const device_path::Protocol) -> Vec<u8>
+{
+	let mut size = 0;
+	unsafe {
+		let mut node = path;
+		loop
+		{
+			let len = u16::from_ne_bytes((*node).length) as usize;
+			if len < 4
+			{
+				break;
+			}
+			size += len;
+			if (*node).r#type == TYPE_END
+			{
+				break;
+			}
+			node = node.byte_add(len);
+		}
+		slice::from_raw_parts(path.cast::<u8>(), size).to_vec()
+	}
+}
+
+/// Get the full device path of this loader in text, in lower case.
+fn self_path_text() -> Option<String>
+{
+	unsafe {
+		let image = &*IMAGE_INFO.load(Ordering::Relaxed);
+		if image.file_path.is_null()
+		{
+			return None;
+		}
+		let device_path = handle_protocol::<device_path::Protocol>(image.device_handle, device_path::PROTOCOL_GUID).ok()?;
+		let mut path = copy_device_path(device_path);
+		// Remove the end node of the device path. Then append the file path.
+		path.truncate(path.len().saturating_sub(4));
+		path.extend_from_slice(&copy_device_path(image.file_path));
+		Some(convert_device_path_to_text(path.as_mut_ptr().cast()).to_lowercase())
+	}
+}
+
+/// Check if the device path of this boot option points to a file (e.g.: `\EFI\Microsoft\Boot\bootmgfw.efi`).
+///
+/// Installed operating systems are booted from a file on the disk. Firmware applications (e.g.: UEFI Shell),
+/// network boot options and removable media boot options do not specify a file path.
+fn has_file_path(path: &[u8]) -> bool
+{
+	let mut offset = 0;
+	while offset + 4 <= path.len()
+	{
+		if path[offset] == TYPE_END
+		{
+			break;
+		}
+		if path[offset] == TYPE_MEDIA && path[offset + 1] == Media::SUBTYPE_FILE_PATH
+		{
+			return true;
+		}
+		let len = u16::from_ne_bytes([path[offset + 2], path[offset + 3]]) as usize;
+		if len < 4
+		{
+			break;
+		}
+		offset += len;
+	}
+	false
+}
+
+/// Choose the boot option that should be booted by default.
+///
+/// Boot options are searched in the `BootOrder`, starting from the one after this loader (`BootCurrent`).
+/// The first active boot option that boots an installed operating system is chosen.
+/// If there are none, the next active boot option after this loader is chosen.
+fn default_selection(options: &[LoadOption]) -> usize
+{
+	let boot_order: Vec<u16> = get_global_variable("BootOrder")
+		.map(|v| v.as_chunks::<2>().0.iter().map(|&c| u16::from_ne_bytes(c)).collect())
+		.unwrap_or_default();
+	let boot_current = get_global_variable("BootCurrent").and_then(|v| Some(u16::from_ne_bytes(v.get(..2)?.try_into().ok()?)));
+	let self_path = self_path_text();
+	// Search in the boot order, starting from the boot option after the current one.
+	let start = boot_current.and_then(|c| boot_order.iter().position(|&n| n == c)).map_or(0, |i| i + 1);
+	let ordered = boot_order[start..].iter().chain(&boot_order[..start]).filter(|&&n| Some(n) != boot_current);
+	let candidates: Vec<usize> = ordered
+		.filter_map(|&n| options.iter().position(|o| o.number == Some(n)))
+		.filter(|&i| options[i].attributes & LOAD_OPTION_ACTIVE != 0)
+		.collect();
+	let is_installed_os = |opt: &LoadOption| {
+		if !has_file_path(&opt.device_path)
+		{
+			return false;
+		}
+		// Do not boot this loader again.
+		let mut path = opt.device_path.clone();
+		let text = unsafe { convert_device_path_to_text(path.as_mut_ptr().cast()) }.to_lowercase();
+		self_path.as_ref() != Some(&text)
+	};
+	candidates.iter().copied().find(|&i| is_installed_os(&options[i])).or(candidates.first().copied()).unwrap_or(0)
+}
+
+/// Wait for a keystroke with a countdown of `seconds` seconds.
+/// Return `None` if the time is out.
+fn wait_with_countdown(seconds: u64) -> Option<Result<char, u16>>
+{
+	for remaining in (1..=seconds).rev()
+	{
+		print!("\rThe selection boots automatically in {remaining:2} seconds. Press any key to stop the countdown.");
+		let timer = Timer::with_seconds(1).unwrap();
+		if let Some(r) = wait_for_keystroke(&timer)
+		{
+			println!();
+			return Some(r);
+		}
+	}
+	println!();
+	None
+}
+
 pub fn select_boot_option(source_image: Handle)
 {
 	let rt = unsafe { &*RT_TABLE.load(Ordering::Relaxed) };
@@ -234,7 +389,8 @@ pub fn select_boot_option(source_image: Handle)
 			panic!("GetNextVariableName failed! Reason: {st}, Buffer-Size: {size}, GUID: {guid:X?}");
 		}
 		let name = String::from_utf16_lossy(&name_raw[..(size >> 1) - 1]);
-		if name.starts_with("Boot") && name.len() == 8
+		// Boot options are named as `BootXXXX`, where `XXXX` is hexadecimal. Note that `BootNext` is not a boot option.
+		if name.len() == 8 && name.starts_with("Boot") && name[4..].chars().all(|c| c.is_ascii_hexdigit())
 		{
 			let mut data_size: usize = 0;
 			let st = unsafe { (rt.get_variable)(name_raw.as_mut_ptr(), &raw mut guid, null_mut(), &raw mut data_size, null_mut()) };
@@ -245,6 +401,8 @@ pub fn select_boot_option(source_image: Handle)
 			};
 			assert_eq!(st, Status::SUCCESS);
 			let option = LoadOption {
+				number: u16::from_str_radix(&name[4..], 16).ok(),
+				attributes: boot_opt.attributes,
 				name,
 				description: boot_opt.get_description(data_size),
 				device_path: expand_short_device_path(boot_opt.get_device_path(data_size)),
@@ -253,10 +411,16 @@ pub fn select_boot_option(source_image: Handle)
 			options.push(option);
 		}
 	}
+	if options.is_empty()
+	{
+		println!("No boot options are found!");
+		return;
+	}
 	// Loop until selection.
-	let mut selection: usize = 0;
-	let mut selected = false;
-	while !selected
+	let mut selection: usize = default_selection(&options);
+	// The countdown stops once any key is pressed.
+	let mut countdown = Some(BOOT_SELECTION_TIMEOUT);
+	loop
 	{
 		clear_screen();
 		println!("Press UP/DOWN to select boot option. Press Enter to boot the selection.");
@@ -268,33 +432,29 @@ pub fn select_boot_option(source_image: Handle)
 			}
 			println!("{opt}");
 		}
-		// Loop until a valid key is input.
-		loop
+		let r = match countdown.take()
 		{
-			let r = block_until_keystroke2();
-			if r == Ok('\r')
+			Some(seconds) => match wait_with_countdown(seconds)
 			{
-				// Selected an option.
-				selected = true;
-				break;
-			}
-			else if r == Err(1)
-			{
-				// UP arrow.
-				selection = selection.saturating_sub(1);
-				break;
-			}
-			else if r == Err(2)
-			{
-				// DOWN arrow.
-				if selection < options.len() - 1
-				{
-					selection += 1;
-				}
-				break;
-			}
+				Some(r) => r,
+				// Time is out. Boot the default selection.
+				None => break,
+			},
+			None => block_until_keystroke2(),
+		};
+		match r
+		{
+			// Selected an option.
+			Ok('\r') => break,
+			// UP arrow.
+			Err(1) => selection = selection.saturating_sub(1),
+			// DOWN arrow.
+			Err(2) => selection = (selection + 1).min(options.len() - 1),
+			_ =>
+			{}
 		}
 	}
+	println!("Booting {}...", options[selection].description);
 	unsafe {
 		let bs = &*BS_TABLE.load(Ordering::Relaxed);
 		let opt = &mut options[selection];
