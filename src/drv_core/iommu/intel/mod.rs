@@ -329,7 +329,7 @@ impl IntelIommuManager
 							.with_w(true)
 							.with_x(true)
 							.with_ps(true)
-							.with_page_base(page_512gb_count(d.gpa_start) + i as u64);
+							.with_page_base(page_1gb_count(d.gpa_start) + i as u64);
 					}
 					// Update PML4E Entry.
 					*self.get_pml4e_mut(gpa).unwrap() = SsPml4e::from_bits(d.descriptor.phys).with_r(true).with_w(true).with_x(true);
@@ -365,7 +365,7 @@ impl IntelIommuManager
 							.with_w(true)
 							.with_x(true)
 							.with_ps(true)
-							.with_page_base(page_1gb_count(d.gpa_start) + i as u64);
+							.with_page_base(page_2mb_count(d.gpa_start) + i as u64);
 					}
 					// Update PDPE Entry.
 					*self.get_pdpte_mut(gpa).unwrap() = SsPdpe::from_bits(d.descriptor.phys).with_r(true).with_w(true).with_x(true);
@@ -397,7 +397,7 @@ impl IntelIommuManager
 					for (i, pte) in pts.iter_mut().enumerate()
 					{
 						*pte =
-							SsPte::new().with_r(true).with_w(true).with_x(true).with_page_base(page_2mb_count(d.gpa_start) + i as u64);
+							SsPte::new().with_r(true).with_w(true).with_x(true).with_page_base(page_4kb_count(d.gpa_start) + i as u64);
 					}
 					// Update PDE Entry.
 					*self.get_pde_mut(gpa).unwrap() = SsPde::from_bits(d.descriptor.phys).with_r(true).with_w(true).with_x(true);
